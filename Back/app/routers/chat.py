@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import uuid
 from typing import Annotated
@@ -7,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from ..config import CHAT_HISTORY_MESSAGES, MAX_CHAT_CONTENT_CHARS, OLLAMA_MODEL
 from ..services.auth_service import get_current_user
-from ..services.database import get_connection, transaction
+from ..services.database import advisory_lock, get_connection, transaction
 from ..services.ollama_service import chat_with_ollama
 from ..services.rate_limit import enforce_rate_limit
 
@@ -25,6 +27,21 @@ class ChatRequest(BaseModel):
 
 class ConversationUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
+
+
+def _encode_cursor(payload):
+    return base64.urlsafe_b64encode(json.dumps(payload, default=str).encode()).decode().rstrip("=")
+
+
+def _decode_cursor(value, required_keys):
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+        if not all(key in payload for key in required_keys):
+            return None
+        return payload
+    except (ValueError, TypeError, json.JSONDecodeError, binascii.Error, UnicodeDecodeError):
+        return None
 
 
 @router.get("/models")
@@ -45,26 +62,41 @@ def models(user=Depends(get_current_user)):
 def conversations(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = None,
     archived: bool = False,
     user=Depends(get_current_user),
 ):
+    decoded_cursor = _decode_cursor(cursor, ("updated_at", "id")) if cursor else None
+    cursor_clause = ""
+    params = [user["id"], archived, archived]
+    if decoded_cursor:
+        cursor_clause = "AND (c.updated_at < %s OR (c.updated_at = %s AND c.id < %s))"
+        params.extend([decoded_cursor["updated_at"], decoded_cursor["updated_at"], decoded_cursor["id"]])
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 SELECT c.id, c.title, c.model_id AS modelId, m.display_name AS modelName,
                        c.created_at AS createdAt, c.updated_at AS updatedAt
                 FROM conversations c
                 LEFT JOIN gpt_models m ON m.id = c.model_id
                 WHERE c.user_id = %s
                   AND ((%s = TRUE AND c.archived_at IS NOT NULL) OR (%s = FALSE AND c.archived_at IS NULL))
-                ORDER BY c.updated_at DESC
+                  {cursor_clause}
+                ORDER BY c.updated_at DESC, c.id DESC
                 LIMIT %s OFFSET %s
                 """,
-                (user["id"], archived, archived, limit, offset),
+                (*params, limit + 1, 0 if decoded_cursor else offset),
             )
             results = cursor.fetchall()
+            has_more = len(results) > limit
+            results = results[:limit]
+            next_cursor = (
+                _encode_cursor({"updated_at": results[-1]["updatedAt"], "id": results[-1]["id"]})
+                if has_more and results
+                else None
+            )
             cursor.execute(
                 """
                 SELECT COUNT(*) AS count FROM conversations
@@ -73,7 +105,7 @@ def conversations(
                 """,
                 (user["id"], archived, archived),
             )
-            return {"conversations": results, "total": cursor.fetchone()["count"]}
+            return {"conversations": results, "total": cursor.fetchone()["count"], "next_cursor": next_cursor}
     finally:
         connection.close()
 
@@ -153,8 +185,14 @@ def messages(
     conversation_id: int,
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = None,
     user=Depends(get_current_user),
 ):
+    decoded_cursor = _decode_cursor(cursor, ("sequence_number",)) if cursor else None
+    cursor_clause = "AND m.sequence_number < %s" if decoded_cursor else ""
+    page_params = [conversation_id, user["id"]]
+    if decoded_cursor:
+        page_params.append(decoded_cursor["sequence_number"])
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -165,22 +203,28 @@ def messages(
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
             cursor.execute(
-                """
+                f"""
                 SELECT * FROM (
                   SELECT m.id, m.role, m.content, m.metadata,
                          m.sequence_number AS sequenceNumber, m.created_at AS createdAt
                   FROM messages m
                   JOIN conversations c ON c.id = m.conversation_id
                   WHERE c.id = %s AND c.user_id = %s
+                    {cursor_clause}
                   ORDER BY m.sequence_number DESC
                   LIMIT %s OFFSET %s
                 ) recent ORDER BY sequenceNumber
                 """,
-                (conversation_id, user["id"], limit, offset),
+                (*page_params, limit + 1, 0 if decoded_cursor else offset),
             )
             results = cursor.fetchall()
+            has_more = len(results) > limit
+            results = results[-limit:]
+            next_cursor = (
+                _encode_cursor({"sequence_number": results[0]["sequenceNumber"]}) if has_more and results else None
+            )
             cursor.execute("SELECT COUNT(*) AS count FROM messages WHERE conversation_id = %s", (conversation_id,))
-            return {"messages": results, "total": cursor.fetchone()["count"]}
+            return {"messages": results, "total": cursor.fetchone()["count"], "next_cursor": next_cursor}
     finally:
         connection.close()
 
@@ -226,158 +270,164 @@ def chat(
 
     if idempotency_key and len(idempotency_key) > 255:
         raise HTTPException(status_code=400, detail="Idempotency-Key는 255자를 초과할 수 없습니다.")
-    connection = get_connection()
     request_id = idempotency_key or str(uuid.uuid4())
     lock_name = f"hanium_conversation_chat_{conversation_id}"
     user_message_id = None
-    lock_acquired = False
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT GET_LOCK(%s, 10) AS acquired", (lock_name,))
-            lock_acquired = cursor.fetchone()["acquired"] == 1
+    with advisory_lock(lock_name, 10) as lock_acquired:
         if not lock_acquired:
             raise HTTPException(status_code=409, detail="이 대화의 다른 채팅 요청이 처리 중입니다.")
 
-        connection.begin()
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM gpt_usage WHERE request_id = %s LIMIT 1", (request_id,))
-            if cursor.fetchone():
-                raise HTTPException(status_code=409, detail="이미 완료된 동일 채팅 요청입니다.")
-            cursor.execute(
-                "SELECT id, system_prompt FROM conversations WHERE id = %s AND user_id = %s FOR UPDATE",
-                (conversation_id, user["id"]),
-            )
-            conversation = cursor.fetchone()
-            if not conversation:
-                raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
-            cursor.execute(
-                """
-                SELECT id, provider, model_key, display_name FROM gpt_models
-                WHERE provider = 'ollama' AND model_key = %s AND is_active = TRUE LIMIT 1
-                """,
-                (OLLAMA_MODEL,),
-            )
-            model = cursor.fetchone()
-            if not model:
-                raise HTTPException(status_code=503, detail="활성화된 Ollama 모델이 등록되어 있지 않습니다.")
-            cursor.execute(
-                "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence "
-                "FROM messages WHERE conversation_id = %s",
-                (conversation_id,),
-            )
-            user_sequence = cursor.fetchone()["next_sequence"]
-            cursor.execute(
-                "INSERT INTO messages (conversation_id, role, content, metadata, sequence_number) "
-                "VALUES (%s, 'user', %s, %s, %s)",
-                (conversation_id, content, json.dumps({"chatStatus": "pending", "requestId": request_id}), user_sequence),
-            )
-            user_message_id = cursor.lastrowid
-            cursor.execute(
-                """
-                SELECT role, content FROM (
-                  SELECT role, content, sequence_number FROM messages
-                  WHERE conversation_id = %s AND role IN ('system', 'user', 'assistant')
-                    AND (
-                      metadata IS NULL OR
-                      JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.chatStatus')) IS NULL OR
-                      JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.chatStatus')) <> 'failed'
+        try:
+            with transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT id FROM gpt_usage WHERE request_id = %s LIMIT 1", (request_id,))
+                    if cursor.fetchone():
+                        raise HTTPException(status_code=409, detail="이미 완료된 동일 채팅 요청입니다.")
+                    cursor.execute(
+                        "SELECT id, system_prompt FROM conversations WHERE id = %s AND user_id = %s FOR UPDATE",
+                        (conversation_id, user["id"]),
                     )
-                  ORDER BY sequence_number DESC
-                  LIMIT %s
-                ) recent
-                ORDER BY sequence_number
-                """,
-                (conversation_id, CHAT_HISTORY_MESSAGES),
-            )
-            history = cursor.fetchall()
-        connection.commit()
+                    conversation = cursor.fetchone()
+                    if not conversation:
+                        raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
+                    cursor.execute(
+                        """
+                        SELECT id, provider, model_key, display_name FROM gpt_models
+                        WHERE provider = 'ollama' AND model_key = %s AND is_active = TRUE LIMIT 1
+                        """,
+                        (OLLAMA_MODEL,),
+                    )
+                    model = cursor.fetchone()
+                    if not model:
+                        raise HTTPException(status_code=503, detail="활성화된 Ollama 모델이 등록되어 있지 않습니다.")
+                    cursor.execute(
+                        "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence "
+                        "FROM messages WHERE conversation_id = %s",
+                        (conversation_id,),
+                    )
+                    user_sequence = cursor.fetchone()["next_sequence"]
+                    cursor.execute(
+                        "INSERT INTO messages (conversation_id, role, content, metadata, sequence_number) "
+                        "VALUES (%s, 'user', %s, %s, %s)",
+                        (
+                            conversation_id,
+                            content,
+                            json.dumps({"chatStatus": "pending", "requestId": request_id}),
+                            user_sequence,
+                        ),
+                    )
+                    user_message_id = cursor.lastrowid
+                    cursor.execute(
+                        """
+                        SELECT role, content FROM (
+                          SELECT role, content, sequence_number FROM messages
+                          WHERE conversation_id = %s AND role IN ('system', 'user', 'assistant')
+                            AND (
+                              metadata IS NULL OR
+                              JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.chatStatus')) IS NULL OR
+                              JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.chatStatus')) <> 'failed'
+                            )
+                          ORDER BY sequence_number DESC
+                          LIMIT %s
+                        ) recent
+                        ORDER BY sequence_number
+                        """,
+                        (conversation_id, CHAT_HISTORY_MESSAGES),
+                    )
+                    history = cursor.fetchall()
 
-        ollama_messages = []
-        if conversation["system_prompt"]:
-            ollama_messages.append({"role": "system", "content": conversation["system_prompt"]})
-        ollama_messages.extend(history)
-        result = chat_with_ollama(ollama_messages)
+            ollama_messages = []
+            if conversation["system_prompt"]:
+                ollama_messages.append({"role": "system", "content": conversation["system_prompt"]})
+            ollama_messages.extend(history)
+            result = chat_with_ollama(ollama_messages)
 
-        connection.begin()
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id FROM conversations WHERE id = %s AND user_id = %s FOR UPDATE",
-                (conversation_id, user["id"]),
-            )
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
-            cursor.execute(
-                "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence "
-                "FROM messages WHERE conversation_id = %s",
-                (conversation_id,),
-            )
-            assistant_sequence = cursor.fetchone()["next_sequence"]
-            cursor.execute(
-                "INSERT INTO messages (conversation_id, role, content, metadata, sequence_number) "
-                "VALUES (%s, 'assistant', %s, %s, %s)",
-                (
-                    conversation_id,
-                    result["content"],
-                    json.dumps({"chatStatus": "completed", "requestId": request_id, "model": model["model_key"]}),
-                    assistant_sequence,
-                ),
-            )
-            assistant_message_id = cursor.lastrowid
-            cursor.execute(
-                "UPDATE messages SET metadata = JSON_SET(metadata, '$.chatStatus', 'completed') WHERE id = %s",
-                (user_message_id,),
-            )
-            cursor.execute(
-                """
-                INSERT INTO gpt_usage
-                  (user_id, conversation_id, message_id, model_id, request_id,
-                   input_tokens, output_tokens, total_tokens, estimated_cost)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
-                """,
-                (
-                    user["id"], conversation_id, assistant_message_id, model["id"], request_id,
-                    result["input_tokens"], result["output_tokens"], result["total_tokens"],
-                ),
-            )
-            cursor.execute("UPDATE conversations SET updated_at = NOW(3) WHERE id = %s", (conversation_id,))
-        connection.commit()
-
-        return {
-            "userMessage": {"id": user_message_id, "role": "user", "content": content, "sequenceNumber": user_sequence},
-            "assistantMessage": {
-                "id": assistant_message_id,
-                "role": "assistant",
-                "content": result["content"],
-                "sequenceNumber": assistant_sequence,
-            },
-            "model": {"provider": model["provider"], "modelKey": model["model_key"], "displayName": model["display_name"]},
-            "usage": {
-                "inputTokens": result["input_tokens"],
-                "outputTokens": result["output_tokens"],
-                "totalTokens": result["total_tokens"],
-                "estimatedCost": 0,
-            },
-        }
-    except Exception as error:
-        connection.rollback()
-        if user_message_id:
-            try:
-                connection.begin()
+            with transaction() as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "UPDATE messages SET metadata = JSON_SET(metadata, '$.chatStatus', 'failed', '$.errorCode', %s) "
-                        "WHERE id = %s",
-                        (error.__class__.__name__, user_message_id),
+                        "SELECT id FROM conversations WHERE id = %s AND user_id = %s FOR UPDATE",
+                        (conversation_id, user["id"]),
                     )
-                connection.commit()
-            except Exception:
-                connection.rollback()
-        raise
-    finally:
-        if lock_acquired:
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
-            except Exception:
-                pass
-        connection.close()
+                    if not cursor.fetchone():
+                        raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
+                    cursor.execute(
+                        "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence "
+                        "FROM messages WHERE conversation_id = %s",
+                        (conversation_id,),
+                    )
+                    assistant_sequence = cursor.fetchone()["next_sequence"]
+                    cursor.execute(
+                        "INSERT INTO messages (conversation_id, role, content, metadata, sequence_number) "
+                        "VALUES (%s, 'assistant', %s, %s, %s)",
+                        (
+                            conversation_id,
+                            result["content"],
+                            json.dumps(
+                                {"chatStatus": "completed", "requestId": request_id, "model": model["model_key"]}
+                            ),
+                            assistant_sequence,
+                        ),
+                    )
+                    assistant_message_id = cursor.lastrowid
+                    cursor.execute(
+                        "UPDATE messages SET metadata = JSON_SET(metadata, '$.chatStatus', 'completed') WHERE id = %s",
+                        (user_message_id,),
+                    )
+                    cursor.execute(
+                        """
+                        INSERT INTO gpt_usage
+                          (user_id, conversation_id, message_id, model_id, request_id,
+                           input_tokens, output_tokens, total_tokens, estimated_cost)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
+                        """,
+                        (
+                            user["id"],
+                            conversation_id,
+                            assistant_message_id,
+                            model["id"],
+                            request_id,
+                            result["input_tokens"],
+                            result["output_tokens"],
+                            result["total_tokens"],
+                        ),
+                    )
+                    cursor.execute("UPDATE conversations SET updated_at = NOW(3) WHERE id = %s", (conversation_id,))
+
+            return {
+                "userMessage": {
+                    "id": user_message_id,
+                    "role": "user",
+                    "content": content,
+                    "sequenceNumber": user_sequence,
+                },
+                "assistantMessage": {
+                    "id": assistant_message_id,
+                    "role": "assistant",
+                    "content": result["content"],
+                    "sequenceNumber": assistant_sequence,
+                },
+                "model": {
+                    "provider": model["provider"],
+                    "modelKey": model["model_key"],
+                    "displayName": model["display_name"],
+                },
+                "usage": {
+                    "inputTokens": result["input_tokens"],
+                    "outputTokens": result["output_tokens"],
+                    "totalTokens": result["total_tokens"],
+                    "estimatedCost": 0,
+                },
+            }
+        except Exception as error:
+            if user_message_id:
+                try:
+                    with transaction() as connection:
+                        with connection.cursor() as cursor:
+                            cursor.execute(
+                                "UPDATE messages SET metadata = JSON_SET(metadata, '$.chatStatus', 'failed', "
+                                "'$.errorCode', %s) WHERE id = %s",
+                                (error.__class__.__name__, user_message_id),
+                            )
+                except Exception:
+                    pass
+            raise

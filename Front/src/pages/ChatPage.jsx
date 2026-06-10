@@ -26,6 +26,8 @@ export default function ChatPage() {
   const contextHandled = useRef(false);
   const conversationListReady = useRef(false);
   const requestController = useRef(null);
+  const conversationController = useRef(null);
+  const messageController = useRef(null);
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -38,19 +40,38 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [conversationOffset, setConversationOffset] = useState(0);
   const [conversationTotal, setConversationTotal] = useState(0);
+  const [conversationCursorPages, setConversationCursorPages] = useState([null]);
+  const [conversationNextCursor, setConversationNextCursor] = useState(null);
   const [messageOffset, setMessageOffset] = useState(0);
   const [messageTotal, setMessageTotal] = useState(0);
+  const [messageCursorPages, setMessageCursorPages] = useState([null]);
+  const [messageNextCursor, setMessageNextCursor] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [conversationDialog, setConversationDialog] = useState(null);
 
   const refreshList = async (preferredId, offset = conversationOffset) => {
-    const result = await getConversations(CONVERSATION_PAGE_SIZE, offset, showArchived);
+    conversationController.current?.abort();
+    const controller = new AbortController();
+    conversationController.current = controller;
+    const cursor = conversationCursorPages[Math.floor(offset / CONVERSATION_PAGE_SIZE)] || "";
+    const result = await getConversations(
+      CONVERSATION_PAGE_SIZE,
+      0,
+      showArchived,
+      cursor,
+      controller.signal,
+    );
     setConversations(result.conversations);
     setConversationTotal(result.total);
+    setConversationNextCursor(result.next_cursor || null);
     const candidateId = preferredId || activeId;
     const nextId = result.conversations.some((item) => item.id === candidateId)
       ? candidateId
       : result.conversations[0]?.id || null;
+    if (nextId !== activeId) {
+      setMessageOffset(0);
+      setMessageCursorPages([null]);
+    }
     setActiveId(nextId);
     return nextId;
   };
@@ -61,7 +82,12 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
-    Promise.all([getModels(), getConversations(CONVERSATION_PAGE_SIZE, 0), getUsageSummary()])
+    const controller = new AbortController();
+    Promise.all([
+      getModels(controller.signal),
+      getConversations(CONVERSATION_PAGE_SIZE, 0, false, "", controller.signal),
+      getUsageSummary(controller.signal),
+    ])
       .then(([modelsResult, conversationsResult, usageResult]) => {
         setModelName(
           conversationsResult.conversations[0]?.modelName ||
@@ -70,24 +96,39 @@ export default function ChatPage() {
         );
         setConversations(conversationsResult.conversations);
         setConversationTotal(conversationsResult.total);
+        setConversationNextCursor(conversationsResult.next_cursor || null);
         setActiveId(conversationsResult.conversations[0]?.id || null);
         setUsage(usageResult.usage);
         conversationListReady.current = true;
       })
-      .catch((requestError) => setError(requestError.message))
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") setError(requestError.message);
+      })
       .finally(() => setLoading(false));
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
     if (!conversationListReady.current) return;
-    getConversations(CONVERSATION_PAGE_SIZE, conversationOffset, showArchived)
+    conversationController.current?.abort();
+    const controller = new AbortController();
+    conversationController.current = controller;
+    const cursor =
+      conversationCursorPages[Math.floor(conversationOffset / CONVERSATION_PAGE_SIZE)] || "";
+    getConversations(CONVERSATION_PAGE_SIZE, 0, showArchived, cursor, controller.signal)
       .then((result) => {
         setConversations(result.conversations);
         setConversationTotal(result.total);
+        setConversationNextCursor(result.next_cursor || null);
+        setMessageOffset(0);
+        setMessageCursorPages([null]);
         setActiveId(result.conversations[0]?.id || null);
       })
-      .catch((requestError) => setError(requestError.message));
-  }, [conversationOffset, showArchived]);
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") setError(requestError.message);
+      });
+    return () => controller.abort();
+  }, [conversationOffset, showArchived, conversationCursorPages]);
 
   useEffect(() => {
     const analysisContext = location.state?.analysisContext;
@@ -99,6 +140,7 @@ export default function ChatPage() {
     })
       .then(async (result) => {
         setConversationOffset(0);
+        setConversationCursorPages([null]);
         await refreshList(result.conversation.id, 0);
         setMessages([]);
         setNotice("분석 결과가 AI 코치의 상담 문맥에 연결되었습니다.");
@@ -111,23 +153,43 @@ export default function ChatPage() {
       setMessages([]);
       return;
     }
-    getMessages(activeId, MESSAGE_PAGE_SIZE, messageOffset)
+    messageController.current?.abort();
+    const controller = new AbortController();
+    messageController.current = controller;
+    const cursor = messageCursorPages[Math.floor(messageOffset / MESSAGE_PAGE_SIZE)] || "";
+    getMessages(activeId, MESSAGE_PAGE_SIZE, 0, cursor, controller.signal)
       .then((result) => {
         setMessages(result.messages);
         setMessageTotal(result.total);
+        setMessageNextCursor(result.next_cursor || null);
       })
-      .catch((requestError) => setError(requestError.message));
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") setError(requestError.message);
+      });
     const activeConversation = conversations.find((conversation) => conversation.id === activeId);
     if (activeConversation?.modelName) setModelName(activeConversation.modelName);
-  }, [activeId, messageOffset]);
+    return () => controller.abort();
+  }, [activeId, messageOffset, messageCursorPages]);
+
+  useEffect(
+    () => () => {
+      requestController.current?.abort();
+      conversationController.current?.abort();
+      messageController.current?.abort();
+    },
+    [],
+  );
 
   const newConversation = async () => {
     setError("");
     try {
       const result = await createConversation({ title: "새 대화" });
       setConversationOffset(0);
+      setConversationCursorPages([null]);
       await refreshList(result.conversation.id, 0);
       setMessages([]);
+      setMessageOffset(0);
+      setMessageCursorPages([null]);
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -222,6 +284,7 @@ export default function ChatPage() {
             className="text-button"
             onClick={() => {
               setConversationOffset(0);
+              setConversationCursorPages([null]);
               setShowArchived((current) => !current);
             }}
           >
@@ -234,6 +297,7 @@ export default function ChatPage() {
                 className={`conversation-item ${activeId === conversation.id ? "active" : ""}`}
                 onClick={() => {
                   setMessageOffset(0);
+                  setMessageCursorPages([null]);
                   setActiveId(conversation.id);
                 }}
               >
@@ -260,8 +324,16 @@ export default function ChatPage() {
             </span>
             <button
               className="text-button"
-              disabled={conversationOffset + CONVERSATION_PAGE_SIZE >= conversationTotal}
-              onClick={() => setConversationOffset(conversationOffset + CONVERSATION_PAGE_SIZE)}
+              disabled={!conversationNextCursor}
+              onClick={() => {
+                setConversationCursorPages((current) => {
+                  const next = [...current];
+                  next[Math.floor(conversationOffset / CONVERSATION_PAGE_SIZE) + 1] =
+                    conversationNextCursor;
+                  return next;
+                });
+                setConversationOffset(conversationOffset + CONVERSATION_PAGE_SIZE);
+              }}
             >
               다음
             </button>
@@ -336,8 +408,15 @@ export default function ChatPage() {
               </span>
               <button
                 className="text-button"
-                disabled={messageOffset + MESSAGE_PAGE_SIZE >= messageTotal}
-                onClick={() => setMessageOffset(messageOffset + MESSAGE_PAGE_SIZE)}
+                disabled={!messageNextCursor}
+                onClick={() => {
+                  setMessageCursorPages((current) => {
+                    const next = [...current];
+                    next[Math.floor(messageOffset / MESSAGE_PAGE_SIZE) + 1] = messageNextCursor;
+                    return next;
+                  });
+                  setMessageOffset(messageOffset + MESSAGE_PAGE_SIZE);
+                }}
               >
                 다음 메시지
               </button>

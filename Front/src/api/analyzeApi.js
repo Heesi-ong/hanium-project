@@ -90,7 +90,7 @@ export function uploadAnalyzeVideo(file, onUploadProgress) {
   });
 }
 
-export async function getAnalyzeResults(params = {}) {
+export async function getAnalyzeResults(params = {}, signal) {
   const query = new URLSearchParams(
     Object.entries(params).filter(
       ([, value]) => value !== "" && value !== null && value !== undefined,
@@ -98,6 +98,7 @@ export async function getAnalyzeResults(params = {}) {
   );
   const response = await fetch(`${API_BASE_URL}/analyze/results?${query}`, {
     credentials: "include",
+    signal,
   });
 
   return await parseResponse(response);
@@ -111,17 +112,19 @@ export async function getAnalyzeSummary(resultId) {
   return await parseResponse(response);
 }
 
-export async function getAnalyzeSections(resultId) {
+export async function getAnalyzeSections(resultId, signal) {
   const response = await fetch(`${API_BASE_URL}/analyze/result/${resultId}/sections`, {
     credentials: "include",
+    signal,
   });
 
   return await parseResponse(response);
 }
 
-export async function getTimelineChart(resultId) {
+export async function getTimelineChart(resultId, signal) {
   const response = await fetch(`${API_BASE_URL}/analyze/result/${resultId}/timeline/chart`, {
     credentials: "include",
+    signal,
   });
 
   return await parseResponse(response);
@@ -136,9 +139,10 @@ export async function deleteAnalyzeResult(resultId) {
   return await parseResponse(response);
 }
 
-export async function getAnalyzeJob(resultId) {
+export async function getAnalyzeJob(resultId, signal) {
   const response = await fetch(`${API_BASE_URL}/analyze/job/${resultId}`, {
     credentials: "include",
+    signal,
   });
 
   return await parseResponse(response);
@@ -162,9 +166,10 @@ export async function retryAnalyzeJob(resultId) {
   return await parseResponse(response);
 }
 
-export async function getAnalyzeGrowth() {
+export async function getAnalyzeGrowth(signal) {
   const response = await fetch(`${API_BASE_URL}/analyze/growth`, {
     credentials: "include",
+    signal,
   });
 
   return await parseResponse(response);

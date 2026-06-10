@@ -13,19 +13,19 @@ from ..services.analysis_jobs import (
     get_user_job,
     get_user_job_by_idempotency_key,
     get_user_job_source_filename,
-    list_user_jobs,
     list_user_growth,
+    list_user_jobs,
+    mark_job_result_missing,
     request_user_job_cancel,
     retry_user_job,
-    mark_job_result_missing,
     sync_job_summary,
 )
 from ..services.auth_service import get_current_user
 from ..services.file_cleaner import ensure_file_removed, safe_remove_file
+from ..services.rate_limit import enforce_rate_limit
 from ..services.readiness import get_disk_status
 from ..services.result_saver import delete_analysis_result, load_analysis_result
 from ..services.storage_usage import get_user_storage_usage
-from ..services.rate_limit import enforce_rate_limit
 from ..services.video_info import get_video_info
 
 router = APIRouter(prefix="/analyze", tags=["Analyze"])
@@ -259,9 +259,18 @@ def get_results(
     sort: str = "latest",
     limit: int = Query(default=12, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    cursor: str | None = Query(default=None, max_length=1000),
     user=Depends(get_current_user),
 ):
-    return list_user_jobs(user["id"], status=status, search=search.strip(), sort=sort, limit=limit, offset=offset)
+    return list_user_jobs(
+        user["id"],
+        status=status,
+        search=search.strip(),
+        sort=sort,
+        limit=limit,
+        offset=offset,
+        cursor=cursor,
+    )
 
 
 @router.get("/growth")

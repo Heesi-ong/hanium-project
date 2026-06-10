@@ -12,5 +12,7 @@ Back/results/
 
 Front/node_modules/
 Front/dist/
+Front/playwright-report/
+Front/test-results/
 Front/.env
 Back/.env

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { getAnalyzeReportUrl, getAnalyzeSections, getTimelineChart } from "../api/analyzeApi";
@@ -45,30 +45,40 @@ function ResultDetailPage() {
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestController = useRef(null);
 
   const loadData = async () => {
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
     try {
       setLoading(true);
       setError("");
 
-      const sectionResponse = await getAnalyzeSections(resultId);
-      const chartResponse = await getTimelineChart(resultId);
+      const sectionResponse = await getAnalyzeSections(resultId, controller.signal);
+      const chartResponse = await getTimelineChart(resultId, controller.signal);
 
       setSections(sectionResponse.sections);
       setChartData(chartResponse.chart_data || []);
       setFileName(sectionResponse.original_filename || "파일명 없음");
     } catch (err) {
-      console.error(err);
-      setError(err.message || "분석 상세 결과를 불러오지 못했습니다.");
-      setSections(null);
-      setChartData([]);
+      if (err.name !== "AbortError") {
+        console.error(err);
+        setError(err.message || "분석 상세 결과를 불러오지 못했습니다.");
+        setSections(null);
+        setChartData([]);
+      }
     } finally {
-      setLoading(false);
+      if (requestController.current === controller) {
+        requestController.current = null;
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadData();
+    return () => requestController.current?.abort();
   }, [resultId]);
 
   const timelineStats = useMemo(() => {

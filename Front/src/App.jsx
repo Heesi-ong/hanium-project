@@ -12,6 +12,7 @@ import ChatPage from "./pages/ChatPage";
 import HomePage from "./pages/HomePage";
 import GrowthPage from "./pages/GrowthPage";
 import AccountPage from "./pages/AccountPage";
+import AdminPage from "./pages/AdminPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function AppContent() {
@@ -75,6 +76,14 @@ function AppContent() {
             성장 추이
           </NavLink>
         )}
+        {user?.role === "admin" && (
+          <NavLink
+            className={({ isActive }) => (isActive ? "navbar-link active" : "navbar-link")}
+            to="/admin"
+          >
+            운영 상태
+          </NavLink>
+        )}
 
         <div className="navbar-account">
           {user ? (
@@ -134,7 +143,7 @@ function AppContent() {
             path="/login"
             element={
               user ? (
-                <Navigate to={location.state?.from || "/chat"} replace />
+                <Navigate to={location.state?.from || "/upload"} replace />
               ) : (
                 <LoginPage onAuthenticated={setUser} />
               )
@@ -161,6 +170,14 @@ function AppContent() {
             element={
               <ProtectedRoute user={user}>
                 <AccountPage user={user} onUserChange={setUser} onSignedOut={() => setUser(null)} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute user={user} requiredRole="admin">
+                <AdminPage />
               </ProtectedRoute>
             }
           />

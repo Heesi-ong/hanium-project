@@ -10,8 +10,8 @@ const metricLabels = {
   gesture_score: "손동작",
 };
 
-const loadGrowth = async () => {
-  const result = await getAnalyzeGrowth();
+const loadGrowth = async (signal) => {
+  const result = await getAnalyzeGrowth(signal);
   return result.growth || [];
 };
 

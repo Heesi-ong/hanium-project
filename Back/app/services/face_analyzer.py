@@ -1,10 +1,10 @@
 import os
+
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from ..config import MODEL_DIR
-
 
 MODEL_PATH = MODEL_DIR / "face_landmarker.task"
 

@@ -1,0 +1,29 @@
+.admin-page {
+  max-width: 1200px;
+}
+
+.admin-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.admin-status-grid .card {
+  margin: 0;
+}
+
+.admin-status-grid h2 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.admin-status-grid .status-ok {
+  color: #166534;
+  font-size: 1.1rem;
+}
+
+.admin-status-grid .status-error {
+  color: #b91c1c;
+  font-size: 1.1rem;
+}

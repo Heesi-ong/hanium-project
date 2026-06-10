@@ -1,5 +1,6 @@
 import cv2
 
+
 def get_video_info(video_path: str):
     cap = cv2.VideoCapture(video_path)
 

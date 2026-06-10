@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 
 from ..config import ANALYSIS_RESULT_RETENTION_DAYS, ANALYSIS_SOURCE_RETENTION_HOURS
@@ -264,7 +266,7 @@ def retry_user_job(job_id, user_id):
                     started_at = NULL, completed_at = NULL, last_heartbeat_at = NULL,
                     source_expires_at = DATE_ADD(NOW(3), INTERVAL %s HOUR)
                 WHERE id = %s AND user_id = %s
-                  AND status IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                  AND status IN ('FAILED', 'CANCELLED')
                   AND attempt_count < max_attempts
                   AND saved_filename <> ''
                 """,
@@ -286,7 +288,21 @@ def get_user_job(job_id, user_id):
         connection.close()
 
 
-def list_user_jobs(user_id, status=None, search="", sort="latest", limit=12, offset=0):
+def _encode_job_cursor(job):
+    payload = json.dumps({"created_at": str(job["created_at"]), "id": job["result_id"]}).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_job_cursor(cursor):
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+        return payload["created_at"], payload["id"]
+    except (KeyError, ValueError, TypeError, json.JSONDecodeError, binascii.Error, UnicodeDecodeError):
+        return None
+
+
+def list_user_jobs(user_id, status=None, search="", sort="latest", limit=12, offset=0, cursor=None):
     where = ["user_id = %s"]
     params = [user_id]
     if status in ("QUEUED", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"):
@@ -296,12 +312,21 @@ def list_user_jobs(user_id, status=None, search="", sort="latest", limit=12, off
         where.append("(original_filename LIKE %s OR summary_feedback LIKE %s)")
         pattern = f"%{search}%"
         params.extend([pattern, pattern])
+    count_where_sql = " AND ".join(where)
+    count_params = list(params)
     where_sql = " AND ".join(where)
+    cursor_supported = sort in ("latest", "oldest")
+    decoded_cursor = _decode_job_cursor(cursor) if cursor and cursor_supported else None
+    if decoded_cursor:
+        cursor_created_at, cursor_id = decoded_cursor
+        operator = ">" if sort == "oldest" else "<"
+        where.append(f"(created_at {operator} %s OR (created_at = %s AND id {operator} %s))")
+        params.extend([cursor_created_at, cursor_created_at, cursor_id])
     order_sql = {
-        "oldest": "created_at ASC",
+        "oldest": "created_at ASC, id ASC",
         "score_high": "total_score DESC, created_at DESC",
         "score_low": "total_score ASC, created_at DESC",
-    }.get(sort, "created_at DESC")
+    }.get(sort, "created_at DESC, id DESC")
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
@@ -313,10 +338,13 @@ def list_user_jobs(user_id, status=None, search="", sort="latest", limit=12, off
                 ORDER BY {order_sql}
                 LIMIT %s OFFSET %s
                 """,
-                (*params, limit, offset),
+                (*params, limit + 1 if cursor_supported else limit, 0 if cursor_supported else offset),
             )
             results = [_decode_job(job) for job in cursor.fetchall()]
-            cursor.execute(f"SELECT COUNT(*) AS count FROM analysis_jobs WHERE {where_sql}", params)
+            has_more = cursor_supported and len(results) > limit
+            results = results[:limit]
+            next_cursor = _encode_job_cursor(results[-1]) if has_more and results else None
+            cursor.execute(f"SELECT COUNT(*) AS count FROM analysis_jobs WHERE {count_where_sql}", count_params)
             total = cursor.fetchone()["count"]
             cursor.execute(
                 """
@@ -330,7 +358,13 @@ def list_user_jobs(user_id, status=None, search="", sort="latest", limit=12, off
                 (user_id,),
             )
             summary = cursor.fetchone()
-            return {"results": results, "total": total, "summary": summary}
+            return {
+                "results": results,
+                "total": total,
+                "summary": summary,
+                "next_cursor": next_cursor,
+                "cursor_supported": cursor_supported,
+            }
     finally:
         connection.close()
 

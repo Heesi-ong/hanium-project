@@ -32,6 +32,8 @@ DB_MIGRATION_CONFIG = {
     "user": os.getenv("DB_MIGRATION_USER", "root"),
     "password": os.getenv("DB_MIGRATION_PASSWORD", ""),
 }
+DB_POOL_SIZE = max(1, int(os.getenv("DB_POOL_SIZE", "8")))
+DB_POOL_TIMEOUT_SECONDS = max(0.5, float(os.getenv("DB_POOL_TIMEOUT_SECONDS", "5")))
 
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "session_token")
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "168"))

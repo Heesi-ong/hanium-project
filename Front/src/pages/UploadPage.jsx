@@ -65,10 +65,13 @@ function UploadPage() {
     }
 
     let cancelled = false;
+    let requestController = null;
     const pollJob = async () => {
       if (document.hidden) return;
+      requestController?.abort();
+      requestController = new AbortController();
       try {
-        const response = await getAnalyzeJob(activeJobId);
+        const response = await getAnalyzeJob(activeJobId, requestController.signal);
         const job = response.job;
         setActiveJob(job);
 
@@ -88,7 +91,7 @@ function UploadPage() {
           setLoading(false);
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && err.name !== "AbortError") {
           setProcessStep("error");
           setError(err.message || "분석 상태를 확인하지 못했습니다.");
           setLoading(false);
@@ -100,6 +103,7 @@ function UploadPage() {
     const intervalId = window.setInterval(pollJob, 3000);
     return () => {
       cancelled = true;
+      requestController?.abort();
       window.clearInterval(intervalId);
     };
   }, [activeJobId, navigate, processStep]);

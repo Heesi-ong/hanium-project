@@ -34,7 +34,9 @@ class ApiAccessTests(unittest.TestCase):
         with TestClient(app) as client:
             response = client.get("/analyze/results?limit=5")
         self.assertEqual(response.status_code, 200)
-        list_user_jobs.assert_called_once_with(77, status=None, search="", sort="latest", limit=5, offset=0)
+        list_user_jobs.assert_called_once_with(
+            77, status=None, search="", sort="latest", limit=5, offset=0, cursor=None
+        )
 
 
 if __name__ == "__main__":

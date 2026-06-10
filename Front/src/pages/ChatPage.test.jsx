@@ -24,15 +24,18 @@ describe("ChatPage", () => {
     getModels.mockResolvedValue({ models: [{ provider: "ollama", displayName: "Ollama" }] });
     getUsageSummary.mockResolvedValue({ usage: { totalTokens: 0, estimatedCost: 0 } });
     getMessages.mockResolvedValue({ messages: [], total: 0 });
-    getConversations.mockImplementation((_limit, offset) =>
+    getConversations.mockImplementation((_limit, _offset, _archived, cursor) =>
       Promise.resolve({
-        conversations: offset === 0 ? [{ id: 1, title: "첫 대화", modelName: "Ollama" }] : [],
+        conversations: cursor
+          ? [{ id: 2, title: "두 번째 페이지", modelName: "Ollama" }]
+          : [{ id: 1, title: "첫 대화", modelName: "Ollama" }],
         total: 11,
+        next_cursor: cursor ? null : "cursor-2",
       }),
     );
   });
 
-  it("requests the next conversation page from the server", async () => {
+  it("서버 cursor로 다음 대화 페이지를 요청한다", async () => {
     render(
       <MemoryRouter>
         <ChatPage />
@@ -42,6 +45,8 @@ describe("ChatPage", () => {
     const nextButton = await screen.findByRole("button", { name: "다음" });
     fireEvent.click(nextButton);
 
-    await waitFor(() => expect(getConversations).toHaveBeenCalledWith(10, 10, false));
+    await waitFor(() =>
+      expect(getConversations).toHaveBeenCalledWith(10, 0, false, "cursor-2", expect.any(Object)),
+    );
   });
 });

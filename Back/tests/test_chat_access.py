@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from Back.app.routers.chat import messages
+from Back.app.routers.chat import _decode_cursor, _encode_cursor, messages
 
 
 class FakeCursor:
@@ -36,6 +36,16 @@ class FakeConnection:
 
 
 class ChatAccessTests(unittest.TestCase):
+    def test_cursor_round_trip(self):
+        cursor = _encode_cursor({"updated_at": "2026-06-11 10:00:00", "id": 8})
+        self.assertEqual(
+            _decode_cursor(cursor, ("updated_at", "id")),
+            {"updated_at": "2026-06-11 10:00:00", "id": 8},
+        )
+
+    def test_invalid_cursor_is_ignored(self):
+        self.assertIsNone(_decode_cursor("not-a-cursor", ("id",)))
+
     @patch("Back.app.routers.chat.get_connection")
     def test_other_users_conversation_messages_are_hidden(self, get_connection):
         connection = FakeConnection()

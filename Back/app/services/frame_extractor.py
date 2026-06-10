@@ -1,7 +1,8 @@
-import cv2
 import os
 import re
 from uuid import uuid4
+
+import cv2
 
 from ..config import FRAME_DIR
 

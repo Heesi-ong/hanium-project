@@ -1,11 +1,17 @@
 import { apiRequest } from "./apiClient";
 
-export const getModels = () => apiRequest("/api/models");
-export const getConversations = (limit = 10, offset = 0, archived = false) =>
-  apiRequest(`/api/conversations?limit=${limit}&offset=${offset}&archived=${archived}`);
-export const getMessages = (conversationId, limit = 50, offset = 0) =>
-  apiRequest(`/api/conversations/${conversationId}/messages?limit=${limit}&offset=${offset}`);
-export const getUsageSummary = () => apiRequest("/api/usage/summary");
+export const getModels = (signal) => apiRequest("/api/models", { signal });
+export const getConversations = (limit = 10, offset = 0, archived = false, cursor = "", signal) => {
+  const params = new URLSearchParams({ limit, offset, archived });
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest(`/api/conversations?${params}`, { signal });
+};
+export const getMessages = (conversationId, limit = 50, offset = 0, cursor = "", signal) => {
+  const params = new URLSearchParams({ limit, offset });
+  if (cursor) params.set("cursor", cursor);
+  return apiRequest(`/api/conversations/${conversationId}/messages?${params}`, { signal });
+};
+export const getUsageSummary = (signal) => apiRequest("/api/usage/summary", { signal });
 
 export const createConversation = (payload = {}) =>
   apiRequest("/api/conversations", {

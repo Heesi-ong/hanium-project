@@ -22,9 +22,13 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
-    getStorageUsage()
+    const controller = new AbortController();
+    getStorageUsage(controller.signal)
       .then((result) => setStorage(result.storage))
-      .catch((requestError) => setError(requestError.message));
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") setError(requestError.message);
+      });
+    return () => controller.abort();
   }, []);
 
   const downloadExport = async () => {

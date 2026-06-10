@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StateMessage from "../components/StateMessage";
 import ActionDialog from "../components/ActionDialog";
@@ -28,7 +28,12 @@ function ResultListPage() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState({});
   const [deleteTargetId, setDeleteTargetId] = useState("");
+  const [cursorPages, setCursorPages] = useState([null]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const requestController = useRef(null);
   const pageSize = 12;
+  const cursorSort = sortType === "LATEST" || sortType === "OLDEST";
+  const currentCursor = cursorPages[page - 1] || null;
 
   const formatDateTime = (value) => {
     if (!value) return "-";
@@ -143,18 +148,26 @@ function ResultListPage() {
       setLoading(true);
       setError("");
       setNotice("");
+      requestController.current?.abort();
+      requestController.current = new AbortController();
 
-      const response = await getAnalyzeResults({
-        status: filter === "ALL" ? "" : filter,
-        search: searchKeyword.trim(),
-        sort: sortType.toLowerCase(),
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
+      const response = await getAnalyzeResults(
+        {
+          status: filter === "ALL" ? "" : filter,
+          search: searchKeyword.trim(),
+          sort: sortType.toLowerCase(),
+          limit: pageSize,
+          offset: cursorSort ? 0 : (page - 1) * pageSize,
+          cursor: cursorSort ? currentCursor : "",
+        },
+        requestController.current.signal,
+      );
       setResults(response.results || []);
       setTotal(response.total || 0);
       setSummary(response.summary || {});
+      setNextCursor(response.next_cursor || null);
     } catch (err) {
+      if (err.name === "AbortError") return;
       console.error(err);
       setError(err.message || "분석 이력을 불러오지 못했습니다.");
     } finally {
@@ -223,14 +236,22 @@ function ResultListPage() {
   };
 
   useEffect(() => {
+    setPage(1);
+    setCursorPages([null]);
+  }, [filter, sortType, searchKeyword]);
+
+  useEffect(() => {
     loadResults();
-  }, [filter, sortType, searchKeyword, page]);
+    return () => requestController.current?.abort();
+  }, [filter, sortType, searchKeyword, page, currentCursor]);
 
   useEffect(() => {
     if (!results.some((item) => item.status === "QUEUED" || item.status === "PROCESSING")) {
       return undefined;
     }
-    const intervalId = window.setInterval(loadResults, 3000);
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) loadResults();
+    }, 3000);
     return () => window.clearInterval(intervalId);
   }, [results]);
 
@@ -540,8 +561,17 @@ function ResultListPage() {
             </span>
             <button
               className="button secondary"
-              disabled={page >= Math.ceil(total / pageSize)}
-              onClick={() => setPage((value) => value + 1)}
+              disabled={cursorSort ? !nextCursor : page >= Math.ceil(total / pageSize)}
+              onClick={() => {
+                if (cursorSort) {
+                  setCursorPages((current) => {
+                    const next = [...current];
+                    next[page] = nextCursor;
+                    return next;
+                  });
+                }
+                setPage((value) => value + 1);
+              }}
             >
               다음
             </button>

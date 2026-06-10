@@ -134,6 +134,10 @@ Port `3307`, 사용자 계정을 직접 등록한다. MySQL 서버가 실행 중
 개발 의존성은 `.venv/bin/pip install -r Back/requirements-dev.txt`로 설치한다.
 MySQL, Ollama, 백엔드, 프론트엔드를 실행한 상태의 읽기 전용 통합 검증은
 `./scripts/verify-service.sh`로 수행한다.
+실제 회원가입, 영상 업로드, 분석 결과, Ollama 코칭, 계정 삭제까지의 브라우저
+E2E는 실행 중인 로컬 서비스와 Playwright Chromium을 사용해
+`./scripts/verify-browser-e2e.sh`로 수행한다. 테스트용 영상과 계정은 실행 중
+생성되며 완료 또는 실패 후 정리된다.
 
 세부 테스트 기준은 `docs/TEST_CRITERIA.md`, 운영 적용 전 확인사항은
 `docs/PRODUCTION_CHECKLIST.md`에서 확인한다.

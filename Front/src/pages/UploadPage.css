@@ -1,0 +1,144 @@
+.upload-description {
+  margin-top: 10px;
+}
+
+.upload-description-large {
+  margin-top: 18px;
+}
+
+.upload-guide-box,
+.selected-file-box,
+.upload-progress-section {
+  margin-top: 20px;
+}
+
+.upload-guide-list {
+  margin-top: 10px;
+  padding-left: 20px;
+}
+
+.upload-guide-item {
+  margin-bottom: 6px;
+}
+
+.upload-file-box {
+  margin-top: 20px;
+  padding: 26px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 18px;
+  background-color: #f8fafc;
+  text-align: center;
+}
+
+.upload-file-title {
+  margin-bottom: 10px;
+}
+
+.upload-file-description {
+  margin-bottom: 18px;
+}
+
+.upload-file-input {
+  max-width: 100%;
+}
+
+.upload-button-area {
+  margin-top: 18px;
+}
+
+.selected-file-size-label {
+  margin-top: 10px;
+}
+
+.selected-file-reset-button {
+  margin-top: 14px;
+}
+
+.upload-progress-bar {
+  width: 100%;
+  height: 14px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background-color: #e5e7eb;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background-color: #2563eb;
+  transition: width 0.2s ease;
+}
+
+.upload-progress-text {
+  margin-top: 8px;
+}
+
+.upload-result-card {
+  border-left: 6px solid #2563eb;
+}
+
+.upload-result-card-success {
+  background-color: #f8fafc;
+}
+
+.upload-result-card-failed {
+  border-left-color: #dc2626;
+  background-color: #fff7f7;
+}
+
+.upload-result-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.upload-result-subtitle {
+  margin-top: 8px;
+  color: #64748b;
+}
+
+@media (max-width: 768px) {
+  .upload-file-box {
+    padding: 20px;
+    border-radius: 14px;
+  }
+
+  .upload-file-title {
+    font-size: 18px;
+  }
+
+  .upload-file-description {
+    font-size: 14px;
+  }
+
+  .upload-guide-list {
+    padding-left: 18px;
+  }
+
+  .upload-button-area .button,
+  .selected-file-reset-button {
+    width: 100%;
+  }
+
+  .upload-result-header {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .upload-file-box {
+    padding: 16px;
+  }
+
+  .upload-progress-bar {
+    height: 12px;
+  }
+
+  .upload-description,
+  .upload-file-description,
+  .upload-progress-text,
+  .upload-result-subtitle {
+    font-size: 14px;
+  }
+}

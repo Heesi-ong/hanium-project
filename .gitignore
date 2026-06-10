@@ -1,0 +1,16 @@
+.DS_Store
+.venv/
+.runtime/
+__pycache__/
+*.pyc
+.coverage
+htmlcov/
+
+Back/uploads/
+Back/frames/
+Back/results/
+
+Front/node_modules/
+Front/dist/
+Front/.env
+Back/.env

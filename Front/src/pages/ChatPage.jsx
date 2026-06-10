@@ -11,9 +11,11 @@ import {
   getModels,
   getUsageSummary,
   renameConversation,
+  restoreConversation,
   sendChat,
 } from "../api/chatApi";
 import StateMessage from "../components/StateMessage";
+import ActionDialog from "../components/ActionDialog";
 import "./ChatPage.css";
 
 const CONVERSATION_PAGE_SIZE = 10;
@@ -38,9 +40,11 @@ export default function ChatPage() {
   const [conversationTotal, setConversationTotal] = useState(0);
   const [messageOffset, setMessageOffset] = useState(0);
   const [messageTotal, setMessageTotal] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
+  const [conversationDialog, setConversationDialog] = useState(null);
 
   const refreshList = async (preferredId, offset = conversationOffset) => {
-    const result = await getConversations(CONVERSATION_PAGE_SIZE, offset);
+    const result = await getConversations(CONVERSATION_PAGE_SIZE, offset, showArchived);
     setConversations(result.conversations);
     setConversationTotal(result.total);
     const candidateId = preferredId || activeId;
@@ -76,14 +80,14 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!conversationListReady.current) return;
-    getConversations(CONVERSATION_PAGE_SIZE, conversationOffset)
+    getConversations(CONVERSATION_PAGE_SIZE, conversationOffset, showArchived)
       .then((result) => {
         setConversations(result.conversations);
         setConversationTotal(result.total);
         setActiveId(result.conversations[0]?.id || null);
       })
       .catch((requestError) => setError(requestError.message));
-  }, [conversationOffset]);
+  }, [conversationOffset, showArchived]);
 
   useEffect(() => {
     const analysisContext = location.state?.analysisContext;
@@ -161,19 +165,17 @@ export default function ChatPage() {
     }
   };
 
-  const manageConversation = async (action) => {
+  const manageConversation = async (action, title) => {
     if (!activeId) return;
     setError("");
     try {
       if (action === "rename") {
-        const current = conversations.find((item) => item.id === activeId);
-        const title = window.prompt("새 대화 이름", current?.title || "");
-        if (!title?.trim()) return;
-        await renameConversation(activeId, title.trim());
+        await renameConversation(activeId, title);
       } else if (action === "archive") {
         await archiveConversation(activeId);
+      } else if (action === "restore") {
+        await restoreConversation(activeId);
       } else {
-        if (!window.confirm("이 대화를 삭제하시겠습니까?")) return;
         await deleteConversation(activeId);
       }
       setMessages([]);
@@ -207,164 +209,206 @@ export default function ChatPage() {
   };
 
   return (
-    <main className="chat-layout">
-      <aside className="card conversation-panel">
-        <div className="panel-heading">
-          <h2>대화</h2>
-          <button className="button" onClick={newConversation}>
-            새 대화
-          </button>
-        </div>
-        <div className="conversation-list">
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              className={`conversation-item ${activeId === conversation.id ? "active" : ""}`}
-              onClick={() => {
-                setMessageOffset(0);
-                setActiveId(conversation.id);
-              }}
-            >
-              {conversation.title}
-            </button>
-          ))}
-          {!conversations.length && !loading && <p className="muted-text">아직 대화가 없습니다.</p>}
-        </div>
-        <div className="conversation-actions">
-          <button
-            className="text-button"
-            disabled={conversationOffset === 0}
-            onClick={() =>
-              setConversationOffset(Math.max(0, conversationOffset - CONVERSATION_PAGE_SIZE))
-            }
-          >
-            이전
-          </button>
-          <span>
-            {conversationTotal ? Math.floor(conversationOffset / CONVERSATION_PAGE_SIZE) + 1 : 0}{" "}
-            페이지
-          </span>
-          <button
-            className="text-button"
-            disabled={conversationOffset + CONVERSATION_PAGE_SIZE >= conversationTotal}
-            onClick={() => setConversationOffset(conversationOffset + CONVERSATION_PAGE_SIZE)}
-          >
-            다음
-          </button>
-        </div>
-        {activeId && (
-          <div className="conversation-actions">
-            <button className="text-button" onClick={() => manageConversation("rename")}>
-              이름 변경
-            </button>
-            <button className="text-button" onClick={() => manageConversation("archive")}>
-              보관
-            </button>
-            <button className="text-button" onClick={() => manageConversation("delete")}>
-              삭제
+    <>
+      <main className="chat-layout">
+        <aside className="card conversation-panel">
+          <div className="panel-heading">
+            <h2>대화</h2>
+            <button className="button" onClick={newConversation}>
+              새 대화
             </button>
           </div>
-        )}
-      </aside>
-
-      <section className="card chat-panel">
-        <div className="panel-heading">
-          <div>
-            <h1>로컬 AI 채팅</h1>
-            <p className="muted-text">{modelName}</p>
+          <button
+            className="text-button"
+            onClick={() => {
+              setConversationOffset(0);
+              setShowArchived((current) => !current);
+            }}
+          >
+            {showArchived ? "활성 대화 보기" : "보관된 대화 보기"}
+          </button>
+          <div className="conversation-list">
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                className={`conversation-item ${activeId === conversation.id ? "active" : ""}`}
+                onClick={() => {
+                  setMessageOffset(0);
+                  setActiveId(conversation.id);
+                }}
+              >
+                {conversation.title}
+              </button>
+            ))}
+            {!conversations.length && !loading && (
+              <p className="muted-text">아직 대화가 없습니다.</p>
+            )}
           </div>
-          {usage && (
-            <span className="usage-chip">
-              총 {usage.totalTokens} tokens · 비용 {usage.estimatedCost}
-            </span>
-          )}
-        </div>
-        <div className="message-list">
-          {messages.map((message) => (
-            <article key={message.id} className={`message ${message.role}`}>
-              <strong>{message.role === "user" ? "나" : "Ollama"}</strong>
-              <p>{message.content}</p>
-              {message.role === "assistant" && (
-                <button
-                  className="message-copy"
-                  onClick={() => navigator.clipboard.writeText(message.content)}
-                >
-                  복사
-                </button>
-              )}
-            </article>
-          ))}
-          {loading && <StateMessage compact title="대화 목록을 불러오는 중입니다." />}
-          {!messages.length && !loading && (
-            <StateMessage compact type="empty">
-              질문을 입력하면 대화가 시작됩니다.
-            </StateMessage>
-          )}
-        </div>
-        {messageTotal > MESSAGE_PAGE_SIZE && (
           <div className="conversation-actions">
             <button
               className="text-button"
-              disabled={messageOffset === 0}
-              onClick={() => setMessageOffset(Math.max(0, messageOffset - MESSAGE_PAGE_SIZE))}
+              disabled={conversationOffset === 0}
+              onClick={() =>
+                setConversationOffset(Math.max(0, conversationOffset - CONVERSATION_PAGE_SIZE))
+              }
             >
-              이전 메시지
+              이전
             </button>
             <span>
-              {messageOffset + 1}-{Math.min(messageOffset + MESSAGE_PAGE_SIZE, messageTotal)} /{" "}
-              {messageTotal}
+              {conversationTotal ? Math.floor(conversationOffset / CONVERSATION_PAGE_SIZE) + 1 : 0}{" "}
+              페이지
             </span>
             <button
               className="text-button"
-              disabled={messageOffset + MESSAGE_PAGE_SIZE >= messageTotal}
-              onClick={() => setMessageOffset(messageOffset + MESSAGE_PAGE_SIZE)}
+              disabled={conversationOffset + CONVERSATION_PAGE_SIZE >= conversationTotal}
+              onClick={() => setConversationOffset(conversationOffset + CONVERSATION_PAGE_SIZE)}
             >
-              다음 메시지
+              다음
             </button>
           </div>
-        )}
-        {error && (
-          <StateMessage compact type="error">
-            {error}
-          </StateMessage>
-        )}
-        {notice && (
-          <StateMessage compact type="success">
-            {notice}
-          </StateMessage>
-        )}
-        <form className="chat-form" onSubmit={submit}>
-          <textarea
-            aria-label="AI 코치에게 보낼 메시지"
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            placeholder="메시지를 입력하세요"
-            maxLength="8000"
-            rows="3"
-          />
-          <button className="button" disabled={sending || !content.trim()}>
-            {sending ? "Ollama 응답 대기 중..." : "전송"}
-          </button>
-          {sending ? (
-            <button
-              type="button"
-              className="button danger"
-              onClick={() => requestController.current?.abort()}
-            >
-              응답 중단
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="button secondary"
-              disabled={!messages.length}
-              onClick={regenerateLast}
-            >
-              마지막 응답 다시 생성
-            </button>
+          {activeId && (
+            <div className="conversation-actions">
+              <button className="text-button" onClick={() => setConversationDialog("rename")}>
+                이름 변경
+              </button>
+              {showArchived ? (
+                <button className="text-button" onClick={() => manageConversation("restore")}>
+                  복원
+                </button>
+              ) : (
+                <button className="text-button" onClick={() => manageConversation("archive")}>
+                  보관
+                </button>
+              )}
+              <button className="text-button" onClick={() => setConversationDialog("delete")}>
+                삭제
+              </button>
+            </div>
           )}
-        </form>
-      </section>
-    </main>
+        </aside>
+
+        <section className="card chat-panel">
+          <div className="panel-heading">
+            <div>
+              <h1>로컬 AI 채팅</h1>
+              <p className="muted-text">{modelName}</p>
+            </div>
+            {usage && (
+              <span className="usage-chip">
+                총 {usage.totalTokens} tokens · 비용 {usage.estimatedCost}
+              </span>
+            )}
+          </div>
+          <div className="message-list">
+            {messages.map((message) => (
+              <article key={message.id} className={`message ${message.role}`}>
+                <strong>{message.role === "user" ? "나" : "Ollama"}</strong>
+                <p>{message.content}</p>
+                {message.role === "assistant" && (
+                  <button
+                    className="message-copy"
+                    onClick={() => navigator.clipboard.writeText(message.content)}
+                  >
+                    복사
+                  </button>
+                )}
+              </article>
+            ))}
+            {loading && <StateMessage compact title="대화 목록을 불러오는 중입니다." />}
+            {!messages.length && !loading && (
+              <StateMessage compact type="empty">
+                질문을 입력하면 대화가 시작됩니다.
+              </StateMessage>
+            )}
+          </div>
+          {messageTotal > MESSAGE_PAGE_SIZE && (
+            <div className="conversation-actions">
+              <button
+                className="text-button"
+                disabled={messageOffset === 0}
+                onClick={() => setMessageOffset(Math.max(0, messageOffset - MESSAGE_PAGE_SIZE))}
+              >
+                이전 메시지
+              </button>
+              <span>
+                {messageOffset + 1}-{Math.min(messageOffset + MESSAGE_PAGE_SIZE, messageTotal)} /{" "}
+                {messageTotal}
+              </span>
+              <button
+                className="text-button"
+                disabled={messageOffset + MESSAGE_PAGE_SIZE >= messageTotal}
+                onClick={() => setMessageOffset(messageOffset + MESSAGE_PAGE_SIZE)}
+              >
+                다음 메시지
+              </button>
+            </div>
+          )}
+          {error && (
+            <StateMessage compact type="error">
+              {error}
+            </StateMessage>
+          )}
+          {notice && (
+            <StateMessage compact type="success">
+              {notice}
+            </StateMessage>
+          )}
+          <form className="chat-form" onSubmit={submit}>
+            <textarea
+              aria-label="AI 코치에게 보낼 메시지"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="메시지를 입력하세요"
+              maxLength="8000"
+              rows="3"
+            />
+            <button className="button" disabled={sending || !content.trim()}>
+              {sending ? "Ollama 응답 대기 중..." : "전송"}
+            </button>
+            {sending ? (
+              <button
+                type="button"
+                className="button danger"
+                onClick={() => requestController.current?.abort()}
+              >
+                응답 중단
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button secondary"
+                disabled={!messages.length}
+                onClick={regenerateLast}
+              >
+                마지막 응답 다시 생성
+              </button>
+            )}
+          </form>
+        </section>
+      </main>
+      <ActionDialog
+        open={conversationDialog === "rename"}
+        title="새 대화 이름"
+        initialValue={conversations.find((item) => item.id === activeId)?.title || ""}
+        confirmLabel="이름 변경"
+        onCancel={() => setConversationDialog(null)}
+        onConfirm={(title) => {
+          setConversationDialog(null);
+          manageConversation("rename", title);
+        }}
+      />
+      <ActionDialog
+        open={conversationDialog === "delete"}
+        title="이 대화를 삭제하시겠습니까?"
+        description="삭제한 대화는 복구할 수 없습니다."
+        confirmLabel="대화 삭제"
+        danger
+        onCancel={() => setConversationDialog(null)}
+        onConfirm={() => {
+          setConversationDialog(null);
+          manageConversation("delete");
+        }}
+      />
+    </>
   );
 }

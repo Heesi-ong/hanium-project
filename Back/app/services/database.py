@@ -6,9 +6,9 @@ from pymysql.cursors import DictCursor
 from ..config import DB_CONFIG
 
 
-def get_connection():
+def get_connection(config=None):
     return pymysql.connect(
-        **DB_CONFIG,
+        **(config or DB_CONFIG),
         cursorclass=DictCursor,
         autocommit=False,
         charset="utf8mb4",
@@ -19,8 +19,8 @@ def get_connection():
 
 
 @contextmanager
-def transaction():
-    connection = get_connection()
+def transaction(config=None):
+    connection = get_connection(config)
     try:
         connection.begin()
         yield connection

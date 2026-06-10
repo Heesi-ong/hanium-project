@@ -1,15 +1,17 @@
 import os
 import shutil
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
-from ..config import MIN_FREE_DISK_MB, UPLOAD_DIR
+from ..config import MAX_UPLOAD_MB, MIN_FREE_DISK_MB, RESULT_DIR, UPLOAD_DIR, USER_MAX_ACTIVE_ANALYSES
 from ..services.analysis_jobs import (
     create_analysis_job,
     delete_user_job,
     get_user_job,
+    get_user_job_by_idempotency_key,
     get_user_job_source_filename,
     list_user_jobs,
     list_user_growth,
@@ -19,16 +21,17 @@ from ..services.analysis_jobs import (
     sync_job_summary,
 )
 from ..services.auth_service import get_current_user
-from ..services.file_cleaner import safe_remove_file
+from ..services.file_cleaner import ensure_file_removed, safe_remove_file
 from ..services.readiness import get_disk_status
 from ..services.result_saver import delete_analysis_result, load_analysis_result
+from ..services.storage_usage import get_user_storage_usage
 from ..services.rate_limit import enforce_rate_limit
 from ..services.video_info import get_video_info
 
 router = APIRouter(prefix="/analyze", tags=["Analyze"])
 
 ALLOWED_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv"]
-MAX_FILE_SIZE_MB = 500
+MAX_FILE_SIZE_MB = MAX_UPLOAD_MB
 MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -66,8 +69,18 @@ def analyze_home(user=Depends(get_current_user)):
 
 
 @router.post("/upload", status_code=202)
-def upload_video(request: Request, file: UploadFile = File(...), user=Depends(get_current_user)):
+def upload_video(
+    request: Request,
+    file: UploadFile = File(...),
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user=Depends(get_current_user),
+):
     enforce_rate_limit(request, "analysis-upload", limit=10, window_seconds=3600)
+    if idempotency_key and len(idempotency_key) > 255:
+        raise HTTPException(status_code=400, detail="Idempotency-Key는 255자를 초과할 수 없습니다.")
+    existing_job = get_user_job_by_idempotency_key(user["id"], idempotency_key)
+    if existing_job:
+        return {"message": "existing analysis job", "job": existing_job}
     original_filename = os.path.basename(file.filename or "video")
     ext = os.path.splitext(original_filename)[1].lower()
 
@@ -93,6 +106,15 @@ def upload_video(request: Request, file: UploadFile = File(...), user=Depends(ge
     if file_size > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail=f"파일 크기는 {MAX_FILE_SIZE_MB}MB 이하여야 합니다.")
 
+    storage = get_user_storage_usage(user["id"])
+    if storage["active_analysis_count"] >= USER_MAX_ACTIVE_ANALYSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"동시에 진행할 수 있는 분석은 최대 {USER_MAX_ACTIVE_ANALYSES}개입니다.",
+        )
+    if file_size > storage["available_bytes"]:
+        raise HTTPException(status_code=413, detail="사용자 저장 공간이 부족합니다. 기존 분석 결과를 삭제해주세요.")
+
     job_id = str(uuid4())
     saved_filename = f"{job_id}{ext}"
     file_path = UPLOAD_DIR / saved_filename
@@ -103,7 +125,7 @@ def upload_video(request: Request, file: UploadFile = File(...), user=Depends(ge
         video_info = get_video_info(str(file_path))
         if video_info.get("error") or video_info.get("frame_count", 0) <= 0:
             raise HTTPException(status_code=400, detail="재생 가능한 영상 파일을 선택해주세요.")
-        create_analysis_job(job_id, user["id"], original_filename, saved_filename)
+        create_analysis_job(job_id, user["id"], original_filename, saved_filename, idempotency_key=idempotency_key)
     except HTTPException:
         safe_remove_file(file_path)
         raise
@@ -298,7 +320,10 @@ def delete_result(result_id: str, user=Depends(get_current_user)):
 
     delete_result_data = delete_analysis_result(result_id)
     saved_filename = get_user_job_source_filename(result_id, user["id"])
-    safe_remove_file(UPLOAD_DIR / saved_filename) if saved_filename else None
+    result_removed = ensure_file_removed(RESULT_DIR / f"{result_id}.json")
+    source_removed = ensure_file_removed(UPLOAD_DIR / saved_filename) if saved_filename else True
+    if not result_removed or not source_removed:
+        raise HTTPException(status_code=500, detail="분석 데이터 파일을 완전히 삭제하지 못했습니다. 다시 시도해주세요.")
     deleted_job = delete_user_job(result_id, user["id"])
     return {
         "message": "result deleted",

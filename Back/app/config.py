@@ -27,6 +27,11 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_NAME", "gpt_conversation_app"),
 }
+DB_MIGRATION_CONFIG = {
+    **DB_CONFIG,
+    "user": os.getenv("DB_MIGRATION_USER", "root"),
+    "password": os.getenv("DB_MIGRATION_PASSWORD", ""),
+}
 
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "session_token")
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "168"))
@@ -46,3 +51,7 @@ ORPHAN_FRAME_MIN_AGE_MINUTES = max(1, int(os.getenv("ORPHAN_FRAME_MIN_AGE_MINUTE
 MAINTENANCE_INTERVAL_SECONDS = max(60, int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "3600")))
 MIN_FREE_DISK_MB = max(0, int(os.getenv("MIN_FREE_DISK_MB", "2048")))
 OLLAMA_HEALTH_TIMEOUT_SECONDS = max(0.2, float(os.getenv("OLLAMA_HEALTH_TIMEOUT_SECONDS", "2")))
+MAX_UPLOAD_MB = max(1, int(os.getenv("MAX_UPLOAD_MB", "500")))
+USER_STORAGE_QUOTA_MB = max(MAX_UPLOAD_MB, int(os.getenv("USER_STORAGE_QUOTA_MB", "2048")))
+USER_MAX_ACTIVE_ANALYSES = max(1, int(os.getenv("USER_MAX_ACTIVE_ANALYSES", "2")))
+ANALYSIS_ALGORITHM_VERSION = os.getenv("ANALYSIS_ALGORITHM_VERSION", "2026.06.1")

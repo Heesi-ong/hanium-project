@@ -73,7 +73,10 @@ def get_current_user(session_token: str | None = Cookie(default=None, alias=SESS
             if not user:
                 raise HTTPException(status_code=401, detail="로그인 세션이 만료되었거나 유효하지 않습니다.")
             cursor.execute(
-                "UPDATE user_sessions SET last_seen_at = NOW(3) WHERE id = %s",
+                """
+                UPDATE user_sessions SET last_seen_at = NOW(3)
+                WHERE id = %s AND last_seen_at < DATE_SUB(NOW(3), INTERVAL 5 MINUTE)
+                """,
                 (user["session_id"],),
             )
         connection.commit()

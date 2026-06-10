@@ -132,6 +132,20 @@ Port `3307`, 사용자 계정을 직접 등록한다. MySQL 서버가 실행 중
 ```
 
 개발 의존성은 `.venv/bin/pip install -r Back/requirements-dev.txt`로 설치한다.
+MySQL, Ollama, 백엔드, 프론트엔드를 실행한 상태의 읽기 전용 통합 검증은
+`./scripts/verify-service.sh`로 수행한다.
 
 세부 테스트 기준은 `docs/TEST_CRITERIA.md`, 운영 적용 전 확인사항은
 `docs/PRODUCTION_CHECKLIST.md`에서 확인한다.
+
+## 데이터베이스 백업 및 마이그레이션
+
+스키마 변경 전 `./scripts/db-backup.sh`로 SQL 백업을 생성한다. 백업은
+`.runtime/backups`에 저장되며 Git에서 제외된다. 마이그레이션은
+`.venv/bin/python scripts/migrate.py`로 적용하며 적용 이력은
+`schema_migrations`에 기록된다. 같은 명령을 다시 실행해도 적용된 변경은 반복하지
+않는다. 복원은 운영 서비스를 중지하고 아래처럼 명시적인 확인값과 함께 실행한다.
+
+```bash
+CONFIRM_RESTORE=gpt_conversation_app ./scripts/db-restore.sh .runtime/backups/<backup.sql>
+```

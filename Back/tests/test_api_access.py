@@ -22,6 +22,11 @@ class ApiAccessTests(unittest.TestCase):
             response = client.get("/", headers={"X-Request-ID": "test-request-id"})
         self.assertEqual(response.headers["X-Request-ID"], "test-request-id")
 
+    def test_oversized_upload_is_rejected_before_authentication(self):
+        with TestClient(app) as client:
+            response = client.post("/analyze/upload", headers={"Content-Length": str(600 * 1024 * 1024)})
+        self.assertEqual(response.status_code, 413)
+
     @patch("Back.app.routers.analyze.list_user_jobs")
     def test_analysis_results_use_authenticated_user(self, list_user_jobs):
         list_user_jobs.return_value = {"results": [], "total": 0, "summary": {}}

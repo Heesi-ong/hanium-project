@@ -10,9 +10,11 @@ from ..services.auth_service import (
     normalize_email,
     verify_password,
 )
-from ..services.database import transaction
-from ..services.file_cleaner import safe_remove_directory, safe_remove_file
+from ..services.database import get_connection, transaction
+from ..services.file_cleaner import ensure_file_removed, safe_remove_directory
 from ..services.rate_limit import enforce_rate_limit
+from ..services.result_saver import load_analysis_result
+from ..services.storage_usage import get_user_storage_usage
 
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
@@ -117,6 +119,61 @@ def me(user=Depends(get_current_user)):
     }
 
 
+@router.get("/storage")
+def storage_usage(user=Depends(get_current_user)):
+    return {"storage": get_user_storage_usage(user["id"])}
+
+
+@router.get("/export")
+def export_user_data(user=Depends(get_current_user)):
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id, email, display_name, role, status, last_login_at, created_at, updated_at "
+                "FROM users WHERE id = %s",
+                (user["id"],),
+            )
+            profile = cursor.fetchone()
+            cursor.execute(
+                "SELECT id, title, model_id, archived_at, created_at, updated_at "
+                "FROM conversations WHERE user_id = %s",
+                (user["id"],),
+            )
+            conversations = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT m.id, m.conversation_id, m.role, m.content, m.metadata,
+                       m.sequence_number, m.created_at
+                FROM messages m JOIN conversations c ON c.id = m.conversation_id
+                WHERE c.user_id = %s ORDER BY m.conversation_id, m.sequence_number
+                """,
+                (user["id"],),
+            )
+            messages = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT id, status, stage, progress, original_filename, public_error,
+                       processing_time_seconds, total_score, summary_feedback, metrics,
+                       created_at, started_at, completed_at
+                FROM analysis_jobs WHERE user_id = %s ORDER BY created_at
+                """,
+                (user["id"],),
+            )
+            jobs = cursor.fetchall()
+    finally:
+        connection.close()
+
+    detailed_results = [result for job in jobs if (result := load_analysis_result(job["id"])) is not None]
+    return {
+        "profile": profile,
+        "conversations": conversations,
+        "messages": messages,
+        "analysis_jobs": jobs,
+        "analysis_results": detailed_results,
+    }
+
+
 @router.put("/password", status_code=204)
 def change_password(request: PasswordRequest, user=Depends(get_current_user)):
     with transaction() as connection:
@@ -171,9 +228,21 @@ def delete_account(request: DeleteAccountRequest, response: Response, user=Depen
                 raise HTTPException(status_code=400, detail="비밀번호가 올바르지 않습니다.")
             cursor.execute("SELECT id, saved_filename FROM analysis_jobs WHERE user_id = %s", (user["id"],))
             jobs = cursor.fetchall()
-            cursor.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+    failed_paths = []
     for job in jobs:
-        safe_remove_file(UPLOAD_DIR / job["saved_filename"]) if job["saved_filename"] else None
-        safe_remove_file(RESULT_DIR / f"{job['id']}.json")
-        safe_remove_directory(FRAME_DIR / job["id"], FRAME_DIR)
+        if job["saved_filename"] and not ensure_file_removed(UPLOAD_DIR / job["saved_filename"]):
+            failed_paths.append(str(UPLOAD_DIR / job["saved_filename"]))
+        if not ensure_file_removed(RESULT_DIR / f"{job['id']}.json"):
+            failed_paths.append(str(RESULT_DIR / f"{job['id']}.json"))
+        frame_dir = FRAME_DIR / job["id"]
+        if frame_dir.exists() and not safe_remove_directory(frame_dir, FRAME_DIR):
+            failed_paths.append(str(frame_dir))
+    if failed_paths:
+        raise HTTPException(status_code=500, detail="계정 데이터 파일을 완전히 삭제하지 못했습니다. 다시 시도해주세요.")
+
+    with transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+            if cursor.rowcount != 1:
+                raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")

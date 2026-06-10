@@ -58,6 +58,7 @@ export function uploadAnalyzeVideo(file, onUploadProgress) {
 
     xhr.open("POST", `${API_BASE_URL}/analyze/upload`);
     xhr.withCredentials = true;
+    xhr.setRequestHeader("Idempotency-Key", crypto.randomUUID());
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onUploadProgress) {

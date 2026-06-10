@@ -1,6 +1,8 @@
 import { apiRequest } from "./apiClient";
 
 export const getMe = () => apiRequest("/api/auth/me");
+export const getStorageUsage = () => apiRequest("/api/auth/storage");
+export const exportUserData = () => apiRequest("/api/auth/export");
 
 export const register = (payload) =>
   apiRequest("/api/auth/register", {

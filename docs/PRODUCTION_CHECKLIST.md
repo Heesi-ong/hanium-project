@@ -23,3 +23,6 @@
 21. 운영 배포 전 DB와 `Back/results`를 함께 백업하고 실제 복원 절차를 검증한다.
 22. 관리자 계정으로 `/api/admin/status`를 확인하고 일반 사용자에게는 403이 반환되는지 검증한다.
 23. `CHAT_PENDING_TIMEOUT_MINUTES`가 Ollama 최대 응답 시간보다 충분히 큰지 확인한다.
+24. 배포 전 `./scripts/db-backup.sh` 결과에 `Dump completed`가 있는지 확인한다.
+25. `.venv/bin/python scripts/migrate.py`를 두 번 실행해 두 번째 결과가 `none`인지 확인한다.
+26. `USER_STORAGE_QUOTA_MB`, `USER_MAX_ACTIVE_ANALYSES`, `MAX_UPLOAD_MB`를 운영 용량에 맞게 설정한다.

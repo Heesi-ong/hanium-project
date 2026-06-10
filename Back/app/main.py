@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import ALLOWED_ORIGINS
 from .middleware import add_request_id
+from .middleware.upload_limit import reject_oversized_upload
 from .routers import admin, analyze, auth, chat
 from .services.analysis_jobs import recover_interrupted_jobs
 from .services.chat_recovery import recover_stale_pending_messages
@@ -41,6 +42,7 @@ async def lifespan(_app):
 
 app = FastAPI(lifespan=lifespan)
 app.middleware("http")(add_request_id)
+app.middleware("http")(reject_oversized_upload)
 
 app.add_middleware(
     CORSMiddleware,

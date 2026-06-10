@@ -4,10 +4,12 @@ import time
 
 from ..config import (
     ANALYSIS_POLL_SECONDS,
+    ANALYSIS_ALGORITHM_VERSION,
     ANALYSIS_WORKERS,
     FRAME_DIR,
     MAINTENANCE_INTERVAL_SECONDS,
     ORPHAN_FRAME_MIN_AGE_MINUTES,
+    OLLAMA_MODEL,
     RESULT_DIR,
     UPLOAD_DIR,
 )
@@ -27,7 +29,7 @@ from ..services.analysis_jobs import (
 from ..services.audio_analyzer import analyze_audio_from_video
 from ..services.face_analyzer import analyze_face_from_frame, create_face_landmarker
 from ..services.feedback_generator import generate_feedback
-from ..services.file_cleaner import cleanup_orphan_directories, ensure_file_removed, safe_remove_directory, safe_remove_file
+from ..services.file_cleaner import cleanup_orphan_directories, ensure_file_removed, safe_remove_directory
 from ..services.filler_analyzer import analyze_filler_words
 from ..services.frame_extractor import extract_frames
 from ..services.gesture_analyzer import analyze_gesture_from_pose_results
@@ -127,6 +129,8 @@ def run_analysis_job(job):
             "summary_feedback": feedback_result.get("summary"),
             "processing_time_seconds": processing_time,
             "timeline_count": timeline_result.get("timeline_count"),
+            "analysis_algorithm_version": ANALYSIS_ALGORITHM_VERSION,
+            "ollama_model": OLLAMA_MODEL,
             "metrics": {
                 "pose_detection_rate": score_result.get("pose_detection_rate"),
                 "face_detection_rate": score_result.get("face_detection_rate"),
@@ -158,6 +162,10 @@ def run_analysis_job(job):
             "feedback_result": feedback_result,
             "summary_result": summary_result,
             "processing_time_seconds": processing_time,
+            "analysis_metadata": {
+                "algorithm_version": ANALYSIS_ALGORITHM_VERSION,
+                "ollama_model": OLLAMA_MODEL,
+            },
         }
 
         _check_cancelled(job_id)
@@ -176,8 +184,8 @@ def run_analysis_job(job):
         mark_job_failed(job_id, PUBLIC_ANALYSIS_ERROR, round(time.time() - start_time, 2))
     finally:
         safe_remove_directory(FRAME_DIR / job_id, FRAME_DIR)
-        if completed:
-            safe_remove_file(file_path)
+        if completed and ensure_file_removed(file_path):
+            clear_source_file(job_id)
 
 
 def cleanup_expired_sources():
@@ -197,8 +205,8 @@ def cleanup_expired_sources():
 def cleanup_expired_results():
     deleted = 0
     for job_id in list_expired_result_ids():
-        if delete_completed_job(job_id):
-            delete_analysis_result(job_id)
+        delete_analysis_result(job_id)
+        if ensure_file_removed(RESULT_DIR / f"{job_id}.json") and delete_completed_job(job_id):
             deleted += 1
     return deleted
 

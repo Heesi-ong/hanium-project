@@ -42,6 +42,6 @@ describe("ChatPage", () => {
     const nextButton = await screen.findByRole("button", { name: "다음" });
     fireEvent.click(nextButton);
 
-    await waitFor(() => expect(getConversations).toHaveBeenCalledWith(10, 10));
+    await waitFor(() => expect(getConversations).toHaveBeenCalledWith(10, 10, false));
   });
 });

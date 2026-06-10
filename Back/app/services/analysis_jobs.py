@@ -18,25 +18,42 @@ def _decode_job(job):
     return job
 
 
-def create_analysis_job(job_id, user_id, original_filename, saved_filename):
+def create_analysis_job(job_id, user_id, original_filename, saved_filename, idempotency_key=None):
     with transaction() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 INSERT INTO analysis_jobs
-                  (id, user_id, status, stage, progress, original_filename,
+                  (id, user_id, idempotency_key, status, stage, progress, original_filename,
                    saved_filename, source_expires_at)
-                VALUES (%s, %s, 'QUEUED', 'queued', 0, %s, %s,
+                VALUES (%s, %s, %s, 'QUEUED', 'queued', 0, %s, %s,
                         DATE_ADD(NOW(3), INTERVAL %s HOUR))
                 """,
                 (
                     job_id,
                     user_id,
+                    idempotency_key,
                     original_filename,
                     saved_filename,
                     ANALYSIS_SOURCE_RETENTION_HOURS,
                 ),
             )
+
+
+def get_user_job_by_idempotency_key(user_id, idempotency_key):
+    if not idempotency_key:
+        return None
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT {PUBLIC_JOB_COLUMNS} FROM analysis_jobs "
+                "WHERE user_id = %s AND idempotency_key = %s LIMIT 1",
+                (user_id, idempotency_key),
+            )
+            return _decode_job(cursor.fetchone())
+    finally:
+        connection.close()
 
 
 def claim_next_job():
@@ -105,7 +122,6 @@ def mark_job_completed(job_id, summary, result_path=None):
                 SET status = 'COMPLETED', stage = 'completed', progress = 100,
                     total_score = %s, summary_feedback = %s,
                     processing_time_seconds = %s, metrics = %s, result_path = %s,
-                    saved_filename = '', source_expires_at = NULL,
                     completed_at = NOW(3), last_heartbeat_at = NOW(3)
                 WHERE id = %s AND cancel_requested = FALSE
                 """,
@@ -248,7 +264,7 @@ def retry_user_job(job_id, user_id):
                     started_at = NULL, completed_at = NULL, last_heartbeat_at = NULL,
                     source_expires_at = DATE_ADD(NOW(3), INTERVAL %s HOUR)
                 WHERE id = %s AND user_id = %s
-                  AND status IN ('FAILED', 'CANCELLED')
+                  AND status IN ('COMPLETED', 'FAILED', 'CANCELLED')
                   AND attempt_count < max_attempts
                   AND saved_filename <> ''
                 """,

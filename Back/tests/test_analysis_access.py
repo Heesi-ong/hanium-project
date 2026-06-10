@@ -72,6 +72,51 @@ class AnalysisAccessTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 507)
 
+    @patch("Back.app.routers.analyze.enforce_rate_limit")
+    @patch("Back.app.routers.analyze.get_disk_status", return_value={"ok": True, "free_mb": 100000})
+    @patch(
+        "Back.app.routers.analyze.get_user_storage_usage",
+        return_value={"active_analysis_count": 2, "available_bytes": 100000},
+    )
+    def test_upload_is_rejected_when_user_has_too_many_active_jobs(self, _storage, _disk, _rate_limit):
+        file = UploadFile(file=BytesIO(b"video"), filename="sample.mp4")
+
+        with self.assertRaises(HTTPException) as raised:
+            upload_video(request=object(), file=file, user={"id": 7})
+
+        self.assertEqual(raised.exception.status_code, 409)
+
+    @patch("Back.app.routers.analyze.enforce_rate_limit")
+    @patch("Back.app.routers.analyze.get_disk_status", return_value={"ok": True, "free_mb": 100000})
+    @patch(
+        "Back.app.routers.analyze.get_user_storage_usage",
+        return_value={"active_analysis_count": 0, "available_bytes": 1},
+    )
+    def test_upload_is_rejected_when_user_quota_is_exhausted(self, _storage, _disk, _rate_limit):
+        file = UploadFile(file=BytesIO(b"video"), filename="sample.mp4")
+
+        with self.assertRaises(HTTPException) as raised:
+            upload_video(request=object(), file=file, user={"id": 7})
+
+        self.assertEqual(raised.exception.status_code, 413)
+
+    @patch("Back.app.routers.analyze.enforce_rate_limit")
+    @patch(
+        "Back.app.routers.analyze.get_user_job_by_idempotency_key",
+        return_value={"result_id": "existing-job", "status": "QUEUED"},
+    )
+    def test_upload_idempotency_key_returns_existing_job(self, _existing_job, _rate_limit):
+        file = UploadFile(file=BytesIO(b"video"), filename="sample.mp4")
+
+        result = upload_video(
+            request=object(),
+            file=file,
+            idempotency_key="same-request",
+            user={"id": 7},
+        )
+
+        self.assertEqual(result["job"]["result_id"], "existing-job")
+
     @patch("Back.app.routers.analyze.request_user_job_cancel", return_value=False)
     def test_completed_job_cannot_be_cancelled(self, _cancel):
         with self.assertRaises(HTTPException) as raised:

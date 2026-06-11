@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { cancelAnalyzeJob, getAnalyzeJob, uploadAnalyzeVideo } from "../api/analyzeApi";
+import {
+  cancelAnalyzeJob,
+  getAnalyzeJob,
+  savePracticeContext,
+  uploadAnalyzeVideo,
+} from "../api/analyzeApi";
 import StateMessage from "../components/StateMessage";
 import { analysisStageLabels as stageLabels } from "../features/analysis/stages";
 
@@ -38,6 +43,13 @@ const uploadGuides = [
   "너무 어둡거나 흔들림이 심한 영상은 분석 정확도가 낮아질 수 있습니다.",
   "업로드 후 다른 화면으로 이동해도 서버에서 분석이 계속 진행됩니다.",
 ];
+const purposes = [
+  ["class", "대학 수업 발표", "개념을 정확하고 이해하기 쉽게 설명"],
+  ["project", "프로젝트 발표", "문제·해결 과정·결과와 기여도를 전달"],
+  ["interview", "면접·자기소개", "강점과 경험을 짧고 구체적으로 전달"],
+  ["business", "업무 보고", "현황·위험·의사결정과 다음 행동을 전달"],
+  ["sales", "세일즈·제안 발표", "고객 문제와 제안 가치를 설득력 있게 전달"],
+];
 
 const formatFileSize = (size) => {
   if (!size) return "0 MB";
@@ -58,6 +70,13 @@ function UploadPage() {
   const [error, setError] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [activeJob, setActiveJob] = useState(null);
+  const [practiceContext, setPracticeContext] = useState({
+    purpose: "project",
+    audience: "",
+    target_minutes: 10,
+    core_message: "",
+    series_name: "",
+  });
 
   useEffect(() => {
     if (!activeJobId || processStep !== "analyzing") {
@@ -173,6 +192,13 @@ function UploadPage() {
       }
       setActiveJobId(resultId);
       setActiveJob(response.job);
+      try {
+        await savePracticeContext(resultId, practiceContext);
+      } catch {
+        setError(
+          "분석은 시작되었지만 연습 목표를 저장하지 못했습니다. 결과 화면에서는 기본 목표를 사용합니다.",
+        );
+      }
       setProcessStep("analyzing");
     } catch (err) {
       console.error(err);
@@ -250,6 +276,89 @@ function UploadPage() {
           발표 영상을 업로드하면 자세, 시선, 말하기 속도, 침묵 구간, 필러 단어, 손동작, 음량을 종합
           분석합니다.
         </p>
+      </div>
+
+      <div className="card">
+        <h2>이번 발표의 연습 목표</h2>
+        <p className="upload-description">
+          목적과 청중을 알려주면 분석 결과를 실제 다음 연습 과제로 연결합니다.
+        </p>
+        <div className="purpose-grid" role="radiogroup" aria-label="발표 목적">
+          {purposes.map(([key, label, description]) => (
+            <label
+              className={`purpose-card ${practiceContext.purpose === key ? "selected" : ""}`}
+              key={key}
+            >
+              <input
+                type="radio"
+                name="purpose"
+                value={key}
+                checked={practiceContext.purpose === key}
+                disabled={loading}
+                onChange={(event) =>
+                  setPracticeContext((current) => ({ ...current, purpose: event.target.value }))
+                }
+              />
+              <strong>{label}</strong>
+              <span>{description}</span>
+            </label>
+          ))}
+        </div>
+        <div className="practice-field-grid">
+          <label>
+            발표 대상
+            <input
+              value={practiceContext.audience}
+              maxLength="120"
+              placeholder="예: 전공 교수님과 팀원"
+              disabled={loading}
+              onChange={(event) =>
+                setPracticeContext((current) => ({ ...current, audience: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            목표 시간(분)
+            <input
+              type="number"
+              min="1"
+              max="180"
+              value={practiceContext.target_minutes}
+              disabled={loading}
+              onChange={(event) =>
+                setPracticeContext((current) => ({
+                  ...current,
+                  target_minutes: Number(event.target.value) || 1,
+                }))
+              }
+            />
+          </label>
+          <label>
+            반복 연습 이름
+            <input
+              value={practiceContext.series_name}
+              maxLength="120"
+              placeholder="예: 한이음 최종 발표"
+              disabled={loading}
+              onChange={(event) =>
+                setPracticeContext((current) => ({ ...current, series_name: event.target.value }))
+              }
+            />
+          </label>
+          <label className="practice-core-message">
+            반드시 전달할 핵심 메시지
+            <textarea
+              value={practiceContext.core_message}
+              maxLength="500"
+              rows="3"
+              placeholder="청중이 발표 후 기억해야 할 한 문장을 입력하세요."
+              disabled={loading}
+              onChange={(event) =>
+                setPracticeContext((current) => ({ ...current, core_message: event.target.value }))
+              }
+            />
+          </label>
+        </div>
       </div>
 
       <div className="card">

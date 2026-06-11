@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 bash -n scripts/*.sh
 .venv/bin/ruff check Back
 .venv/bin/python -m coverage run --source=Back/app -m unittest discover -s Back/tests -v
-.venv/bin/python -m coverage report --fail-under=45
+.venv/bin/python -m coverage report --fail-under=48
 
 cd "$ROOT_DIR/Front"
 npm run format:check

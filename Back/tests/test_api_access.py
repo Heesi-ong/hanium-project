@@ -22,6 +22,22 @@ class ApiAccessTests(unittest.TestCase):
             response = client.get("/", headers={"X-Request-ID": "test-request-id"})
         self.assertEqual(response.headers["X-Request-ID"], "test-request-id")
 
+    def test_security_headers_are_applied(self):
+        with TestClient(app) as client:
+            response = client.get("/")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+
+    def test_cross_origin_cookie_mutation_is_rejected(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/auth/logout",
+                headers={"Origin": "https://attacker.example"},
+                cookies={"session_token": "fake"},
+            )
+        self.assertEqual(response.status_code, 403)
+
     def test_oversized_upload_is_rejected_before_authentication(self):
         with TestClient(app) as client:
             response = client.post("/analyze/upload", headers={"Content-Length": str(600 * 1024 * 1024)})

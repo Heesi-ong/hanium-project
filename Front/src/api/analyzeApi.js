@@ -175,6 +175,32 @@ export async function getAnalyzeGrowth(signal) {
   return await parseResponse(response);
 }
 
+export async function savePracticeContext(resultId, context) {
+  const response = await fetch(`${API_BASE_URL}/analyze/practice/${resultId}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(context),
+  });
+  return await parseResponse(response);
+}
+
+export async function getPracticeCoaching(resultId, signal) {
+  const response = await fetch(`${API_BASE_URL}/analyze/practice/${resultId}`, {
+    credentials: "include",
+    signal,
+  });
+  return await parseResponse(response);
+}
+
+export async function getPracticeGrowth(signal) {
+  const response = await fetch(`${API_BASE_URL}/analyze/practice/growth/all`, {
+    credentials: "include",
+    signal,
+  });
+  return await parseResponse(response);
+}
+
 export function getAnalyzeReportUrl(resultId) {
   return `${API_BASE_URL}/analyze/result/${resultId}/report.md`;
 }

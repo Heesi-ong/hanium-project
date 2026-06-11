@@ -2,7 +2,13 @@ import base64
 import binascii
 import json
 
-from ..config import ANALYSIS_RESULT_RETENTION_DAYS, ANALYSIS_SOURCE_RETENTION_HOURS
+from ..config import (
+    ANALYSIS_RESULT_RETENTION_DAYS,
+    ANALYSIS_SOURCE_RETENTION_HOURS,
+    USER_MAX_ACTIVE_ANALYSES,
+    USER_STORAGE_QUOTA_MB,
+    WORKER_HEARTBEAT_STALE_SECONDS,
+)
 from ..services.database import get_connection, transaction
 
 PUBLIC_JOB_COLUMNS = """
@@ -20,15 +26,43 @@ def _decode_job(job):
     return job
 
 
-def create_analysis_job(job_id, user_id, original_filename, saved_filename, idempotency_key=None):
+def reserve_analysis_job(job_id, user_id, original_filename, saved_filename, source_size_bytes, idempotency_key=None):
     with transaction() as connection:
         with connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM users WHERE id = %s FOR UPDATE", (user_id,))
+            user = cursor.fetchone()
+            if not user or user["status"] != "active":
+                return {"outcome": "inactive"}
+            if idempotency_key:
+                cursor.execute(
+                    f"SELECT {PUBLIC_JOB_COLUMNS} FROM analysis_jobs "
+                    "WHERE user_id = %s AND idempotency_key = %s LIMIT 1",
+                    (user_id, idempotency_key),
+                )
+                existing = _decode_job(cursor.fetchone())
+                if existing:
+                    return {"outcome": "existing", "job": existing}
+            cursor.execute(
+                "SELECT COUNT(*) AS count FROM analysis_jobs "
+                "WHERE user_id = %s AND status IN ('QUEUED','PROCESSING')",
+                (user_id,),
+            )
+            if int(cursor.fetchone()["count"]) >= USER_MAX_ACTIVE_ANALYSES:
+                return {"outcome": "active_limit"}
+            cursor.execute(
+                "SELECT COALESCE(SUM(source_size_bytes + result_size_bytes), 0) AS reserved_bytes "
+                "FROM analysis_jobs WHERE user_id = %s",
+                (user_id,),
+            )
+            reserved_bytes = int(cursor.fetchone()["reserved_bytes"])
+            if reserved_bytes + source_size_bytes > USER_STORAGE_QUOTA_MB * 1024 * 1024:
+                return {"outcome": "quota_limit"}
             cursor.execute(
                 """
                 INSERT INTO analysis_jobs
                   (id, user_id, idempotency_key, status, stage, progress, original_filename,
-                   saved_filename, source_expires_at)
-                VALUES (%s, %s, %s, 'QUEUED', 'queued', 0, %s, %s,
+                   saved_filename, source_size_bytes, source_expires_at)
+                VALUES (%s, %s, %s, 'QUEUED', 'queued', 0, %s, %s, %s,
                         DATE_ADD(NOW(3), INTERVAL %s HOUR))
                 """,
                 (
@@ -37,9 +71,17 @@ def create_analysis_job(job_id, user_id, original_filename, saved_filename, idem
                     idempotency_key,
                     original_filename,
                     saved_filename,
+                    source_size_bytes,
                     ANALYSIS_SOURCE_RETENTION_HOURS,
                 ),
             )
+            return {"outcome": "created"}
+
+
+def create_analysis_job(job_id, user_id, original_filename, saved_filename, idempotency_key=None, source_size_bytes=0):
+    return reserve_analysis_job(
+        job_id, user_id, original_filename, saved_filename, source_size_bytes, idempotency_key=idempotency_key
+    )
 
 
 def get_user_job_by_idempotency_key(user_id, idempotency_key):
@@ -115,7 +157,7 @@ def is_cancel_requested(job_id):
         connection.close()
 
 
-def mark_job_completed(job_id, summary, result_path=None):
+def mark_job_completed(job_id, summary, result_path=None, result_size_bytes=0):
     with transaction() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -124,6 +166,7 @@ def mark_job_completed(job_id, summary, result_path=None):
                 SET status = 'COMPLETED', stage = 'completed', progress = 100,
                     total_score = %s, summary_feedback = %s,
                     processing_time_seconds = %s, metrics = %s, result_path = %s,
+                    result_size_bytes = %s,
                     completed_at = NOW(3), last_heartbeat_at = NOW(3)
                 WHERE id = %s AND cancel_requested = FALSE
                 """,
@@ -133,6 +176,7 @@ def mark_job_completed(job_id, summary, result_path=None):
                     summary.get("processing_time_seconds"),
                     json.dumps(summary.get("metrics", {}), ensure_ascii=False),
                     result_path,
+                    result_size_bytes,
                     job_id,
                 ),
             )
@@ -161,7 +205,7 @@ def mark_job_result_missing(job_id):
                 """
                 UPDATE analysis_jobs
                 SET status = 'FAILED', stage = 'failed', progress = 100,
-                    public_error = %s, completed_at = NOW(3)
+                    public_error = %s, result_size_bytes = 0, completed_at = NOW(3)
                 WHERE id = %s AND status = 'COMPLETED'
                 """,
                 ("분석 결과 파일이 없어 결과를 복구할 수 없습니다. 다시 분석해주세요.", job_id),
@@ -453,7 +497,7 @@ def clear_source_file(job_id):
     with transaction() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE analysis_jobs SET saved_filename = '', source_expires_at = NULL WHERE id = %s",
+                "UPDATE analysis_jobs SET saved_filename = '', source_size_bytes = 0, source_expires_at = NULL WHERE id = %s",
                 (job_id,),
             )
 
@@ -467,14 +511,67 @@ def get_analysis_queue_status():
                 SELECT
                   SUM(status = 'QUEUED') AS queued,
                   SUM(status = 'PROCESSING') AS processing,
-                  SUM(status = 'FAILED') AS failed
+                  SUM(status = 'FAILED') AS failed,
+                  SUM(status = 'PROCESSING' AND (
+                    last_heartbeat_at IS NULL OR
+                    last_heartbeat_at < DATE_SUB(NOW(3), INTERVAL %s SECOND)
+                  )) AS stalled
                 FROM analysis_jobs
-                """
+                """,
+                (WORKER_HEARTBEAT_STALE_SECONDS,),
             )
             result = cursor.fetchone() or {}
-            return {key: int(result.get(key) or 0) for key in ("queued", "processing", "failed")}
+            return {key: int(result.get(key) or 0) for key in ("queued", "processing", "failed", "stalled")}
     finally:
         connection.close()
+
+
+def list_admin_problem_jobs(limit=50):
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT j.id AS result_id, j.status, j.stage, j.progress,
+                       j.attempt_count, j.max_attempts, j.original_filename,
+                       j.public_error, j.processing_time_seconds, j.total_score,
+                       j.summary_feedback, j.metrics, j.created_at, j.started_at,
+                       j.completed_at, j.last_heartbeat_at, u.email AS user_email,
+                       (j.saved_filename <> '' AND j.status = 'FAILED'
+                        AND j.attempt_count < j.max_attempts) AS retry_available
+                FROM analysis_jobs j JOIN users u ON u.id = j.user_id
+                WHERE j.status = 'FAILED' OR (
+                  j.status = 'PROCESSING' AND (
+                    j.last_heartbeat_at IS NULL OR
+                    j.last_heartbeat_at < DATE_SUB(NOW(3), INTERVAL %s SECOND)
+                  )
+                )
+                ORDER BY j.updated_at DESC
+                LIMIT %s
+                """,
+                (WORKER_HEARTBEAT_STALE_SECONDS, limit),
+            )
+            return [_decode_job(job) for job in cursor.fetchall()]
+    finally:
+        connection.close()
+
+
+def retry_admin_job(job_id):
+    with transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE analysis_jobs
+                SET status = 'QUEUED', stage = 'queued', progress = 0,
+                    cancel_requested = FALSE, public_error = NULL,
+                    started_at = NULL, completed_at = NULL, last_heartbeat_at = NULL,
+                    source_expires_at = DATE_ADD(NOW(3), INTERVAL %s HOUR)
+                WHERE id = %s AND status = 'FAILED'
+                  AND attempt_count < max_attempts AND saved_filename <> ''
+                """,
+                (ANALYSIS_SOURCE_RETENTION_HOURS, job_id),
+            )
+            return cursor.rowcount == 1
 
 
 def delete_completed_job(job_id):

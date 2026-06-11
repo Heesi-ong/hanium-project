@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import cv2
 
-from ..config import FRAME_DIR
+from ..config import FRAME_DIR, MAX_EXTRACTED_FRAMES, MAX_FRAME_STORAGE_MB
 
 
 def extract_frames(video_path: str, interval_sec: int = 1, output_id: str | None = None):
@@ -29,6 +29,8 @@ def extract_frames(video_path: str, interval_sec: int = 1, output_id: str | None
     saved_frames = []
     frame_index = 0
     saved_count = 0
+    saved_bytes = 0
+    max_saved_bytes = MAX_FRAME_STORAGE_MB * 1024 * 1024
 
     while True:
         success, frame = cap.read()
@@ -44,8 +46,15 @@ def extract_frames(video_path: str, interval_sec: int = 1, output_id: str | None
                 cap.release()
                 raise RuntimeError(f"frame save failed: {frame_path}")
 
+            saved_bytes += frame_path.stat().st_size
             saved_frames.append(str(frame_path))
             saved_count += 1
+            if saved_count > MAX_EXTRACTED_FRAMES:
+                cap.release()
+                raise ValueError(f"extracted frame limit exceeded: {MAX_EXTRACTED_FRAMES}")
+            if saved_bytes > max_saved_bytes:
+                cap.release()
+                raise ValueError(f"frame storage limit exceeded: {MAX_FRAME_STORAGE_MB}MB")
 
         frame_index += 1
 
@@ -54,5 +63,6 @@ def extract_frames(video_path: str, interval_sec: int = 1, output_id: str | None
     return {
         "output_dir": str(output_dir),
         "saved_count": saved_count,
+        "saved_bytes": saved_bytes,
         "frames": saved_frames
     }

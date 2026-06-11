@@ -134,6 +134,7 @@ export default function ChatPage() {
     const analysisContext = location.state?.analysisContext;
     if (!analysisContext || contextHandled.current) return;
     contextHandled.current = true;
+    if (location.state?.initialMessage) setContent(location.state.initialMessage);
     createConversation({
       title: location.state?.analysisTitle || "발표 분석 코칭",
       system_prompt: `너는 발표 코치다. 아래 분석 결과를 기준으로 구체적이고 실행 가능한 조언을 제공해라.\n\n${analysisContext}`,

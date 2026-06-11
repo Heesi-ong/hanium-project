@@ -1,5 +1,5 @@
 import React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 export default function ActionDialog({
   open,
@@ -12,13 +12,19 @@ export default function ActionDialog({
   onConfirm,
 }) {
   const confirmRef = useRef(null);
+  const dialogRef = useRef(null);
+  const previousFocusRef = useRef(null);
+  const titleId = useId();
+  const descriptionId = useId();
   const [value, setValue] = useState(initialValue || "");
   const hasInput = initialValue !== undefined;
 
   useEffect(() => {
     if (!open) return;
+    previousFocusRef.current = document.activeElement;
     setValue(initialValue || "");
     confirmRef.current?.focus();
+    return () => previousFocusRef.current?.focus();
   }, [initialValue, open]);
 
   if (!open) return null;
@@ -32,17 +38,33 @@ export default function ActionDialog({
       }}
     >
       <section
+        ref={dialogRef}
         className="dialog-card"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="action-dialog-title"
-        aria-describedby={description ? "action-dialog-description" : undefined}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         onKeyDown={(event) => {
           if (event.key === "Escape") onCancel();
+          if (event.key === "Tab") {
+            const focusable = dialogRef.current?.querySelectorAll(
+              'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+            );
+            if (!focusable?.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
         }}
       >
-        <h2 id="action-dialog-title">{title}</h2>
-        {description && <p id="action-dialog-description">{description}</p>}
+        <h2 id={titleId}>{title}</h2>
+        {description && <p id={descriptionId}>{description}</p>}
         {hasInput && (
           <input
             aria-label={title}

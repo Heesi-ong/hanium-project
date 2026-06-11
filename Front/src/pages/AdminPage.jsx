@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-import { getAdminStatus } from "../api/adminApi";
+import { getAdminProblemJobs, getAdminStatus, retryAdminProblemJob } from "../api/adminApi";
 import StateMessage from "../components/StateMessage";
 import "./AdminPage.css";
 
@@ -10,6 +10,8 @@ export default function AdminPage() {
   const [status, setStatus] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState([]);
+  const [retryingId, setRetryingId] = useState("");
   const requestController = useRef(null);
 
   const loadStatus = useCallback(async () => {
@@ -19,7 +21,12 @@ export default function AdminPage() {
     setLoading(true);
     try {
       setError("");
-      setStatus(await getAdminStatus(controller.signal));
+      const [nextStatus, problemJobs] = await Promise.all([
+        getAdminStatus(controller.signal),
+        getAdminProblemJobs(controller.signal),
+      ]);
+      setStatus(nextStatus);
+      setJobs(problemJobs.jobs);
     } catch (requestError) {
       if (requestError.name !== "AbortError") setError(requestError.message);
     } finally {
@@ -29,6 +36,18 @@ export default function AdminPage() {
       }
     }
   }, []);
+
+  const retryJob = async (jobId) => {
+    setRetryingId(jobId);
+    try {
+      await retryAdminProblemJob(jobId);
+      await loadStatus();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setRetryingId("");
+    }
+  };
 
   useEffect(() => {
     loadStatus();
@@ -81,6 +100,8 @@ export default function AdminPage() {
                 활성 {checks.worker.active_worker_count} / 설정 {checks.worker.worker_count}
               </p>
               <p>유지보수: {checks.worker.maintenance_running ? "실행 중" : "중단"}</p>
+              <p>heartbeat: {checks.worker.worker_heartbeat_stale ? "정체" : "정상"}</p>
+              <p>유지보수 상태: {checks.worker.maintenance_stale ? "정체" : "정상"}</p>
             </article>
             <article className="card">
               <h2>Ollama</h2>
@@ -94,6 +115,7 @@ export default function AdminPage() {
               <p>대기 {checks.queue.queued}건</p>
               <p>처리 {checks.queue.processing}건</p>
               <p>실패 {checks.queue.failed}건</p>
+              <p>정체 {checks.queue.stalled}건</p>
             </article>
             <article className="card">
               <h2>디스크</h2>
@@ -104,6 +126,55 @@ export default function AdminPage() {
               <p>최소 기준 {checks.disk.minimum_free_mb.toLocaleString()}MB</p>
             </article>
           </div>
+          <section className="card">
+            <h2>실패 및 정체 분석 작업</h2>
+            {jobs.length === 0 ? (
+              <p>확인할 문제 작업이 없습니다.</p>
+            ) : (
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>작업 ID</th>
+                      <th>사용자</th>
+                      <th>상태 / 단계</th>
+                      <th>진행률</th>
+                      <th>시도</th>
+                      <th>오류</th>
+                      <th>heartbeat</th>
+                      <th>작업</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.map((job) => (
+                      <tr key={job.result_id}>
+                        <td>{job.result_id}</td>
+                        <td>{job.user_email}</td>
+                        <td>
+                          {job.status} / {job.stage}
+                        </td>
+                        <td>{job.progress}%</td>
+                        <td>
+                          {job.attempt_count}/{job.max_attempts}
+                        </td>
+                        <td>{job.public_error || "-"}</td>
+                        <td>{job.last_heartbeat_at || "-"}</td>
+                        <td>
+                          <button
+                            className="button secondary"
+                            disabled={!job.retry_available || retryingId === job.result_id}
+                            onClick={() => retryJob(job.result_id)}
+                          >
+                            재시도
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </>
       )}
     </main>

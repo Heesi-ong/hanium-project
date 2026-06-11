@@ -21,7 +21,7 @@ const concerns = [
   {
     icon: "04",
     title: "개선 방법까지 연결",
-    description: "결과를 이해하고 다음 연습 방향을 세울 수 있습니다.",
+    description: "목적별 개선 과제와 예상 질문으로 다음 연습을 시작합니다.",
   },
 ];
 
@@ -85,8 +85,8 @@ const features = [
   {
     className: "score",
     icon: "☆",
-    title: "종합 점수와 맞춤 피드백",
-    description: "영역별 점수와 잘한 점, 개선할 점을 한눈에 확인합니다.",
+    title: "목적별 개선 계획",
+    description: "발표 목적과 청중에 맞춰 다음 연습에서 바꿀 행동 3가지를 제안합니다.",
     visual: (
       <div className="home-score-mini">
         <strong>84</strong>
@@ -147,7 +147,7 @@ const faqs = [
   ],
   [
     "AI 코치는 어떤 역할을 하나요?",
-    "분석 결과를 바탕으로 개선 방법과 반복 연습 방법을 질문할 수 있습니다.",
+    "분석 결과와 발표 목적을 바탕으로 예상 질문에 답하고 후속 질문과 개선 방법을 연습할 수 있습니다.",
   ],
 ];
 
@@ -169,8 +169,8 @@ function HomePage() {
               <strong>더 나은 발표를 준비하세요</strong>
             </h1>
             <p>
-              음성, 표정, 자세, 제스처를 AI가 분석하여 객관적인 점수와 구체적인 개선 방법을
-              제공합니다.
+              발표 목적과 청중을 설정하면 음성, 표정, 자세, 제스처를 분석하고 다음 연습 행동과 예상
+              질문을 제공합니다.
             </p>
 
             <div className="home-hero-actions">
@@ -403,8 +403,8 @@ function HomePage() {
             <article>
               <span>1</span>
               <div className="step-icon">⇧</div>
-              <h3>발표 영상 업로드</h3>
-              <p>발표자가 잘 보이고 음성이 포함된 영상을 준비합니다.</p>
+              <h3>목표 설정 및 영상 업로드</h3>
+              <p>발표 목적, 청중, 핵심 메시지를 정하고 영상을 준비합니다.</p>
             </article>
             <article>
               <span>2</span>
@@ -416,7 +416,7 @@ function HomePage() {
               <span>3</span>
               <div className="step-icon">↗</div>
               <h3>결과 확인 및 반복 연습</h3>
-              <p>피드백을 확인하고 다음 발표를 준비합니다.</p>
+              <p>개선 행동 3가지와 예상 질문을 연습하고 성장 변화를 확인합니다.</p>
             </article>
           </div>
           <div className="home-centered-action">

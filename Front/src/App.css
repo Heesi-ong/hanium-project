@@ -344,8 +344,13 @@ pre {
     margin-right: auto;
   }
 
-  .navbar-home .navbar-link:not(.active),
   .navbar-home .navbar-account {
+    width: auto;
+    display: flex;
+    margin-left: auto;
+  }
+
+  .navbar-home .navbar-link:not(.active) {
     display: none;
   }
 

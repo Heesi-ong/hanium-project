@@ -20,7 +20,7 @@ jobs:
       - run: python -m pip install -r Back/requirements-dev.txt
       - run: python -m ruff check Back
       - run: python -m coverage run --source=Back/app -m unittest discover -s Back/tests -v
-      - run: python -m coverage report --fail-under=45
+      - run: python -m coverage report --fail-under=48
       - run: npm ci
         working-directory: Front
       - run: npm run format:check
@@ -31,3 +31,44 @@ jobs:
         working-directory: Front
       - run: npm run build
         working-directory: Front
+      - run: npm audit --omit=dev
+        working-directory: Front
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: gpt_conversation_app
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3307
+      DB_USER: root
+      DB_PASSWORD: ""
+      DB_NAME: gpt_conversation_app
+      DB_MIGRATION_USER: root
+      DB_MIGRATION_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r Back/requirements-dev.txt
+      - run: python scripts/migrate.py
+      - run: python scripts/migrate.py
+      - run: |
+          python - <<'PY'
+          from Back.app.services.database import ping_database
+          from Back.app.services.analysis_jobs import get_analysis_queue_status
+          ping_database()
+          assert get_analysis_queue_status() == {"queued": 0, "processing": 0, "failed": 0, "stalled": 0}
+          PY

@@ -1,7 +1,17 @@
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pymysql.err import IntegrityError
 
-from ..config import COOKIE_SECURE, FRAME_DIR, RESULT_DIR, SESSION_COOKIE_NAME, SESSION_TTL_HOURS, UPLOAD_DIR
+from ..config import (
+    ACCOUNT_DELETION_WAIT_SECONDS,
+    COOKIE_SECURE,
+    FRAME_DIR,
+    RESULT_DIR,
+    SESSION_COOKIE_NAME,
+    SESSION_TTL_HOURS,
+    UPLOAD_DIR,
+)
 from ..schemas.auth import DeleteAccountRequest, LoginRequest, PasswordRequest, ProfileRequest, RegisterRequest
 from ..services.auth_service import (
     create_session,
@@ -12,6 +22,7 @@ from ..services.auth_service import (
 )
 from ..services.database import get_connection, transaction
 from ..services.file_cleaner import ensure_file_removed, safe_remove_directory
+from ..services.practice_coaching import delete_practice_context
 from ..services.rate_limit import enforce_rate_limit
 from ..services.result_saver import load_analysis_result
 from ..services.storage_usage import get_user_storage_usage
@@ -71,8 +82,9 @@ def register(payload: RegisterRequest, response: Response, request: Request):
 
 @router.post("/login")
 def login(payload: LoginRequest, response: Response, request: Request):
-    enforce_rate_limit(request, "login", limit=20, window_seconds=900)
     email = validate_email(payload.email)
+    enforce_rate_limit(request, "login", limit=20, window_seconds=900)
+    enforce_rate_limit(request, "login-email", limit=10, window_seconds=900, identity=email)
     with transaction() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -222,12 +234,55 @@ def logout_all(response: Response, user=Depends(get_current_user)):
 def delete_account(request: DeleteAccountRequest, response: Response, user=Depends(get_current_user)):
     with transaction() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT password_hash FROM users WHERE id = %s FOR UPDATE", (user["id"],))
+            cursor.execute("SELECT password_hash, status FROM users WHERE id = %s FOR UPDATE", (user["id"],))
             record = cursor.fetchone()
             if not record or not verify_password(request.password, record["password_hash"]):
                 raise HTTPException(status_code=400, detail="비밀번호가 올바르지 않습니다.")
+            if record["status"] != "active":
+                raise HTTPException(status_code=409, detail="이미 계정 삭제가 진행 중입니다.")
+            cursor.execute("UPDATE users SET status = 'deleting' WHERE id = %s", (user["id"],))
+            cursor.execute(
+                """
+                UPDATE analysis_jobs
+                SET cancel_requested = TRUE,
+                    stage = IF(status = 'QUEUED', 'cancelled', 'cancelling'),
+                    progress = IF(status = 'QUEUED', 100, progress),
+                    completed_at = IF(status = 'QUEUED', NOW(3), completed_at),
+                    status = IF(status = 'QUEUED', 'CANCELLED', status)
+                WHERE user_id = %s AND status IN ('QUEUED','PROCESSING')
+                """,
+                (user["id"],),
+            )
+            cursor.execute("DELETE FROM user_sessions WHERE user_id = %s", (user["id"],))
+
+    deadline = time.monotonic() + ACCOUNT_DELETION_WAIT_SECONDS
+    while True:
+        connection = get_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) AS count FROM analysis_jobs WHERE user_id = %s AND status = 'PROCESSING'",
+                    (user["id"],),
+                )
+                processing_count = int(cursor.fetchone()["count"])
+        finally:
+            connection.close()
+        if processing_count == 0:
+            break
+        if time.monotonic() >= deadline:
+            with transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("UPDATE users SET status = 'active' WHERE id = %s AND status = 'deleting'", (user["id"],))
+            raise HTTPException(status_code=409, detail="진행 중인 분석 취소를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.")
+        time.sleep(0.2)
+
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
             cursor.execute("SELECT id, saved_filename FROM analysis_jobs WHERE user_id = %s", (user["id"],))
             jobs = cursor.fetchall()
+    finally:
+        connection.close()
     failed_paths = []
     for job in jobs:
         if job["saved_filename"] and not ensure_file_removed(UPLOAD_DIR / job["saved_filename"]):
@@ -237,12 +292,17 @@ def delete_account(request: DeleteAccountRequest, response: Response, user=Depen
         frame_dir = FRAME_DIR / job["id"]
         if frame_dir.exists() and not safe_remove_directory(frame_dir, FRAME_DIR):
             failed_paths.append(str(frame_dir))
+        if not delete_practice_context(job["id"]):
+            failed_paths.append(f"practice_context:{job['id']}")
     if failed_paths:
+        with transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("UPDATE users SET status = 'active' WHERE id = %s AND status = 'deleting'", (user["id"],))
         raise HTTPException(status_code=500, detail="계정 데이터 파일을 완전히 삭제하지 못했습니다. 다시 시도해주세요.")
 
     with transaction() as connection:
         with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM users WHERE id = %s", (user["id"],))
+            cursor.execute("DELETE FROM users WHERE id = %s AND status = 'deleting'", (user["id"],))
             if cursor.rowcount != 1:
                 raise HTTPException(status_code=404, detail="계정을 찾을 수 없습니다.")
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")

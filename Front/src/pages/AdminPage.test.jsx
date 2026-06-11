@@ -2,20 +2,29 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getAdminStatus } from "../api/adminApi";
+import { getAdminProblemJobs, getAdminStatus } from "../api/adminApi";
 import AdminPage from "./AdminPage";
 
 vi.mock("../api/adminApi", () => ({
+  getAdminProblemJobs: vi.fn(),
   getAdminStatus: vi.fn(),
+  retryAdminProblemJob: vi.fn(),
 }));
 
 const status = {
   status: "degraded",
   checks: {
     database: { ok: true },
-    worker: { ok: true, active_worker_count: 1, worker_count: 1, maintenance_running: true },
+    worker: {
+      ok: true,
+      active_worker_count: 1,
+      worker_count: 1,
+      maintenance_running: true,
+      worker_heartbeat_stale: false,
+      maintenance_stale: false,
+    },
     ollama: { ok: false, configured_model: "qwen3:4b" },
-    queue: { queued: 1, processing: 0, failed: 2 },
+    queue: { queued: 1, processing: 0, failed: 2, stalled: 0 },
     disk: { ok: true, free_mb: 2048, minimum_free_mb: 1024 },
   },
 };
@@ -27,6 +36,7 @@ describe("AdminPage", () => {
 
   it("운영 상태와 점검 필요 항목을 표시한다", async () => {
     getAdminStatus.mockResolvedValue(status);
+    getAdminProblemJobs.mockResolvedValue({ jobs: [] });
 
     render(<AdminPage />);
 
@@ -44,6 +54,7 @@ describe("AdminPage", () => {
           signal = requestSignal;
         }),
     );
+    getAdminProblemJobs.mockResolvedValue({ jobs: [] });
 
     const view = render(<AdminPage />);
     await waitFor(() => expect(signal).toBeDefined());

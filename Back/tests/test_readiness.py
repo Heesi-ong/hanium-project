@@ -1,7 +1,9 @@
+import time
 import unittest
 from unittest.mock import patch
 
 from Back.app.services import readiness
+from Back.app.workers.analysis_worker import AnalysisWorkerManager
 
 
 class ReadinessTest(unittest.TestCase):
@@ -25,6 +27,22 @@ class ReadinessTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "not_ready")
         self.assertFalse(result["checks"]["database"]["ok"])
+
+    @patch("Back.app.workers.analysis_worker.WORKER_HEARTBEAT_STALE_SECONDS", 5)
+    @patch("Back.app.workers.analysis_worker.MAINTENANCE_STALE_SECONDS", 5)
+    def test_stale_worker_heartbeat_marks_manager_not_running(self):
+        manager = AnalysisWorkerManager()
+        alive_thread = unittest.mock.Mock()
+        alive_thread.is_alive.return_value = True
+        manager._threads = [alive_thread]
+        manager._maintenance_thread = alive_thread
+        manager._last_worker_heartbeat = time.time() - 10
+        manager._last_maintenance_at = time.time()
+
+        status = manager.status()
+
+        self.assertFalse(status["running"])
+        self.assertTrue(status["worker_heartbeat_stale"])
 
 
 if __name__ == "__main__":

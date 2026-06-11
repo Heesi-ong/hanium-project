@@ -86,3 +86,15 @@ def get_current_user(session_token: str | None = Cookie(default=None, alias=SESS
 
 
 CurrentUser = Depends(get_current_user)
+
+
+def delete_expired_sessions():
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM user_sessions WHERE expires_at <= NOW(3)")
+            deleted = cursor.rowcount
+        connection.commit()
+        return deleted
+    finally:
+        connection.close()

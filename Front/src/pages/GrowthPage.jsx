@@ -1,4 +1,4 @@
-import { getAnalyzeGrowth } from "../api/analyzeApi";
+import { getPracticeGrowth } from "../api/analyzeApi";
 import StateMessage from "../components/StateMessage";
 import useAsyncData from "../hooks/useAsyncData";
 import "./GrowthPage.css";
@@ -11,7 +11,7 @@ const metricLabels = {
 };
 
 const loadGrowth = async (signal) => {
-  const result = await getAnalyzeGrowth(signal);
+  const result = await getPracticeGrowth(signal);
   return result.growth || [];
 };
 
@@ -35,7 +35,7 @@ export default function GrowthPage() {
       )}
       {!growth.length && !error && !loading && (
         <StateMessage type="empty" title="비교할 완료 분석 결과가 없습니다.">
-          발표 영상을 분석하면 점수 변화를 비교할 수 있습니다.
+          발표 목적을 정하고 영상을 분석하면 다음 연습에서 바꿀 점과 성장 변화를 비교할 수 있습니다.
         </StateMessage>
       )}
       <section className="growth-list">
@@ -47,6 +47,15 @@ export default function GrowthPage() {
                 <span>{new Date(item.completed_at).toLocaleString("ko-KR")}</span>
               </div>
               <strong>{item.total_score ?? "-"}점</strong>
+            </div>
+            <div className="growth-practice-summary">
+              <span>{item.purpose_label || "프로젝트 발표"}</span>
+              <span>{item.practice_context?.series_name || "개별 연습"}</span>
+              <strong>
+                {item.score_change === null || item.score_change === undefined
+                  ? "첫 기록"
+                  : `이전 대비 ${item.score_change >= 0 ? "+" : ""}${item.score_change}점`}
+              </strong>
             </div>
             <div className="growth-metrics">
               {Object.entries(metricLabels).map(([key, label]) => {

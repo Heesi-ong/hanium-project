@@ -8,10 +8,12 @@ from ..config import (
     ANALYSIS_WORKERS,
     FRAME_DIR,
     MAINTENANCE_INTERVAL_SECONDS,
+    MAINTENANCE_STALE_SECONDS,
     OLLAMA_MODEL,
     ORPHAN_FRAME_MIN_AGE_MINUTES,
     RESULT_DIR,
     UPLOAD_DIR,
+    WORKER_HEARTBEAT_STALE_SECONDS,
 )
 from ..repositories.analysis_job_repository import list_processing_job_ids
 from ..services.analysis_jobs import (
@@ -27,6 +29,7 @@ from ..services.analysis_jobs import (
     update_job_progress,
 )
 from ..services.audio_analyzer import analyze_audio_from_video
+from ..services.auth_service import delete_expired_sessions
 from ..services.face_analyzer import analyze_face_from_frame, create_face_landmarker
 from ..services.feedback_generator import generate_feedback
 from ..services.file_cleaner import cleanup_orphan_directories, ensure_file_removed, safe_remove_directory
@@ -49,6 +52,7 @@ class AnalysisCancelled(Exception):
 
 
 def _check_cancelled(job_id):
+    analysis_worker_manager.touch_worker_heartbeat()
     if is_cancel_requested(job_id):
         raise AnalysisCancelled()
 
@@ -171,8 +175,14 @@ def run_analysis_job(job):
         _check_cancelled(job_id)
         update_job_progress(job_id, "saving_result", 96)
         save_analysis_result(analysis_data, result_id=job_id)
-        result_path = str(RESULT_DIR / f"{job_id}.json")
-        completed = mark_job_completed(job_id, summary_result, result_path=result_path)
+        result_file = RESULT_DIR / f"{job_id}.json"
+        result_path = str(result_file)
+        completed = mark_job_completed(
+            job_id,
+            summary_result,
+            result_path=result_path,
+            result_size_bytes=result_file.stat().st_size,
+        )
         if not completed:
             delete_analysis_result(job_id)
             raise AnalysisCancelled()
@@ -263,7 +273,7 @@ class AnalysisWorkerManager:
 
     def _loop(self):
         while not self._stop_event.is_set():
-            self._last_worker_heartbeat = time.time()
+            self.touch_worker_heartbeat()
             try:
                 job = claim_next_job()
                 if job:
@@ -279,6 +289,7 @@ class AnalysisWorkerManager:
                 cleanup_expired_sources()
                 cleanup_expired_results()
                 cleanup_orphan_frames()
+                delete_expired_sessions()
                 self._last_maintenance_at = time.time()
                 self._last_maintenance_error = None
             except Exception as error:
@@ -289,8 +300,21 @@ class AnalysisWorkerManager:
     def status(self):
         worker_threads = list(self._threads)
         maintenance_alive = bool(self._maintenance_thread and self._maintenance_thread.is_alive())
+        now = time.time()
+        worker_heartbeat_age = now - self._last_worker_heartbeat if self._last_worker_heartbeat else None
+        maintenance_age = now - self._last_maintenance_at if self._last_maintenance_at else None
+        worker_heartbeat_stale = worker_heartbeat_age is None or worker_heartbeat_age > WORKER_HEARTBEAT_STALE_SECONDS
+        maintenance_stale = maintenance_age is None or maintenance_age > MAINTENANCE_STALE_SECONDS
+        running = (
+            bool(worker_threads)
+            and all(thread.is_alive() for thread in worker_threads)
+            and maintenance_alive
+            and not worker_heartbeat_stale
+            and not maintenance_stale
+            and self._last_maintenance_error is None
+        )
         return {
-            "running": bool(worker_threads) and all(thread.is_alive() for thread in worker_threads) and maintenance_alive,
+            "running": running,
             "worker_count": len(worker_threads),
             "active_worker_count": sum(thread.is_alive() for thread in worker_threads),
             "maintenance_running": maintenance_alive,
@@ -298,7 +322,14 @@ class AnalysisWorkerManager:
             "last_worker_heartbeat_epoch": self._last_worker_heartbeat,
             "last_maintenance_at_epoch": self._last_maintenance_at,
             "last_maintenance_error": self._last_maintenance_error,
+            "worker_heartbeat_age_seconds": worker_heartbeat_age,
+            "worker_heartbeat_stale": worker_heartbeat_stale,
+            "maintenance_age_seconds": maintenance_age,
+            "maintenance_stale": maintenance_stale,
         }
+
+    def touch_worker_heartbeat(self):
+        self._last_worker_heartbeat = time.time()
 
 
 analysis_worker_manager = AnalysisWorkerManager()

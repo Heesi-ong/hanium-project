@@ -8,7 +8,6 @@ from fastapi.responses import PlainTextResponse
 
 from ..config import MAX_UPLOAD_MB, MIN_FREE_DISK_MB, RESULT_DIR, UPLOAD_DIR, USER_MAX_ACTIVE_ANALYSES
 from ..services.analysis_jobs import (
-    create_analysis_job,
     delete_user_job,
     get_user_job,
     get_user_job_by_idempotency_key,
@@ -17,16 +16,18 @@ from ..services.analysis_jobs import (
     list_user_jobs,
     mark_job_result_missing,
     request_user_job_cancel,
+    reserve_analysis_job,
     retry_user_job,
     sync_job_summary,
 )
 from ..services.auth_service import get_current_user
 from ..services.file_cleaner import ensure_file_removed, safe_remove_file
+from ..services.practice_coaching import delete_practice_context
 from ..services.rate_limit import enforce_rate_limit
 from ..services.readiness import get_disk_status
 from ..services.result_saver import delete_analysis_result, load_analysis_result
 from ..services.storage_usage import get_user_storage_usage
-from ..services.video_info import get_video_info
+from ..services.video_info import get_video_info, validate_video_info
 
 router = APIRouter(prefix="/analyze", tags=["Analyze"])
 
@@ -122,10 +123,30 @@ def upload_video(
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        video_info = get_video_info(str(file_path))
-        if video_info.get("error") or video_info.get("frame_count", 0) <= 0:
-            raise HTTPException(status_code=400, detail="재생 가능한 영상 파일을 선택해주세요.")
-        create_analysis_job(job_id, user["id"], original_filename, saved_filename, idempotency_key=idempotency_key)
+        try:
+            validate_video_info(get_video_info(str(file_path)))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        reservation = reserve_analysis_job(
+            job_id,
+            user["id"],
+            original_filename,
+            saved_filename,
+            file_size,
+            idempotency_key=idempotency_key,
+        )
+        if reservation["outcome"] == "existing":
+            safe_remove_file(file_path)
+            return {"message": "existing analysis job", "job": reservation["job"]}
+        if reservation["outcome"] == "inactive":
+            raise HTTPException(status_code=409, detail="계정 상태가 변경되어 분석을 시작할 수 없습니다.")
+        if reservation["outcome"] == "active_limit":
+            raise HTTPException(
+                status_code=409,
+                detail=f"동시에 진행할 수 있는 분석은 최대 {USER_MAX_ACTIVE_ANALYSES}개입니다.",
+            )
+        if reservation["outcome"] == "quota_limit":
+            raise HTTPException(status_code=413, detail="사용자 저장 공간이 부족합니다. 기존 분석 결과를 삭제해주세요.")
     except HTTPException:
         safe_remove_file(file_path)
         raise
@@ -255,7 +276,7 @@ def get_result_timeline_chart(result_id: str, user=Depends(get_current_user)):
 @router.get("/results")
 def get_results(
     status: str | None = None,
-    search: str = "",
+    search: str = Query(default="", max_length=200),
     sort: str = "latest",
     limit: int = Query(default=12, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -328,10 +349,11 @@ def delete_result(result_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=409, detail="대기 또는 분석 중인 작업은 먼저 취소해주세요.")
 
     delete_result_data = delete_analysis_result(result_id)
+    practice_removed = delete_practice_context(result_id)
     saved_filename = get_user_job_source_filename(result_id, user["id"])
     result_removed = ensure_file_removed(RESULT_DIR / f"{result_id}.json")
     source_removed = ensure_file_removed(UPLOAD_DIR / saved_filename) if saved_filename else True
-    if not result_removed or not source_removed:
+    if not result_removed or not source_removed or not practice_removed:
         raise HTTPException(status_code=500, detail="분석 데이터 파일을 완전히 삭제하지 못했습니다. 다시 시도해주세요.")
     deleted_job = delete_user_job(result_id, user["id"])
     return {

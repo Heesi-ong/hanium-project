@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from Back.app.routers.practice import PracticeContextRequest, get_practice_coaching, update_practice_context
+from Back.app.routers.practice import PracticeContextRequest, get_practice_coaching, get_series, update_practice_context
 
 
 class PracticeAccessTests(unittest.TestCase):
@@ -39,6 +39,26 @@ class PracticeAccessTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as raised:
             get_practice_coaching("job-1", user={"id": 7})
         self.assertEqual(raised.exception.status_code, 409)
+
+    @patch("Back.app.routers.practice.list_practice_series")
+    def test_existing_series_can_be_listed_and_selected(self, list_series):
+        list_series.return_value = [
+            {"series_id": "series-1", "series_name": "한이음 발표", "purpose": "project"}
+        ]
+
+        self.assertEqual(get_series(user={"id": 7})["series"][0]["series_id"], "series-1")
+
+        with patch("Back.app.routers.practice.get_user_job", return_value={"status": "QUEUED"}), patch(
+            "Back.app.routers.practice.save_practice_context"
+        ) as save_context:
+            save_context.return_value = {"series_id": "series-1"}
+            result = update_practice_context(
+                "job-1",
+                PracticeContextRequest(purpose="project", series_id="series-1"),
+                user={"id": 7},
+            )
+
+        self.assertEqual(result["practice_context"]["series_id"], "series-1")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from .practice_contexts import (
     delete_practice_context,
     find_previous_same_series,
     list_orphan_practice_contexts,
+    list_practice_series,
     load_practice_context,
     order_growth,
     save_practice_context,
@@ -16,6 +17,7 @@ __all__ = [
     "enrich_growth",
     "find_previous_same_series",
     "list_orphan_practice_contexts",
+    "list_practice_series",
     "load_practice_context",
     "save_practice_context",
 ]
@@ -60,6 +62,11 @@ def _score(value):
     return float(value)
 
 
+def _legacy_series(context):
+    source = context.get("series_id_source")
+    return bool(context.get("series_name")) and (not source or str(source).startswith("legacy"))
+
+
 def _improvement_candidates(data):
     score = data.get("score_result", {})
     audio = data.get("audio_result", {})
@@ -81,7 +88,11 @@ def _improvement_candidates(data):
             "말하기 속도",
             _score(score.get("speech_speed_score")),
             "핵심 문장 앞뒤에 짧은 멈춤을 넣어 청중이 내용을 처리할 시간을 주세요.",
-            f"현재 {audio.get('speech_speed_wpm', '-')} WPM을 기준으로 핵심 문단을 또박또박 다시 말합니다.",
+            (
+                f"현재 {audio.get('speech_speed_spm')} 음절/분을 기준으로 핵심 문단을 또박또박 다시 말합니다."
+                if audio.get("speech_speed_spm")
+                else f"현재 {audio.get('speech_speed_wpm', '-')} WPM을 기준으로 핵심 문단을 또박또박 다시 말합니다."
+            ),
         ),
         (
             "필러 단어",
@@ -138,11 +149,12 @@ def _build_content_analysis(data, core_message):
             (item for item in candidates if any(keyword in item["text"].lower() for keyword in keywords)),
             None,
         )
-        evidence = keyword_evidence or (candidates[0] if segments and candidates else None)
+        evidence = keyword_evidence
         structure.append(
             {
                 "part": part,
                 "found": bool(evidence),
+                "confidence": "medium" if evidence else "low",
                 "start": evidence.get("start") if evidence else None,
                 "end": evidence.get("end") if evidence else None,
                 "sentence": evidence.get("text") if evidence else None,
@@ -153,7 +165,15 @@ def _build_content_analysis(data, core_message):
     shortened = longest[:100].rstrip(" ,") + ("..." if len(longest) > 100 else "")
     core_words = [word for word in re.findall(r"[가-힣A-Za-z0-9]+", core_message) if len(word) >= 2]
     message_mentioned = bool(core_words) and any(word in transcript for word in core_words[:5])
-    words = [word for word in re.findall(r"[가-힣A-Za-z0-9]+", transcript.lower()) if len(word) >= 2]
+    stopwords = {
+        "그리고", "그래서", "하지만", "저희", "제가", "이번", "대한", "통해", "것을",
+        "수", "있는", "있습니다", "합니다", "입니다", "됩니다",
+    }
+    words = [
+        word
+        for word in re.findall(r"[가-힣A-Za-z0-9]+", transcript.lower())
+        if len(word) >= 2 and word not in stopwords
+    ]
     repeated = sorted(
         ((word, words.count(word)) for word in set(words) if words.count(word) >= 3),
         key=lambda item: item[1],
@@ -177,7 +197,10 @@ def _build_content_analysis(data, core_message):
                 "start": longest_item.get("start"),
                 "end": longest_item.get("end"),
                 "sentence": longest[:300],
-                "rewrite_example": f"핵심 주장과 근거를 두 문장으로 분리하세요. 예: '{shortened}' 다음에 근거를 한 문장으로 덧붙이세요.",
+                "rewrite_example": (
+                    f"예시 수정: '핵심 주장은 {shortened}입니다. 이를 뒷받침하는 근거는 [수치·사례]입니다.'처럼 "
+                    "주장과 검증 근거를 분리하세요."
+                ),
             }
         ],
     }
@@ -233,6 +256,11 @@ def build_practice_coaching(result, context, previous=None):
         "content_analysis": _build_content_analysis(data, context.get("core_message", "")),
         "confidence": confidence,
         "comparison": comparison,
+        "series_compatibility_note": (
+            "기존 이름 기반 시리즈는 같은 이름의 다른 발표가 포함될 수 있습니다."
+            if _legacy_series(context)
+            else None
+        ),
     }
 
 
@@ -242,7 +270,15 @@ def enrich_growth(growth, user_id):
     for item in order_growth(growth):
         context = load_practice_context(item["result_id"], user_id) or {}
         current_score = _score(item.get("total_score"))
-        series_key = (context.get("purpose"), context.get("series_id") or context.get("series_name", "").strip().casefold())
+        series_key = (
+            context.get("purpose"),
+            context.get("series_id")
+            or (
+                f"legacy:{context.get('series_name', '').strip().casefold()}"
+                if context.get("series_name")
+                else ""
+            ),
+        )
         previous = previous_by_series.get(series_key) if series_key[1] else None
         change = None
         if previous is not None and current_score is not None:
@@ -253,6 +289,11 @@ def enrich_growth(growth, user_id):
                 "practice_context": context,
                 "purpose_label": PURPOSES.get(context.get("purpose"), {}).get("label"),
                 "score_change": change,
+                "series_compatibility_note": (
+                    "기존 이름 기반 시리즈 비교입니다. 같은 이름의 다른 발표 포함 여부를 확인하세요."
+                    if _legacy_series(context)
+                    else None
+                ),
             }
         )
         if current_score is not None and series_key[1]:

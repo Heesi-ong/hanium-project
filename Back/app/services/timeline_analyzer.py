@@ -1,3 +1,6 @@
+from .score_calculator import _meets_visual_threshold
+
+
 def analyze_timeline_scores(
     video_info: dict,
     frame_result: dict,
@@ -14,6 +17,14 @@ def analyze_timeline_scores(
         }
 
     timeline = []
+    pose_evaluation_available = _meets_visual_threshold(
+        sum(item.get("pose_detected") is True for item in pose_results),
+        len(frames),
+    )
+    face_evaluation_available = _meets_visual_threshold(
+        sum(item.get("face_detected") is True for item in face_results),
+        len(frames),
+    )
 
     for index, frame_path in enumerate(frames):
         pose_result = pose_results[index] if index < len(pose_results) else {}
@@ -25,7 +36,7 @@ def analyze_timeline_scores(
         shoulder_score = None
         gaze_score = None
 
-        if pose_result.get("pose_detected") is True:
+        if pose_evaluation_available and pose_result.get("pose_detected") is True:
             landmarks = pose_result.get("landmarks", [])
 
             left_shoulder = next((lm for lm in landmarks if lm["id"] == 11), None)
@@ -41,7 +52,7 @@ def analyze_timeline_scores(
                 else:
                     shoulder_score = 40
 
-        if face_result.get("face_detected") is True:
+        if face_evaluation_available and face_result.get("face_detected") is True:
             landmarks = face_result.get("landmarks", [])
 
             nose = next((lm for lm in landmarks if lm["id"] == 1), None)
@@ -59,7 +70,7 @@ def analyze_timeline_scores(
                 else:
                     gaze_score = 40
 
-        available_scores = [score for score in (pose_score, shoulder_score, face_score, gaze_score) if score is not None]
+        available_scores = [score for score in (shoulder_score, gaze_score) if score is not None]
         frame_score = round(sum(available_scores) / len(available_scores), 2) if available_scores else None
 
         timeline.append({

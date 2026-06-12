@@ -5,6 +5,7 @@ import {
   cancelAnalyzeJob,
   getAnalyzeJob,
   getPracticePurposes,
+  getPracticeSeries,
   savePracticeContext,
   uploadAnalyzeVideo,
 } from "../api/analyzeApi";
@@ -73,12 +74,14 @@ function UploadPage() {
   const [activeJobId, setActiveJobId] = useState("");
   const [activeJob, setActiveJob] = useState(null);
   const [purposes, setPurposes] = useState(fallbackPurposes);
+  const [practiceSeries, setPracticeSeries] = useState([]);
   const [practiceContext, setPracticeContext] = useState({
     purpose: "project",
     audience: "",
     target_minutes: 12,
     core_message: "",
     series_name: "",
+    series_id: null,
   });
 
   useEffect(() => {
@@ -89,6 +92,11 @@ function UploadPage() {
       )
       .catch((requestError) => {
         if (requestError.name !== "AbortError") setPurposes(fallbackPurposes);
+      });
+    getPracticeSeries(controller.signal)
+      .then((response) => setPracticeSeries(response.series || []))
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") setPracticeSeries([]);
       });
     return () => controller.abort();
   }, []);
@@ -315,6 +323,8 @@ function UploadPage() {
                     ...current,
                     purpose: event.target.value,
                     target_minutes: purpose.recommended_minutes,
+                    series_id: null,
+                    series_name: "",
                   }))
                 }
               />
@@ -353,14 +363,44 @@ function UploadPage() {
             />
           </label>
           <label>
-            반복 연습 이름
+            기존 연습 시리즈
+            <select
+              value={practiceContext.series_id || ""}
+              disabled={loading}
+              onChange={(event) => {
+                const selected = practiceSeries.find(
+                  (item) => item.series_id === event.target.value,
+                );
+                setPracticeContext((current) => ({
+                  ...current,
+                  series_id: selected?.series_id || null,
+                  series_name: selected?.series_name || "",
+                }));
+              }}
+            >
+              <option value="">새 연습 시리즈 만들기</option>
+              {practiceSeries
+                .filter((item) => item.purpose === practiceContext.purpose && item.series_id)
+                .map((item) => (
+                  <option value={item.series_id} key={item.series_id}>
+                    {item.series_name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            새 연습 시리즈 이름
             <input
               value={practiceContext.series_name}
               maxLength="120"
               placeholder="예: 한이음 최종 발표"
-              disabled={loading}
+              disabled={loading || Boolean(practiceContext.series_id)}
               onChange={(event) =>
-                setPracticeContext((current) => ({ ...current, series_name: event.target.value }))
+                setPracticeContext((current) => ({
+                  ...current,
+                  series_name: event.target.value,
+                  series_id: null,
+                }))
               }
             />
           </label>
@@ -525,7 +565,7 @@ function UploadPage() {
                 <div className="metric-item">
                   <div className="metric-label">총점</div>
 
-                  <div className="metric-value">{result?.summary?.total_score}</div>
+                  <div className="metric-value">{result?.summary?.total_score ?? "측정 불가"}</div>
                 </div>
 
                 <div className="metric-item">

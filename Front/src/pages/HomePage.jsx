@@ -59,7 +59,7 @@ const features = [
     className: "pose",
     icon: "⌘",
     title: "자세와 제스처 분석",
-    description: "자세 균형과 발표 중 손동작의 자연스러움을 확인합니다.",
+    description: "자세 균형과 발표 중 손목 위치 변화 횟수를 확인합니다.",
     visual: (
       <div className="home-pose-mini">
         <span />
@@ -170,7 +170,8 @@ function HomePage() {
             </h1>
             <p>
               발표 목적과 청중을 설정하면 음성, 얼굴 방향, 자세, 제스처를 분석하고 다음 연습 행동과
-              예상 질문을 제공합니다.
+              예상 질문을 제공합니다. 촬영 환경과 음성 품질에 따라 일부 항목은 측정 불가일 수
+              있습니다.
             </p>
 
             <div className="home-hero-actions">
@@ -186,12 +187,12 @@ function HomePage() {
               <div>
                 <span>⌬</span>
                 <strong>Ollama 기반 로컬 AI</strong>
-                <small>서비스가 설치된 로컬 서버에서 처리</small>
+                <small>AI 코칭 요청은 Ollama가 실행되는 서비스 서버에서 처리</small>
               </div>
               <div>
                 <span>▣</span>
                 <strong>개인정보 안전 보호</strong>
-                <small>Ollama 코칭은 외부 AI API 없이</small>
+                <small>현재 구성의 Ollama 코칭은 외부 AI API 없이 처리</small>
               </div>
               <div>
                 <span>◉</span>
@@ -370,11 +371,11 @@ function HomePage() {
               </div>
               <div>
                 <b>05:20</b>
-                <i className="normal">서던 발음</i>
+                <i className="normal">안정적인 발음</i>
               </div>
               <div>
                 <b>07:10</b>
-                <i className="good">좋은 몸짓과 제스처</i>
+                <i className="good">손동작 변화 구간</i>
               </div>
             </div>
             <div className="result-feedback-panel">
@@ -467,14 +468,14 @@ function HomePage() {
               <strong>발표 중 속도가 빨라지는 구간이 보여요.</strong>
               <ul>
                 <li>문장 사이에 1~2초의 의도적인 쉼을 넣어보세요.</li>
-                <li>분당 120~140 단어를 목표로 연습해보세요.</li>
+                <li>한국어 음절/분 지표와 실제 녹음을 함께 확인해보세요.</li>
               </ul>
             </div>
           </div>
           <div className="home-local-card">
             <span>⌬</span>
             <strong>Ollama 기반 로컬 AI</strong>
-            <p>서비스가 설치된 로컬 서버에서 실행</p>
+            <p>Ollama가 설치된 서비스 서버에서 AI 코칭 실행</p>
             <p>Ollama 코칭은 외부 AI API 없이 처리</p>
           </div>
         </div>
@@ -490,8 +491,8 @@ function HomePage() {
             <article>
               <span>⌬</span>
               <div>
-                <h3>로컬 AI 기반 분석</h3>
-                <p>Ollama 기반 AI를 로컬 환경에서 활용합니다.</p>
+                <h3>Ollama 코칭 처리 범위</h3>
+                <p>현재 배포 구성에서는 서비스 서버의 Ollama를 AI 코칭에 활용합니다.</p>
               </div>
             </article>
             <article>

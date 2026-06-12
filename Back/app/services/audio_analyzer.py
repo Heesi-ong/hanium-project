@@ -1,6 +1,28 @@
+import re
+
 import whisper
 
 model = whisper.load_model("base")
+
+
+def calculate_speech_rates(text, duration):
+    word_count = len(text.split())
+    korean_syllable_count = len(re.findall(r"[가-힣]", text))
+    if duration <= 0:
+        return {
+            "word_count": word_count,
+            "korean_syllable_count": korean_syllable_count,
+            "speech_speed_wpm": 0,
+            "speech_speed_spm": 0,
+            "speech_speed_basis": "unavailable",
+        }
+    return {
+        "word_count": word_count,
+        "korean_syllable_count": korean_syllable_count,
+        "speech_speed_wpm": round((word_count / duration) * 60, 2),
+        "speech_speed_spm": round((korean_syllable_count / duration) * 60, 2),
+        "speech_speed_basis": "korean_syllables_per_minute" if korean_syllable_count else "words_per_minute",
+    }
 
 
 def analyze_audio_from_video(video_path: str):
@@ -16,11 +38,7 @@ def analyze_audio_from_video(video_path: str):
     if segments:
         duration = segments[-1].get("end", 0)
 
-    word_count = len(text.split())
-
-    speech_speed = 0
-    if duration > 0:
-        speech_speed = round((word_count / duration) * 60, 2)
+    speech_rates = calculate_speech_rates(text, duration)
 
     silence_segments = []
 
@@ -45,8 +63,7 @@ def analyze_audio_from_video(video_path: str):
     return {
         "text": text,
         "duration_seconds": duration,
-        "word_count": word_count,
-        "speech_speed_wpm": speech_speed,
+        **speech_rates,
         "silence_count": len(silence_segments),
         "total_silence_time": total_silence_time,
         "silence_segments": silence_segments,

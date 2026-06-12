@@ -1,12 +1,13 @@
 import re
 
 
-def analyze_filler_words(text: str):
+def analyze_filler_words(text: str, duration_seconds: float = 0):
     if not text:
         return {
             "filler_count": 0,
             "filler_words": {},
-            "filler_score": None
+            "filler_score": None,
+            "filler_per_minute": None,
         }
 
     filler_list = [
@@ -33,13 +34,16 @@ def analyze_filler_words(text: str):
             filler_words[word] = count
             total_count += count
 
-    if total_count <= 3:
+    filler_per_minute = round(total_count / duration_seconds * 60, 2) if duration_seconds > 0 else None
+    score_count = filler_per_minute if filler_per_minute is not None else total_count
+
+    if score_count <= 2:
         filler_score = 100
-    elif total_count <= 6:
+    elif score_count <= 4:
         filler_score = 85
-    elif total_count <= 10:
+    elif score_count <= 7:
         filler_score = 70
-    elif total_count <= 15:
+    elif score_count <= 10:
         filler_score = 55
     else:
         filler_score = 40
@@ -47,5 +51,6 @@ def analyze_filler_words(text: str):
     return {
         "filler_count": total_count,
         "filler_words": filler_words,
-        "filler_score": filler_score
+        "filler_score": filler_score,
+        "filler_per_minute": filler_per_minute,
     }

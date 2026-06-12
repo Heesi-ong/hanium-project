@@ -227,6 +227,8 @@ def get_result_sections(result_id: str, user=Depends(get_current_user)):
             "speech": {
                 "audio_analysis_available": score_result.get("audio_analysis_available"),
                 "speech_speed_wpm": audio_result.get("speech_speed_wpm"),
+                "speech_speed_spm": audio_result.get("speech_speed_spm"),
+                "speech_speed_basis": audio_result.get("speech_speed_basis"),
                 "speech_speed_score": score_result.get("speech_speed_score"),
                 "silence_count": audio_result.get("silence_count"),
                 "total_silence_time": audio_result.get("total_silence_time"),

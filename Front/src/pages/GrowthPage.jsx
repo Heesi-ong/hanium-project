@@ -4,7 +4,7 @@ import useAsyncData from "../hooks/useAsyncData";
 import "./GrowthPage.css";
 
 const metricLabels = {
-  pose_detection_rate: "자세",
+  pose_detection_rate: "자세 감지율(신뢰도)",
   gaze_score: "얼굴 방향",
   speech_speed_score: "말하기",
   gesture_score: "손동작",
@@ -48,7 +48,7 @@ export default function GrowthPage() {
                 <h2>{item.original_filename}</h2>
                 <span>{new Date(item.completed_at).toLocaleString("ko-KR")}</span>
               </div>
-              <strong>{item.total_score ?? "-"}점</strong>
+              <strong>{item.total_score === null ? "측정 불가" : `${item.total_score}점`}</strong>
             </div>
             <div className="growth-practice-summary">
               <span>{item.purpose_label || "프로젝트 발표"}</span>
@@ -67,17 +67,20 @@ export default function GrowthPage() {
                     <span>
                       {label} {value ?? "측정 불가"}
                     </span>
-                    <div className="growth-track">
-                      <div
-                        style={{
-                          width: `${typeof value === "number" ? Math.max(0, Math.min(100, value)) : 0}%`,
-                        }}
-                      />
-                    </div>
+                    {typeof value === "number" ? (
+                      <div className="growth-track">
+                        <div style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+                      </div>
+                    ) : (
+                      <div className="growth-unavailable">측정 데이터 없음</div>
+                    )}
                   </div>
                 );
               })}
             </div>
+            {item.series_compatibility_note && (
+              <p className="detail-muted-text">{item.series_compatibility_note}</p>
+            )}
           </article>
         ))}
       </section>

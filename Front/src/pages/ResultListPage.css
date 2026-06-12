@@ -206,6 +206,10 @@
   flex-shrink: 0;
 }
 
+.mini-score-circle.unavailable {
+  background: #e5e7eb;
+}
+
 .mini-score-circle-inner {
   width: 62px;
   height: 62px;

@@ -8,6 +8,7 @@ from ..services.practice_coaching import (
     build_practice_coaching,
     enrich_growth,
     find_previous_same_series,
+    list_practice_series,
     load_practice_context,
     save_practice_context,
 )
@@ -37,10 +38,25 @@ def get_purposes(_user=Depends(get_current_user)):
     return {"purposes": [{"key": key, **value} for key, value in PURPOSES.items()]}
 
 
+@router.get("/series")
+def get_series(user=Depends(get_current_user)):
+    return {"series": list_practice_series(user["id"])}
+
+
 @router.put("/{result_id}")
 def update_practice_context(result_id: str, request: PracticeContextRequest, user=Depends(get_current_user)):
     _owned_job(result_id, user["id"])
-    context = save_practice_context(result_id, user["id"], request.model_dump())
+    context_data = request.model_dump()
+    if request.series_id:
+        series = next(
+            (item for item in list_practice_series(user["id"]) if item.get("series_id") == request.series_id),
+            None,
+        )
+        if not series or series["purpose"] != request.purpose:
+            raise HTTPException(status_code=400, detail="선택한 연습 시리즈를 사용할 수 없습니다.")
+        context_data["series_name"] = series["series_name"]
+        context_data["series_id_source"] = "legacy_selected" if series.get("legacy") else "selected"
+    context = save_practice_context(result_id, user["id"], context_data)
     return {"practice_context": context}
 
 

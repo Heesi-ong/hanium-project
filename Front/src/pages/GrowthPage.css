@@ -57,6 +57,12 @@
   background: #2563eb;
 }
 
+.growth-unavailable {
+  color: #64748b;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
 @media (max-width: 768px) {
   .growth-heading,
   .growth-metrics {

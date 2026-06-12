@@ -1,9 +1,10 @@
-def analyze_gesture_from_pose_results(pose_results: list):
+def analyze_gesture_from_pose_results(pose_results: list, duration_seconds: float = 0):
     if not pose_results:
         return {
             "gesture_movement_count": 0,
             "gesture_score": 0,
-            "gesture_level": "UNKNOWN"
+            "gesture_level": "UNKNOWN",
+            "gesture_per_minute": None,
         }
 
     wrist_positions = []
@@ -29,7 +30,8 @@ def analyze_gesture_from_pose_results(pose_results: list):
         return {
             "gesture_movement_count": 0,
             "gesture_score": 40,
-            "gesture_level": "LOW"
+            "gesture_level": "LOW",
+            "gesture_per_minute": None,
         }
 
     movement_count = 0
@@ -44,16 +46,19 @@ def analyze_gesture_from_pose_results(pose_results: list):
         if left_move > 0.08 or right_move > 0.08:
             movement_count += 1
 
-    if 2 <= movement_count <= 8:
+    gesture_per_minute = round(movement_count / duration_seconds * 60, 2) if duration_seconds > 0 else None
+    score_count = gesture_per_minute if gesture_per_minute is not None else movement_count
+
+    if 2 <= score_count <= 10:
         gesture_score = 100
         gesture_level = "GOOD"
-    elif movement_count == 0:
+    elif score_count == 0:
         gesture_score = 40
         gesture_level = "LOW"
-    elif movement_count < 2:
+    elif score_count < 2:
         gesture_score = 70
         gesture_level = "LOW"
-    elif movement_count <= 14:
+    elif score_count <= 16:
         gesture_score = 70
         gesture_level = "HIGH"
     else:
@@ -63,5 +68,6 @@ def analyze_gesture_from_pose_results(pose_results: list):
     return {
         "gesture_movement_count": movement_count,
         "gesture_score": gesture_score,
-        "gesture_level": gesture_level
+        "gesture_level": gesture_level,
+        "gesture_per_minute": gesture_per_minute,
     }

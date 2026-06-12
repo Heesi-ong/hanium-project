@@ -1,6 +1,6 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAnalyzeSections, getPracticeCoaching, getTimelineChart } from "../api/analyzeApi";
@@ -26,7 +26,7 @@ const sections = {
 
 describe("ResultDetailPage", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     getAnalyzeSections.mockResolvedValue({ sections, original_filename: "sample.mp4" });
     getTimelineChart.mockResolvedValue({ chart_data: [] });
     getPracticeCoaching.mockRejectedValue(new Error("코칭 서비스 오류"));
@@ -74,5 +74,48 @@ describe("ResultDetailPage", () => {
     expect(getPracticeCoaching).toHaveBeenCalledTimes(2);
     expect(getAnalyzeSections).toHaveBeenCalledTimes(1);
     expect(getTimelineChart).toHaveBeenCalledTimes(1);
+  });
+
+  it("타임라인 실패가 기본 분석 결과를 막지 않고 해당 영역만 재시도한다", async () => {
+    getTimelineChart.mockRejectedValue(new Error("타임라인 오류"));
+
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("기본 결과 정상")).toBeInTheDocument();
+    expect(await screen.findByText("타임라인만 불러오지 못했습니다.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "타임라인 다시 불러오기" }));
+    expect(getAnalyzeSections).toHaveBeenCalledTimes(1);
+    expect(getTimelineChart).toHaveBeenCalledTimes(2);
+  });
+
+  it("빠른 결과 전환 후 이전 요청 응답을 표시하지 않는다", async () => {
+    let resolveOld;
+    getAnalyzeSections.mockImplementation((resultId) => {
+      if (resultId === "job-1") {
+        return new Promise((resolve) => {
+          resolveOld = resolve;
+        });
+      }
+      return Promise.resolve({
+        sections: { ...sections, summary: { total_score: 90, summary_feedback: "새 결과" } },
+        original_filename: "new.mp4",
+      });
+    });
+    const router = createMemoryRouter(
+      [{ path: "/result/:resultId", element: <ResultDetailPage /> }],
+      { initialEntries: ["/result/job-1"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await router.navigate("/result/job-2");
+    expect(await screen.findByText("새 결과")).toBeInTheDocument();
+    resolveOld({ sections, original_filename: "old.mp4" });
+    await waitFor(() => expect(screen.queryByText("기본 결과 정상")).not.toBeInTheDocument());
   });
 });

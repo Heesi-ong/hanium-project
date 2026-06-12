@@ -1,3 +1,14 @@
+import math
+
+MIN_VISUAL_VALID_FRAMES = 3
+MIN_VISUAL_DETECTION_RATE = 30
+
+
+def _meets_visual_threshold(detected_count, saved_count):
+    required_count = max(MIN_VISUAL_VALID_FRAMES, math.ceil(saved_count * MIN_VISUAL_DETECTION_RATE / 100))
+    return saved_count > 0 and detected_count >= required_count
+
+
 def calculate_basic_score(
     video_info: dict,
     frame_result: dict,
@@ -65,20 +76,23 @@ def calculate_basic_score(
     pose_detection_rate = None
     face_detection_rate = None
 
-    if saved_count > 0 and pose_detected_count > 0:
+    if saved_count > 0:
         pose_detection_rate = round((pose_detected_count / saved_count) * 100, 2)
-    if saved_count > 0 and face_detected_count > 0:
+    if saved_count > 0:
         face_detection_rate = round((face_detected_count / saved_count) * 100, 2)
 
+    pose_evaluation_available = _meets_visual_threshold(pose_detected_count, saved_count)
+    face_evaluation_available = _meets_visual_threshold(face_detected_count, saved_count)
+
     shoulder_balance_score = None
-    if shoulder_balance_scores:
+    if pose_evaluation_available and len(shoulder_balance_scores) >= MIN_VISUAL_VALID_FRAMES:
         shoulder_balance_score = round(
             sum(shoulder_balance_scores) / len(shoulder_balance_scores),
             2
         )
 
     gaze_score = None
-    if gaze_scores:
+    if face_evaluation_available and len(gaze_scores) >= MIN_VISUAL_VALID_FRAMES:
         gaze_score = round(
             sum(gaze_scores) / len(gaze_scores),
             2
@@ -88,9 +102,17 @@ def calculate_basic_score(
         audio_result.get("text", "").strip() or audio_result.get("segments")
     )
     speech_speed = audio_result.get("speech_speed_wpm", 0)
+    speech_speed_spm = audio_result.get("speech_speed_spm")
 
     if not audio_analysis_available:
         speech_speed_score = None
+    elif isinstance(speech_speed_spm, (int, float)) and speech_speed_spm > 0:
+        if 250 <= speech_speed_spm <= 400:
+            speech_speed_score = 100
+        elif 180 <= speech_speed_spm < 250 or 400 < speech_speed_spm <= 500:
+            speech_speed_score = 70
+        else:
+            speech_speed_score = 40
     elif 100 <= speech_speed <= 160:
         speech_speed_score = 100
     elif 80 <= speech_speed < 100 or 160 < speech_speed <= 190:
@@ -121,7 +143,7 @@ def calculate_basic_score(
     )
 
     gesture_movement_count = gesture_result.get("gesture_movement_count", 0)
-    gesture_score = gesture_result.get("gesture_score") if pose_detected_count > 0 else None
+    gesture_score = gesture_result.get("gesture_score") if pose_evaluation_available else None
     gesture_level = gesture_result.get("gesture_level", "UNKNOWN")
 
     mean_volume_db = volume_result.get("mean_volume_db")
@@ -130,15 +152,13 @@ def calculate_basic_score(
     volume_level = volume_result.get("volume_level", "UNKNOWN")
 
     weighted_scores = [
-        (pose_detection_rate, 0.07),
-        (shoulder_balance_score, 0.15),
-        (face_detection_rate, 0.07),
-        (gaze_score, 0.15),
-        (speech_speed_score, 0.14),
-        (silence_score, 0.14),
-        (filler_score, 0.09),
-        (gesture_score, 0.09),
-        (volume_score, 0.10)
+        (shoulder_balance_score, 0.18),
+        (gaze_score, 0.18),
+        (speech_speed_score, 0.16),
+        (silence_score, 0.16),
+        (filler_score, 0.11),
+        (gesture_score, 0.10),
+        (volume_score, 0.11),
     ]
     available_scores = [
         (score, weight)
@@ -152,15 +172,43 @@ def calculate_basic_score(
     ) if total_weight else None
 
     availability = {
-        "pose_detection_rate": pose_detection_rate is not None,
         "shoulder_balance_score": shoulder_balance_score is not None,
-        "face_detection_rate": face_detection_rate is not None,
         "gaze_score": gaze_score is not None,
         "speech_speed_score": speech_speed_score is not None,
         "silence_score": silence_score is not None,
         "filler_score": filler_score is not None,
         "gesture_score": gesture_score is not None,
         "volume_score": volume_score is not None,
+    }
+    confidence_availability = {
+        "pose_detection_rate": pose_detection_rate is not None,
+        "face_detection_rate": face_detection_rate is not None,
+    }
+    analysis_confidence = {
+        "visual": {
+            "pose_detection_rate": pose_detection_rate,
+            "face_detection_rate": face_detection_rate,
+            "minimum_valid_frames": MIN_VISUAL_VALID_FRAMES,
+            "minimum_detection_rate": MIN_VISUAL_DETECTION_RATE,
+            "pose_evaluation_available": pose_evaluation_available,
+            "face_evaluation_available": face_evaluation_available,
+            "level": (
+                "high"
+                if pose_evaluation_available
+                and face_evaluation_available
+                and pose_detection_rate >= 70
+                and face_detection_rate >= 70
+                else (
+                    "moderate"
+                    if pose_evaluation_available and face_evaluation_available
+                    else "limited"
+                )
+            ),
+        },
+        "audio": {
+            "available": audio_analysis_available,
+            "level": "high" if audio_analysis_available else "limited",
+        },
     }
 
     return {
@@ -174,6 +222,7 @@ def calculate_basic_score(
         "shoulder_balance_score": shoulder_balance_score,
         "gaze_score": gaze_score,
         "speech_speed_wpm": speech_speed,
+        "speech_speed_spm": speech_speed_spm,
         "audio_analysis_available": audio_analysis_available,
         "speech_speed_score": speech_speed_score,
         "silence_count": silence_count,
@@ -190,6 +239,8 @@ def calculate_basic_score(
         "volume_score": volume_score,
         "volume_level": volume_level,
         "score_availability": availability,
+        "confidence_availability": confidence_availability,
+        "analysis_confidence": analysis_confidence,
         "available_score_count": sum(availability.values()),
         "total_score_available": total_score is not None,
     }

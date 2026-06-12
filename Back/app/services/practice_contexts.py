@@ -1,7 +1,7 @@
 import json
 import os
 import tempfile
-from hashlib import sha256
+from uuid import uuid4
 
 from ..config import BACK_DIR
 from .file_cleaner import ensure_file_removed, safe_remove_file
@@ -16,9 +16,9 @@ def _path(result_id):
 def save_practice_context(result_id, user_id, context):
     PRACTICE_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
     series_name = str(context.get("series_name") or "").strip()
-    purpose = context.get("purpose", "project")
-    series_id = context.get("series_id") or (
-        sha256(f"{user_id}:{purpose}:{series_name.casefold()}".encode()).hexdigest()[:24] if series_name else None
+    series_id = context.get("series_id") or (str(uuid4()) if series_name else None)
+    series_id_source = context.get("series_id_source") or (
+        "selected" if context.get("series_id") else ("generated" if series_id else None)
     )
     payload = {
         "result_id": result_id,
@@ -26,6 +26,7 @@ def save_practice_context(result_id, user_id, context):
         **context,
         "series_name": series_name,
         "series_id": series_id,
+        "series_id_source": series_id_source,
     }
     temp_path = None
     try:
@@ -61,11 +62,41 @@ def list_orphan_practice_contexts(valid_result_ids):
     return sorted(path.stem for path in PRACTICE_CONTEXT_DIR.glob("*.json") if path.stem not in valid_ids)
 
 
+def list_practice_series(user_id):
+    if not PRACTICE_CONTEXT_DIR.exists():
+        return []
+    series = {}
+    for path in PRACTICE_CONTEXT_DIR.glob("*.json"):
+        try:
+            context = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if context.get("user_id") != user_id or not context.get("series_name"):
+            continue
+        series_id = context.get("series_id")
+        legacy = not context.get("series_id_source") or str(context.get("series_id_source")).startswith("legacy")
+        key = series_id or f"legacy:{context.get('purpose')}:{context['series_name'].strip().casefold()}"
+        series[key] = {
+            "series_id": series_id,
+            "series_name": context["series_name"],
+            "purpose": context.get("purpose", "project"),
+            "legacy": legacy,
+            "compatibility_note": (
+                "기존 이름 기반 시리즈입니다. 같은 이름의 다른 발표가 포함될 가능성을 확인하세요."
+                if legacy
+                else None
+            ),
+        }
+    return sorted(series.values(), key=lambda item: (item["purpose"], item["series_name"].casefold()))
+
+
 def same_series(left, right):
     if not left or not right or left.get("purpose") != right.get("purpose"):
         return False
     if left.get("series_id") and right.get("series_id"):
         return left["series_id"] == right["series_id"]
+    if left.get("series_id") or right.get("series_id"):
+        return False
     return bool(left.get("series_name")) and left.get("series_name").strip().casefold() == right.get(
         "series_name", ""
     ).strip().casefold()

@@ -59,6 +59,9 @@ function PracticeCoachingSections({ coaching, loading, error, onRetry, onPractic
             </strong>
           </div>
         </div>
+        {coaching.series_compatibility_note && (
+          <p className="detail-muted-text">{coaching.series_compatibility_note}</p>
+        )}
       </section>
 
       <section className="card">
@@ -96,7 +99,11 @@ function PracticeCoachingSections({ coaching, loading, error, onRetry, onPractic
               {coaching.content_analysis.structure.map((item) => (
                 <div className={item.found ? "found" : "missing"} key={item.part}>
                   <strong>{item.part}</strong>
-                  <span>{item.found ? "구조 단서 확인" : "명확한 전환 표현 필요"}</span>
+                  <span>
+                    {item.found
+                      ? `구조 단서 확인 · 신뢰도 ${item.confidence || "보조"}`
+                      : "구조 미확인 · 명확한 전환 표현 필요"}
+                  </span>
                   {item.sentence && (
                     <small>
                       {item.start ?? "-"}초 · {item.sentence}

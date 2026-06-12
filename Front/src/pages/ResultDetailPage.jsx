@@ -32,6 +32,7 @@ const getScoreClassName = (score) => {
 };
 
 const getBarClassName = (score) => {
+  if (typeof score !== "number") return "timeline-bar unavailable";
   if (score >= 80) return "timeline-bar good";
   if (score >= 60) return "timeline-bar normal";
   return "timeline-bar bad";
@@ -52,69 +53,107 @@ function ResultDetailPage() {
   const [coaching, setCoaching] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [timelineLoading, setTimelineLoading] = useState(true);
+  const [timelineError, setTimelineError] = useState("");
   const [coachingLoading, setCoachingLoading] = useState(true);
   const [coachingError, setCoachingError] = useState("");
-  const requestController = useRef(null);
+  const requestControllers = useRef({});
 
-  const loadCoaching = async (signal) => {
+  const startRequest = (key) => {
+    requestControllers.current[key]?.abort();
+    const controller = new AbortController();
+    requestControllers.current[key] = controller;
+    return controller;
+  };
+
+  const loadCoaching = async () => {
+    const controller = startRequest("coaching");
+    const requestedResultId = resultId;
     try {
       setCoachingLoading(true);
       setCoachingError("");
-      const response = await getPracticeCoaching(resultId, signal);
-      setCoaching(response.coaching || null);
+      const response = await getPracticeCoaching(resultId, controller.signal);
+      if (requestedResultId === resultId && requestControllers.current.coaching === controller) {
+        setCoaching(response.coaching || null);
+      }
     } catch (err) {
-      if (err.name !== "AbortError") {
+      if (err.name !== "AbortError" && requestControllers.current.coaching === controller) {
         setCoaching(null);
         setCoachingError(err.message || "연습 코칭을 불러오지 못했습니다.");
       }
     } finally {
-      setCoachingLoading(false);
+      if (requestControllers.current.coaching === controller) {
+        setCoachingLoading(false);
+      }
     }
   };
 
-  const loadData = async () => {
-    requestController.current?.abort();
-    const controller = new AbortController();
-    requestController.current = controller;
+  const loadSections = async () => {
+    const controller = startRequest("sections");
+    const requestedResultId = resultId;
     try {
       setLoading(true);
       setError("");
-
-      const [sectionResponse, chartResponse] = await Promise.all([
-        getAnalyzeSections(resultId, controller.signal),
-        getTimelineChart(resultId, controller.signal),
-      ]);
-
-      setSections(sectionResponse.sections);
-      setChartData(chartResponse.chart_data || []);
-      setFileName(sectionResponse.original_filename || "파일명 없음");
-      void loadCoaching(controller.signal);
+      const response = await getAnalyzeSections(resultId, controller.signal);
+      if (requestedResultId === resultId && requestControllers.current.sections === controller) {
+        setSections(response.sections);
+        setFileName(response.original_filename || "파일명 없음");
+      }
     } catch (err) {
-      if (err.name !== "AbortError") {
-        console.error(err);
+      if (err.name !== "AbortError" && requestControllers.current.sections === controller) {
         setError(err.message || "분석 상세 결과를 불러오지 못했습니다.");
         setSections(null);
-        setChartData([]);
       }
     } finally {
-      if (requestController.current === controller) {
-        requestController.current = null;
+      if (requestControllers.current.sections === controller) {
         setLoading(false);
       }
     }
   };
 
+  const loadTimeline = async () => {
+    const controller = startRequest("timeline");
+    const requestedResultId = resultId;
+    try {
+      setTimelineLoading(true);
+      setTimelineError("");
+      const response = await getTimelineChart(resultId, controller.signal);
+      if (requestedResultId === resultId && requestControllers.current.timeline === controller) {
+        setChartData(response.chart_data || []);
+      }
+    } catch (err) {
+      if (err.name !== "AbortError" && requestControllers.current.timeline === controller) {
+        setChartData([]);
+        setTimelineError(err.message || "타임라인을 불러오지 못했습니다.");
+      }
+    } finally {
+      if (requestControllers.current.timeline === controller) {
+        setTimelineLoading(false);
+      }
+    }
+  };
+
+  const loadData = () => {
+    void loadSections();
+    void loadTimeline();
+    void loadCoaching();
+  };
+
   useEffect(() => {
+    setSections(null);
+    setChartData([]);
+    setCoaching(null);
     loadData();
-    return () => requestController.current?.abort();
+    return () =>
+      Object.values(requestControllers.current).forEach((controller) => controller.abort());
   }, [resultId]);
 
   const timelineStats = useMemo(() => {
     if (chartData.length === 0) {
       return {
-        average: 0,
-        best: 0,
-        weak: 0,
+        average: null,
+        best: null,
+        weak: null,
       };
     }
 
@@ -176,6 +215,9 @@ function ResultDetailPage() {
   const fillerWords = filler.filler_words || {};
   const totalScore = summary.total_score ?? score.total_score ?? null;
   const scoreAvailable = (key, value) => {
+    if (score.confidence_availability && key in score.confidence_availability) {
+      return score.confidence_availability[key];
+    }
     if (score.score_availability && key in score.score_availability) {
       return score.score_availability[key];
     }
@@ -212,18 +254,20 @@ function ResultDetailPage() {
 
   const scoreCards = [
     {
-      label: "자세 인식률",
+      label: "자세 분석 신뢰도 (감지율)",
       value: scoreAvailable("pose_detection_rate", score.pose_detection_rate)
         ? formatNumber(score.pose_detection_rate, "%")
         : "측정 불가",
       score: score.pose_detection_rate,
+      confidence: true,
     },
     {
-      label: "얼굴 인식률",
+      label: "얼굴 방향 분석 신뢰도 (감지율)",
       value: scoreAvailable("face_detection_rate", score.face_detection_rate)
         ? formatNumber(score.face_detection_rate, "%")
         : "측정 불가",
       score: score.face_detection_rate,
+      confidence: true,
     },
     {
       label: "어깨 균형",
@@ -300,8 +344,8 @@ function ResultDetailPage() {
 
         <div className="detail-hero-grid">
           <div
-            className="score-circle detail-score-circle"
-            style={{ "--score": clampScore(totalScore) }}
+            className={`score-circle detail-score-circle ${totalScore === null ? "unavailable" : ""}`}
+            style={totalScore === null ? undefined : { "--score": clampScore(totalScore) }}
           >
             <div className="score-circle-inner">
               <div className={`score-circle-value ${getScoreClassName(totalScore)}`}>
@@ -351,7 +395,7 @@ function ResultDetailPage() {
         coaching={coaching}
         loading={coachingLoading}
         error={coachingError}
-        onRetry={() => loadCoaching()}
+        onRetry={loadCoaching}
         onPracticeQuestion={practiceQuestion}
       />
 
@@ -359,10 +403,15 @@ function ResultDetailPage() {
         {scoreCards.map((item) => (
           <div className="card detail-score-card" key={item.label}>
             <div className="metric-label">{item.label}</div>
-            <div className={`metric-value ${getScoreClassName(item.score)}`}>{item.value}</div>
+            <div className={`metric-value ${item.confidence ? "" : getScoreClassName(item.score)}`}>
+              {item.value}
+            </div>
           </div>
         ))}
       </section>
+      <p className="detail-muted-text">
+        감지율은 촬영 환경에 따른 분석 신뢰도이며 발표 실력 점수에는 포함하지 않습니다.
+      </p>
 
       <section className="detail-section-grid">
         <article className="card detail-section-card">
@@ -377,6 +426,12 @@ function ResultDetailPage() {
             <div className="metric-item">
               <div className="metric-label">말하기 속도</div>
               <div className="metric-value">{formatNumber(speech.speech_speed_wpm, " WPM")}</div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">한국어 발화 속도</div>
+              <div className="metric-value">
+                {formatNumber(speech.speech_speed_spm, " 음절/분")}
+              </div>
             </div>
 
             <div className="metric-item">
@@ -410,6 +465,10 @@ function ResultDetailPage() {
             <div className="metric-item">
               <div className="metric-label">필러 횟수</div>
               <div className="metric-value">{formatNumber(filler.filler_count, "회")}</div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">분당 필러</div>
+              <div className="metric-value">{formatNumber(filler.filler_per_minute, "회/분")}</div>
             </div>
           </div>
 
@@ -445,6 +504,12 @@ function ResultDetailPage() {
             <div className="metric-item">
               <div className="metric-label">손동작 수준</div>
               <div className="metric-value">{gesture.gesture_level || "-"}</div>
+            </div>
+            <div className="metric-item">
+              <div className="metric-label">분당 손동작 변화</div>
+              <div className="metric-value">
+                {formatNumber(gesture.gesture_per_minute, "회/분")}
+              </div>
             </div>
           </div>
         </article>
@@ -489,25 +554,39 @@ function ResultDetailPage() {
             <div>
               <span className="metric-label">평균</span>
               <strong className={getScoreClassName(timelineStats.average)}>
-                {timelineStats.average}
+                {timelineStats.average ?? "측정 불가"}
               </strong>
             </div>
             <div>
               <span className="metric-label">최고</span>
               <strong className={getScoreClassName(timelineStats.best)}>
-                {timelineStats.best}
+                {timelineStats.best ?? "측정 불가"}
               </strong>
             </div>
             <div>
               <span className="metric-label">최저</span>
               <strong className={getScoreClassName(timelineStats.weak)}>
-                {timelineStats.weak}
+                {timelineStats.weak ?? "측정 불가"}
               </strong>
             </div>
           </div>
         </div>
 
-        {chartData.length === 0 ? (
+        {timelineLoading ? (
+          <StateMessage title="타임라인을 불러오는 중입니다." compact />
+        ) : timelineError ? (
+          <StateMessage
+            type="error"
+            title="타임라인만 불러오지 못했습니다."
+            actions={
+              <button className="button" onClick={loadTimeline}>
+                타임라인 다시 불러오기
+              </button>
+            }
+          >
+            기본 분석 결과는 정상적으로 확인할 수 있습니다. {timelineError}
+          </StateMessage>
+        ) : chartData.length === 0 ? (
           <p className="detail-muted-text">타임라인 데이터가 없습니다.</p>
         ) : (
           <div className="timeline-list detail-timeline-list">
@@ -516,10 +595,12 @@ function ResultDetailPage() {
                 <div className="timeline-time">{item.time_sec}s</div>
 
                 <div className="timeline-track detail-timeline-track">
-                  <div
-                    className={getBarClassName(item.frame_score)}
-                    style={{ width: `${clampScore(item.frame_score)}%` }}
-                  />
+                  {typeof item.frame_score === "number" && (
+                    <div
+                      className={getBarClassName(item.frame_score)}
+                      style={{ width: `${clampScore(item.frame_score)}%` }}
+                    />
+                  )}
                 </div>
 
                 <div className="timeline-score">
@@ -527,10 +608,16 @@ function ResultDetailPage() {
                 </div>
 
                 <div className="timeline-detail-metrics">
-                  <span>자세 {formatNumber(item.pose_score)}</span>
-                  <span>어깨 {formatNumber(item.shoulder_score)}</span>
-                  <span>얼굴 {formatNumber(item.face_score)}</span>
-                  <span>얼굴 방향 {formatNumber(item.gaze_score)}</span>
+                  <span>자세 감지 {item.pose_score === null ? "미감지" : "감지"}</span>
+                  <span>
+                    어깨{" "}
+                    {item.shoulder_score === null ? "측정 불가" : formatNumber(item.shoulder_score)}
+                  </span>
+                  <span>얼굴 감지 {item.face_score === null ? "미감지" : "감지"}</span>
+                  <span>
+                    얼굴 방향{" "}
+                    {item.gaze_score === null ? "측정 불가" : formatNumber(item.gaze_score)}
+                  </span>
                 </div>
               </div>
             ))}

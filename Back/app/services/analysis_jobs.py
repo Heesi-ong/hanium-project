@@ -368,8 +368,8 @@ def list_user_jobs(user_id, status=None, search="", sort="latest", limit=12, off
         params.extend([cursor_created_at, cursor_created_at, cursor_id])
     order_sql = {
         "oldest": "created_at ASC, id ASC",
-        "score_high": "total_score DESC, created_at DESC",
-        "score_low": "total_score ASC, created_at DESC",
+        "score_high": "total_score IS NULL ASC, total_score DESC, created_at DESC",
+        "score_low": "total_score IS NULL ASC, total_score ASC, created_at DESC",
     }.get(sort, "created_at DESC, id DESC")
     connection = get_connection()
     try:

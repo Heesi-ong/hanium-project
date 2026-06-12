@@ -109,12 +109,18 @@ def run_analysis_job(job):
         _check_cancelled(job_id)
         update_job_progress(job_id, "analyzing_audio", 74)
         audio_result = analyze_audio_from_video(str(file_path))
-        filler_result = analyze_filler_words(audio_result.get("text", ""))
+        filler_result = analyze_filler_words(
+            audio_result.get("text", ""),
+            audio_result.get("duration_seconds", 0),
+        )
         audio_result.update(filler_result)
 
         _check_cancelled(job_id)
         update_job_progress(job_id, "calculating_scores", 86)
-        gesture_result = analyze_gesture_from_pose_results(pose_results)
+        gesture_result = analyze_gesture_from_pose_results(
+            pose_results,
+            video_info.get("duration_seconds", 0),
+        )
         volume_result = analyze_volume_from_video(str(file_path))
         score_result = calculate_basic_score(
             video_info,
@@ -140,6 +146,7 @@ def run_analysis_job(job):
             "metrics": {
                 "pose_detection_rate": score_result.get("pose_detection_rate"),
                 "face_detection_rate": score_result.get("face_detection_rate"),
+                "analysis_confidence": score_result.get("analysis_confidence"),
                 "shoulder_balance_score": score_result.get("shoulder_balance_score"),
                 "gaze_score": score_result.get("gaze_score"),
                 "speech_speed_score": score_result.get("speech_speed_score"),
@@ -170,6 +177,7 @@ def run_analysis_job(job):
             "processing_time_seconds": processing_time,
             "analysis_metadata": {
                 "algorithm_version": ANALYSIS_ALGORITHM_VERSION,
+                "speech_speed_basis": audio_result.get("speech_speed_basis"),
                 "ollama_model": OLLAMA_MODEL,
             },
         }

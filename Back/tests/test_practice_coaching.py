@@ -27,6 +27,19 @@ class PracticeCoachingTests(unittest.TestCase):
                 self.assertTrue(practice_coaching.load_practice_context("job-1", 7)["series_id"])
                 self.assertIsNone(practice_coaching.load_practice_context("job-1", 8))
 
+    def test_same_named_new_series_receive_independent_ids(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(practice_contexts, "PRACTICE_CONTEXT_DIR", Path(temp_dir)):
+                first = practice_coaching.save_practice_context(
+                    "job-1", 7, {"purpose": "project", "series_name": "최종 발표"}
+                )
+                second = practice_coaching.save_practice_context(
+                    "job-2", 7, {"purpose": "project", "series_name": "최종 발표"}
+                )
+
+        self.assertNotEqual(first["series_id"], second["series_id"])
+        self.assertFalse(practice_contexts.same_series(first, second))
+
     def test_coaching_returns_three_actions_and_purpose_questions(self):
         result = {
             "data": {
@@ -80,6 +93,27 @@ class PracticeCoachingTests(unittest.TestCase):
         self.assertFalse(coaching["content_analysis"]["available"])
         self.assertEqual(coaching["confidence"]["audio"], "제한적")
 
+    def test_segments_without_transition_evidence_do_not_confirm_structure(self):
+        coaching = practice_coaching.build_practice_coaching(
+            {
+                "data": {
+                    "audio_result": {
+                        "text": "서비스를 만들었습니다. 사용자가 확인했습니다. 기능을 개선했습니다.",
+                        "segments": [
+                            {"start": 0, "end": 2, "text": "서비스를 만들었습니다."},
+                            {"start": 50, "end": 52, "text": "사용자가 확인했습니다."},
+                            {"start": 98, "end": 100, "text": "기능을 개선했습니다."},
+                        ],
+                    },
+                    "score_result": {},
+                    "summary_result": {},
+                }
+            },
+            {"purpose": "project", "core_message": ""},
+        )
+
+        self.assertTrue(all(not item["found"] for item in coaching["content_analysis"]["structure"]))
+
     def test_growth_compares_only_same_purpose_and_series(self):
         contexts = {
             "one": {"purpose": "project", "series_id": "series-a"},
@@ -96,6 +130,25 @@ class PracticeCoachingTests(unittest.TestCase):
 
         self.assertIsNone(result[1]["score_change"])
         self.assertEqual(result[2]["score_change"], 10)
+
+    def test_legacy_name_comparison_is_marked_as_limited_compatibility(self):
+        contexts = {
+            "one": {"purpose": "project", "series_name": "기존 발표"},
+            "two": {"purpose": "project", "series_name": "기존 발표"},
+        }
+        growth = [
+            {"result_id": "one", "total_score": 60},
+            {"result_id": "two", "total_score": 70},
+        ]
+        with patch.object(
+            practice_coaching,
+            "load_practice_context",
+            side_effect=lambda result_id, _user: contexts[result_id],
+        ):
+            result = practice_coaching.enrich_growth(growth, 7)
+
+        self.assertEqual(result[1]["score_change"], 10)
+        self.assertIn("이름 기반", result[1]["series_compatibility_note"])
 
     def test_previous_same_series_is_found_when_growth_input_is_newest_first(self):
         now = datetime.now()

@@ -7,6 +7,7 @@ def generate_feedback(score_result: dict):
     shoulder_score = score_result.get("shoulder_balance_score", 0)
     gaze_score = score_result.get("gaze_score", 0)
     speech_speed = score_result.get("speech_speed_wpm", 0)
+    speech_speed_spm = score_result.get("speech_speed_spm")
     speech_speed_score = score_result.get("speech_speed_score", 0)
     silence_count = score_result.get("silence_count", 0)
     total_silence_time = score_result.get("total_silence_time", 0)
@@ -20,6 +21,7 @@ def generate_feedback(score_result: dict):
     mean_volume_db = score_result.get("mean_volume_db")
     volume_score = score_result.get("volume_score", 0)
     volume_level = score_result.get("volume_level", "UNKNOWN")
+    visual_confidence = score_result.get("analysis_confidence", {}).get("visual", {})
 
     if total_score is None:
         feedback.append("측정 가능한 데이터가 부족해 종합 점수를 계산하지 않았습니다.")
@@ -32,13 +34,17 @@ def generate_feedback(score_result: dict):
 
     if pose_rate is None:
         feedback.append("발표자 자세가 감지되지 않아 자세 항목을 종합 점수에서 제외했습니다.")
+    elif not visual_confidence.get("pose_evaluation_available", shoulder_score is not None):
+        feedback.append("자세 감지 데이터가 기준보다 적어 자세 평가는 측정 불가로 처리했습니다.")
     elif pose_rate < 70:
-        feedback.append("영상에서 발표자의 전신 또는 상반신이 안정적으로 인식되지 않았습니다.")
+        feedback.append("자세 감지율이 낮아 분석 신뢰도가 제한적입니다. 감지율은 발표 실력 점수에 포함하지 않습니다.")
 
     if face_rate is None:
         feedback.append("얼굴이 감지되지 않아 얼굴 방향 항목을 종합 점수에서 제외했습니다.")
+    elif not visual_confidence.get("face_evaluation_available", gaze_score is not None):
+        feedback.append("얼굴 감지 데이터가 기준보다 적어 얼굴 방향 평가는 측정 불가로 처리했습니다.")
     elif face_rate < 70:
-        feedback.append("얼굴 인식률이 낮아 얼굴 방향 분석 정확도가 떨어질 수 있습니다.")
+        feedback.append("얼굴 감지율이 낮아 얼굴 방향 분석 신뢰도가 제한적입니다. 감지율은 발표 실력 점수에 포함하지 않습니다.")
 
     if shoulder_score is not None and shoulder_score < 70:
         feedback.append("어깨 균형이 일정하지 않아 자세가 흔들려 보일 수 있습니다.")
@@ -49,7 +55,14 @@ def generate_feedback(score_result: dict):
     if speech_speed_score is None:
         feedback.append("음성이 인식되지 않아 말하기 속도, 침묵, 필러 사용을 평가에서 제외했습니다.")
     elif speech_speed_score < 70:
-        if speech_speed == 0:
+        if isinstance(speech_speed_spm, (int, float)) and speech_speed_spm > 0:
+            if speech_speed_spm < 250:
+                feedback.append("한국어 음절 기준 말하기 속도가 다소 느려 발표 흐름이 늘어질 수 있습니다.")
+            elif speech_speed_spm > 400:
+                feedback.append("한국어 음절 기준 말하기 속도가 빨라 청중이 내용을 따라가기 어려울 수 있습니다.")
+            else:
+                feedback.append("한국어 음절 기준 말하기 속도에 개선이 필요합니다.")
+        elif speech_speed == 0:
             feedback.append("음성이 인식되지 않아 말하기 속도를 평가할 수 없습니다.")
         elif speech_speed < 100:
             feedback.append("말하기 속도가 다소 느려 발표 흐름이 늘어질 수 있습니다.")

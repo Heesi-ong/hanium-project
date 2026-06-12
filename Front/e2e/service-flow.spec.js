@@ -22,7 +22,7 @@ test.describe("실제 서비스 흐름", () => {
     await expect(page.getByRole("heading", { name: "발표 영상 분석" })).toBeVisible();
     await page.getByRole("radio", { name: /업무 보고/ }).check();
     await page.getByLabel("발표 대상").fill("프로젝트 심사위원");
-    await page.getByLabel("반복 연습 이름").fill("한이음 최종 발표");
+    await page.getByLabel("새 연습 시리즈 이름").fill("한이음 최종 발표");
     await page
       .getByLabel("반드시 전달할 핵심 메시지")
       .fill("발표 코칭 결과를 다음 연습 행동으로 연결합니다.");
@@ -48,7 +48,7 @@ test.describe("실제 서비스 흐름", () => {
     await page.goto("/upload");
     await page.getByRole("radio", { name: /업무 보고/ }).check();
     await page.getByLabel("발표 대상").fill("프로젝트 심사위원");
-    await page.getByLabel("반복 연습 이름").fill("한이음 최종 발표");
+    await page.getByLabel("기존 연습 시리즈").selectOption({ label: "한이음 최종 발표" });
     await page
       .getByLabel("반드시 전달할 핵심 메시지")
       .fill("발표 코칭 결과를 다음 연습 행동으로 연결합니다.");

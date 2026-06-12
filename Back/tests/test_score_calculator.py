@@ -80,6 +80,42 @@ class ScoreCalculatorTest(unittest.TestCase):
         self.assertEqual(result["total_score"], 100)
         self.assertFalse(result["score_availability"]["gaze_score"])
 
+    def test_detection_rates_are_confidence_not_performance_scores(self):
+        result = calculate_basic_score(
+            video_info={"duration_seconds": 10},
+            frame_result={"saved_count": 10},
+            pose_results=[{"pose_detected": False}] * 7
+            + [{"pose_detected": True, "landmarks": [{"id": 11, "y": 0.4}, {"id": 12, "y": 0.4}]}] * 3,
+            face_results=[{"face_detected": False}] * 10,
+            audio_result={"text": "", "segments": []},
+            gesture_result={"gesture_score": 100},
+            volume_result={},
+        )
+
+        self.assertEqual(result["pose_detection_rate"], 30)
+        self.assertEqual(result["shoulder_balance_score"], 100)
+        self.assertEqual(result["total_score"], 100)
+        self.assertNotIn("pose_detection_rate", result["score_availability"])
+        self.assertTrue(result["confidence_availability"]["pose_detection_rate"])
+
+    def test_too_few_visual_frames_are_unavailable(self):
+        result = calculate_basic_score(
+            video_info={"duration_seconds": 10},
+            frame_result={"saved_count": 10},
+            pose_results=[
+                {"pose_detected": True, "landmarks": [{"id": 11, "y": 0.4}, {"id": 12, "y": 0.4}]}
+            ] + [{"pose_detected": False}] * 9,
+            face_results=[{"face_detected": False}] * 10,
+            audio_result={"text": "", "segments": []},
+            gesture_result={"gesture_score": 100},
+            volume_result={},
+        )
+
+        self.assertEqual(result["pose_detection_rate"], 10)
+        self.assertIsNone(result["shoulder_balance_score"])
+        self.assertIsNone(result["gesture_score"])
+        self.assertFalse(result["analysis_confidence"]["visual"]["pose_evaluation_available"])
+
 
 if __name__ == "__main__":
     unittest.main()

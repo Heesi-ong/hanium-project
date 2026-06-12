@@ -54,6 +54,7 @@ function ResultListPage() {
   };
 
   const getScoreClassName = (score) => {
+    if (typeof score !== "number") return "";
     if (score >= 80) return "score-good";
     if (score >= 60) return "score-normal";
     return "score-bad";
@@ -98,7 +99,7 @@ function ResultListPage() {
 
   const completedCount = summary.completed || 0;
   const failedCount = (summary.failed || 0) + (summary.cancelled || 0);
-  const averageScore = summary.average_score || 0;
+  const averageScore = summary.average_score ?? null;
 
   const searchedResults = results.filter((item) => {
     const keyword = searchKeyword.trim().toLowerCase();
@@ -133,11 +134,15 @@ function ResultListPage() {
     }
 
     if (sortType === "SCORE_HIGH") {
-      return (b.total_score ?? 0) - (a.total_score ?? 0);
+      if (a.total_score === null) return 1;
+      if (b.total_score === null) return -1;
+      return b.total_score - a.total_score;
     }
 
     if (sortType === "SCORE_LOW") {
-      return (a.total_score ?? 0) - (b.total_score ?? 0);
+      if (a.total_score === null) return 1;
+      if (b.total_score === null) return -1;
+      return a.total_score - b.total_score;
     }
 
     return 0;
@@ -291,7 +296,7 @@ function ResultListPage() {
             <div className="metric-item">
               <div className="metric-label">평균 점수</div>
               <div className={`metric-value ${getScoreClassName(averageScore)}`}>
-                {averageScore}점
+                {averageScore === null ? "측정 불가" : `${averageScore}점`}
               </div>
             </div>
           </div>
@@ -412,7 +417,7 @@ function ResultListPage() {
 
         <div className="result-list-grid">
           {sortedResults.map((item) => {
-            const score = item.total_score ?? 0;
+            const score = typeof item.total_score === "number" ? item.total_score : null;
 
             return (
               <div
@@ -439,10 +444,13 @@ function ResultListPage() {
                   </div>
 
                   {item.status === "COMPLETED" && (
-                    <div className="mini-score-circle" style={{ "--score": score }}>
+                    <div
+                      className={`mini-score-circle ${score === null ? "unavailable" : ""}`}
+                      style={score === null ? undefined : { "--score": score }}
+                    >
                       <div className="mini-score-circle-inner">
                         <div className={`mini-score-value ${getScoreClassName(score)}`}>
-                          {score}
+                          {score === null ? "N/A" : score}
                         </div>
 
                         <div className="mini-score-label">SCORE</div>
@@ -455,7 +463,7 @@ function ResultListPage() {
                   <div className="metric-item">
                     <div className="metric-label">총점</div>
                     <div className={`metric-value ${getScoreClassName(score)}`}>
-                      {item.total_score ?? "-"}
+                      {score === null ? "측정 불가" : score}
                     </div>
                   </div>
 

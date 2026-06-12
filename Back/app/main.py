@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import ALLOWED_ORIGINS
+from .config import ALLOWED_ORIGINS, DISABLE_BACKGROUND_SERVICES
 from .middleware import add_request_id
 from .middleware.upload_limit import reject_oversized_upload
 from .routers import admin, analyze, auth, chat, practice
@@ -42,6 +42,9 @@ async def reject_cross_origin_cookie_requests(request: Request, call_next):
 
 @asynccontextmanager
 async def lifespan(_app):
+    if DISABLE_BACKGROUND_SERVICES:
+        yield
+        return
     try:
         recovery = recover_interrupted_jobs()
         if recovery["requeued"] or recovery["failed"]:

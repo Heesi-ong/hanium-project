@@ -72,6 +72,10 @@
   background: conic-gradient(#2563eb calc(var(--score) * 1%), #e5e7eb 0);
 }
 
+.score-circle.unavailable {
+  background: #e5e7eb;
+}
+
 .score-circle-inner {
   border-radius: 50%;
   background-color: #ffffff;

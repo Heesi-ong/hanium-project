@@ -5,7 +5,7 @@ import "./GrowthPage.css";
 
 const metricLabels = {
   pose_detection_rate: "자세",
-  gaze_score: "시선",
+  gaze_score: "얼굴 방향",
   speech_speed_score: "말하기",
   gesture_score: "손동작",
 };
@@ -24,7 +24,9 @@ export default function GrowthPage() {
       <header className="dashboard-header">
         <div>
           <h1 className="page-title">성장 추이</h1>
-          <p className="dashboard-subtitle">완료된 발표 분석을 시간 순서대로 비교합니다.</p>
+          <p className="dashboard-subtitle">
+            동일한 발표 목적과 연습 시리즈의 이전 기록만 비교합니다.
+          </p>
         </div>
       </header>
       {loading && <StateMessage title="성장 데이터를 불러오는 중입니다." />}
@@ -59,14 +61,18 @@ export default function GrowthPage() {
             </div>
             <div className="growth-metrics">
               {Object.entries(metricLabels).map(([key, label]) => {
-                const value = item.metrics?.[key] ?? 0;
+                const value = item.metrics?.[key];
                 return (
                   <div key={key}>
                     <span>
-                      {label} {value}
+                      {label} {value ?? "측정 불가"}
                     </span>
                     <div className="growth-track">
-                      <div style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+                      <div
+                        style={{
+                          width: `${typeof value === "number" ? Math.max(0, Math.min(100, value)) : 0}%`,
+                        }}
+                      />
                     </div>
                   </div>
                 );

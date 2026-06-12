@@ -62,21 +62,22 @@ def calculate_basic_score(
                 else:
                     gaze_scores.append(40)
 
-    pose_detection_rate = 0
-    face_detection_rate = 0
+    pose_detection_rate = None
+    face_detection_rate = None
 
-    if saved_count > 0:
+    if saved_count > 0 and pose_detected_count > 0:
         pose_detection_rate = round((pose_detected_count / saved_count) * 100, 2)
+    if saved_count > 0 and face_detected_count > 0:
         face_detection_rate = round((face_detected_count / saved_count) * 100, 2)
 
-    shoulder_balance_score = 0
+    shoulder_balance_score = None
     if shoulder_balance_scores:
         shoulder_balance_score = round(
             sum(shoulder_balance_scores) / len(shoulder_balance_scores),
             2
         )
 
-    gaze_score = 0
+    gaze_score = None
     if gaze_scores:
         gaze_score = round(
             sum(gaze_scores) / len(gaze_scores),
@@ -120,12 +121,12 @@ def calculate_basic_score(
     )
 
     gesture_movement_count = gesture_result.get("gesture_movement_count", 0)
-    gesture_score = gesture_result.get("gesture_score", 0)
+    gesture_score = gesture_result.get("gesture_score") if pose_detected_count > 0 else None
     gesture_level = gesture_result.get("gesture_level", "UNKNOWN")
 
     mean_volume_db = volume_result.get("mean_volume_db")
     max_volume_db = volume_result.get("max_volume_db")
-    volume_score = volume_result.get("volume_score", 0)
+    volume_score = volume_result.get("volume_score") if mean_volume_db is not None else None
     volume_level = volume_result.get("volume_level", "UNKNOWN")
 
     weighted_scores = [
@@ -148,7 +149,19 @@ def calculate_basic_score(
     total_score = round(
         sum(score * weight for score, weight in available_scores) / total_weight,
         2
-    ) if total_weight else 0
+    ) if total_weight else None
+
+    availability = {
+        "pose_detection_rate": pose_detection_rate is not None,
+        "shoulder_balance_score": shoulder_balance_score is not None,
+        "face_detection_rate": face_detection_rate is not None,
+        "gaze_score": gaze_score is not None,
+        "speech_speed_score": speech_speed_score is not None,
+        "silence_score": silence_score is not None,
+        "filler_score": filler_score is not None,
+        "gesture_score": gesture_score is not None,
+        "volume_score": volume_score is not None,
+    }
 
     return {
         "total_score": total_score,
@@ -175,5 +188,8 @@ def calculate_basic_score(
         "mean_volume_db": mean_volume_db,
         "max_volume_db": max_volume_db,
         "volume_score": volume_score,
-        "volume_level": volume_level
+        "volume_level": volume_level,
+        "score_availability": availability,
+        "available_score_count": sum(availability.values()),
+        "total_score_available": total_score is not None,
     }

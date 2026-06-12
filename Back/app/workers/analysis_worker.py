@@ -21,6 +21,7 @@ from ..services.analysis_jobs import (
     clear_source_file,
     delete_completed_job,
     is_cancel_requested,
+    list_all_job_ids,
     list_expired_result_ids,
     list_expired_source_files,
     mark_job_cancelled,
@@ -37,6 +38,7 @@ from ..services.filler_analyzer import analyze_filler_words
 from ..services.frame_extractor import extract_frames
 from ..services.gesture_analyzer import analyze_gesture_from_pose_results
 from ..services.pose_analyzer import analyze_pose_from_frame, create_pose_landmarker
+from ..services.practice_coaching import delete_practice_context, list_orphan_practice_contexts
 from ..services.result_saver import delete_analysis_result, save_analysis_result
 from ..services.score_calculator import calculate_basic_score
 from ..services.timeline_analyzer import analyze_timeline_scores
@@ -216,9 +218,19 @@ def cleanup_expired_results():
     deleted = 0
     for job_id in list_expired_result_ids():
         delete_analysis_result(job_id)
-        if ensure_file_removed(RESULT_DIR / f"{job_id}.json") and delete_completed_job(job_id):
+        if (
+            ensure_file_removed(RESULT_DIR / f"{job_id}.json")
+            and delete_practice_context(job_id)
+            and delete_completed_job(job_id)
+        ):
             deleted += 1
     return deleted
+
+
+def cleanup_orphan_practice_contexts():
+    orphan_ids = list_orphan_practice_contexts(list_all_job_ids())
+    deleted = sum(delete_practice_context(result_id) for result_id in orphan_ids)
+    return {"orphan_count": len(orphan_ids), "deleted": deleted}
 
 
 def cleanup_orphan_frames():
@@ -289,6 +301,7 @@ class AnalysisWorkerManager:
                 cleanup_expired_sources()
                 cleanup_expired_results()
                 cleanup_orphan_frames()
+                cleanup_orphan_practice_contexts()
                 delete_expired_sessions()
                 self._last_maintenance_at = time.time()
                 self._last_maintenance_error = None

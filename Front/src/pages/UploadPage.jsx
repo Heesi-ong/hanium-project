@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   cancelAnalyzeJob,
   getAnalyzeJob,
+  getPracticePurposes,
   savePracticeContext,
   uploadAnalyzeVideo,
 } from "../api/analyzeApi";
@@ -21,9 +22,9 @@ const analysisItems = [
     description: "어깨 기울기, 몸 중심, 발표 자세 안정성을 분석합니다.",
   },
   {
-    label: "시선",
-    value: "Gaze",
-    description: "정면 응시 비율과 시선 분산 정도를 확인합니다.",
+    label: "얼굴 방향",
+    value: "Head direction",
+    description: "얼굴 특징점으로 정면 방향 안정성을 보조 분석합니다.",
   },
   {
     label: "말하기",
@@ -43,12 +44,13 @@ const uploadGuides = [
   "너무 어둡거나 흔들림이 심한 영상은 분석 정확도가 낮아질 수 있습니다.",
   "업로드 후 다른 화면으로 이동해도 서버에서 분석이 계속 진행됩니다.",
 ];
-const purposes = [
-  ["class", "대학 수업 발표", "개념을 정확하고 이해하기 쉽게 설명"],
-  ["project", "프로젝트 발표", "문제·해결 과정·결과와 기여도를 전달"],
-  ["interview", "면접·자기소개", "강점과 경험을 짧고 구체적으로 전달"],
-  ["business", "업무 보고", "현황·위험·의사결정과 다음 행동을 전달"],
-  ["sales", "세일즈·제안 발표", "고객 문제와 제안 가치를 설득력 있게 전달"],
+const fallbackPurposes = [
+  {
+    key: "project",
+    label: "프로젝트 발표",
+    focus: "문제·해결 과정·결과와 기여도를 전달",
+    recommended_minutes: 12,
+  },
 ];
 
 const formatFileSize = (size) => {
@@ -70,13 +72,26 @@ function UploadPage() {
   const [error, setError] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [activeJob, setActiveJob] = useState(null);
+  const [purposes, setPurposes] = useState(fallbackPurposes);
   const [practiceContext, setPracticeContext] = useState({
     purpose: "project",
     audience: "",
-    target_minutes: 10,
+    target_minutes: 12,
     core_message: "",
     series_name: "",
   });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getPracticePurposes(controller.signal)
+      .then((response) =>
+        setPurposes(response.purposes?.length ? response.purposes : fallbackPurposes),
+      )
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") setPurposes(fallbackPurposes);
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!activeJobId || processStep !== "analyzing") {
@@ -273,8 +288,8 @@ function UploadPage() {
         </div>
 
         <p className="upload-description upload-description-large">
-          발표 영상을 업로드하면 자세, 시선, 말하기 속도, 침묵 구간, 필러 단어, 손동작, 음량을 종합
-          분석합니다.
+          발표 영상을 업로드하면 자세, 얼굴 방향, 말하기 속도, 침묵 구간, 필러 단어, 손동작, 음량을
+          종합 분석합니다.
         </p>
       </div>
 
@@ -284,23 +299,27 @@ function UploadPage() {
           목적과 청중을 알려주면 분석 결과를 실제 다음 연습 과제로 연결합니다.
         </p>
         <div className="purpose-grid" role="radiogroup" aria-label="발표 목적">
-          {purposes.map(([key, label, description]) => (
+          {purposes.map((purpose) => (
             <label
-              className={`purpose-card ${practiceContext.purpose === key ? "selected" : ""}`}
-              key={key}
+              className={`purpose-card ${practiceContext.purpose === purpose.key ? "selected" : ""}`}
+              key={purpose.key}
             >
               <input
                 type="radio"
                 name="purpose"
-                value={key}
-                checked={practiceContext.purpose === key}
+                value={purpose.key}
+                checked={practiceContext.purpose === purpose.key}
                 disabled={loading}
                 onChange={(event) =>
-                  setPracticeContext((current) => ({ ...current, purpose: event.target.value }))
+                  setPracticeContext((current) => ({
+                    ...current,
+                    purpose: event.target.value,
+                    target_minutes: purpose.recommended_minutes,
+                  }))
                 }
               />
-              <strong>{label}</strong>
-              <span>{description}</span>
+              <strong>{purpose.label}</strong>
+              <span>{purpose.focus}</span>
             </label>
           ))}
         </div>

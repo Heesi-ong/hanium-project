@@ -48,6 +48,7 @@ export default function ChatPage() {
   const [messageNextCursor, setMessageNextCursor] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [conversationDialog, setConversationDialog] = useState(null);
+  const [practiceQuestion, setPracticeQuestion] = useState("");
 
   const refreshList = async (preferredId, offset = conversationOffset) => {
     conversationController.current?.abort();
@@ -134,10 +135,10 @@ export default function ChatPage() {
     const analysisContext = location.state?.analysisContext;
     if (!analysisContext || contextHandled.current) return;
     contextHandled.current = true;
-    if (location.state?.initialMessage) setContent(location.state.initialMessage);
+    setPracticeQuestion(location.state?.practiceQuestion || "");
     createConversation({
       title: location.state?.analysisTitle || "발표 분석 코칭",
-      system_prompt: `너는 발표 코치다. 아래 분석 결과를 기준으로 구체적이고 실행 가능한 조언을 제공해라.\n\n${analysisContext}`,
+      system_prompt: `너는 발표 코치이자 청중이다. 아래 분석 결과와 예상 질문을 기준으로 사용자가 직접 작성한 답변을 평가해라. 명확성, 근거, 간결성, 설득력을 각각 평가하고, 개선된 답변 예시와 후속 질문 한 개를 제공해라. 질문 자체를 사용자 답변으로 간주하지 마라.\n\n${analysisContext}`,
     })
       .then(async (result) => {
         setConversationOffset(0);
@@ -361,6 +362,11 @@ export default function ChatPage() {
         </aside>
 
         <section className="card chat-panel">
+          {practiceQuestion && (
+            <StateMessage title="AI 청중의 예상 질문" compact>
+              {practiceQuestion}
+            </StateMessage>
+          )}
           <div className="panel-heading">
             <div>
               <h1>로컬 AI 채팅</h1>

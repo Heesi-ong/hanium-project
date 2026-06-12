@@ -419,10 +419,10 @@ def list_user_growth(user_id, limit=20):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id AS result_id, original_filename, total_score, metrics, completed_at
+                SELECT id AS result_id, original_filename, total_score, metrics, created_at, completed_at
                 FROM analysis_jobs
                 WHERE user_id = %s AND status = 'COMPLETED'
-                ORDER BY completed_at DESC
+                ORDER BY completed_at DESC, created_at DESC, id DESC
                 LIMIT %s
                 """,
                 (user_id, limit),
@@ -582,3 +582,13 @@ def delete_completed_job(job_id):
                 (job_id,),
             )
             return cursor.rowcount == 1
+
+
+def list_all_job_ids():
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM analysis_jobs")
+            return {row["id"] for row in cursor.fetchall()}
+    finally:
+        connection.close()

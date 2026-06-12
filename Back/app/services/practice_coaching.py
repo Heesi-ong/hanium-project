@@ -1,12 +1,24 @@
-import json
-import os
 import re
-import tempfile
+from decimal import Decimal
 
-from ..config import BACK_DIR
-from .file_cleaner import ensure_file_removed, safe_remove_file
+from .practice_contexts import (
+    delete_practice_context,
+    find_previous_same_series,
+    list_orphan_practice_contexts,
+    load_practice_context,
+    order_growth,
+    save_practice_context,
+)
 
-PRACTICE_CONTEXT_DIR = BACK_DIR / "practice_contexts"
+__all__ = [
+    "build_practice_coaching",
+    "delete_practice_context",
+    "enrich_growth",
+    "find_previous_same_series",
+    "list_orphan_practice_contexts",
+    "load_practice_context",
+    "save_practice_context",
+]
 
 PURPOSES = {
     "class": {
@@ -42,42 +54,10 @@ PURPOSES = {
 }
 
 
-def _path(result_id):
-    return PRACTICE_CONTEXT_DIR / f"{result_id}.json"
-
-
-def save_practice_context(result_id, user_id, context):
-    PRACTICE_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
-    payload = {"result_id": result_id, "user_id": user_id, **context}
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=PRACTICE_CONTEXT_DIR, delete=False) as file:
-            temp_path = file.name
-            json.dump(payload, file, ensure_ascii=False, indent=2)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temp_path, _path(result_id))
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            safe_remove_file(temp_path)
-    return payload
-
-
-def load_practice_context(result_id, user_id):
-    try:
-        with open(_path(result_id), "r", encoding="utf-8") as file:
-            context = json.load(file)
-        return context if context.get("user_id") == user_id else None
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def delete_practice_context(result_id):
-    return ensure_file_removed(_path(result_id))
-
-
 def _score(value):
-    return value if isinstance(value, (int, float)) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        return None
+    return float(value)
 
 
 def _improvement_candidates(data):
@@ -126,7 +106,17 @@ def _improvement_candidates(data):
 
 
 def _build_content_analysis(data, core_message):
-    transcript = str(data.get("audio_result", {}).get("text") or "").strip()
+    audio_result = data.get("audio_result", {})
+    transcript = str(audio_result.get("text") or "").strip()
+    segments = [
+        {
+            "start": float(segment.get("start", 0)),
+            "end": float(segment.get("end", 0)),
+            "text": str(segment.get("text") or "").strip(),
+        }
+        for segment in audio_result.get("segments", [])
+        if str(segment.get("text") or "").strip()
+    ]
     if not transcript:
         return {
             "available": False,
@@ -134,27 +124,60 @@ def _build_content_analysis(data, core_message):
             "structure": [],
             "evidence": [],
         }
-    sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?。])\s+|\n+", transcript) if sentence.strip()]
-    lowered = transcript.lower()
-    structure = [
-        {"part": "도입", "found": any(word in lowered for word in ("오늘", "주제", "발표", "문제"))},
-        {"part": "본론", "found": any(word in lowered for word in ("첫째", "둘째", "이유", "결과", "방법"))},
-        {"part": "결론", "found": any(word in lowered for word in ("결론", "정리", "따라서", "마지막"))},
-    ]
-    longest = max(sentences, key=len) if sentences else transcript[:240]
+    sentences = segments or [{"start": None, "end": None, "text": transcript}]
+    duration = max((item["end"] for item in segments), default=0)
+    thirds = (
+        ("도입", 0, duration * 0.25, ("오늘", "주제", "발표", "문제", "목적")),
+        ("본론", duration * 0.20, duration * 0.80, ("첫째", "둘째", "이유", "결과", "방법", "근거")),
+        ("결론", duration * 0.75, duration + 1, ("결론", "정리", "따라서", "마지막", "제안")),
+    )
+    structure = []
+    for part, start, end, keywords in thirds:
+        candidates = [item for item in sentences if item["start"] is None or start <= item["start"] <= end]
+        keyword_evidence = next(
+            (item for item in candidates if any(keyword in item["text"].lower() for keyword in keywords)),
+            None,
+        )
+        evidence = keyword_evidence or (candidates[0] if segments and candidates else None)
+        structure.append(
+            {
+                "part": part,
+                "found": bool(evidence),
+                "start": evidence.get("start") if evidence else None,
+                "end": evidence.get("end") if evidence else None,
+                "sentence": evidence.get("text") if evidence else None,
+            }
+        )
+    longest_item = max(sentences, key=lambda item: len(item["text"]))
+    longest = longest_item["text"]
     shortened = longest[:100].rstrip(" ,") + ("..." if len(longest) > 100 else "")
     core_words = [word for word in re.findall(r"[가-힣A-Za-z0-9]+", core_message) if len(word) >= 2]
     message_mentioned = bool(core_words) and any(word in transcript for word in core_words[:5])
+    words = [word for word in re.findall(r"[가-힣A-Za-z0-9]+", transcript.lower()) if len(word) >= 2]
+    repeated = sorted(
+        ((word, words.count(word)) for word in set(words) if words.count(word) >= 3),
+        key=lambda item: item[1],
+        reverse=True,
+    )[:5]
     return {
         "available": True,
-        "note": "음성 인식 텍스트의 연결 표현과 문장 길이를 기준으로 한 보조 분석입니다.",
+        "method": "heuristic",
+        "confidence": "보조 분석",
+        "note": "Whisper 발화 시점과 연결 표현을 사용하는 휴리스틱 보조 분석입니다. 의미 판단이 필요한 부분은 직접 확인하세요.",
         "structure": structure,
         "core_message_mentioned": message_mentioned if core_words else None,
+        "repeated_expressions": [{"expression": word, "count": count} for word, count in repeated],
+        "flow": {
+            "has_order_markers": any(word in transcript for word in ("첫째", "둘째", "다음", "따라서", "정리")),
+            "note": "순서·인과·정리 연결 표현의 존재 여부를 확인했습니다.",
+        },
         "evidence": [
             {
-                "issue": "가장 긴 문장",
-                "sentence": longest[:240],
-                "rewrite_example": f"핵심 주장부터 말한 뒤 근거를 나누어 설명하세요. 예: {shortened}",
+                "issue": "가장 긴 설명 구간",
+                "start": longest_item.get("start"),
+                "end": longest_item.get("end"),
+                "sentence": longest[:300],
+                "rewrite_example": f"핵심 주장과 근거를 두 문장으로 분리하세요. 예: '{shortened}' 다음에 근거를 한 문장으로 덧붙이세요.",
             }
         ],
     }
@@ -185,16 +208,17 @@ def build_practice_coaching(result, context, previous=None):
         f"핵심 메시지 '{core_message}'를 뒷받침하는 가장 강한 근거는 무엇인가요?",
     ]
     score = data.get("score_result", {})
+    visual_rates = [value for value in (score.get("pose_detection_rate"), score.get("face_detection_rate")) if isinstance(value, (int, float))]
     confidence = {
-        "visual": "높음" if min(score.get("pose_detection_rate", 0), score.get("face_detection_rate", 0)) >= 70 else "제한적",
+        "visual": "높음" if visual_rates and min(visual_rates) >= 70 else "제한적",
         "audio": "높음" if score.get("audio_analysis_available") else "제한적",
         "note": "감지 데이터가 부족한 항목은 낮은 점수가 아닌 확인 필요 항목으로 안내합니다.",
     }
     comparison = None
     if previous:
-        current_score = data.get("summary_result", {}).get("total_score")
-        previous_score = previous.get("total_score")
-        if isinstance(current_score, (int, float)) and isinstance(previous_score, (int, float)):
+        current_score = _score(data.get("summary_result", {}).get("total_score"))
+        previous_score = _score(previous.get("total_score"))
+        if current_score is not None and previous_score is not None:
             comparison = {"previous_score": previous_score, "score_change": round(current_score - previous_score, 2)}
 
     return {
@@ -214,12 +238,14 @@ def build_practice_coaching(result, context, previous=None):
 
 def enrich_growth(growth, user_id):
     enriched = []
-    previous = None
-    for item in growth:
+    previous_by_series = {}
+    for item in order_growth(growth):
         context = load_practice_context(item["result_id"], user_id) or {}
-        current_score = item.get("total_score")
+        current_score = _score(item.get("total_score"))
+        series_key = (context.get("purpose"), context.get("series_id") or context.get("series_name", "").strip().casefold())
+        previous = previous_by_series.get(series_key) if series_key[1] else None
         change = None
-        if previous is not None and isinstance(current_score, (int, float)) and isinstance(previous, (int, float)):
+        if previous is not None and current_score is not None:
             change = round(current_score - previous, 2)
         enriched.append(
             {
@@ -229,6 +255,6 @@ def enrich_growth(growth, user_id):
                 "score_change": change,
             }
         )
-        if isinstance(current_score, (int, float)):
-            previous = current_score
+        if current_score is not None and series_key[1]:
+            previous_by_series[series_key] = current_score
     return enriched

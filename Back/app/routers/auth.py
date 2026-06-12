@@ -22,7 +22,7 @@ from ..services.auth_service import (
 )
 from ..services.database import get_connection, transaction
 from ..services.file_cleaner import ensure_file_removed, safe_remove_directory
-from ..services.practice_coaching import delete_practice_context
+from ..services.practice_coaching import build_practice_coaching, delete_practice_context, load_practice_context
 from ..services.rate_limit import enforce_rate_limit
 from ..services.result_saver import load_analysis_result
 from ..services.storage_usage import get_user_storage_usage
@@ -177,12 +177,27 @@ def export_user_data(user=Depends(get_current_user)):
         connection.close()
 
     detailed_results = [result for job in jobs if (result := load_analysis_result(job["id"])) is not None]
+    practice_contexts = [
+        context for job in jobs if (context := load_practice_context(job["id"], user["id"])) is not None
+    ]
+    practice_coaching = []
+    for result in detailed_results:
+        context = load_practice_context(result["result_id"], user["id"])
+        if context:
+            practice_coaching.append(
+                {
+                    "result_id": result["result_id"],
+                    "coaching": build_practice_coaching(result, context),
+                }
+            )
     return {
         "profile": profile,
         "conversations": conversations,
         "messages": messages,
         "analysis_jobs": jobs,
         "analysis_results": detailed_results,
+        "practice_contexts": practice_contexts,
+        "practice_coaching": practice_coaching,
     }
 
 

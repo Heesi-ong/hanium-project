@@ -20,19 +20,44 @@ test.describe("실제 서비스 흐름", () => {
     await page.getByRole("button", { name: "회원가입" }).click();
 
     await expect(page.getByRole("heading", { name: "발표 영상 분석" })).toBeVisible();
+    await page.getByRole("radio", { name: /업무 보고/ }).check();
+    await page.getByLabel("발표 대상").fill("프로젝트 심사위원");
+    await page.getByLabel("반복 연습 이름").fill("한이음 최종 발표");
+    await page
+      .getByLabel("반드시 전달할 핵심 메시지")
+      .fill("발표 코칭 결과를 다음 연습 행동으로 연결합니다.");
     await page.locator('input[type="file"]').setInputFiles(videoPath);
     await page.getByRole("button", { name: "분석 시작" }).click();
 
     await expect(page).toHaveURL(/\/result\/.+/, { timeout: 180_000 });
     await expect(page.getByRole("heading", { name: "분석 상세 결과" })).toBeVisible();
-    await page.getByRole("button", { name: "이 결과로 AI 코치 상담" }).click();
+    await expect(page.getByRole("heading", { name: "업무 보고" })).toBeVisible();
+    await expect(page.getByText("측정 불가").first()).toBeVisible();
+    await page.locator(".expected-question").first().click();
 
     await expect(page.getByRole("heading", { name: "로컬 AI 채팅" })).toBeVisible();
-    await page
-      .getByLabel("AI 코치에게 보낼 메시지")
-      .fill("이 발표에서 가장 먼저 연습할 점을 한 문장으로 알려줘.");
+    await expect(page.getByText("AI 청중의 예상 질문")).toBeVisible();
+    const answerInput = page.getByLabel("AI 코치에게 보낼 메시지");
+    await expect(answerInput).toHaveValue("");
+    await answerInput.fill(
+      "현재 가장 큰 위험은 분석 데이터가 부족한 상황이며, 측정 불가로 구분해 대응합니다.",
+    );
     await page.getByRole("button", { name: "전송" }).click();
     await expect(page.locator(".message.assistant")).toHaveCount(1, { timeout: 180_000 });
+
+    await page.goto("/upload");
+    await page.getByRole("radio", { name: /업무 보고/ }).check();
+    await page.getByLabel("발표 대상").fill("프로젝트 심사위원");
+    await page.getByLabel("반복 연습 이름").fill("한이음 최종 발표");
+    await page
+      .getByLabel("반드시 전달할 핵심 메시지")
+      .fill("발표 코칭 결과를 다음 연습 행동으로 연결합니다.");
+    await page.locator('input[type="file"]').setInputFiles(videoPath);
+    await page.getByRole("button", { name: "분석 시작" }).click();
+
+    await expect(page).toHaveURL(/\/result\/.+/, { timeout: 180_000 });
+    await expect(page.getByText("이전 대비")).toBeVisible();
+    await expect(page.getByText("+0점")).toBeVisible();
 
     await page.getByRole("link", { name: "E2E 사용자" }).click();
     await page.getByLabel("탈퇴 확인 비밀번호").fill(password);

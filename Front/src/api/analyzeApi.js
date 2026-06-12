@@ -201,6 +201,14 @@ export async function getPracticeGrowth(signal) {
   return await parseResponse(response);
 }
 
+export async function getPracticePurposes(signal) {
+  const response = await fetch(`${API_BASE_URL}/analyze/practice/purposes`, {
+    credentials: "include",
+    signal,
+  });
+  return await parseResponse(response);
+}
+
 export function getAnalyzeReportUrl(resultId) {
   return `${API_BASE_URL}/analyze/result/${resultId}/report.md`;
 }

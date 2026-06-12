@@ -19,11 +19,11 @@ def analyze_timeline_scores(
         pose_result = pose_results[index] if index < len(pose_results) else {}
         face_result = face_results[index] if index < len(face_results) else {}
 
-        pose_score = 100 if pose_result.get("pose_detected") is True else 0
-        face_score = 100 if face_result.get("face_detected") is True else 0
+        pose_score = 100 if pose_result.get("pose_detected") is True else None
+        face_score = 100 if face_result.get("face_detected") is True else None
 
-        shoulder_score = 0
-        gaze_score = 0
+        shoulder_score = None
+        gaze_score = None
 
         if pose_result.get("pose_detected") is True:
             landmarks = pose_result.get("landmarks", [])
@@ -59,13 +59,8 @@ def analyze_timeline_scores(
                 else:
                     gaze_score = 40
 
-        frame_score = round(
-            (pose_score * 0.25) +
-            (shoulder_score * 0.25) +
-            (face_score * 0.25) +
-            (gaze_score * 0.25),
-            2
-        )
+        available_scores = [score for score in (pose_score, shoulder_score, face_score, gaze_score) if score is not None]
+        frame_score = round(sum(available_scores) / len(available_scores), 2) if available_scores else None
 
         timeline.append({
             "time_sec": index,

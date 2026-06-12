@@ -7,6 +7,7 @@ from ..services.practice_coaching import (
     PURPOSES,
     build_practice_coaching,
     enrich_growth,
+    find_previous_same_series,
     load_practice_context,
     save_practice_context,
 )
@@ -21,6 +22,7 @@ class PracticeContextRequest(BaseModel):
     target_minutes: int | None = Field(default=None, ge=1, le=180)
     core_message: str = Field(default="", max_length=500)
     series_name: str = Field(default="", max_length=120)
+    series_id: str | None = Field(default=None, max_length=64)
 
 
 def _owned_job(result_id, user_id):
@@ -42,6 +44,11 @@ def update_practice_context(result_id: str, request: PracticeContextRequest, use
     return {"practice_context": context}
 
 
+@router.get("/growth/all")
+def get_practice_growth(user=Depends(get_current_user)):
+    return {"growth": enrich_growth(list_user_growth(user["id"]), user["id"])}
+
+
 @router.get("/{result_id}")
 def get_practice_coaching(result_id: str, user=Depends(get_current_user)):
     job = _owned_job(result_id, user["id"])
@@ -58,11 +65,5 @@ def get_practice_coaching(result_id: str, user=Depends(get_current_user)):
         "series_name": "",
     }
     growth = list_user_growth(user["id"])
-    index = next((index for index, item in enumerate(growth) if item["result_id"] == result_id), -1)
-    previous = growth[index - 1] if index > 0 else None
+    previous = find_previous_same_series(growth, user["id"], result_id, context)
     return {"coaching": build_practice_coaching(result, context, previous)}
-
-
-@router.get("/growth/all")
-def get_practice_growth(user=Depends(get_current_user)):
-    return {"growth": enrich_growth(list_user_growth(user["id"]), user["id"])}

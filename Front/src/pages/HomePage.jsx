@@ -10,8 +10,8 @@ const concerns = [
   },
   {
     icon: "02",
-    title: "표정과 시선 흐름 확인",
-    description: "발표 중 표정 변화와 정면 응시 비율을 분석합니다.",
+    title: "얼굴 방향 흐름 확인",
+    description: "발표 중 얼굴 감지와 정면 방향 안정성을 보조 지표로 확인합니다.",
   },
   {
     icon: "03",
@@ -46,8 +46,8 @@ const features = [
   {
     className: "face",
     icon: "◎",
-    title: "표정과 시선 분석",
-    description: "표정 변화와 시선 분산 정도를 장면별로 확인합니다.",
+    title: "얼굴 방향 분석",
+    description: "얼굴 특징점 기반 정면 방향 안정성을 장면별로 확인합니다.",
     visual: (
       <div className="home-face-grid">
         <span>☺</span>
@@ -123,7 +123,7 @@ const useCases = [
   {
     label: "취업 면접 · 자기소개",
     className: "interview",
-    description: "시선과 말하기 습관을 객관적으로 확인하세요.",
+    description: "얼굴 방향과 말하기 습관을 객관적으로 확인하세요.",
   },
   {
     label: "비즈니스 · 업무 발표",
@@ -143,7 +143,7 @@ const faqs = [
   ],
   [
     "어떤 항목을 분석하나요?",
-    "음성, 말하기 속도, 침묵, 필러 단어, 표정, 시선, 자세, 제스처를 종합 분석합니다.",
+    "음성, 말하기 속도, 침묵, 필러 단어, 얼굴 감지, 얼굴 방향, 자세, 제스처를 종합 분석합니다.",
   ],
   [
     "AI 코치는 어떤 역할을 하나요?",
@@ -169,8 +169,8 @@ function HomePage() {
               <strong>더 나은 발표를 준비하세요</strong>
             </h1>
             <p>
-              발표 목적과 청중을 설정하면 음성, 표정, 자세, 제스처를 분석하고 다음 연습 행동과 예상
-              질문을 제공합니다.
+              발표 목적과 청중을 설정하면 음성, 얼굴 방향, 자세, 제스처를 분석하고 다음 연습 행동과
+              예상 질문을 제공합니다.
             </p>
 
             <div className="home-hero-actions">
@@ -186,16 +186,16 @@ function HomePage() {
               <div>
                 <span>⌬</span>
                 <strong>Ollama 기반 로컬 AI</strong>
-                <small>내 데이터는 내 PC에서</small>
+                <small>서비스가 설치된 로컬 서버에서 처리</small>
               </div>
               <div>
                 <span>▣</span>
                 <strong>개인정보 안전 보호</strong>
-                <small>외부 API 전송 없이</small>
+                <small>Ollama 코칭은 외부 AI API 없이</small>
               </div>
               <div>
                 <span>◉</span>
-                <strong>음성·표정·자세 종합 분석</strong>
+                <strong>음성·얼굴 방향·자세 종합 분석</strong>
                 <small>여러 지표를 한 번에</small>
               </div>
             </div>
@@ -236,7 +236,7 @@ function HomePage() {
               </div>
             </div>
             <div className="hero-data-card gaze-card">
-              <span>시선 분포</span>
+              <span>얼굴 방향 예시</span>
               <div className="hero-heatmap">
                 <i />
                 <i />
@@ -343,10 +343,10 @@ function HomePage() {
                 <strong>84</strong>
                 <small>/100</small>
               </div>
-              <p>상위 18%</p>
+              <p>화면 설명용 예시 점수</p>
             </div>
             <div className="result-metrics-panel">
-              {["음성 88", "표정 82", "시선 78", "자세 86", "제스처 80", "전달력 85"].map(
+              {["음성 88", "얼굴 감지 82", "얼굴 방향 78", "자세 86", "제스처 80", "전달력 85"].map(
                 (item) => {
                   const [label, value] = item.split(" ");
                   return (
@@ -366,7 +366,7 @@ function HomePage() {
               </div>
               <div>
                 <b>03:42</b>
-                <i className="normal">주변 시선 증가</i>
+                <i className="normal">정면 방향 이탈 증가</i>
               </div>
               <div>
                 <b>05:20</b>
@@ -380,7 +380,7 @@ function HomePage() {
             <div className="result-feedback-panel">
               <div className="feedback-good">
                 <strong>잘한 점</strong>
-                <p>도입부에서 청중과 눈맞춤을 잘 했어요.</p>
+                <p>도입부에서 정면 방향을 안정적으로 유지했어요.</p>
                 <p>핵심 내용을 명확하게 전달했어요.</p>
               </div>
               <div className="feedback-bad">
@@ -410,7 +410,7 @@ function HomePage() {
               <span>2</span>
               <div className="step-icon">⌘</div>
               <h3>AI가 자동 분석</h3>
-              <p>음성, 표정, 자세와 제스처를 종합 분석합니다.</p>
+              <p>음성, 얼굴 방향, 자세와 제스처를 종합 분석합니다.</p>
             </article>
             <article>
               <span>3</span>
@@ -474,8 +474,8 @@ function HomePage() {
           <div className="home-local-card">
             <span>⌬</span>
             <strong>Ollama 기반 로컬 AI</strong>
-            <p>내 PC에서 안전하게 실행</p>
-            <p>외부 API 전송 없이 사용</p>
+            <p>서비스가 설치된 로컬 서버에서 실행</p>
+            <p>Ollama 코칭은 외부 AI API 없이 처리</p>
           </div>
         </div>
       </section>
@@ -492,6 +492,16 @@ function HomePage() {
               <div>
                 <h3>로컬 AI 기반 분석</h3>
                 <p>Ollama 기반 AI를 로컬 환경에서 활용합니다.</p>
+              </div>
+            </article>
+            <article>
+              <span>i</span>
+              <div>
+                <h3>분석 신뢰도 안내</h3>
+                <p>
+                  화면·음성 데이터가 부족한 항목은 점수가 아닌 측정 불가로 표시하며, 결과는 발표
+                  연습을 위한 보조 지표입니다.
+                </p>
               </div>
             </article>
             <article>

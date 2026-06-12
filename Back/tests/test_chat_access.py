@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from Back.app.routers.chat import _decode_cursor, _encode_cursor, messages
+from Back.app.routers.chat import ConversationRequest, _decode_cursor, _encode_cursor, create_conversation, messages
 
 
 class FakeCursor:
@@ -57,6 +57,16 @@ class ChatAccessTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 404)
         self.assertEqual(connection.cursor_instance.executions[0][1], (123, 7))
         self.assertTrue(connection.closed)
+
+    @patch("Back.app.routers.chat.get_user_job", return_value=None)
+    def test_other_users_analysis_cannot_be_attached_to_chat(self, _job):
+        with self.assertRaises(HTTPException) as raised:
+            create_conversation(
+                ConversationRequest(title="발표 코칭", analysis_result_id="other-result"),
+                user={"id": 7},
+            )
+
+        self.assertEqual(raised.exception.status_code, 404)
 
 
 if __name__ == "__main__":

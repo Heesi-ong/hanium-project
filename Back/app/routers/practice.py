@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ..services.ai_coaching import generate_ai_coaching, load_ai_coaching
 from ..services.analysis_jobs import get_user_job, list_user_growth
 from ..services.auth_service import get_current_user
 from ..services.practice_coaching import (
@@ -33,6 +34,25 @@ def _owned_job(result_id, user_id):
     return job
 
 
+def _coaching_inputs(result_id, user_id):
+    job = _owned_job(result_id, user_id)
+    if job["status"] != "COMPLETED":
+        raise HTTPException(status_code=409, detail="분석 완료 후 AI 코칭을 생성할 수 있습니다.")
+    result = load_analysis_result(result_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="분석 결과를 찾을 수 없습니다.")
+    context = load_practice_context(result_id, user_id) or {
+        "purpose": "project",
+        "audience": "",
+        "target_minutes": PURPOSES["project"]["recommended_minutes"],
+        "core_message": "",
+        "series_name": "",
+    }
+    previous = find_previous_same_series(list_user_growth(user_id), user_id, result_id, context)
+    rule_coaching = build_practice_coaching(result, context, previous)
+    return result, context, previous, rule_coaching
+
+
 @router.get("/purposes")
 def get_purposes(_user=Depends(get_current_user)):
     return {"purposes": [{"key": key, **value} for key, value in PURPOSES.items()]}
@@ -41,6 +61,39 @@ def get_purposes(_user=Depends(get_current_user)):
 @router.get("/series")
 def get_series(user=Depends(get_current_user)):
     return {"series": list_practice_series(user["id"])}
+
+
+@router.get("/{result_id}/ai-coaching")
+def get_ai_coaching(result_id: str, user=Depends(get_current_user)):
+    _owned_job(result_id, user["id"])
+    saved = load_ai_coaching(result_id, user["id"])
+    return {"ai_coaching": saved, "status": saved.get("status") if saved else "not_generated"}
+
+
+@router.post("/{result_id}/ai-coaching")
+def create_ai_coaching(result_id: str, user=Depends(get_current_user)):
+    saved = load_ai_coaching(result_id, user["id"])
+    if saved:
+        _owned_job(result_id, user["id"])
+        return {"ai_coaching": saved, "cached": True}
+    result, context, previous, rule_coaching = _coaching_inputs(result_id, user["id"])
+    return {
+        "ai_coaching": generate_ai_coaching(
+            result_id, user["id"], result, context, rule_coaching, previous
+        ),
+        "cached": False,
+    }
+
+
+@router.post("/{result_id}/ai-coaching/regenerate")
+def regenerate_ai_coaching(result_id: str, user=Depends(get_current_user)):
+    result, context, previous, rule_coaching = _coaching_inputs(result_id, user["id"])
+    return {
+        "ai_coaching": generate_ai_coaching(
+            result_id, user["id"], result, context, rule_coaching, previous
+        ),
+        "cached": False,
+    }
 
 
 @router.put("/{result_id}")

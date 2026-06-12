@@ -29,6 +29,48 @@
   line-height: 1.6;
 }
 
+.ai-coaching-card {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.ai-coaching-content,
+.ai-coaching-content article,
+.ai-coaching-grid,
+.ai-coaching-item {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ai-coaching-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.ai-coaching-item {
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.ai-coaching-item span {
+  line-height: 1.55;
+}
+
+.ai-coaching-warning {
+  padding: 0.85rem 1rem;
+  border: 1px solid #f4c86a;
+  border-radius: 12px;
+  background: #fff8df;
+  color: #765600;
+}
+
+.ai-question-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .detail-action-row {
   display: flex;
   flex-wrap: wrap;

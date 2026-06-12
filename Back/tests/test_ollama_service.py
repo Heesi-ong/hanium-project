@@ -32,6 +32,22 @@ class OllamaServiceTests(unittest.TestCase):
             chat_with_ollama([])
         self.assertEqual(raised.exception.status_code, 503)
 
+    @patch("Back.app.services.ollama_service.requests.post")
+    def test_requests_structured_json_format(self, post):
+        response = Mock(ok=True)
+        response.json.return_value = {
+            "message": {"content": "{}"},
+            "prompt_eval_count": 1,
+            "eval_count": 1,
+        }
+        post.return_value = response
+
+        chat_with_ollama([], response_format="json", options={"temperature": 0.2}, think=False)
+
+        self.assertEqual(post.call_args.kwargs["json"]["format"], "json")
+        self.assertEqual(post.call_args.kwargs["json"]["options"]["temperature"], 0.2)
+        self.assertFalse(post.call_args.kwargs["json"]["think"])
+
 
 if __name__ == "__main__":
     unittest.main()

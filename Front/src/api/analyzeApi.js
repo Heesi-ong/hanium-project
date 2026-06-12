@@ -217,6 +217,35 @@ export async function getPracticeSeries(signal) {
   return await parseResponse(response);
 }
 
+export async function getAiCoaching(resultId, signal) {
+  const response = await fetch(`${API_BASE_URL}/analyze/practice/${resultId}/ai-coaching`, {
+    credentials: "include",
+    signal,
+  });
+  return await parseResponse(response);
+}
+
+export async function createAiCoaching(resultId, signal) {
+  const response = await fetch(`${API_BASE_URL}/analyze/practice/${resultId}/ai-coaching`, {
+    method: "POST",
+    credentials: "include",
+    signal,
+  });
+  return await parseResponse(response);
+}
+
+export async function regenerateAiCoaching(resultId, signal) {
+  const response = await fetch(
+    `${API_BASE_URL}/analyze/practice/${resultId}/ai-coaching/regenerate`,
+    {
+      method: "POST",
+      credentials: "include",
+      signal,
+    },
+  );
+  return await parseResponse(response);
+}
+
 export function getAnalyzeReportUrl(resultId) {
   return `${API_BASE_URL}/analyze/result/${resultId}/report.md`;
 }

@@ -33,6 +33,12 @@ test.describe("실제 서비스 흐름", () => {
     await expect(page.getByRole("heading", { name: "분석 상세 결과" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "업무 보고" })).toBeVisible();
     await expect(page.getByText("측정 불가").first()).toBeVisible();
+    await page.getByRole("button", { name: "AI 코칭 생성" }).click();
+    await expect(page.getByRole("button", { name: "코칭 다시 생성" })).toBeVisible({
+      timeout: 180_000,
+    });
+    await page.reload();
+    await expect(page.getByRole("button", { name: "코칭 다시 생성" })).toBeVisible();
     await page.locator(".expected-question").first().click();
 
     await expect(page.getByRole("heading", { name: "로컬 AI 채팅" })).toBeVisible();

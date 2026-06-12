@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
+  createAiCoaching,
+  getAiCoaching,
   getAnalyzeReportUrl,
   getAnalyzeSections,
   getPracticeCoaching,
   getTimelineChart,
+  regenerateAiCoaching,
 } from "../api/analyzeApi";
 import StateMessage from "../components/StateMessage";
+import AiCoachingSection from "../features/practice/AiCoachingSection";
 import PracticeCoachingSections from "../features/practice/PracticeCoachingSections";
 
 import "./ResultDetailPage.css";
@@ -57,6 +61,9 @@ function ResultDetailPage() {
   const [timelineError, setTimelineError] = useState("");
   const [coachingLoading, setCoachingLoading] = useState(true);
   const [coachingError, setCoachingError] = useState("");
+  const [aiCoaching, setAiCoaching] = useState(null);
+  const [aiCoachingLoading, setAiCoachingLoading] = useState(false);
+  const [aiCoachingError, setAiCoachingError] = useState("");
   const requestControllers = useRef({});
 
   const startRequest = (key) => {
@@ -111,6 +118,46 @@ function ResultDetailPage() {
     }
   };
 
+  const loadAiCoaching = async () => {
+    const controller = startRequest("aiCoaching");
+    const requestedResultId = resultId;
+    try {
+      setAiCoachingLoading(true);
+      setAiCoachingError("");
+      const response = await getAiCoaching(resultId, controller.signal);
+      if (requestedResultId === resultId && requestControllers.current.aiCoaching === controller) {
+        setAiCoaching(response.ai_coaching || null);
+      }
+    } catch (err) {
+      if (err.name !== "AbortError" && requestControllers.current.aiCoaching === controller) {
+        setAiCoachingError(err.message || "AI 코칭을 불러오지 못했습니다.");
+      }
+    } finally {
+      if (requestControllers.current.aiCoaching === controller) setAiCoachingLoading(false);
+    }
+  };
+
+  const generateAiCoaching = async (regenerate = false) => {
+    const controller = startRequest("aiCoaching");
+    const requestedResultId = resultId;
+    try {
+      setAiCoachingLoading(true);
+      setAiCoachingError("");
+      const response = regenerate
+        ? await regenerateAiCoaching(resultId, controller.signal)
+        : await createAiCoaching(resultId, controller.signal);
+      if (requestedResultId === resultId && requestControllers.current.aiCoaching === controller) {
+        setAiCoaching(response.ai_coaching || null);
+      }
+    } catch (err) {
+      if (err.name !== "AbortError" && requestControllers.current.aiCoaching === controller) {
+        setAiCoachingError(err.message || "AI 코칭을 생성하지 못했습니다.");
+      }
+    } finally {
+      if (requestControllers.current.aiCoaching === controller) setAiCoachingLoading(false);
+    }
+  };
+
   const loadTimeline = async () => {
     const controller = startRequest("timeline");
     const requestedResultId = resultId;
@@ -137,12 +184,14 @@ function ResultDetailPage() {
     void loadSections();
     void loadTimeline();
     void loadCoaching();
+    void loadAiCoaching();
   };
 
   useEffect(() => {
     setSections(null);
     setChartData([]);
     setCoaching(null);
+    setAiCoaching(null);
     loadData();
     return () =>
       Object.values(requestControllers.current).forEach((controller) => controller.abort());
@@ -232,26 +281,6 @@ function ResultDetailPage() {
     }
     return value !== null && value !== undefined;
   };
-  const weakTimeline = [...chartData]
-    .filter((item) => typeof item.frame_score === "number")
-    .sort((left, right) => (left.frame_score ?? 100) - (right.frame_score ?? 100))
-    .slice(0, 3)
-    .map((item) => `${item.time_sec ?? "-"}초(${item.frame_score ?? "-"}점)`)
-    .join(", ");
-  const coachContext = [
-    `발표 파일: ${fileName}`,
-    `발표 목적: ${coaching?.purpose?.label || "프로젝트 발표"}`,
-    `발표 대상: ${coaching?.context?.audience || "일반 청중"}`,
-    `핵심 메시지: ${coaching?.context?.core_message || "미입력"}`,
-    `종합 점수: ${totalScore}`,
-    `요약 피드백: ${summary.summary_feedback || feedback.summary || "없음"}`,
-    `자세 인식률: ${score.pose_detection_rate ?? "-"}`,
-    `얼굴 방향 안정성: ${score.gaze_score ?? "-"}`,
-    `말하기 속도 점수: ${speech.speech_speed_score ?? "-"}`,
-    `손동작 점수: ${gesture.gesture_score ?? "-"}`,
-    `집중 연습 시간대: ${weakTimeline || "없음"}`,
-  ].join("\n");
-
   const scoreCards = [
     {
       label: "자세 분석 신뢰도 (감지율)",
@@ -287,7 +316,7 @@ function ResultDetailPage() {
   const practiceQuestion = (question) => {
     navigate("/chat", {
       state: {
-        analysisContext: `${coachContext}\n예상 질문: ${question}\n사용자의 답변을 평가하고 구체적인 후속 질문을 한 개씩 제시해라.`,
+        analysisResultId: resultId,
         analysisTitle: `${fileName} 예상 질문 연습`,
         practiceQuestion: question,
       },
@@ -322,7 +351,7 @@ function ResultDetailPage() {
             onClick={() =>
               navigate("/chat", {
                 state: {
-                  analysisContext: coachContext,
+                  analysisResultId: resultId,
                   analysisTitle: `${fileName} 코칭`,
                 },
               })
@@ -396,6 +425,20 @@ function ResultDetailPage() {
         loading={coachingLoading}
         error={coachingError}
         onRetry={loadCoaching}
+        onPracticeQuestion={practiceQuestion}
+      />
+
+      <AiCoachingSection
+        aiCoaching={aiCoaching}
+        loading={aiCoachingLoading}
+        error={aiCoachingError}
+        onGenerate={() => generateAiCoaching(false)}
+        onRegenerate={() => generateAiCoaching(true)}
+        onContinueChat={() =>
+          navigate("/chat", {
+            state: { analysisResultId: resultId, analysisTitle: `${fileName} AI 발표 코칭` },
+          })
+        }
         onPracticeQuestion={practiceQuestion}
       />
 

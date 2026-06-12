@@ -4,11 +4,18 @@ from fastapi import HTTPException
 from ..config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
 
 
-def chat_with_ollama(messages):
+def chat_with_ollama(messages, response_format=None, options=None, think=None):
+    payload = {"model": OLLAMA_MODEL, "stream": False, "messages": messages}
+    if response_format:
+        payload["format"] = response_format
+    if options:
+        payload["options"] = options
+    if think is not None:
+        payload["think"] = think
     try:
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
-            json={"model": OLLAMA_MODEL, "stream": False, "messages": messages},
+            json=payload,
             timeout=OLLAMA_TIMEOUT_SECONDS,
         )
     except requests.Timeout as error:

@@ -13,6 +13,7 @@ from ..config import (
     UPLOAD_DIR,
 )
 from ..schemas.auth import DeleteAccountRequest, LoginRequest, PasswordRequest, ProfileRequest, RegisterRequest
+from ..services.ai_coaching import delete_ai_coaching, load_ai_coaching
 from ..services.auth_service import (
     create_session,
     get_current_user,
@@ -180,6 +181,9 @@ def export_user_data(user=Depends(get_current_user)):
     practice_contexts = [
         context for job in jobs if (context := load_practice_context(job["id"], user["id"])) is not None
     ]
+    ai_coaching = [
+        coaching for job in jobs if (coaching := load_ai_coaching(job["id"], user["id"])) is not None
+    ]
     practice_coaching = []
     for result in detailed_results:
         context = load_practice_context(result["result_id"], user["id"])
@@ -198,6 +202,7 @@ def export_user_data(user=Depends(get_current_user)):
         "analysis_results": detailed_results,
         "practice_contexts": practice_contexts,
         "practice_coaching": practice_coaching,
+        "ai_coaching": ai_coaching,
     }
 
 
@@ -309,6 +314,8 @@ def delete_account(request: DeleteAccountRequest, response: Response, user=Depen
             failed_paths.append(str(frame_dir))
         if not delete_practice_context(job["id"]):
             failed_paths.append(f"practice_context:{job['id']}")
+        if not delete_ai_coaching(job["id"]):
+            failed_paths.append(f"ai_coaching:{job['id']}")
     if failed_paths:
         with transaction() as connection:
             with connection.cursor() as cursor:

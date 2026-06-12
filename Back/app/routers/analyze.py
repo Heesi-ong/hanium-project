@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Requ
 from fastapi.responses import PlainTextResponse
 
 from ..config import MAX_UPLOAD_MB, MIN_FREE_DISK_MB, RESULT_DIR, UPLOAD_DIR, USER_MAX_ACTIVE_ANALYSES
+from ..services.ai_coaching import delete_ai_coaching
 from ..services.analysis_jobs import (
     delete_user_job,
     get_user_job,
@@ -352,10 +353,11 @@ def delete_result(result_id: str, user=Depends(get_current_user)):
 
     delete_result_data = delete_analysis_result(result_id)
     practice_removed = delete_practice_context(result_id)
+    ai_coaching_removed = delete_ai_coaching(result_id)
     saved_filename = get_user_job_source_filename(result_id, user["id"])
     result_removed = ensure_file_removed(RESULT_DIR / f"{result_id}.json")
     source_removed = ensure_file_removed(UPLOAD_DIR / saved_filename) if saved_filename else True
-    if not result_removed or not source_removed or not practice_removed:
+    if not result_removed or not source_removed or not practice_removed or not ai_coaching_removed:
         raise HTTPException(status_code=500, detail="분석 데이터 파일을 완전히 삭제하지 못했습니다. 다시 시도해주세요.")
     deleted_job = delete_user_job(result_id, user["id"])
     return {

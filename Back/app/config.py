@@ -10,6 +10,7 @@ UPLOAD_DIR = BACK_DIR / "uploads"
 FRAME_DIR = BACK_DIR / "frames"
 RESULT_DIR = BACK_DIR / "results"
 MODEL_DIR = BACK_DIR / "models"
+AI_COACHING_DIR = BACK_DIR / "ai_coaching"
 
 ALLOWED_ORIGINS = [
     origin.strip()

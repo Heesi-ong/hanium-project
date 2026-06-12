@@ -8,10 +8,23 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from ..config import CHAT_HISTORY_MESSAGES, MAX_CHAT_CONTENT_CHARS, OLLAMA_MODEL
+from ..services.ai_coaching import (
+    build_presentation_chat_system_prompt,
+    build_structured_coaching_input,
+    load_ai_coaching,
+)
+from ..services.analysis_jobs import get_user_job, list_user_growth
 from ..services.auth_service import get_current_user
 from ..services.database import advisory_lock, get_connection, transaction
 from ..services.ollama_service import chat_with_ollama
+from ..services.practice_coaching import (
+    PURPOSES,
+    build_practice_coaching,
+    find_previous_same_series,
+    load_practice_context,
+)
 from ..services.rate_limit import enforce_rate_limit
+from ..services.result_saver import load_analysis_result
 
 router = APIRouter(prefix="/api", tags=["Chat"])
 
@@ -19,6 +32,8 @@ router = APIRouter(prefix="/api", tags=["Chat"])
 class ConversationRequest(BaseModel):
     title: str = Field(default="새 대화", max_length=255)
     system_prompt: str | None = None
+    analysis_result_id: str | None = Field(default=None, max_length=64)
+    practice_question: str | None = Field(default=None, max_length=500)
 
 
 class ChatRequest(BaseModel):
@@ -113,6 +128,34 @@ def conversations(
 @router.post("/conversations", status_code=201)
 def create_conversation(request: ConversationRequest, user=Depends(get_current_user)):
     title = request.title.strip() or "새 대화"
+    system_prompt = request.system_prompt
+    if request.analysis_result_id:
+        job = get_user_job(request.analysis_result_id, user["id"])
+        if not job:
+            raise HTTPException(status_code=404, detail="분석 결과를 찾을 수 없습니다.")
+        if job["status"] != "COMPLETED":
+            raise HTTPException(status_code=409, detail="분석 완료 후 발표 코칭 대화를 시작할 수 있습니다.")
+        result = load_analysis_result(request.analysis_result_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="분석 결과를 찾을 수 없습니다.")
+        context = load_practice_context(request.analysis_result_id, user["id"]) or {
+            "purpose": "project",
+            "audience": "",
+            "target_minutes": PURPOSES["project"]["recommended_minutes"],
+            "core_message": "",
+            "series_name": "",
+        }
+        previous = find_previous_same_series(
+            list_user_growth(user["id"]), user["id"], request.analysis_result_id, context
+        )
+        rule_coaching = build_practice_coaching(result, context, previous)
+        structured_input = build_structured_coaching_input(result, context, rule_coaching, previous)
+        system_prompt = build_presentation_chat_system_prompt(
+            request.analysis_result_id,
+            structured_input,
+            load_ai_coaching(request.analysis_result_id, user["id"]),
+            request.practice_question,
+        )
     with transaction() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -124,7 +167,7 @@ def create_conversation(request: ConversationRequest, user=Depends(get_current_u
                 raise HTTPException(status_code=503, detail="활성화된 Ollama 모델이 등록되어 있지 않습니다.")
             cursor.execute(
                 "INSERT INTO conversations (user_id, model_id, title, system_prompt) VALUES (%s, %s, %s, %s)",
-                (user["id"], model["id"], title, request.system_prompt),
+                (user["id"], model["id"], title, system_prompt),
             )
             conversation_id = cursor.lastrowid
     return {"conversation": {"id": conversation_id, "title": title, "modelId": model["id"]}}

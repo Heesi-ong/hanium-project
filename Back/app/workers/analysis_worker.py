@@ -16,6 +16,7 @@ from ..config import (
     WORKER_HEARTBEAT_STALE_SECONDS,
 )
 from ..repositories.analysis_job_repository import list_processing_job_ids
+from ..services.ai_coaching import delete_ai_coaching
 from ..services.analysis_jobs import (
     claim_next_job,
     clear_source_file,
@@ -229,6 +230,7 @@ def cleanup_expired_results():
         if (
             ensure_file_removed(RESULT_DIR / f"{job_id}.json")
             and delete_practice_context(job_id)
+            and delete_ai_coaching(job_id)
             and delete_completed_job(job_id)
         ):
             deleted += 1

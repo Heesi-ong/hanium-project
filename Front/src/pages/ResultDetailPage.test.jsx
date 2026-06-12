@@ -3,14 +3,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getAnalyzeSections, getPracticeCoaching, getTimelineChart } from "../api/analyzeApi";
+import {
+  createAiCoaching,
+  getAiCoaching,
+  getAnalyzeSections,
+  getPracticeCoaching,
+  getTimelineChart,
+  regenerateAiCoaching,
+} from "../api/analyzeApi";
 import ResultDetailPage from "./ResultDetailPage";
 
 vi.mock("../api/analyzeApi", () => ({
+  createAiCoaching: vi.fn(),
+  getAiCoaching: vi.fn(),
   getAnalyzeReportUrl: vi.fn(() => "/report.md"),
   getAnalyzeSections: vi.fn(),
   getPracticeCoaching: vi.fn(),
   getTimelineChart: vi.fn(),
+  regenerateAiCoaching: vi.fn(),
 }));
 
 const sections = {
@@ -30,6 +40,7 @@ describe("ResultDetailPage", () => {
     getAnalyzeSections.mockResolvedValue({ sections, original_filename: "sample.mp4" });
     getTimelineChart.mockResolvedValue({ chart_data: [] });
     getPracticeCoaching.mockRejectedValue(new Error("코칭 서비스 오류"));
+    getAiCoaching.mockResolvedValue({ ai_coaching: null, status: "not_generated" });
   });
 
   it("연습 코칭 실패가 기본 분석 결과를 막지 않는다", async () => {
@@ -117,5 +128,81 @@ describe("ResultDetailPage", () => {
     expect(await screen.findByText("새 결과")).toBeInTheDocument();
     resolveOld({ sections, original_filename: "old.mp4" });
     await waitFor(() => expect(screen.queryByText("기본 결과 정상")).not.toBeInTheDocument());
+  });
+
+  it("AI 코칭을 선택적으로 생성하고 성공 결과를 표시한다", async () => {
+    createAiCoaching.mockResolvedValue({
+      ai_coaching: {
+        status: "completed",
+        model: "qwen3:4b",
+        prompt_version: "presentation-coach-2026.06.1",
+        coaching: {
+          summary: "검증 결과를 먼저 설명하세요.",
+          strengths: [],
+          priorities: [],
+          expected_questions: [],
+          limitations: [],
+        },
+      },
+    });
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "AI 코칭 생성" }));
+
+    expect(await screen.findByText("검증 결과를 먼저 설명하세요.")).toBeInTheDocument();
+    expect(getAnalyzeSections).toHaveBeenCalledTimes(1);
+  });
+
+  it("AI 코칭 생성 실패가 기본 분석 결과를 막지 않는다", async () => {
+    createAiCoaching.mockRejectedValue(new Error("Ollama 서버 오류"));
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "AI 코칭 생성" }));
+
+    expect(await screen.findByText("AI 코칭 영역만 처리하지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByText("기본 결과 정상")).toBeInTheDocument();
+  });
+
+  it("저장된 AI 코칭을 다시 생성할 수 있다", async () => {
+    const saved = {
+      status: "completed",
+      model: "qwen3:4b",
+      prompt_version: "v1",
+      coaching: {
+        summary: "기존 코칭",
+        strengths: [],
+        priorities: [],
+        expected_questions: [],
+        limitations: [],
+      },
+    };
+    getAiCoaching.mockResolvedValue({ ai_coaching: saved });
+    regenerateAiCoaching.mockResolvedValue({
+      ai_coaching: { ...saved, coaching: { ...saved.coaching, summary: "재생성 코칭" } },
+    });
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "코칭 다시 생성" }));
+
+    expect(await screen.findByText("재생성 코칭")).toBeInTheDocument();
+    expect(regenerateAiCoaching).toHaveBeenCalledWith("job-1", expect.any(Object));
   });
 });

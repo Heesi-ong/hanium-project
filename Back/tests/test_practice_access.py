@@ -3,7 +3,15 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from Back.app.routers.practice import PracticeContextRequest, get_practice_coaching, get_series, update_practice_context
+from Back.app.routers.practice import (
+    PracticeContextRequest,
+    create_ai_coaching,
+    get_ai_coaching,
+    get_practice_coaching,
+    get_series,
+    regenerate_ai_coaching,
+    update_practice_context,
+)
 
 
 class PracticeAccessTests(unittest.TestCase):
@@ -59,6 +67,34 @@ class PracticeAccessTests(unittest.TestCase):
             )
 
         self.assertEqual(result["practice_context"]["series_id"], "series-1")
+
+    @patch("Back.app.routers.practice.load_ai_coaching", return_value=None)
+    @patch("Back.app.routers.practice.get_user_job", return_value=None)
+    def test_other_users_ai_coaching_is_hidden(self, _job, _load):
+        with self.assertRaises(HTTPException) as raised:
+            get_ai_coaching("job-1", user={"id": 8})
+        self.assertEqual(raised.exception.status_code, 404)
+
+    @patch("Back.app.routers.practice.load_ai_coaching")
+    @patch("Back.app.routers.practice.get_user_job", return_value={"status": "COMPLETED"})
+    def test_saved_ai_coaching_is_returned_without_regeneration(self, _job, load):
+        load.return_value = {"result_id": "job-1", "status": "completed"}
+
+        response = create_ai_coaching("job-1", user={"id": 7})
+
+        self.assertTrue(response["cached"])
+        self.assertEqual(response["ai_coaching"]["status"], "completed")
+
+    @patch("Back.app.routers.practice.generate_ai_coaching")
+    @patch("Back.app.routers.practice._coaching_inputs")
+    def test_regenerate_replaces_saved_ai_coaching(self, inputs, generate):
+        inputs.return_value = ({"data": {}}, {"purpose": "project"}, None, {"improvement_plan": []})
+        generate.return_value = {"result_id": "job-1", "status": "completed"}
+
+        response = regenerate_ai_coaching("job-1", user={"id": 7})
+
+        self.assertFalse(response["cached"])
+        generate.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -115,15 +115,42 @@ function UploadPage() {
   };
 
   return (
-    <div className="page">
-      <h1 className="page-title">발표 영상 분석</h1>
+    <div className="page upload-page">
+      <section className="upload-hero">
+        <div className="upload-hero-content">
+          <span className="upload-section-kicker">Presentation analysis</span>
+          <h1>발표 영상 분석</h1>
+          <p>
+            영상 하나로 자세, 시선, 말하기 흐름을 확인하고 다음 연습에서 바로 바꿀 행동까지
+            연결합니다.
+          </p>
 
-      <div className="card">
-        <h2>분석 항목</h2>
+          <div className="upload-hero-meta" aria-label="업로드 분석 요약">
+            <span>최대 {MAX_FILE_SIZE_MB}MB</span>
+            <span>MP4 · MOV · AVI · MKV</span>
+            <span>분석 후 결과 자동 저장</span>
+          </div>
+        </div>
+
+        <div className="upload-hero-panel" aria-label="분석 진행 순서">
+          <span className="upload-hero-panel-label">Flow</span>
+          <ol>
+            <li>연습 목표 설정</li>
+            <li>발표 영상 업로드</li>
+            <li>결과 확인 및 다음 연습</li>
+          </ol>
+        </div>
+      </section>
+
+      <div className="card upload-analysis-card">
+        <div className="upload-card-header">
+          <span className="upload-section-kicker">Analysis scope</span>
+          <h2>분석 항목</h2>
+        </div>
 
         <div className="metric-grid">
           {analysisItems.map((item) => (
-            <div className="metric-item" key={item.value}>
+            <div className="metric-item upload-analysis-item" key={item.value}>
               <div className="metric-label">{item.label}</div>
 
               <div className="metric-value">{item.value}</div>
@@ -147,63 +174,77 @@ function UploadPage() {
         setContext={setPracticeContext}
       />
 
-      <div className="card">
-        <h2>영상 업로드</h2>
+      <div className="card upload-card">
+        <div className="upload-card-header">
+          <div>
+            <span className="upload-section-kicker">Upload</span>
+            <h2>영상 업로드</h2>
+          </div>
 
-        <p>업로드 가능 형식: MP4, MOV, AVI, MKV / 최대 {MAX_FILE_SIZE_MB}MB</p>
-
-        <div className="metric-item upload-guide-box">
-          <div className="metric-label">업로드 전 확인사항</div>
-
-          <ul className="upload-guide-list">
-            {uploadGuides.map((guide) => (
-              <li key={guide} className="upload-guide-item">
-                {guide}
-              </li>
-            ))}
-          </ul>
+          <p>업로드 가능 형식: MP4, MOV, AVI, MKV / 최대 {MAX_FILE_SIZE_MB}MB</p>
         </div>
 
-        <div className="upload-file-box">
-          <label className="metric-value upload-file-title" htmlFor="presentation-video">
-            발표 영상 파일 선택
-          </label>
+        <div className="upload-workspace">
+          <div className="upload-file-box">
+            <span className="upload-file-icon" aria-hidden="true">
+              ↑
+            </span>
+            <label className="metric-value upload-file-title" htmlFor="presentation-video">
+              발표 영상 파일 선택
+            </label>
 
-          <p className="upload-file-description">
-            MP4, MOV, AVI, MKV 형식의 영상을 업로드할 수 있습니다.
-          </p>
-
-          <input
-            id="presentation-video"
-            ref={fileInputRef}
-            className="upload-file-input"
-            type="file"
-            accept=".mp4,.mov,.avi,.mkv"
-            onChange={handleFileChange}
-            disabled={loading}
-          />
-
-          <div className="upload-button-area">
-            <button className="button" onClick={startUpload} disabled={loading || !file}>
-              {loading ? "처리 중..." : "분석 시작"}
-            </button>
-          </div>
-          {!file && !loading && (
-            <p className="upload-file-hint" role="status">
-              파일을 선택하면 분석 시작 버튼이 활성화됩니다.
+            <p className="upload-file-description">
+              발표자가 화면에 잘 보이고 음성이 포함된 영상을 선택하세요.
             </p>
-          )}
+
+            <input
+              id="presentation-video"
+              ref={fileInputRef}
+              className="upload-file-input"
+              type="file"
+              accept=".mp4,.mov,.avi,.mkv"
+              onChange={handleFileChange}
+              disabled={loading}
+            />
+
+            <div className="upload-button-area">
+              <button className="button" onClick={startUpload} disabled={loading || !file}>
+                {loading ? "처리 중..." : "분석 시작"}
+              </button>
+            </div>
+            {!file && !loading && (
+              <p className="upload-file-hint" role="status">
+                파일을 선택하면 분석 시작 버튼이 활성화됩니다.
+              </p>
+            )}
+          </div>
+
+          <div className="metric-item upload-guide-box">
+            <div className="metric-label">업로드 전 확인사항</div>
+
+            <ul className="upload-guide-list">
+              {uploadGuides.map((guide) => (
+                <li key={guide} className="upload-guide-item">
+                  {guide}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {file && (
           <div className="metric-item selected-file-box">
-            <div className="metric-label">선택 파일</div>
+            <div>
+              <div className="metric-label">선택 파일</div>
 
-            <div className="metric-value">{file.name}</div>
+              <div className="metric-value">{file.name}</div>
+            </div>
 
-            <div className="metric-label selected-file-size-label">파일 크기</div>
+            <div>
+              <div className="metric-label selected-file-size-label">파일 크기</div>
 
-            <div className="metric-value">{formatFileSize(file.size)}</div>
+              <div className="metric-value">{formatFileSize(file.size)}</div>
+            </div>
 
             <button
               className="button selected-file-reset-button"

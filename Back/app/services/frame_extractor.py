@@ -66,5 +66,6 @@ def extract_frames(video_path: str, interval_sec: int = 1, output_id: str | None
         "output_dir": str(output_dir),
         "saved_count": saved_count,
         "saved_bytes": saved_bytes,
+        "interval_seconds": interval_sec,
         "frames": saved_frames
     }

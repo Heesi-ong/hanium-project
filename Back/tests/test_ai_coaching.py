@@ -140,6 +140,35 @@ class AiCoachingTests(unittest.TestCase):
         self.assertIn("Ollama 서버", saved["failure_reason"])
         self.assertEqual(saved["failure_type"], "ollama_unavailable")
 
+    def test_ai_coaching_limits_ollama_output_and_transcript_input(self):
+        result = sample_result()
+        result["data"]["audio_result"]["segments"] = [
+            {"start": index, "end": index + 1, "text": f"긴 발표 문장 {index} " * 30}
+            for index in range(40)
+        ]
+        context = {"purpose": "project", "audience": "심사위원", "core_message": "검증 결과"}
+        rule = build_practice_coaching(result, context)
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            ai_coaching, "AI_COACHING_DIR", Path(temp_dir)
+        ), patch.object(
+            ai_coaching,
+            "chat_with_ollama",
+            side_effect=HTTPException(status_code=504, detail="Ollama 응답 시간이 초과되었습니다."),
+        ) as chat:
+            saved = ai_coaching.generate_ai_coaching("job-1", 7, result, context, rule)
+
+        self.assertEqual(saved["failure_type"], "timeout")
+        self.assertLessEqual(len(saved["input_summary"]["transcript_segments"]), ai_coaching.MAX_TRANSCRIPT_SEGMENTS)
+        self.assertLessEqual(
+            max(len(item["text"]) for item in saved["input_summary"]["transcript_segments"]),
+            ai_coaching.MAX_SEGMENT_TEXT_CHARS,
+        )
+        self.assertEqual(
+            chat.call_args.kwargs["options"]["num_predict"],
+            ai_coaching.AI_COACHING_MAX_OUTPUT_TOKENS,
+        )
+        self.assertFalse(chat.call_args.kwargs["think"])
+
 
 if __name__ == "__main__":
     unittest.main()

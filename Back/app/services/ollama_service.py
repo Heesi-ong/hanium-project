@@ -3,15 +3,18 @@
 import requests
 from fastapi import HTTPException
 
-from ..config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS
+from ..config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_NUM_CTX, OLLAMA_NUM_PREDICT, OLLAMA_TIMEOUT_SECONDS
 
 
 def chat_with_ollama(messages, response_format=None, options=None, think=None):
     payload = {"model": OLLAMA_MODEL, "stream": False, "messages": messages}
     if response_format:
         payload["format"] = response_format
-    if options:
-        payload["options"] = options
+    payload["options"] = {
+        "num_ctx": OLLAMA_NUM_CTX,
+        "num_predict": OLLAMA_NUM_PREDICT,
+        **(options or {}),
+    }
     if think is not None:
         payload["think"] = think
     try:

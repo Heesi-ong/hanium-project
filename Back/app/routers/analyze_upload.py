@@ -8,7 +8,13 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 
-from ..config import MAX_UPLOAD_MB, MIN_FREE_DISK_MB, UPLOAD_DIR, USER_MAX_ACTIVE_ANALYSES
+from ..config import (
+    ANALYSIS_FRAME_INTERVAL_SECONDS,
+    MAX_UPLOAD_MB,
+    MIN_FREE_DISK_MB,
+    UPLOAD_DIR,
+    USER_MAX_ACTIVE_ANALYSES,
+)
 from ..services.analysis_jobs import (
     get_user_job_by_idempotency_key,
     get_user_job_source_filename,
@@ -94,7 +100,10 @@ def upload_video(
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         try:
-            validate_video_info(get_video_info(str(file_path)))
+            validate_video_info(
+                get_video_info(str(file_path)),
+                interval_seconds=ANALYSIS_FRAME_INTERVAL_SECONDS,
+            )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         reservation = reserve_analysis_job(

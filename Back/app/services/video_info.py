@@ -5,6 +5,7 @@ import math
 import cv2
 
 from ..config import (
+    ANALYSIS_FRAME_INTERVAL_SECONDS,
     MAX_EXTRACTED_FRAMES,
     MAX_VIDEO_DURATION_SECONDS,
     MAX_VIDEO_FPS,
@@ -40,7 +41,8 @@ def get_video_info(video_path: str):
     }
 
 
-def validate_video_info(video_info, interval_seconds=1):
+def validate_video_info(video_info, interval_seconds=None):
+    interval_seconds = interval_seconds or ANALYSIS_FRAME_INTERVAL_SECONDS
     fields = ("fps", "frame_count", "width", "height", "duration_seconds")
     if video_info.get("error") or any(
         not isinstance(video_info.get(field), (int, float))

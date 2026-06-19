@@ -1,3 +1,5 @@
+"""사용자별 업로드·결과 파일 사용량과 활성 분석 작업 수를 계산한다."""
+
 from pathlib import Path
 
 from ..config import RESULT_DIR, UPLOAD_DIR, USER_MAX_ACTIVE_ANALYSES, USER_STORAGE_QUOTA_MB

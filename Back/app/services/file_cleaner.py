@@ -1,8 +1,12 @@
+"""백엔드 저장소 내부 파일과 오래된 임시 디렉터리를 안전하게 삭제한다."""
+
 import logging
 import os
 import shutil
 import time
 from pathlib import Path
+
+from .log_safety import safe_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +17,7 @@ def safe_remove_file(file_path: str):
             os.remove(file_path)
             return True
         except Exception:
-            logger.exception("Failed to remove file: %s", file_path)
+            logger.exception("Failed to remove file: %s", safe_log_path(file_path))
             return False
 
     return False
@@ -40,7 +44,7 @@ def safe_remove_empty_dir(dir_path: str):
             os.rmdir(dir_path)
             return True
     except Exception:
-        logger.exception("Failed to remove empty directory: %s", dir_path)
+        logger.exception("Failed to remove empty directory: %s", safe_log_path(dir_path))
         return False
 
     return False
@@ -79,7 +83,7 @@ def safe_remove_directory(dir_path: str | Path, allowed_root: str | Path):
         shutil.rmtree(path)
         return True
     except Exception:
-        logger.exception("Failed to remove directory: %s", path)
+        logger.exception("Failed to remove directory: %s", safe_log_path(path))
         return False
 
 

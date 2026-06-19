@@ -1,3 +1,5 @@
+"""분석 상세 결과 JSON을 원자적으로 저장하고 안전하게 조회한다."""
+
 import json
 import logging
 import os
@@ -7,6 +9,7 @@ from uuid import uuid4
 
 from ..config import RESULT_DIR
 from .file_cleaner import safe_remove_empty_dir, safe_remove_file
+from .log_safety import safe_log_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,7 @@ def load_analysis_result(result_id: str):
         with open(file_path, "r", encoding="utf-8") as file:
             return json.load(file)
     except (OSError, json.JSONDecodeError):
-        logger.exception("Failed to load analysis result: %s", result_id)
+        logger.exception("Failed to load analysis result: %s", safe_log_identifier(result_id))
         return None
 
 
@@ -65,7 +68,7 @@ def delete_analysis_result(result_id: str):
         with open(file_path, "r", encoding="utf-8") as file:
             result_file = json.load(file)
     except (OSError, json.JSONDecodeError):
-        logger.exception("Failed to read analysis result before deletion: %s", result_id)
+        logger.exception("Failed to read analysis result before deletion: %s", safe_log_identifier(result_id))
         result_file = {}
 
     data = result_file.get("data", {})
@@ -131,6 +134,7 @@ def build_result_summary_item(result_file: dict, file_path: str):
             "face_detection_rate": score_result.get("face_detection_rate"),
             "shoulder_balance_score": score_result.get("shoulder_balance_score"),
             "gaze_score": score_result.get("gaze_score"),
+            "head_direction_score": score_result.get("head_direction_score"),
             "speech_speed_score": score_result.get("speech_speed_score"),
             "silence_score": score_result.get("silence_score"),
             "filler_score": score_result.get("filler_score"),

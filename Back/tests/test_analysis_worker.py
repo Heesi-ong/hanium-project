@@ -3,12 +3,23 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from Back.app.workers import analysis_worker
 
 
 class AnalysisWorkerCleanupTest(unittest.TestCase):
+    @patch.object(analysis_worker.threading, "Thread")
+    def test_worker_manager_start_is_idempotent(self, thread):
+        created_thread = MagicMock()
+        thread.return_value = created_thread
+        manager = analysis_worker.AnalysisWorkerManager()
+
+        manager.start()
+        manager.start()
+
+        self.assertEqual(thread.call_count, analysis_worker.ANALYSIS_WORKERS + 1)
+
     def test_cleanup_keeps_processing_job_and_removes_orphan(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             frame_root = Path(temp_dir)
@@ -35,13 +46,16 @@ class AnalysisWorkerCleanupTest(unittest.TestCase):
     def test_completed_result_cleanup_is_disabled_by_default(self, _list_expired):
         self.assertEqual(analysis_worker.cleanup_expired_results(), 0)
 
-    @patch.object(analysis_worker, "delete_analysis_result")
-    @patch.object(analysis_worker, "delete_completed_job", return_value=True)
+    @patch.object(analysis_worker, "StagedDeletion")
+    @patch.object(analysis_worker, "delete_result_records")
     @patch.object(analysis_worker, "list_expired_result_ids", return_value=["old-result"])
-    def test_expired_completed_result_removes_db_and_json(self, _list_expired, delete_job, delete_result):
+    def test_expired_completed_result_removes_db_and_json(
+        self, _list_expired, delete_records, staged_deletion
+    ):
         self.assertEqual(analysis_worker.cleanup_expired_results(), 1)
-        delete_job.assert_called_once_with("old-result")
-        delete_result.assert_called_once_with("old-result")
+        delete_records.assert_called_once_with("old-result")
+        staged_deletion.return_value.commit.assert_called_once_with()
+        staged_deletion.return_value.purge.assert_called_once_with()
 
     @patch.object(analysis_worker, "clear_source_file")
     @patch.object(analysis_worker, "ensure_file_removed", return_value=False)

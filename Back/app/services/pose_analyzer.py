@@ -1,3 +1,5 @@
+"""MediaPipe Pose 결과에서 자세 랜드마크와 자세 안정성 원천 데이터를 추출한다."""
+
 import os
 
 import mediapipe as mp

@@ -1,3 +1,5 @@
+"""포즈 결과의 손목 움직임을 기반으로 발표 제스처 횟수와 빈도 지표를 계산한다."""
+
 def analyze_gesture_from_pose_results(pose_results: list, duration_seconds: float = 0):
     if not pose_results:
         return {

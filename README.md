@@ -29,12 +29,20 @@ MySQL을 종료할 때는 `./scripts/mysql-stop.sh`를 사용한다. 데이터�
 만드는 환경에서는 `Back/migrations` 아래 SQL 파일을 번호 순서대로 적용해야 한다.
 백엔드를 백그라운드 사용자 서비스로 실행하거나 종료하려면 각각
 `./scripts/backend-start.sh`, `./scripts/backend-stop.sh`를 사용한다.
-프론트엔드를 백그라운드에서 실행하거나 종료하려면 각각
-`./scripts/frontend-start.sh`, `./scripts/frontend-stop.sh`를 사용한다.
+프론트엔드는 macOS Desktop 폴더 접근 권한이 유지되도록
+`./scripts/frontend-start.sh`를 실행한 터미널을 열어 둔 상태로 사용한다.
+종료할 때는 해당 터미널에서 `Ctrl-C`를 누르거나 다른 터미널에서
+`./scripts/frontend-stop.sh`를 사용한다.
 
 백엔드는 `Back/.env`를 읽는다. 로컬 Ollama는 API 키를 사용하지 않으며
 `OLLAMA_API_KEY`가 비어 있어도 정상 동작한다. 개발 중 Vite는 `/analyze`와
 `/api`를 `http://127.0.0.1:8000`으로 프록시한다.
+
+운영 배포 전에는 실제 비밀값을 출력하지 않는 설정 검사를 실행한다.
+
+```bash
+.venv/bin/python scripts/verify-config.py --mode production
+```
 
 ## 채팅 API
 
@@ -112,9 +120,34 @@ Port `3307`, 사용자 계정을 직접 등록한다. MySQL 서버가 실행 중
 분석 워커, 유지보수 스레드, Ollama 모델, 작업 큐, 디스크 여유 공간을 함께 확인할 수
 있다. `MIN_FREE_DISK_MB`보다 디스크 여유 공간이 부족하면 새 업로드를 거부한다.
 관리자는 `/api/admin/status`에서 동일한 운영 상태를 인증된 요청으로 조회할 수 있다.
-완료 결과 자동 정리는 기본적으로 비활성화되어 있다. 운영 정책을 확정한 뒤
-`ANALYSIS_RESULT_RETENTION_DAYS`를 1 이상의 값으로 설정하면 해당 기간이 지난
-완료 결과의 DB 레코드와 JSON 파일을 주기적으로 함께 삭제한다.
+관리자 전용 `/api/admin/metrics`는 개인 식별 정보 없이 분석 성공률, 실패율, 평균
+완료 처리 시간과 최근 24시간 집계를 제공한다.
+완료 분석 결과와 AI 코칭은 확정 정책에 따라 90일 보존하며,
+`ANALYSIS_RESULT_RETENTION_DAYS=90`이 지난 완료 결과의 DB 레코드와 JSON 파일을
+주기적으로 함께 삭제한다. 관리자 감사 로그는 `ADMIN_AUDIT_RETENTION_DAYS=365`
+기준으로 정리한다.
+
+## 관리자 계정 관리
+
+관리자 계정은 공개 웹 API에서 생성하거나 승격하지 않는다. 먼저 마이그레이션을
+적용한 뒤 프로젝트 루트에서 전용 CLI를 사용한다. CLI는 대상 이메일을 다시 입력해야
+변경하며, 결과는 `admin_audit_logs`에 기록한다.
+
+관리자가 한 명도 없을 때 최초 관리자 계정을 생성한다.
+
+```bash
+.venv/bin/python scripts/manage-admin.py create-initial \
+  --email admin@example.com \
+  --display-name 관리자
+```
+
+활성 상태의 기존 사용자를 관리자로 승격한다.
+
+```bash
+.venv/bin/python scripts/manage-admin.py promote --email user@example.com
+```
+
+승격된 사용자는 기존 세션을 로그아웃한 뒤 다시 로그인해야 한다.
 
 ## 목적 기반 연습 코칭
 
@@ -133,6 +166,12 @@ Port `3307`, 사용자 계정을 직접 등록한다. MySQL 서버가 실행 중
 변화는 발표 길이에 따른 분당 비율로 정규화한다. 기존 결과는 생성 당시 알고리즘과
 수치를 그대로 유지한다.
 
+새 분석 알고리즘 `2026.06.3`은 MediaPipe 얼굴 변환 행렬에서 yaw, pitch, roll과
+실험용 얼굴 방향 점수를 추가로 계산한다. 이 신규 지표는 기존 얼굴 방향 안정성
+점수와 함께 저장해 비교할 수 있지만, 검증이 완료되기 전까지 종합 점수에는
+포함하지 않는다. 기존 결과 비교 방법과 정답 데이터 수집 전 결정 항목은
+`docs/FACE_DIRECTION_VALIDATION.md`에서 확인한다.
+
 반복 발표는 동일 발표 목적과 동일 연습 시리즈만 성장 비교에 포함한다. 예상 질문
 연습에서는 질문을 AI 청중의 질문으로 표시하고, 사용자가 직접 입력한 답변을 Ollama
 코치가 평가한다. 연습 데이터 수명주기와 운영 점검 방법은
@@ -142,8 +181,14 @@ Port `3307`, 사용자 계정을 직접 등록한다. MySQL 서버가 실행 중
 변경하지 않고 발표 목적, 청중, 핵심 메시지, 측정 가능 여부, 분석 신뢰도, 발화
 시점과 규칙 기반 코칭을 구조화 JSON으로 Ollama에 전달한다. 응답은 검증 가능한
 근거만 허용하는 JSON으로 검증하며 실패하면 규칙 기반 대체 코칭을 저장한다.
-생성 결과는 `Back/ai_coaching/{result_id}.json`에 저장되고 조회·재생성할 수 있다.
+생성 결과는 `Back/storage/ai_coaching/{result_id}.json`에 저장되고 조회·재생성할 수 있다.
 AI 코칭 장애는 기본 분석 결과와 규칙 기반 코칭 조회에 영향을 주지 않는다.
+
+AI 발표 코칭과 발표 문맥 채팅은 `Back/knowledge`의 Markdown 문서를 로컬 RAG
+지식으로 사용한다. 검색기는 문서 front matter, 발표 목적, 핵심 메시지와 측정
+가능한 낮은 점수 항목을 이용해 관련 문서를 선택한다. 검색 문서는 코칭 지침으로만
+사용하며 시스템 점수나 검증 가능한 측정 근거를 변경하지 않는다. 문서 형식과 추가
+방법은 `Back/knowledge/README.md`에서 확인한다.
 
 ## 사용자 및 대화 관리
 
@@ -180,7 +225,10 @@ E2E는 실행 중인 로컬 서비스와 Playwright Chromium을 사용해
 `.runtime/backups`에 저장되며 Git에서 제외된다. 마이그레이션은
 `.venv/bin/python scripts/migrate.py`로 적용하며 적용 이력은
 `schema_migrations`에 기록된다. 같은 명령을 다시 실행해도 적용된 변경은 반복하지
-않는다. 복원은 운영 서비스를 중지하고 아래처럼 명시적인 확인값과 함께 실행한다.
+않는다. `ALTER TABLE` 마이그레이션이 부분 적용된 뒤 `schema_migrations` 기록 전에
+실패한 경우에는 같은 SQL을 즉시 재실행하지 말고, 백업을 보존한 상태에서 실제 컬럼과
+인덱스 존재 여부를 확인한 뒤 기록 보정 또는 백업 복원을 선택한다. 복원은 운영 서비스를
+중지하고 아래처럼 명시적인 확인값과 함께 실행한다.
 
 ```bash
 CONFIRM_RESTORE=gpt_conversation_app ./scripts/db-restore.sh .runtime/backups/<backup.sql>

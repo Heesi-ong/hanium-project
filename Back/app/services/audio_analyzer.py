@@ -1,3 +1,5 @@
+"""Whisper 음성 인식 결과를 만들고 발표 발화 텍스트와 말하기 속도 정보를 계산한다."""
+
 import re
 
 import whisper

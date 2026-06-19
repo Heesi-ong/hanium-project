@@ -1,3 +1,5 @@
+"""ffmpeg로 영상 음성 트랙의 평균 음량과 음량 안정성 정보를 계산한다."""
+
 import subprocess
 
 

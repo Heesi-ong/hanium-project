@@ -1,3 +1,5 @@
+"""분석 점수와 측정값을 사용자가 읽을 수 있는 장점·개선점 피드백으로 변환한다."""
+
 def generate_feedback(score_result: dict):
     feedback = []
 

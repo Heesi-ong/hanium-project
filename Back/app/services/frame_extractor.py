@@ -1,3 +1,5 @@
+"""분석용 영상 프레임을 일정 간격으로 추출해 프레임 디렉터리에 저장한다."""
+
 import os
 import re
 from uuid import uuid4

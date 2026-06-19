@@ -1,3 +1,5 @@
+"""인증과 계정 관리 API 요청 본문의 Pydantic 검증 스키마를 정의한다."""
+
 from pydantic import BaseModel, Field
 
 

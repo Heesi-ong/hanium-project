@@ -1,3 +1,5 @@
+"""사용자 인증, 비밀번호 해시, 세션 생성·검증, 현재 사용자 조회 로직을 제공한다."""
+
 import hashlib
 import hmac
 import secrets

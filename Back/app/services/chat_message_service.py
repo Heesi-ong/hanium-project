@@ -4,7 +4,7 @@ import json
 
 from fastapi import HTTPException
 
-from ..config import CHAT_HISTORY_MESSAGES, OLLAMA_MODEL
+from ..config import CHAT_HISTORY_MESSAGES, OLLAMA_CHAT_MAX_OUTPUT_TOKENS, OLLAMA_MODEL
 from .database import advisory_lock, transaction
 from .ollama_service import chat_with_ollama
 
@@ -79,7 +79,11 @@ def send_chat_message(conversation_id: int, content: str, request_id: str, user_
             if conversation["system_prompt"]:
                 ollama_messages.append({"role": "system", "content": conversation["system_prompt"]})
             ollama_messages.extend(history)
-            result = chat_with_ollama(ollama_messages)
+            result = chat_with_ollama(
+                ollama_messages,
+                options={"temperature": 0.3, "num_predict": OLLAMA_CHAT_MAX_OUTPUT_TOKENS},
+                think=False,
+            )
 
             with transaction() as connection:
                 with connection.cursor() as cursor:

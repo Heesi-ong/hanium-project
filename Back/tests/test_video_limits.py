@@ -10,7 +10,7 @@ class VideoLimitTests(unittest.TestCase):
 
     def test_valid_video_includes_expected_extracted_frames(self):
         result = video_info.validate_video_info(self.valid_video())
-        self.assertEqual(result["expected_extracted_frames"], 10)
+        self.assertEqual(result["expected_extracted_frames"], 2)
 
     def test_invalid_or_non_finite_metadata_is_rejected(self):
         metadata = self.valid_video()

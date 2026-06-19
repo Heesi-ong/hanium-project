@@ -22,6 +22,8 @@ class OllamaServiceTests(unittest.TestCase):
         self.assertEqual(result["content"], "안녕하세요.")
         self.assertEqual(result["total_tokens"], 16)
         self.assertFalse(post.call_args.kwargs["json"]["stream"])
+        self.assertIn("num_ctx", post.call_args.kwargs["json"]["options"])
+        self.assertIn("num_predict", post.call_args.kwargs["json"]["options"])
 
     @patch("Back.app.services.ollama_service.requests.post")
     def test_maps_connection_error_to_503(self, post):
@@ -46,6 +48,8 @@ class OllamaServiceTests(unittest.TestCase):
 
         self.assertEqual(post.call_args.kwargs["json"]["format"], "json")
         self.assertEqual(post.call_args.kwargs["json"]["options"]["temperature"], 0.2)
+        self.assertGreaterEqual(post.call_args.kwargs["json"]["options"]["num_ctx"], 1024)
+        self.assertGreaterEqual(post.call_args.kwargs["json"]["options"]["num_predict"], 64)
         self.assertFalse(post.call_args.kwargs["json"]["think"])
 
 

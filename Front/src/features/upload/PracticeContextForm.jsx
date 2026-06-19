@@ -1,11 +1,22 @@
 // 업로드 전 발표 목적, 청중, 핵심 메시지, 연습 시리즈를 입력받는 폼이다.
 function PracticeContextForm({ context, loading, practiceSeries, purposes, setContext }) {
   return (
-    <div className="card">
-      <h2>이번 발표의 연습 목표</h2>
-      <p className="upload-description">
-        목적과 청중을 알려주면 분석 결과를 실제 다음 연습 과제로 연결합니다.
-      </p>
+    <div className="card practice-context-card">
+      <div className="practice-context-header">
+        <div>
+          <span className="upload-section-kicker">Practice setup</span>
+          <h2>이번 발표의 연습 목표</h2>
+          <p className="upload-description">
+            목적과 청중을 알려주면 분석 결과를 실제 다음 연습 과제로 연결합니다.
+          </p>
+        </div>
+
+        <div className="practice-context-summary">
+          <span>반복 연습 기준</span>
+          <strong>목표 · 시리즈 · 핵심 메시지</strong>
+        </div>
+      </div>
+
       <div className="purpose-grid" role="radiogroup" aria-label="발표 목적">
         {purposes.map((purpose) => (
           <label
@@ -18,6 +29,7 @@ function PracticeContextForm({ context, loading, practiceSeries, purposes, setCo
               value={purpose.key}
               checked={context.purpose === purpose.key}
               disabled={loading}
+              className="purpose-input"
               onChange={(event) =>
                 setContext((current) => ({
                   ...current,
@@ -28,14 +40,19 @@ function PracticeContextForm({ context, loading, practiceSeries, purposes, setCo
                 }))
               }
             />
+            <span className="purpose-card-check" aria-hidden="true">
+              {context.purpose === purpose.key ? "✓" : ""}
+            </span>
             <strong>{purpose.label}</strong>
             <span>{purpose.focus}</span>
+            <em>권장 {purpose.recommended_minutes}분</em>
           </label>
         ))}
       </div>
+
       <div className="practice-field-grid">
-        <label>
-          발표 대상
+        <label className="practice-field">
+          <span>발표 대상</span>
           <input
             value={context.audience}
             maxLength="120"
@@ -46,8 +63,8 @@ function PracticeContextForm({ context, loading, practiceSeries, purposes, setCo
             }
           />
         </label>
-        <label>
-          목표 시간(분)
+        <label className="practice-field">
+          <span>목표 시간(분)</span>
           <input
             type="number"
             min="1"
@@ -62,8 +79,8 @@ function PracticeContextForm({ context, loading, practiceSeries, purposes, setCo
             }
           />
         </label>
-        <label>
-          기존 연습 시리즈
+        <label className="practice-field">
+          <span>기존 연습 시리즈</span>
           <select
             value={context.series_id || ""}
             disabled={loading}
@@ -86,8 +103,8 @@ function PracticeContextForm({ context, loading, practiceSeries, purposes, setCo
               ))}
           </select>
         </label>
-        <label>
-          새 연습 시리즈 이름
+        <label className="practice-field">
+          <span>새 연습 시리즈 이름</span>
           <input
             value={context.series_name}
             maxLength="120"
@@ -102,8 +119,8 @@ function PracticeContextForm({ context, loading, practiceSeries, purposes, setCo
             }
           />
         </label>
-        <label className="practice-core-message">
-          반드시 전달할 핵심 메시지
+        <label className="practice-field practice-core-message">
+          <span>반드시 전달할 핵심 메시지</span>
           <textarea
             value={context.core_message}
             maxLength="500"

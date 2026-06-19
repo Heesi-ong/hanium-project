@@ -3,7 +3,15 @@
 import logging
 import time
 
-from ..config import ANALYSIS_ALGORITHM_VERSION, FRAME_DIR, OLLAMA_MODEL, RESULT_DIR, UPLOAD_DIR
+from ..config import (
+    ANALYSIS_ALGORITHM_VERSION,
+    ANALYSIS_FRAME_INTERVAL_SECONDS,
+    FRAME_DIR,
+    OLLAMA_MODEL,
+    RESULT_DIR,
+    UPLOAD_DIR,
+)
+from ..services.analysis_filter import filter_analysis_result
 from ..services.analysis_jobs import (
     clear_source_file,
     is_cancel_requested,
@@ -19,6 +27,7 @@ from ..services.file_cleaner import ensure_file_removed, safe_remove_directory
 from ..services.filler_analyzer import analyze_filler_words
 from ..services.frame_extractor import extract_frames
 from ..services.gesture_analyzer import analyze_gesture_from_pose_results
+from ..services.llm_feedback_generator import generate_llm_feedback
 from ..services.log_safety import safe_log_identifier
 from ..services.pose_analyzer import analyze_pose_from_frame, create_pose_landmarker
 from ..services.result_saver import delete_analysis_result, save_analysis_result
@@ -57,6 +66,43 @@ def _analyze_frames(job_id, frame_paths, analyzer_factory, analyzer, stage, star
     return results
 
 
+def _build_raw_analysis_result(
+    video_info,
+    frame_result,
+    pose_results,
+    face_results,
+    timeline_result,
+    audio_result,
+    filler_result,
+    gesture_result,
+    volume_result,
+    score_result,
+    feedback_result,
+    summary_result,
+):
+    return {
+        "video_info": video_info,
+        "frame_result": {
+            "saved_count": frame_result.get("saved_count"),
+            "saved_bytes": frame_result.get("saved_bytes"),
+            "interval_seconds": frame_result.get("interval_seconds"),
+            "output_dir": frame_result.get("output_dir"),
+            "frames": frame_result.get("frames", []),
+        },
+        "pose_result": pose_results,
+        "face_result": face_results,
+        "timeline_result": timeline_result,
+        "audio_result": audio_result,
+        "filler_result": filler_result,
+        "gesture_result": gesture_result,
+        "volume_result": volume_result,
+        "score_result": score_result,
+        "basic_feedback": feedback_result,
+        "feedback_result": feedback_result,
+        "summary_result": summary_result,
+    }
+
+
 def run_analysis_job(job, heartbeat=None):
     job_id = job["id"]
     original_filename = job["original_filename"]
@@ -73,7 +119,11 @@ def run_analysis_job(job, heartbeat=None):
             raise ValueError(video_info["error"])
 
         update_job_progress(job_id, "extracting_frames", 15)
-        frame_result = extract_frames(str(file_path), interval_sec=1, output_id=job_id)
+        frame_result = extract_frames(
+            str(file_path),
+            interval_sec=ANALYSIS_FRAME_INTERVAL_SECONDS,
+            output_id=job_id,
+        )
         if frame_result.get("error") or not frame_result.get("frames"):
             raise ValueError(frame_result.get("error") or "no frames extracted")
 
@@ -158,11 +208,33 @@ def run_analysis_job(job, heartbeat=None):
                 "volume_level": score_result.get("volume_level"),
             },
         }
+        raw_analysis_result = _build_raw_analysis_result(
+            video_info,
+            frame_result,
+            pose_results,
+            face_results,
+            timeline_result,
+            audio_result,
+            filler_result,
+            gesture_result,
+            volume_result,
+            score_result,
+            feedback_result,
+            summary_result,
+        )
+        filtered_analysis_result = filter_analysis_result(raw_analysis_result)
+        llm_feedback_result = generate_llm_feedback(raw_analysis_result, filtered_analysis_result)
         analysis_data = {
             "status": "COMPLETED",
             "original_filename": original_filename,
             "video_info": video_info,
-            "frame_result": {"saved_count": frame_result.get("saved_count"), "output_dir": None, "frames": []},
+            "frame_result": {
+                "saved_count": frame_result.get("saved_count"),
+                "saved_bytes": frame_result.get("saved_bytes"),
+                "interval_seconds": frame_result.get("interval_seconds"),
+                "output_dir": frame_result.get("output_dir"),
+                "frames": frame_result.get("frames", []),
+            },
             "pose_results": pose_results,
             "face_results": face_results,
             "timeline_result": timeline_result,
@@ -179,6 +251,13 @@ def run_analysis_job(job, heartbeat=None):
                 "speech_speed_basis": audio_result.get("speech_speed_basis"),
                 "ollama_model": OLLAMA_MODEL,
             },
+            "raw_analysis_result": raw_analysis_result,
+            "filtered_analysis_result": filtered_analysis_result,
+            "llm_feedback_result": llm_feedback_result,
+            "final_feedback_summary": llm_feedback_result.get(
+                "summary",
+                feedback_result.get("summary"),
+            ),
         }
 
         _check_cancelled(job_id, heartbeat)
@@ -202,6 +281,7 @@ def run_analysis_job(job, heartbeat=None):
         logger.exception("Analysis job %s failed", safe_log_identifier(job_id))
         mark_job_failed(job_id, PUBLIC_ANALYSIS_ERROR, round(time.time() - start_time, 2))
     finally:
-        safe_remove_directory(FRAME_DIR / job_id, FRAME_DIR)
+        if not completed:
+            safe_remove_directory(FRAME_DIR / job_id, FRAME_DIR)
         if completed and ensure_file_removed(file_path):
             clear_source_file(job_id)

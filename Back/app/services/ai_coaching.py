@@ -9,7 +9,13 @@ from datetime import datetime
 
 from fastapi import HTTPException
 
-from ..config import AI_COACHING_DIR, OLLAMA_MODEL
+from ..config import (
+    AI_COACHING_DIR,
+    AI_COACHING_MAX_OUTPUT_TOKENS,
+    AI_COACHING_MAX_SEGMENT_TEXT_CHARS,
+    AI_COACHING_MAX_TRANSCRIPT_SEGMENTS,
+    OLLAMA_MODEL,
+)
 from .file_cleaner import ensure_file_removed, safe_remove_file
 from .knowledge_retriever import retrieve_knowledge
 from .log_safety import safe_log_identifier
@@ -18,8 +24,8 @@ from .practice_coaching import PURPOSES
 
 logger = logging.getLogger(__name__)
 AI_COACHING_PROMPT_VERSION = "presentation-coach-rag-2026.06.2"
-MAX_TRANSCRIPT_SEGMENTS = 30
-MAX_SEGMENT_TEXT_CHARS = 300
+MAX_TRANSCRIPT_SEGMENTS = AI_COACHING_MAX_TRANSCRIPT_SEGMENTS
+MAX_SEGMENT_TEXT_CHARS = AI_COACHING_MAX_SEGMENT_TEXT_CHARS
 
 PRESENTATION_COACH_SYSTEM_PROMPT = f"""
 /no_think
@@ -351,7 +357,7 @@ def generate_ai_coaching(result_id, user_id, result, context, rule_coaching, pre
                 },
             ],
             response_format="json",
-            options={"temperature": 0.2, "num_predict": 1600},
+            options={"temperature": 0.2, "num_predict": AI_COACHING_MAX_OUTPUT_TOKENS},
             think=False,
         )
         coaching = validate_coaching_response(response["content"], structured_input["allowed_evidence"])

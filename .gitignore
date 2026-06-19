@@ -6,10 +6,12 @@ __pycache__/
 .coverage
 htmlcov/
 
-Back/uploads/
-Back/frames/
-Back/results/
-Back/practice_contexts/
+Back/storage/uploads/
+Back/storage/frames/
+Back/storage/results/
+Back/storage/practice_contexts/
+Back/storage/ai_coaching/
+Back/storage/.deletion_staging/
 
 Front/node_modules/
 Front/dist/

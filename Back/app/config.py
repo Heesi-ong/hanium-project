@@ -1,3 +1,5 @@
+"""환경변수와 런타임 저장 경로를 읽어 백엔드 전역 설정값으로 제공한다."""
+
 import os
 from pathlib import Path
 
@@ -6,11 +8,17 @@ from dotenv import load_dotenv
 BACK_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BACK_DIR / ".env")
 
-UPLOAD_DIR = BACK_DIR / "uploads"
-FRAME_DIR = BACK_DIR / "frames"
-RESULT_DIR = BACK_DIR / "results"
-MODEL_DIR = BACK_DIR / "models"
-AI_COACHING_DIR = BACK_DIR / "ai_coaching"
+STORAGE_DIR = BACK_DIR / "storage"
+UPLOAD_DIR = STORAGE_DIR / "uploads"
+FRAME_DIR = STORAGE_DIR / "frames"
+RESULT_DIR = STORAGE_DIR / "results"
+MODEL_DIR = STORAGE_DIR / "models"
+AI_COACHING_DIR = STORAGE_DIR / "ai_coaching"
+PRACTICE_CONTEXT_DIR = STORAGE_DIR / "practice_contexts"
+DELETION_STAGING_DIR = STORAGE_DIR / ".deletion_staging"
+KNOWLEDGE_DIR = BACK_DIR / "knowledge"
+RAG_MAX_DOCUMENTS = max(1, int(os.getenv("RAG_MAX_DOCUMENTS", "5")))
+RAG_MAX_CHARS_PER_DOCUMENT = max(400, int(os.getenv("RAG_MAX_CHARS_PER_DOCUMENT", "1800")))
 
 ALLOWED_ORIGINS = [
     origin.strip()
@@ -49,7 +57,8 @@ CHAT_PENDING_TIMEOUT_MINUTES = max(1, int(os.getenv("CHAT_PENDING_TIMEOUT_MINUTE
 ANALYSIS_WORKERS = max(1, int(os.getenv("ANALYSIS_WORKERS", "1")))
 ANALYSIS_POLL_SECONDS = max(0.2, float(os.getenv("ANALYSIS_POLL_SECONDS", "1")))
 ANALYSIS_SOURCE_RETENTION_HOURS = max(1, int(os.getenv("ANALYSIS_SOURCE_RETENTION_HOURS", "24")))
-ANALYSIS_RESULT_RETENTION_DAYS = max(0, int(os.getenv("ANALYSIS_RESULT_RETENTION_DAYS", "0")))
+ANALYSIS_RESULT_RETENTION_DAYS = max(1, int(os.getenv("ANALYSIS_RESULT_RETENTION_DAYS", "90")))
+ADMIN_AUDIT_RETENTION_DAYS = max(1, int(os.getenv("ADMIN_AUDIT_RETENTION_DAYS", "365")))
 ORPHAN_FRAME_MIN_AGE_MINUTES = max(1, int(os.getenv("ORPHAN_FRAME_MIN_AGE_MINUTES", "10")))
 MAINTENANCE_INTERVAL_SECONDS = max(60, int(os.getenv("MAINTENANCE_INTERVAL_SECONDS", "3600")))
 MIN_FREE_DISK_MB = max(0, int(os.getenv("MIN_FREE_DISK_MB", "2048")))
@@ -70,5 +79,5 @@ MAINTENANCE_STALE_SECONDS = max(
     int(os.getenv("MAINTENANCE_STALE_SECONDS", str(MAINTENANCE_INTERVAL_SECONDS * 2 + 60))),
 )
 ACCOUNT_DELETION_WAIT_SECONDS = max(1, int(os.getenv("ACCOUNT_DELETION_WAIT_SECONDS", "30")))
-ANALYSIS_ALGORITHM_VERSION = os.getenv("ANALYSIS_ALGORITHM_VERSION", "2026.06.2")
+ANALYSIS_ALGORITHM_VERSION = os.getenv("ANALYSIS_ALGORITHM_VERSION", "2026.06.3")
 DISABLE_BACKGROUND_SERVICES = os.getenv("DISABLE_BACKGROUND_SERVICES", "false").lower() == "true"

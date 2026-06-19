@@ -11,8 +11,6 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
-screen -S hanium-frontend -X quit >/dev/null 2>&1 || true
-
 for _ in {1..20}; do
   if ! lsof -nP -iTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then
     rm -f "$PID_FILE"

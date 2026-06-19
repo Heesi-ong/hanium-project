@@ -1,3 +1,5 @@
+"""FastAPI 앱 생성, 공통 미들웨어 등록, 라우터 연결, 백그라운드 작업자 생명주기를 관리한다."""
+
 import logging
 from contextlib import asynccontextmanager
 
@@ -7,12 +9,13 @@ from fastapi.responses import JSONResponse
 
 from .config import ALLOWED_ORIGINS, DISABLE_BACKGROUND_SERVICES
 from .middleware import add_request_id
-from .middleware.upload_limit import reject_oversized_upload
+from .middleware.upload_limit import UploadSizeLimitMiddleware
 from .routers import admin, analyze, auth, chat, practice
 from .services.analysis_jobs import recover_interrupted_jobs
 from .services.chat_recovery import recover_stale_pending_messages
 from .services.database import ping_database
 from .services.readiness import get_readiness_status
+from .services.runtime_storage import ensure_runtime_storage_dirs
 from .workers.analysis_worker import analysis_worker_manager
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,7 @@ async def reject_cross_origin_cookie_requests(request: Request, call_next):
 
 @asynccontextmanager
 async def lifespan(_app):
+    ensure_runtime_storage_dirs()
     if DISABLE_BACKGROUND_SERVICES:
         yield
         return
@@ -69,7 +73,6 @@ app = FastAPI(lifespan=lifespan)
 app.middleware("http")(add_request_id)
 app.middleware("http")(add_security_headers)
 app.middleware("http")(reject_cross_origin_cookie_requests)
-app.middleware("http")(reject_oversized_upload)
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,6 +81,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Idempotency-Key", "X-Request-ID"],
 )
+app.add_middleware(UploadSizeLimitMiddleware)
 
 app.include_router(analyze.router)
 app.include_router(auth.router)

@@ -1,3 +1,5 @@
+"""MySQL 연결 풀, 트랜잭션 컨텍스트, advisory lock, DB 상태 확인 기능을 제공한다."""
+
 from contextlib import contextmanager
 from queue import Empty, LifoQueue
 from threading import Lock

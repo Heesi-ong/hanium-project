@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 데이터베이스 마이그레이션 SQL을 순서대로 적용하는 CLI 스크립트다.
 import sys
 from pathlib import Path
 

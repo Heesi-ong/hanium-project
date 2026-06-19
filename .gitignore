@@ -1,11 +1,69 @@
 .DS_Store
-.venv/
-.runtime/
-__pycache__/
-*.pyc
-.coverage
-htmlcov/
 
+# Python caches and virtual environments
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+__pypackages__/
+
+# Python build and packaging output
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+
+# Test, coverage, and lint caches
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+*.py.cover
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+cover/
+
+# Local app/runtime state
+.runtime/
+logs/
+*.log
+db.sqlite3
+db.sqlite3-journal
+
+# Environment files
+.env
+.envrc
+Back/.env
+Front/.env
+
+# Backend runtime storage
 Back/storage/uploads/
 Back/storage/frames/
 Back/storage/results/
@@ -13,9 +71,23 @@ Back/storage/practice_contexts/
 Back/storage/ai_coaching/
 Back/storage/.deletion_staging/
 
+# Frontend dependencies and build output
+node_modules/
 Front/node_modules/
 Front/dist/
 Front/playwright-report/
 Front/test-results/
-Front/.env
-Back/.env
+
+# Editor and tool state
+.cache/
+.pyre/
+.pytype/
+.pdm-python
+.pdm-build/
+.pixi/
+.ipynb_checkpoints/
+.spyderproject
+.spyproject
+.ropeproject
+tempCodeRunnerFile.py
+.pypirc

@@ -1,3 +1,5 @@
+"""서버 재시작 후 오래 pending 상태로 남은 채팅 메시지를 실패 상태로 복구한다."""
+
 from ..config import CHAT_PENDING_TIMEOUT_MINUTES
 from ..services.database import transaction
 

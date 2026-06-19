@@ -1,3 +1,5 @@
+"""발표 목적과 이전 연습 기록을 기반으로 규칙 기반 연습 계획과 성장 비교를 만든다."""
+
 import re
 from decimal import Decimal
 

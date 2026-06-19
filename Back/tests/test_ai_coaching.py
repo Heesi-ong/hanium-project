@@ -36,6 +36,18 @@ def sample_result():
 
 
 class AiCoachingTests(unittest.TestCase):
+    @patch("Back.app.services.ai_coaching.retrieve_knowledge", return_value=[])
+    def test_unavailable_metric_is_not_used_as_rag_improvement_query(self, retrieve):
+        result = sample_result()
+        context = {"purpose": "project", "audience": "심사위원", "core_message": "검증 결과"}
+        rule = build_practice_coaching(result, context)
+
+        ai_coaching.build_structured_coaching_input(result, context, rule)
+
+        metric_keys = retrieve.call_args.kwargs["metric_keys"]
+        self.assertIn("speech_speed_score", metric_keys)
+        self.assertNotIn("gaze_score", metric_keys)
+
     def test_structured_input_marks_unavailable_score_without_treating_it_as_low(self):
         result = sample_result()
         context = {"purpose": "project", "audience": "심사위원", "core_message": "검증 결과"}
@@ -109,6 +121,7 @@ class AiCoachingTests(unittest.TestCase):
         self.assertEqual(loaded["result_id"], "job-1")
         self.assertIn("규칙 기반", saved["coaching"]["summary"])
         self.assertEqual(saved["failure_type"], "invalid_response")
+        self.assertIn("knowledge_sources", saved)
 
     def test_ollama_failure_does_not_raise_and_preserves_fallback(self):
         result = sample_result()

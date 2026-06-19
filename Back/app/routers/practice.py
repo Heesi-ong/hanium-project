@@ -1,3 +1,5 @@
+"""발표 목적별 연습 문맥 저장, 시리즈 조회, 규칙/AI 코칭 API를 담당한다."""
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 

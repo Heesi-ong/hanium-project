@@ -1,4 +1,6 @@
+// 저장된 AI 코칭을 표시하고 사용자가 AI 코칭 생성을 요청할 수 있게 한다.
 import StateMessage from "../../components/StateMessage";
+import "./AiCoachingSection.css";
 
 function AiCoachingSection({
   aiCoaching,
@@ -136,6 +138,22 @@ function AiCoachingSection({
                   <li key={item}>{item}</li>
                 ))}
               </ul>
+            </article>
+          )}
+
+          {aiCoaching.knowledge_sources?.length > 0 && (
+            <article>
+              <h3>RAG 참고 지식</h3>
+              <p className="detail-muted-text">
+                아래 문서는 코칭 방향을 구성하는 참고 자료이며 시스템 측정 근거와는 구분됩니다.
+              </p>
+              <div className="detail-tag-area">
+                {aiCoaching.knowledge_sources.map((source) => (
+                  <span className="tag" key={source.id}>
+                    {source.title} · v{source.version}
+                  </span>
+                ))}
+              </div>
             </article>
           )}
 

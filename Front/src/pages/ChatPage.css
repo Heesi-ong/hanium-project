@@ -1,3 +1,5 @@
+/* 발표 코칭 채팅 화면의 사이드바, 메시지 목록, 입력 영역 스타일을 정의한다. */
+
 .chat-layout {
   display: grid;
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
@@ -126,6 +128,12 @@
   color: #047857;
   font-size: 13px;
   font-weight: 700;
+}
+
+.chat-optional-errors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 @media (max-width: 800px) {

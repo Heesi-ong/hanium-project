@@ -1,3 +1,4 @@
+// 모델, 대화방, 메시지, 채팅 전송, 사용량 요약 API 호출을 제공한다.
 import { apiRequest } from "./apiClient";
 
 export const getModels = (signal) => apiRequest("/api/models", { signal });

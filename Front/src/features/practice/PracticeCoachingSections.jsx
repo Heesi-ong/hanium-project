@@ -1,3 +1,4 @@
+// 규칙 기반 발표 코칭의 개선 행동, 예상 질문, 성장 비교 섹션을 렌더링한다.
 import StateMessage from "../../components/StateMessage";
 
 function PracticeCoachingSections({ coaching, loading, error, onRetry, onPracticeQuestion }) {

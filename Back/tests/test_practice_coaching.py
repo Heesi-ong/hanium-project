@@ -182,6 +182,29 @@ class PracticeCoachingTests(unittest.TestCase):
             with patch.object(practice_contexts, "PRACTICE_CONTEXT_DIR", root):
                 self.assertEqual(practice_coaching.list_orphan_practice_contexts({"active"}), ["orphan"])
 
+    def test_series_listing_ignores_malformed_series_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "valid.json").write_text(
+                '{"user_id": 7, "purpose": "project", "series_name": " 최종 발표 "}',
+                encoding="utf-8",
+            )
+            (root / "empty.json").write_text(
+                '{"user_id": 7, "purpose": "project", "series_name": ""}',
+                encoding="utf-8",
+            )
+            (root / "other.json").write_text(
+                '{"user_id": 8, "purpose": "project", "series_name": "다른 사용자"}',
+                encoding="utf-8",
+            )
+            (root / "broken.json").write_text("{", encoding="utf-8")
+            with patch.object(practice_contexts, "PRACTICE_CONTEXT_DIR", root):
+                series = practice_coaching.list_practice_series(7)
+
+        self.assertEqual(len(series), 1)
+        self.assertEqual(series[0]["series_name"], "최종 발표")
+        self.assertEqual(series[0]["purpose"], "project")
+
 
 if __name__ == "__main__":
     unittest.main()

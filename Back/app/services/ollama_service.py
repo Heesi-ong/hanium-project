@@ -1,3 +1,5 @@
+"""Ollama 채팅 API 호출을 공통화하고 실패를 HTTP 오류로 변환한다."""
+
 import requests
 from fastapi import HTTPException
 

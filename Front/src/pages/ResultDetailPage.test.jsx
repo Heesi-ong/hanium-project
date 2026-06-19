@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createAiCoaching,
+  downloadAnalyzeReport,
   getAiCoaching,
   getAnalyzeSections,
   getPracticeCoaching,
@@ -15,8 +16,8 @@ import ResultDetailPage from "./ResultDetailPage";
 
 vi.mock("../api/analyzeApi", () => ({
   createAiCoaching: vi.fn(),
+  downloadAnalyzeReport: vi.fn(),
   getAiCoaching: vi.fn(),
-  getAnalyzeReportUrl: vi.fn(() => "/report.md"),
   getAnalyzeSections: vi.fn(),
   getPracticeCoaching: vi.fn(),
   getTimelineChart: vi.fn(),
@@ -41,6 +42,16 @@ describe("ResultDetailPage", () => {
     getTimelineChart.mockResolvedValue({ chart_data: [] });
     getPracticeCoaching.mockRejectedValue(new Error("코칭 서비스 오류"));
     getAiCoaching.mockResolvedValue({ ai_coaching: null, status: "not_generated" });
+    downloadAnalyzeReport.mockResolvedValue(new Blob(["# report"], { type: "text/markdown" }));
+    if (!URL.createObjectURL) {
+      URL.createObjectURL = vi.fn();
+    }
+    if (!URL.revokeObjectURL) {
+      URL.revokeObjectURL = vi.fn();
+    }
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
   });
 
   it("연습 코칭 실패가 기본 분석 결과를 막지 않는다", async () => {
@@ -55,6 +66,32 @@ describe("ResultDetailPage", () => {
     expect(await screen.findByText("기본 결과 정상")).toBeInTheDocument();
     expect(await screen.findByText("연습 코칭만 불러오지 못했습니다.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "코칭 다시 불러오기" })).toBeInTheDocument();
+  });
+
+  it("신규 3축 얼굴 방향 지표를 기존 점수와 분리해 표시한다", async () => {
+    getAnalyzeSections.mockResolvedValue({
+      sections: {
+        ...sections,
+        score: {
+          total_score: 88,
+          gaze_score: 100,
+          head_direction_score: 70,
+          score_availability: { gaze_score: true },
+        },
+      },
+      original_filename: "sample.mp4",
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findAllByText("3축 얼굴 방향 (실험)")).toHaveLength(2);
+    expect(screen.getAllByText("70").length).toBeGreaterThanOrEqual(1);
   });
 
   it("연습 코칭 재시도는 기본 결과를 다시 요청하지 않는다", async () => {
@@ -103,6 +140,62 @@ describe("ResultDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "타임라인 다시 불러오기" }));
     expect(getAnalyzeSections).toHaveBeenCalledTimes(1);
     expect(getTimelineChart).toHaveBeenCalledTimes(2);
+  });
+
+  it("분석 결과 지표와 타임라인을 차트로 표시한다", async () => {
+    getAnalyzeSections.mockResolvedValue({
+      sections: {
+        ...sections,
+        score: {
+          total_score: 88,
+          pose_detection_rate: 95,
+          face_detection_rate: 90,
+          shoulder_balance_score: 82,
+          gaze_score: 76,
+          head_direction_score: 70,
+          score_availability: {
+            shoulder_balance_score: true,
+            gaze_score: true,
+            head_direction_score: true,
+          },
+        },
+      },
+      original_filename: "sample.mp4",
+    });
+    getTimelineChart.mockResolvedValue({
+      chart_data: [
+        {
+          time_sec: 0,
+          frame_score: 80,
+          pose_score: 100,
+          shoulder_score: 84,
+          face_score: 100,
+          gaze_score: 78,
+        },
+        {
+          time_sec: 5,
+          frame_score: 68,
+          pose_score: 100,
+          shoulder_score: 70,
+          face_score: 100,
+          gaze_score: 66,
+        },
+      ],
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("지표별 점수 분포")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("img", { name: "시간대별 프레임 점수 선형 차트" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("마지막 측정 구간 5s 점수는 68입니다.")).toBeInTheDocument();
   });
 
   it("빠른 결과 전환 후 이전 요청 응답을 표시하지 않는다", async () => {
@@ -180,6 +273,14 @@ describe("ResultDetailPage", () => {
       status: "completed",
       model: "qwen3:4b",
       prompt_version: "v1",
+      knowledge_sources: [
+        {
+          id: "practice_methods",
+          title: "개선 항목별 연습 방법",
+          category: "coaching",
+          version: "1.0",
+        },
+      ],
       coaching: {
         summary: "기존 코칭",
         strengths: [],
@@ -203,6 +304,37 @@ describe("ResultDetailPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "코칭 다시 생성" }));
 
     expect(await screen.findByText("재생성 코칭")).toBeInTheDocument();
+    expect(screen.getByText("개선 항목별 연습 방법 · v1.0")).toBeInTheDocument();
     expect(regenerateAiCoaching).toHaveBeenCalledWith("job-1", expect.any(Object));
+  });
+
+  it("Markdown 보고서를 blob 다운로드로 요청한다", async () => {
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Markdown 보고서" }));
+
+    await waitFor(() => expect(downloadAnalyzeReport).toHaveBeenCalledWith("job-1"));
+  });
+
+  it("Markdown 보고서 다운로드 실패를 화면에 표시한다", async () => {
+    downloadAnalyzeReport.mockRejectedValue(new Error("보고서 생성 오류"));
+    render(
+      <MemoryRouter initialEntries={["/result/job-1"]}>
+        <Routes>
+          <Route path="/result/:resultId" element={<ResultDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Markdown 보고서" }));
+
+    expect(await screen.findByText("Markdown 보고서를 내려받지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByText("보고서 생성 오류")).toBeInTheDocument();
   });
 });

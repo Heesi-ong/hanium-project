@@ -1,3 +1,4 @@
+// 사용자 프로필, 비밀번호, 세션, 저장소 사용량, 계정 삭제 기능을 제공한다.
 import { useEffect, useState } from "react";
 
 import {
@@ -20,6 +21,7 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
   const [error, setError] = useState("");
   const [storage, setStorage] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,14 +44,18 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
     URL.revokeObjectURL(url);
   };
 
-  const run = async (action, message) => {
+  const run = async (action, message, actionKey = "default") => {
+    if (busyAction) return;
+    setBusyAction(actionKey);
     setError("");
     setNotice("");
     try {
       await action();
-      setNotice(message);
+      if (message) setNotice(message);
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setBusyAction("");
     }
   };
 
@@ -78,13 +84,18 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
         <button
           className="button"
           onClick={() =>
-            run(async () => {
-              const result = await updateProfile({ display_name: displayName });
-              onUserChange(result.user);
-            }, "표시 이름을 변경했습니다.")
+            run(
+              async () => {
+                const result = await updateProfile({ display_name: displayName });
+                onUserChange(result.user);
+              },
+              "표시 이름을 변경했습니다.",
+              "profile",
+            )
           }
+          disabled={Boolean(busyAction) || displayName.trim().length < 2}
         >
-          표시 이름 변경
+          {busyAction === "profile" ? "변경 중..." : "표시 이름 변경"}
         </button>
       </section>
       <section className="card account-section">
@@ -107,9 +118,21 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
         />
         <button
           className="button"
-          onClick={() => run(() => changePassword(passwords), "비밀번호를 변경했습니다.")}
+          onClick={() =>
+            run(
+              async () => {
+                await changePassword(passwords);
+                setPasswords({ current_password: "", new_password: "" });
+              },
+              "비밀번호를 변경했습니다.",
+              "password",
+            )
+          }
+          disabled={
+            Boolean(busyAction) || !passwords.current_password || passwords.new_password.length < 8
+          }
         >
-          비밀번호 변경
+          {busyAction === "password" ? "변경 중..." : "비밀번호 변경"}
         </button>
       </section>
       <section className="card account-section">
@@ -128,20 +151,26 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
         )}
         <button
           className="button secondary"
-          onClick={() => run(downloadExport, "사용자 데이터를 내려받았습니다.")}
+          onClick={() => run(downloadExport, "사용자 데이터를 내려받았습니다.", "export")}
+          disabled={Boolean(busyAction)}
         >
-          내 데이터 내보내기
+          {busyAction === "export" ? "내보내는 중..." : "내 데이터 내보내기"}
         </button>
         <button
           className="button secondary"
           onClick={() =>
-            run(async () => {
-              await logoutAll();
-              onSignedOut();
-            }, "")
+            run(
+              async () => {
+                await logoutAll();
+                onSignedOut();
+              },
+              "",
+              "logout-all",
+            )
           }
+          disabled={Boolean(busyAction)}
         >
-          모든 기기에서 로그아웃
+          {busyAction === "logout-all" ? "로그아웃 중..." : "모든 기기에서 로그아웃"}
         </button>
         <label htmlFor="account-delete-password">탈퇴 확인 비밀번호</label>
         <input
@@ -151,7 +180,11 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
           value={deletePassword}
           onChange={(event) => setDeletePassword(event.target.value)}
         />
-        <button className="button danger" onClick={() => setDeleteDialogOpen(true)}>
+        <button
+          className="button danger"
+          disabled={Boolean(busyAction) || !deletePassword}
+          onClick={() => setDeleteDialogOpen(true)}
+        >
           계정 탈퇴
         </button>
       </section>
@@ -164,10 +197,14 @@ export default function AccountPage({ user, onUserChange, onSignedOut }) {
         onCancel={() => setDeleteDialogOpen(false)}
         onConfirm={() => {
           setDeleteDialogOpen(false);
-          run(async () => {
-            await deleteAccount({ password: deletePassword });
-            onSignedOut();
-          }, "");
+          run(
+            async () => {
+              await deleteAccount({ password: deletePassword });
+              onSignedOut();
+            },
+            "",
+            "delete",
+          );
         }}
       />
     </main>

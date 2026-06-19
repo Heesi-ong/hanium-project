@@ -1,15 +1,4 @@
-.dashboard-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.dashboard-subtitle {
-  margin-top: 8px;
-  color: #64748b;
-}
+/* 분석 이력 목록, 결과 카드 그리드, 삭제/재시도 액션 영역 스타일을 정의한다. */
 
 .result-control-grid {
   display: grid;
@@ -27,10 +16,10 @@
 .result-search-input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background-color: #ffffff;
-  font-size: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control-lg);
+  background-color: var(--color-surface);
+  font-size: var(--font-size-base);
 }
 
 .result-search-reset-button {
@@ -54,10 +43,10 @@
 .result-sort-select {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background-color: #ffffff;
-  font-size: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control-lg);
+  background-color: var(--color-surface);
+  font-size: var(--font-size-base);
 }
 
 .result-list-grid {
@@ -73,27 +62,6 @@
     box-shadow 0.2s ease;
 }
 
-.result-card-completed {
-  border-left: 6px solid #16a34a;
-}
-
-.result-card-failed {
-  border-left: 6px solid #dc2626;
-}
-
-.result-card-processing {
-  border-left: 6px solid #2563eb;
-}
-
-.result-card-cancelled {
-  border-left: 6px solid #64748b;
-}
-
-.status-cancelled {
-  color: #475569;
-  background: #e2e8f0;
-}
-
 .result-progress-area {
   margin-top: 18px;
 }
@@ -103,27 +71,27 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
-  color: #475569;
-  font-size: 14px;
+  color: var(--color-muted-dark);
+  font-size: var(--font-size-base);
 }
 
 .result-progress-track {
   height: 10px;
   overflow: hidden;
-  border-radius: 999px;
-  background: #e2e8f0;
+  border-radius: var(--radius-pill);
+  background: var(--color-muted-surface);
 }
 
 .result-progress-track > div {
   height: 100%;
   border-radius: inherit;
-  background: #2563eb;
+  background: var(--color-primary);
   transition: width 0.25s ease;
 }
 
 .result-list-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .result-card-header {
@@ -153,12 +121,6 @@
   white-space: nowrap;
 }
 
-.result-status-icon {
-  display: inline-block;
-  margin-right: 8px;
-  font-size: 18px;
-}
-
 .result-feedback {
   margin-top: 18px;
   line-height: 1.6;
@@ -169,17 +131,17 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
-  color: #64748b;
-  font-size: 14px;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-base);
 }
 
 .result-date-label {
-  font-weight: 700;
-  color: #334155;
+  color: var(--color-text-strong);
+  font-weight: var(--font-weight-bold);
 }
 
 .result-date-value {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .result-action-row {
@@ -190,45 +152,9 @@
 }
 
 .result-notice-card {
-  border-left: 6px solid #16a34a;
-  color: #166534;
-  font-weight: 700;
-}
-
-.mini-score-circle {
-  width: 82px;
-  height: 82px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: conic-gradient(#2563eb calc(var(--score) * 1%), #e5e7eb 0);
-  flex-shrink: 0;
-}
-
-.mini-score-circle.unavailable {
-  background: #e5e7eb;
-}
-
-.mini-score-circle-inner {
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  background-color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-}
-
-.mini-score-value {
-  font-size: 18px;
-  font-weight: 800;
-}
-
-.mini-score-label {
-  font-size: 10px;
-  color: #6b7280;
+  border-left: 6px solid var(--color-success);
+  color: var(--color-success-dark);
+  font-weight: var(--font-weight-bold);
 }
 
 .empty-result-card {
@@ -244,7 +170,7 @@
 .empty-result-text {
   max-width: 520px;
   margin: 12px auto 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   line-height: 1.6;
 }
 
@@ -271,14 +197,6 @@
 }
 
 @media (max-width: 768px) {
-  .dashboard-header {
-    flex-direction: column;
-  }
-
-  .dashboard-header .button {
-    width: 100%;
-  }
-
   .result-control-grid {
     grid-template-columns: 1fr;
   }
@@ -312,11 +230,6 @@
   .result-date-row,
   .empty-result-text {
     font-size: 14px;
-  }
-
-  .result-status-icon {
-    margin-right: 6px;
-    font-size: 16px;
   }
 
   .empty-result-card {

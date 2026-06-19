@@ -1,0 +1,206 @@
+/* 랜딩페이지 공통 섹션, 고민 카드, 주요 기능 카드 스타일을 정의한다. */
+
+.home-section {
+  padding: 82px 0;
+}
+.home-section-heading {
+  max-width: 640px;
+  margin: 0 auto 38px;
+  text-align: center;
+}
+.home-section-heading.left {
+  margin-left: 0;
+  text-align: left;
+}
+.home-section-heading h2 {
+  margin: 10px 0 10px;
+  font-size: clamp(28px, 3vw, 40px);
+  letter-spacing: -0.04em;
+}
+.home-section-heading p {
+  margin: 0;
+  color: var(--home-muted);
+  line-height: 1.7;
+}
+.home-concern-section {
+  padding: 58px 0;
+  background: #fff;
+}
+.home-concern-layout {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  align-items: center;
+  gap: 42px;
+}
+.home-concern-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.home-concern-card,
+.home-feature-card,
+.home-security-grid article {
+  border: 1px solid #e6ebf3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(31, 52, 91, 0.04);
+}
+.home-concern-card {
+  min-height: 185px;
+  padding: 22px 18px;
+  text-align: center;
+}
+.home-concern-card h3 {
+  font-size: 14px;
+  line-height: 1.45;
+}
+.home-concern-card p,
+.home-feature-card p,
+.home-use-card p,
+.home-security-grid p {
+  color: var(--home-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.home-number-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 18px;
+  border: 1px solid #cfe0ff;
+  border-radius: 50%;
+  color: #2477ec;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.home-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.home-feature-card {
+  min-height: 280px;
+  padding: 24px;
+}
+.home-feature-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #eef5ff;
+  color: #2178ee;
+  font-size: 22px;
+}
+.home-feature-card h3 {
+  margin: 18px 0 8px;
+  font-size: 16px;
+}
+.home-feature-card a {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 12px;
+}
+.home-feature-visual {
+  height: 72px;
+  margin-top: 17px;
+  border-radius: 10px;
+  background: #f7faff;
+}
+.home-wave-mini {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 100%;
+}
+.home-wave-mini span {
+  width: 3px;
+  height: 20px;
+  background: #2085ff;
+}
+.home-wave-mini span:nth-child(2n) {
+  height: 46px;
+}
+.home-face-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  height: 100%;
+  padding: 8px;
+}
+.home-face-grid span:first-child {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #dfeaff;
+  color: #264a85;
+  font-size: 32px;
+}
+.heatmap-mini {
+  border-radius: 8px;
+  background: radial-gradient(circle, #ff6b46, #ffcf4a 15%, #41a7ff 38%, #e8f2ff 65%);
+}
+.home-pose-mini {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 16px;
+  height: 100%;
+}
+.home-pose-mini span {
+  width: 8px;
+  height: 45px;
+  border: solid #2d88ff;
+  border-width: 2px 0;
+  box-shadow: 0 -10px 0 -2px #2d88ff;
+}
+.home-pose-mini span:nth-child(2) {
+  height: 60px;
+}
+.home-timeline-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 18px;
+}
+.home-timeline-mini span {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: #32c8e6;
+}
+.home-timeline-mini span:nth-child(2),
+.home-timeline-mini span:nth-child(3) {
+  background: #ffb64e;
+}
+.home-score-mini {
+  width: 62px;
+  height: 62px;
+  margin: 5px auto;
+  box-shadow: inset 0 0 0 8px #f7faff;
+  color: #1c3f75;
+}
+.home-score-mini strong {
+  font-size: 18px;
+}
+.home-chat-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+}
+.home-chat-mini span {
+  height: 11px;
+  border-radius: 8px;
+  background: #dce8ff;
+}
+.home-chat-mini span:nth-child(2) {
+  width: 75%;
+  margin-left: auto;
+  background: #b7d3ff;
+}

@@ -1,3 +1,4 @@
+// 로딩, 오류, 빈 상태 안내 메시지를 일관된 UI로 보여주는 공통 컴포넌트다.
 import React from "react";
 
 import "./StateMessage.css";

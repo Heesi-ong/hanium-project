@@ -1,3 +1,4 @@
+// 삭제, 재시도, 상태 변경처럼 확인이 필요한 작업에 쓰는 공통 확인 대화상자다.
 import React from "react";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -13,6 +14,7 @@ export default function ActionDialog({
 }) {
   const confirmRef = useRef(null);
   const dialogRef = useRef(null);
+  const inputRef = useRef(null);
   const previousFocusRef = useRef(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -23,9 +25,13 @@ export default function ActionDialog({
     if (!open) return;
     previousFocusRef.current = document.activeElement;
     setValue(initialValue || "");
-    confirmRef.current?.focus();
+    if (hasInput) {
+      inputRef.current?.focus();
+    } else {
+      confirmRef.current?.focus();
+    }
     return () => previousFocusRef.current?.focus();
-  }, [initialValue, open]);
+  }, [hasInput, initialValue, open]);
 
   if (!open) return null;
 
@@ -67,10 +73,10 @@ export default function ActionDialog({
         {description && <p id={descriptionId}>{description}</p>}
         {hasInput && (
           <input
+            ref={inputRef}
             aria-label={title}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            autoFocus
           />
         )}
         <div className="dialog-actions">

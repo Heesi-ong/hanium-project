@@ -1,3 +1,4 @@
+// 백엔드 분석 단계 키를 사용자에게 보여줄 한국어 상태 문구로 매핑한다.
 export const analysisStageLabels = {
   queued: "분석 대기 중",
   preparing: "분석 준비 중",

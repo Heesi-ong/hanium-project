@@ -1,3 +1,4 @@
+// 렌더링 오류가 전체 앱을 중단하지 않도록 대체 화면을 보여주는 오류 경계다.
 import React from "react";
 
 import StateMessage from "./StateMessage";

@@ -51,10 +51,8 @@ describe("측정 불가 결과 표시", () => {
     expect((await screen.findAllByText("측정 불가")).length).toBeGreaterThan(0);
     expect(screen.queryByText("0점")).not.toBeInTheDocument();
     expect(screen.getByText("N/A")).toBeInTheDocument();
-    expect(view.container.querySelector(".mini-score-circle.unavailable")).toHaveTextContent("N/A");
-    expect(view.container.querySelector(".mini-score-circle:not(.unavailable)")).toHaveTextContent(
-      "0",
-    );
+    expect(view.container.querySelector(".ui-score-ring.unavailable")).toHaveTextContent("N/A");
+    expect(view.container.querySelector(".ui-score-ring:not(.unavailable)")).toHaveTextContent("0");
   });
 
   it("성장 추이에서 측정 불가 값에 0퍼센트 막대를 만들지 않는다", async () => {

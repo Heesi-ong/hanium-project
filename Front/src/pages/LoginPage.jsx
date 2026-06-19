@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { login, register } from "../api/accountApi";
+import StateMessage from "../components/StateMessage";
 import "./LoginPage.css";
 
 export default function LoginPage({ onAuthenticated }) {
@@ -65,7 +66,11 @@ export default function LoginPage({ onAuthenticated }) {
               required
             />
           </label>
-          {error && <p className="error-text">{error}</p>}
+          {error && (
+            <StateMessage type="error" compact>
+              {error}
+            </StateMessage>
+          )}
           <button className="button" disabled={submitting}>
             {submitting ? "처리 중..." : mode === "login" ? "로그인" : "회원가입"}
           </button>

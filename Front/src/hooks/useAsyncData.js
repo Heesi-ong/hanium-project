@@ -1,3 +1,4 @@
+// AbortController와 로딩·오류 상태를 포함한 비동기 데이터 로딩 공통 훅이다.
 import { useCallback, useEffect, useState } from "react";
 
 export default function useAsyncData(loader) {

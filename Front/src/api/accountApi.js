@@ -1,6 +1,7 @@
+// 로그인 사용자 정보, 인증, 프로필, 비밀번호, 계정 삭제 API 호출을 제공한다.
 import { apiRequest } from "./apiClient";
 
-export const getMe = () => apiRequest("/api/auth/me");
+export const getMe = (signal) => apiRequest("/api/auth/me", { signal });
 export const getStorageUsage = (signal) => apiRequest("/api/auth/storage", { signal });
 export const exportUserData = () => apiRequest("/api/auth/export");
 

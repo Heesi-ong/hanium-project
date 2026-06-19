@@ -1,0 +1,124 @@
+/* 랜딩페이지 AI 코치, 보안 안내, FAQ 섹션 스타일을 정의한다. */
+
+.home-coach-section {
+  padding-top: 40px;
+  background: #fff;
+}
+.home-coach-card {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 0.7fr;
+  align-items: center;
+  gap: 28px;
+  padding: 42px;
+  border-radius: 20px;
+  background: linear-gradient(120deg, #071a44, #0d2f78);
+  color: #fff;
+  box-shadow: 0 24px 55px rgba(8, 35, 85, 0.24);
+}
+.home-section-kicker.light {
+  color: #61d7ff;
+}
+.home-coach-copy h2 {
+  margin: 12px 0;
+  font-size: 30px;
+}
+.home-coach-copy p {
+  color: #bfcee8;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.home-coach-chat {
+  padding: 22px;
+  border-radius: 15px;
+  background: #f9fbff;
+  color: var(--home-text);
+}
+.home-coach-chat p,
+.home-coach-chat li {
+  font-size: 11px;
+  line-height: 1.7;
+}
+.home-coach-chat .question {
+  padding: 10px;
+  border-radius: 8px;
+  background: #e8f0ff;
+}
+.home-coach-chat .answer {
+  padding: 8px 12px;
+}
+.home-local-card {
+  padding: 22px;
+  border: 1px solid rgba(94, 159, 255, 0.25);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.15);
+}
+.home-local-card span {
+  font-size: 30px;
+  color: #70d5ff;
+}
+.home-local-card strong {
+  display: block;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.home-local-card p {
+  color: #b8cae6;
+  font-size: 10px;
+}
+
+.home-security-section {
+  background: #fff;
+}
+.home-security-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.home-security-grid article {
+  display: flex;
+  gap: 13px;
+  padding: 20px;
+}
+.home-security-grid article > span {
+  display: grid;
+  flex: 0 0 40px;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #edf5ff;
+  color: #1677ff;
+}
+.home-security-grid h3 {
+  margin: 3px 0 4px;
+  font-size: 13px;
+}
+.home-faq-section {
+  padding-top: 35px;
+}
+.home-faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.home-faq-grid details {
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+.home-faq-grid summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  list-style: none;
+}
+.home-faq-grid details p {
+  margin: 0;
+  padding: 0 16px 16px;
+  color: var(--home-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}

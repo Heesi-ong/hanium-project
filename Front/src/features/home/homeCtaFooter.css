@@ -1,0 +1,47 @@
+/* 랜딩페이지 최종 CTA와 푸터 스타일을 정의한다. */
+
+.home-final-cta {
+  padding: 65px 0;
+  background: linear-gradient(120deg, #071943, #102f75);
+  color: #fff;
+  text-align: center;
+}
+.home-final-cta h2 {
+  margin: 12px 0;
+  font-size: clamp(28px, 3vw, 42px);
+}
+.home-final-cta p {
+  color: #b7c8e5;
+}
+.home-hero-actions.centered {
+  justify-content: center;
+}
+.home-footer {
+  padding: 38px 0;
+  background: #041027;
+  color: #fff;
+}
+.home-footer-grid {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr);
+  gap: 40px;
+}
+.home-footer-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.home-footer strong {
+  color: #66cfff;
+  font-size: 18px;
+}
+.home-footer p,
+.home-footer a,
+.home-footer span {
+  color: #8fa2c2;
+  font-size: 11px;
+}
+.home-footer b {
+  margin-bottom: 4px;
+  font-size: 12px;
+}

@@ -1,0 +1,108 @@
+/* 랜딩페이지 태블릿과 모바일 반응형 스타일을 정의한다. */
+
+@media (max-width: 1050px) {
+  .home-hero-layout {
+    grid-template-columns: 1fr;
+  }
+  .home-hero-visual {
+    width: min(600px, 100%);
+    margin: auto;
+  }
+  .home-concern-layout {
+    grid-template-columns: 1fr;
+  }
+  .home-concern-grid,
+  .home-security-grid,
+  .home-use-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .home-result-board {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .home-result-board > div:nth-child(2) {
+    border-right: 0;
+  }
+  .home-result-board > div:nth-child(-n + 2) {
+    border-bottom: 1px solid #e9edf4;
+  }
+  .home-coach-card {
+    grid-template-columns: 1fr 1fr;
+  }
+  .home-local-card {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .home-page {
+    margin: -16px;
+  }
+  .home-hero {
+    padding-top: 95px;
+  }
+  .home-hero-visual {
+    transform: scale(0.88);
+    transform-origin: top center;
+    margin-bottom: -50px;
+  }
+  .home-trust-row,
+  .home-feature-grid,
+  .home-steps,
+  .home-use-grid,
+  .home-security-grid,
+  .home-faq-grid {
+    grid-template-columns: 1fr;
+  }
+  .home-concern-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .home-section {
+    padding: 58px 0;
+  }
+  .home-result-board,
+  .home-coach-card {
+    grid-template-columns: 1fr;
+  }
+  .home-result-board > div {
+    border-right: 0;
+    border-bottom: 1px solid #e9edf4;
+  }
+  .home-steps::before {
+    display: none;
+  }
+  .split-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .home-footer-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .home-page {
+    margin: -12px;
+  }
+  .home-shell {
+    width: min(100% - 28px, 1180px);
+  }
+  .home-hero h1 {
+    font-size: 36px;
+  }
+  .home-hero-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .home-concern-grid,
+  .home-footer-grid {
+    grid-template-columns: 1fr;
+  }
+  .home-hero-visual {
+    min-height: 430px;
+    transform: scale(0.65);
+    width: 560px;
+    margin-left: calc((100% - 560px) / 2);
+    margin-bottom: -150px;
+  }
+}

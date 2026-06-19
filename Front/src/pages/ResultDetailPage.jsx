@@ -1,39 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+// 단일 분석 결과의 점수, 타임라인, 피드백, 연습 코칭, 보고서 다운로드를 보여준다.
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import {
-  createAiCoaching,
-  getAiCoaching,
-  getAnalyzeReportUrl,
-  getAnalyzeSections,
-  getPracticeCoaching,
-  getTimelineChart,
-  regenerateAiCoaching,
-} from "../api/analyzeApi";
+import { downloadAnalyzeReport } from "../api/analyzeApi";
 import StateMessage from "../components/StateMessage";
+import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
+import ScoreRing from "../components/ui/ScoreRing";
+import { ScoreBarChart, TimelineLineChart } from "../features/analysis/ResultCharts";
+import { clampScore, formatNumber, getScoreClassName } from "../features/analysis/formatters";
+import { buildScoreCards, getTimelineStats } from "../features/analysis/resultDetailModel";
+import useResultDetailData from "../features/analysis/useResultDetailData";
 import AiCoachingSection from "../features/practice/AiCoachingSection";
 import PracticeCoachingSections from "../features/practice/PracticeCoachingSections";
 
 import "./ResultDetailPage.css";
-
-const formatNumber = (value, suffix = "") => {
-  if (value === null || value === undefined || value === "") {
-    return "-";
-  }
-
-  if (typeof value === "number") {
-    return `${Number.isInteger(value) ? value : value.toFixed(2)}${suffix}`;
-  }
-
-  return `${value}${suffix}`;
-};
-
-const getScoreClassName = (score) => {
-  if (score === null || score === undefined) return "";
-  if (score >= 80) return "score-good";
-  if (score >= 60) return "score-normal";
-  return "score-bad";
-};
 
 const getBarClassName = (score) => {
   if (typeof score !== "number") return "timeline-bar unavailable";
@@ -42,184 +23,53 @@ const getBarClassName = (score) => {
   return "timeline-bar bad";
 };
 
-const clampScore = (score) => {
-  if (typeof score !== "number") return 0;
-  return Math.min(100, Math.max(0, score));
-};
-
 function ResultDetailPage() {
   const navigate = useNavigate();
   const { resultId } = useParams();
+  const [reportError, setReportError] = useState("");
+  const [reportDownloading, setReportDownloading] = useState(false);
 
-  const [sections, setSections] = useState(null);
-  const [chartData, setChartData] = useState([]);
-  const [fileName, setFileName] = useState("");
-  const [coaching, setCoaching] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [timelineLoading, setTimelineLoading] = useState(true);
-  const [timelineError, setTimelineError] = useState("");
-  const [coachingLoading, setCoachingLoading] = useState(true);
-  const [coachingError, setCoachingError] = useState("");
-  const [aiCoaching, setAiCoaching] = useState(null);
-  const [aiCoachingLoading, setAiCoachingLoading] = useState(false);
-  const [aiCoachingError, setAiCoachingError] = useState("");
-  const requestControllers = useRef({});
+  const {
+    aiCoaching,
+    aiCoachingError,
+    aiCoachingLoading,
+    chartData,
+    coaching,
+    coachingError,
+    coachingLoading,
+    error,
+    fileName,
+    generateAiCoaching,
+    loadCoaching,
+    loadData,
+    loadTimeline,
+    loading,
+    sections,
+    timelineError,
+    timelineLoading,
+  } = useResultDetailData(resultId);
 
-  const startRequest = (key) => {
-    requestControllers.current[key]?.abort();
-    const controller = new AbortController();
-    requestControllers.current[key] = controller;
-    return controller;
-  };
-
-  const loadCoaching = async () => {
-    const controller = startRequest("coaching");
-    const requestedResultId = resultId;
+  const handleDownloadReport = async () => {
     try {
-      setCoachingLoading(true);
-      setCoachingError("");
-      const response = await getPracticeCoaching(resultId, controller.signal);
-      if (requestedResultId === resultId && requestControllers.current.coaching === controller) {
-        setCoaching(response.coaching || null);
-      }
-    } catch (err) {
-      if (err.name !== "AbortError" && requestControllers.current.coaching === controller) {
-        setCoaching(null);
-        setCoachingError(err.message || "연습 코칭을 불러오지 못했습니다.");
-      }
+      setReportDownloading(true);
+      setReportError("");
+      const blob = await downloadAnalyzeReport(resultId);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${resultId}.md`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setReportError(requestError.message || "Markdown 보고서를 내려받지 못했습니다.");
     } finally {
-      if (requestControllers.current.coaching === controller) {
-        setCoachingLoading(false);
-      }
+      setReportDownloading(false);
     }
   };
 
-  const loadSections = async () => {
-    const controller = startRequest("sections");
-    const requestedResultId = resultId;
-    try {
-      setLoading(true);
-      setError("");
-      const response = await getAnalyzeSections(resultId, controller.signal);
-      if (requestedResultId === resultId && requestControllers.current.sections === controller) {
-        setSections(response.sections);
-        setFileName(response.original_filename || "파일명 없음");
-      }
-    } catch (err) {
-      if (err.name !== "AbortError" && requestControllers.current.sections === controller) {
-        setError(err.message || "분석 상세 결과를 불러오지 못했습니다.");
-        setSections(null);
-      }
-    } finally {
-      if (requestControllers.current.sections === controller) {
-        setLoading(false);
-      }
-    }
-  };
-
-  const loadAiCoaching = async () => {
-    const controller = startRequest("aiCoaching");
-    const requestedResultId = resultId;
-    try {
-      setAiCoachingLoading(true);
-      setAiCoachingError("");
-      const response = await getAiCoaching(resultId, controller.signal);
-      if (requestedResultId === resultId && requestControllers.current.aiCoaching === controller) {
-        setAiCoaching(response.ai_coaching || null);
-      }
-    } catch (err) {
-      if (err.name !== "AbortError" && requestControllers.current.aiCoaching === controller) {
-        setAiCoachingError(err.message || "AI 코칭을 불러오지 못했습니다.");
-      }
-    } finally {
-      if (requestControllers.current.aiCoaching === controller) setAiCoachingLoading(false);
-    }
-  };
-
-  const generateAiCoaching = async (regenerate = false) => {
-    const controller = startRequest("aiCoaching");
-    const requestedResultId = resultId;
-    try {
-      setAiCoachingLoading(true);
-      setAiCoachingError("");
-      const response = regenerate
-        ? await regenerateAiCoaching(resultId, controller.signal)
-        : await createAiCoaching(resultId, controller.signal);
-      if (requestedResultId === resultId && requestControllers.current.aiCoaching === controller) {
-        setAiCoaching(response.ai_coaching || null);
-      }
-    } catch (err) {
-      if (err.name !== "AbortError" && requestControllers.current.aiCoaching === controller) {
-        setAiCoachingError(err.message || "AI 코칭을 생성하지 못했습니다.");
-      }
-    } finally {
-      if (requestControllers.current.aiCoaching === controller) setAiCoachingLoading(false);
-    }
-  };
-
-  const loadTimeline = async () => {
-    const controller = startRequest("timeline");
-    const requestedResultId = resultId;
-    try {
-      setTimelineLoading(true);
-      setTimelineError("");
-      const response = await getTimelineChart(resultId, controller.signal);
-      if (requestedResultId === resultId && requestControllers.current.timeline === controller) {
-        setChartData(response.chart_data || []);
-      }
-    } catch (err) {
-      if (err.name !== "AbortError" && requestControllers.current.timeline === controller) {
-        setChartData([]);
-        setTimelineError(err.message || "타임라인을 불러오지 못했습니다.");
-      }
-    } finally {
-      if (requestControllers.current.timeline === controller) {
-        setTimelineLoading(false);
-      }
-    }
-  };
-
-  const loadData = () => {
-    void loadSections();
-    void loadTimeline();
-    void loadCoaching();
-    void loadAiCoaching();
-  };
-
-  useEffect(() => {
-    setSections(null);
-    setChartData([]);
-    setCoaching(null);
-    setAiCoaching(null);
-    loadData();
-    return () =>
-      Object.values(requestControllers.current).forEach((controller) => controller.abort());
-  }, [resultId]);
-
-  const timelineStats = useMemo(() => {
-    if (chartData.length === 0) {
-      return {
-        average: null,
-        best: null,
-        weak: null,
-      };
-    }
-
-    const scores = chartData
-      .map((item) => item.frame_score)
-      .filter((value) => typeof value === "number");
-    if (scores.length === 0) {
-      return { average: null, best: null, weak: null };
-    }
-    const total = scores.reduce((sum, score) => sum + score, 0);
-
-    return {
-      average: Math.round(total / scores.length),
-      best: Math.max(...scores),
-      weak: Math.min(...scores),
-    };
-  }, [chartData]);
+  const timelineStats = getTimelineStats(chartData);
 
   if (loading) {
     return (
@@ -237,13 +87,11 @@ function ResultDetailPage() {
           title="분석 상세 결과를 불러오지 못했습니다."
           actions={
             <>
-              <button className="button secondary" onClick={() => navigate("/results")}>
+              <Button variant="secondary" onClick={() => navigate("/results")}>
                 목록으로 돌아가기
-              </button>
+              </Button>
 
-              <button className="button" onClick={loadData}>
-                다시 불러오기
-              </button>
+              <Button onClick={loadData}>다시 불러오기</Button>
             </>
           }
         >
@@ -263,62 +111,11 @@ function ResultDetailPage() {
   const timeline = sections.timeline || {};
   const fillerWords = filler.filler_words || {};
   const totalScore = summary.total_score ?? score.total_score ?? null;
-  const scoreAvailable = (key, value) => {
-    if (score.confidence_availability && key in score.confidence_availability) {
-      return score.confidence_availability[key];
-    }
-    if (score.score_availability && key in score.score_availability) {
-      return score.score_availability[key];
-    }
-    if (
-      ["pose_detection_rate", "shoulder_balance_score"].includes(key) &&
-      score.pose_detected_count === 0
-    ) {
-      return false;
-    }
-    if (["face_detection_rate", "gaze_score"].includes(key) && score.face_detected_count === 0) {
-      return false;
-    }
-    return value !== null && value !== undefined;
-  };
-  const scoreCards = [
-    {
-      label: "자세 분석 신뢰도 (감지율)",
-      value: scoreAvailable("pose_detection_rate", score.pose_detection_rate)
-        ? formatNumber(score.pose_detection_rate, "%")
-        : "측정 불가",
-      score: score.pose_detection_rate,
-      confidence: true,
-    },
-    {
-      label: "얼굴 방향 분석 신뢰도 (감지율)",
-      value: scoreAvailable("face_detection_rate", score.face_detection_rate)
-        ? formatNumber(score.face_detection_rate, "%")
-        : "측정 불가",
-      score: score.face_detection_rate,
-      confidence: true,
-    },
-    {
-      label: "어깨 균형",
-      value: scoreAvailable("shoulder_balance_score", score.shoulder_balance_score)
-        ? formatNumber(score.shoulder_balance_score)
-        : "측정 불가",
-      score: score.shoulder_balance_score,
-    },
-    {
-      label: "얼굴 방향 안정성",
-      value: scoreAvailable("gaze_score", score.gaze_score)
-        ? formatNumber(score.gaze_score)
-        : "측정 불가",
-      score: score.gaze_score,
-    },
-  ];
+  const scoreCards = buildScoreCards(score);
   const practiceQuestion = (question) => {
-    navigate("/chat", {
+    navigate(`/chat/result/${resultId}?question=${encodeURIComponent(question)}`, {
       state: {
-        analysisResultId: resultId,
         analysisTitle: `${fileName} 예상 질문 연습`,
-        practiceQuestion: question,
       },
     });
   };
@@ -335,54 +132,52 @@ function ResultDetailPage() {
         </div>
 
         <div className="detail-action-row">
-          <button className="button secondary" onClick={() => navigate("/results")}>
+          <Button variant="secondary" onClick={() => navigate("/results")}>
             목록
-          </button>
+          </Button>
 
-          <button className="button secondary" onClick={() => navigate("/upload")}>
+          <Button variant="secondary" onClick={() => navigate("/upload")}>
             새 분석
-          </button>
+          </Button>
 
-          <button className="button" onClick={loadData}>
-            새로고침
-          </button>
-          <button
-            className="button"
+          <Button onClick={loadData}>새로고침</Button>
+          <Button
             onClick={() =>
-              navigate("/chat", {
+              navigate(`/chat/result/${resultId}`, {
                 state: {
-                  analysisResultId: resultId,
                   analysisTitle: `${fileName} 코칭`,
                 },
               })
             }
           >
             이 결과로 AI 코치 상담
-          </button>
-          <a className="button secondary" href={getAnalyzeReportUrl(resultId)} download>
-            Markdown 보고서
-          </a>
+          </Button>
+          <Button variant="secondary" onClick={handleDownloadReport} disabled={reportDownloading}>
+            {reportDownloading ? "보고서 준비 중" : "Markdown 보고서"}
+          </Button>
         </div>
       </header>
 
-      <section className="card detail-hero-card">
+      {reportError && (
+        <StateMessage type="error" title="Markdown 보고서를 내려받지 못했습니다.">
+          {reportError}
+        </StateMessage>
+      )}
+
+      <Card accent="primary" className="detail-hero-card">
         <div className="detail-file-block">
           <div className="metric-label">분석 파일</div>
           <div className="detail-file-name">{fileName}</div>
         </div>
 
         <div className="detail-hero-grid">
-          <div
-            className={`score-circle detail-score-circle ${totalScore === null ? "unavailable" : ""}`}
-            style={totalScore === null ? undefined : { "--score": clampScore(totalScore) }}
-          >
-            <div className="score-circle-inner">
-              <div className={`score-circle-value ${getScoreClassName(totalScore)}`}>
-                {totalScore === null ? "측정 불가" : formatNumber(totalScore)}
-              </div>
-              <div className="score-circle-label">TOTAL</div>
-            </div>
-          </div>
+          <ScoreRing
+            className="detail-score-circle"
+            label="TOTAL"
+            score={totalScore}
+            size="lg"
+            value={totalScore === null ? "측정 불가" : formatNumber(totalScore)}
+          />
 
           <div className="detail-summary-panel">
             <h2>요약 피드백</h2>
@@ -418,7 +213,7 @@ function ResultDetailPage() {
             </div>
           </div>
         </div>
-      </section>
+      </Card>
 
       <PracticeCoachingSections
         coaching={coaching}
@@ -435,8 +230,8 @@ function ResultDetailPage() {
         onGenerate={() => generateAiCoaching(false)}
         onRegenerate={() => generateAiCoaching(true)}
         onContinueChat={() =>
-          navigate("/chat", {
-            state: { analysisResultId: resultId, analysisTitle: `${fileName} AI 발표 코칭` },
+          navigate(`/chat/result/${resultId}`, {
+            state: { analysisTitle: `${fileName} AI 발표 코칭` },
           })
         }
         onPracticeQuestion={practiceQuestion}
@@ -444,20 +239,22 @@ function ResultDetailPage() {
 
       <section className="detail-score-grid">
         {scoreCards.map((item) => (
-          <div className="card detail-score-card" key={item.label}>
+          <Card className="detail-score-card" key={item.key}>
             <div className="metric-label">{item.label}</div>
             <div className={`metric-value ${item.confidence ? "" : getScoreClassName(item.score)}`}>
               {item.value}
             </div>
-          </div>
+          </Card>
         ))}
       </section>
       <p className="detail-muted-text">
         감지율은 촬영 환경에 따른 분석 신뢰도이며 발표 실력 점수에는 포함하지 않습니다.
       </p>
 
+      <ScoreBarChart items={scoreCards} />
+
       <section className="detail-section-grid">
-        <article className="card detail-section-card">
+        <Card as="article" className="detail-section-card">
           <div className="detail-section-header">
             <h2>발표 속도 / 침묵</h2>
             <span className={`detail-score-pill ${getScoreClassName(speech.speech_speed_score)}`}>
@@ -494,9 +291,9 @@ function ResultDetailPage() {
               </div>
             </div>
           </div>
-        </article>
+        </Card>
 
-        <article className="card detail-section-card">
+        <Card as="article" className="detail-section-card">
           <div className="detail-section-header">
             <h2>필러 단어</h2>
             <span className={`detail-score-pill ${getScoreClassName(filler.filler_score)}`}>
@@ -526,9 +323,9 @@ function ResultDetailPage() {
               ))
             )}
           </div>
-        </article>
+        </Card>
 
-        <article className="card detail-section-card">
+        <Card as="article" className="detail-section-card">
           <div className="detail-section-header">
             <h2>손동작 분석</h2>
             <span className={`detail-score-pill ${getScoreClassName(gesture.gesture_score)}`}>
@@ -555,9 +352,9 @@ function ResultDetailPage() {
               </div>
             </div>
           </div>
-        </article>
+        </Card>
 
-        <article className="card detail-section-card">
+        <Card as="article" className="detail-section-card">
           <div className="detail-section-header">
             <h2>음량 분석</h2>
             <span className={`detail-score-pill ${getScoreClassName(volume.volume_score)}`}>
@@ -581,10 +378,10 @@ function ResultDetailPage() {
               <div className="metric-value">{volume.volume_level || "-"}</div>
             </div>
           </div>
-        </article>
+        </Card>
       </section>
 
-      <section className="card detail-timeline-card">
+      <Card className="detail-timeline-card">
         <div className="detail-section-header">
           <div>
             <h2>타임라인 점수</h2>
@@ -621,52 +418,61 @@ function ResultDetailPage() {
           <StateMessage
             type="error"
             title="타임라인만 불러오지 못했습니다."
-            actions={
-              <button className="button" onClick={loadTimeline}>
-                타임라인 다시 불러오기
-              </button>
-            }
+            actions={<Button onClick={loadTimeline}>타임라인 다시 불러오기</Button>}
           >
             기본 분석 결과는 정상적으로 확인할 수 있습니다. {timelineError}
           </StateMessage>
         ) : chartData.length === 0 ? (
           <p className="detail-muted-text">타임라인 데이터가 없습니다.</p>
         ) : (
-          <div className="timeline-list detail-timeline-list">
-            {chartData.map((item) => (
-              <div className="timeline-row detail-timeline-row" key={item.time_sec}>
-                <div className="timeline-time">{item.time_sec}s</div>
+          <>
+            <TimelineLineChart data={chartData} />
+            <div className="timeline-list detail-timeline-list">
+              {chartData.map((item) => (
+                <div className="timeline-row detail-timeline-row" key={item.time_sec}>
+                  <div className="timeline-time">{item.time_sec}s</div>
 
-                <div className="timeline-track detail-timeline-track">
-                  {typeof item.frame_score === "number" && (
-                    <div
-                      className={getBarClassName(item.frame_score)}
-                      style={{ width: `${clampScore(item.frame_score)}%` }}
-                    />
-                  )}
-                </div>
+                  <div className="timeline-track detail-timeline-track">
+                    {typeof item.frame_score === "number" && (
+                      <div
+                        className={getBarClassName(item.frame_score)}
+                        style={{ width: `${clampScore(item.frame_score)}%` }}
+                      />
+                    )}
+                  </div>
 
-                <div className="timeline-score">
-                  {item.frame_score === null ? "측정 불가" : formatNumber(item.frame_score)}
-                </div>
+                  <div className="timeline-score">
+                    {item.frame_score === null ? "측정 불가" : formatNumber(item.frame_score)}
+                  </div>
 
-                <div className="timeline-detail-metrics">
-                  <span>자세 감지 {item.pose_score === null ? "미감지" : "감지"}</span>
-                  <span>
-                    어깨{" "}
-                    {item.shoulder_score === null ? "측정 불가" : formatNumber(item.shoulder_score)}
-                  </span>
-                  <span>얼굴 감지 {item.face_score === null ? "미감지" : "감지"}</span>
-                  <span>
-                    얼굴 방향{" "}
-                    {item.gaze_score === null ? "측정 불가" : formatNumber(item.gaze_score)}
-                  </span>
+                  <div className="timeline-detail-metrics">
+                    <span>자세 감지 {item.pose_score === null ? "미감지" : "감지"}</span>
+                    <span>
+                      어깨{" "}
+                      {item.shoulder_score === null
+                        ? "측정 불가"
+                        : formatNumber(item.shoulder_score)}
+                    </span>
+                    <span>얼굴 감지 {item.face_score === null ? "미감지" : "감지"}</span>
+                    <span>
+                      얼굴 방향{" "}
+                      {item.gaze_score === null ? "측정 불가" : formatNumber(item.gaze_score)}
+                    </span>
+                    {typeof item.head_direction_score === "number" && (
+                      <span>
+                        3축 방향 {formatNumber(item.head_direction_score)} · yaw{" "}
+                        {formatNumber(item.yaw_degrees, "°")} · pitch{" "}
+                        {formatNumber(item.pitch_degrees, "°")} · roll{" "}
+                        {formatNumber(item.roll_degrees, "°")}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
-      </section>
+      </Card>
     </div>
   );
 }

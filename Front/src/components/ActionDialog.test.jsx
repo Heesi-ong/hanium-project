@@ -18,6 +18,7 @@ describe("ActionDialog", () => {
     );
 
     expect(screen.getByRole("dialog", { name: "새 대화 이름" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "새 대화 이름" })).toHaveFocus();
     fireEvent.change(screen.getByRole("textbox", { name: "새 대화 이름" }), {
       target: { value: "변경 이름" },
     });

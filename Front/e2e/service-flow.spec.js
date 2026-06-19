@@ -3,9 +3,16 @@ import { expect, test } from "@playwright/test";
 const email = process.env.E2E_EMAIL || `speakinsight-e2e-${Date.now()}@example.com`;
 const password = process.env.E2E_PASSWORD || "E2e-Test-Password-2026";
 const videoPath = process.env.E2E_VIDEO_PATH;
+const videoPathRequired = process.env.CI === "true" || process.env.E2E_REQUIRE_VIDEO === "true";
 
 test.describe("실제 서비스 흐름", () => {
-  test.skip(!videoPath, "E2E_VIDEO_PATH가 필요합니다.");
+  test.beforeAll(() => {
+    if (!videoPath && videoPathRequired) {
+      throw new Error("E2E_VIDEO_PATH가 필요합니다. 실제 분석 가능한 테스트 영상을 지정하세요.");
+    }
+  });
+
+  test.skip(!videoPath && !videoPathRequired, "로컬 E2E 실행에는 E2E_VIDEO_PATH가 필요합니다.");
 
   test.afterEach(async ({ page }) => {
     await page.request.delete("/api/auth/account", { data: { password }, failOnStatusCode: false });

@@ -1,5 +1,77 @@
+/* 관리자 랜딩페이지와 시스템 상태 페이지의 카드, 표, 작업 버튼 스타일을 정의한다. */
+
 .admin-page {
   max-width: 1200px;
+}
+
+.admin-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.admin-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.admin-overview-copy {
+  padding: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background:
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.15), transparent 38%),
+    linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+  color: #fff;
+}
+
+.admin-overview-copy h2 {
+  max-width: 680px;
+  margin: 10px 0;
+  font-size: 1.45rem;
+  line-height: 1.45;
+}
+
+.admin-overview-copy p {
+  max-width: 720px;
+  margin: 0;
+  color: #dbeafe;
+  line-height: 1.7;
+}
+
+.admin-card-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-overview-copy .admin-card-label {
+  color: #93c5fd;
+}
+
+.admin-policy-card {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 0;
+}
+
+.admin-policy-card h2 {
+  margin: 8px 0 0;
+  font-size: var(--font-size-lg);
+}
+
+.admin-policy-card ul {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--color-text-muted);
+  line-height: 1.55;
 }
 
 .admin-status-grid {
@@ -13,17 +85,190 @@
   margin: 0;
 }
 
-.admin-status-grid h2 {
+.admin-status-grid h2,
+.admin-system-card h2 {
   margin-top: 0;
   font-size: 1rem;
 }
 
+.admin-metric-card,
+.admin-system-card {
+  overflow: hidden;
+}
+
+.admin-metric-card::before,
+.admin-system-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  content: "";
+}
+
+.admin-metric-card strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--color-text-strong);
+  font-size: 2rem;
+}
+
+.admin-metric-card p,
+.admin-system-card p {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.admin-card-success::before {
+  background: var(--color-success);
+}
+
+.admin-card-warning::before {
+  background: var(--color-warning);
+}
+
+.admin-card-danger::before {
+  background: var(--color-danger);
+}
+
+.admin-card-info::before {
+  background: var(--color-primary);
+}
+
+.admin-card-neutral::before {
+  background: var(--color-muted);
+}
+
 .admin-status-grid .status-ok {
-  color: #166534;
+  color: var(--color-success-dark);
   font-size: 1.1rem;
 }
 
 .admin-status-grid .status-error {
-  color: #b91c1c;
+  color: var(--color-danger-dark);
   font-size: 1.1rem;
+}
+
+.admin-system-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-users-section {
+  margin-top: 24px;
+}
+
+.admin-user-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.admin-user-filters label {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.admin-user-filters input,
+.admin-user-filters select {
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control-lg);
+  font: inherit;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-scroll th,
+.table-scroll td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table-scroll th {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.admin-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.admin-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-section-heading h2 {
+  margin: 0;
+}
+
+.admin-section-heading p {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+}
+
+.admin-job-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-surface);
+  color: var(--color-primary-dark);
+  font-weight: var(--font-weight-extrabold);
+  white-space: nowrap;
+}
+
+.admin-stage-text {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 900px) {
+  .admin-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-header-actions,
+  .admin-header-actions .button,
+  .admin-header-actions a {
+    width: 100%;
+  }
+
+  .admin-section-heading {
+    flex-direction: column;
+  }
+
+  .admin-user-filters {
+    flex-direction: column;
+  }
+
+  .admin-user-filters label {
+    min-width: 0;
+  }
 }

@@ -1,66 +1,91 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getAdminProblemJobs, getAdminStatus } from "../api/adminApi";
+import { getAdminMetrics, getAdminUsers, updateAdminUserStatus } from "../api/adminApi";
 import AdminPage from "./AdminPage";
 
 vi.mock("../api/adminApi", () => ({
-  getAdminProblemJobs: vi.fn(),
-  getAdminStatus: vi.fn(),
-  retryAdminProblemJob: vi.fn(),
+  getAdminMetrics: vi.fn(),
+  getAdminUsers: vi.fn(),
+  updateAdminUserStatus: vi.fn(),
 }));
 
-const status = {
-  status: "degraded",
-  checks: {
-    database: { ok: true },
-    worker: {
-      ok: true,
-      active_worker_count: 1,
-      worker_count: 1,
-      maintenance_running: true,
-      worker_heartbeat_stale: false,
-      maintenance_stale: false,
-    },
-    ollama: { ok: false, configured_model: "qwen3:4b" },
-    queue: { queued: 1, processing: 0, failed: 2, stalled: 0 },
-    disk: { ok: true, free_mb: 2048, minimum_free_mb: 1024 },
-  },
-};
-
 describe("AdminPage", () => {
-  afterEach(() => {
-    vi.clearAllMocks();
+  beforeEach(() => {
+    vi.resetAllMocks();
+    getAdminMetrics.mockResolvedValue({
+      users: { total: 2, active: 1, disabled: 1, created_last_24_hours: 1 },
+      analysis: {
+        total: 3,
+        completed: 2,
+        failed: 1,
+        success_rate: 66.67,
+        completed_last_24_hours: 1,
+        average_completed_processing_seconds: 10,
+      },
+    });
+    getAdminUsers.mockResolvedValue({
+      total: 45,
+      users: [
+        {
+          id: 7,
+          email: "user@example.com",
+          status: "active",
+          status_change_allowed: true,
+          created_at: "2026-06-15",
+        },
+      ],
+    });
   });
 
-  it("운영 상태와 점검 필요 항목을 표시한다", async () => {
-    getAdminStatus.mockResolvedValue(status);
-    getAdminProblemJobs.mockResolvedValue({ jobs: [] });
-
-    render(<AdminPage />);
-
-    expect(await screen.findByText("전체 서비스 상태: 점검 필요")).toBeInTheDocument();
-    expect(screen.getByText("qwen3:4b")).toBeInTheDocument();
-    expect(screen.getByText("실패 2건")).toBeInTheDocument();
-    expect(screen.getByText("점검 필요")).toHaveClass("status-error");
-  });
-
-  it("화면 이탈 시 진행 중인 상태 요청을 취소한다", async () => {
-    let signal;
-    getAdminStatus.mockImplementation(
-      (requestSignal) =>
-        new Promise(() => {
-          signal = requestSignal;
-        }),
+  it("개인정보를 제한한 관리자 통계와 사용자 목록을 표시한다", async () => {
+    render(
+      <MemoryRouter>
+        <AdminPage />
+      </MemoryRouter>,
     );
-    getAdminProblemJobs.mockResolvedValue({ jobs: [] });
 
-    const view = render(<AdminPage />);
-    await waitFor(() => expect(signal).toBeDefined());
+    expect(await screen.findByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getByText("2명")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "시스템 운영 상태" })).toHaveAttribute(
+      "href",
+      "/admin/system",
+    );
+    expect(screen.queryByText("분석 상세 결과")).not.toBeInTheDocument();
+  });
 
-    view.unmount();
+  it("확인 대화상자를 거쳐 일반 사용자 계정을 정지한다", async () => {
+    updateAdminUserStatus.mockResolvedValue({});
+    render(
+      <MemoryRouter>
+        <AdminPage />
+      </MemoryRouter>,
+    );
 
-    expect(signal.aborted).toBe(true);
+    fireEvent.click(await screen.findByRole("button", { name: "계정 정지" }));
+    expect(updateAdminUserStatus).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "계정 정지" }));
+
+    await waitFor(() => expect(updateAdminUserStatus).toHaveBeenCalledWith(7, "disabled"));
+  });
+
+  it("사용자 목록 페이지를 이동할 때 limit과 offset을 전달한다", async () => {
+    render(
+      <MemoryRouter>
+        <AdminPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("1 / 3 페이지 · 총 45명")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+
+    await waitFor(() =>
+      expect(getAdminUsers).toHaveBeenLastCalledWith(
+        { search: "", status: "", limit: 20, offset: 20 },
+        expect.any(AbortSignal),
+      ),
+    );
   });
 });

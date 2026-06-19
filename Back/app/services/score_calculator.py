@@ -1,4 +1,8 @@
+"""측정 가능한 발표 지표를 결정론적 규칙으로 점수화하고 종합 점수를 계산한다."""
+
 import math
+
+from .face_direction_analyzer import calculate_legacy_gaze_score
 
 MIN_VISUAL_VALID_FRAMES = 3
 MIN_VISUAL_DETECTION_RATE = 30
@@ -26,6 +30,7 @@ def calculate_basic_score(
 
     shoulder_balance_scores = []
     gaze_scores = []
+    head_direction_scores = []
 
     if gesture_result is None:
         gesture_result = {}
@@ -58,20 +63,13 @@ def calculate_basic_score(
 
             landmarks = item.get("landmarks", [])
 
-            nose = next((lm for lm in landmarks if lm["id"] == 1), None)
-            left_eye = next((lm for lm in landmarks if lm["id"] == 33), None)
-            right_eye = next((lm for lm in landmarks if lm["id"] == 263), None)
+            gaze_score = calculate_legacy_gaze_score(landmarks)
+            if gaze_score is not None:
+                gaze_scores.append(gaze_score)
 
-            if nose and left_eye and right_eye:
-                eye_center_x = (left_eye["x"] + right_eye["x"]) / 2
-                diff = abs(nose["x"] - eye_center_x)
-
-                if diff < 0.02:
-                    gaze_scores.append(100)
-                elif diff < 0.05:
-                    gaze_scores.append(70)
-                else:
-                    gaze_scores.append(40)
+            head_direction_score = item.get("head_direction_score")
+            if isinstance(head_direction_score, (int, float)):
+                head_direction_scores.append(head_direction_score)
 
     pose_detection_rate = None
     face_detection_rate = None
@@ -95,6 +93,13 @@ def calculate_basic_score(
     if face_evaluation_available and len(gaze_scores) >= MIN_VISUAL_VALID_FRAMES:
         gaze_score = round(
             sum(gaze_scores) / len(gaze_scores),
+            2
+        )
+
+    head_direction_score = None
+    if face_evaluation_available and len(head_direction_scores) >= MIN_VISUAL_VALID_FRAMES:
+        head_direction_score = round(
+            sum(head_direction_scores) / len(head_direction_scores),
             2
         )
 
@@ -192,6 +197,8 @@ def calculate_basic_score(
             "minimum_detection_rate": MIN_VISUAL_DETECTION_RATE,
             "pose_evaluation_available": pose_evaluation_available,
             "face_evaluation_available": face_evaluation_available,
+            "head_direction_valid_frames": len(head_direction_scores),
+            "head_direction_evaluation_available": head_direction_score is not None,
             "level": (
                 "high"
                 if pose_evaluation_available
@@ -221,6 +228,8 @@ def calculate_basic_score(
         "face_detection_rate": face_detection_rate,
         "shoulder_balance_score": shoulder_balance_score,
         "gaze_score": gaze_score,
+        "head_direction_score": head_direction_score,
+        "head_direction_valid_frames": len(head_direction_scores),
         "speech_speed_wpm": speech_speed,
         "speech_speed_spm": speech_speed_spm,
         "audio_analysis_available": audio_analysis_available,

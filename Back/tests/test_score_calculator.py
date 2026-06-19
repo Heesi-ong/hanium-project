@@ -116,6 +116,31 @@ class ScoreCalculatorTest(unittest.TestCase):
         self.assertIsNone(result["gesture_score"])
         self.assertFalse(result["analysis_confidence"]["visual"]["pose_evaluation_available"])
 
+    def test_head_direction_is_parallel_metric_and_does_not_change_total_score(self):
+        face = {
+            "face_detected": True,
+            "landmarks": [
+                {"id": 1, "x": 0.5},
+                {"id": 33, "x": 0.4},
+                {"id": 263, "x": 0.6},
+            ],
+            "head_direction_score": 40,
+        }
+        result = calculate_basic_score(
+            video_info={"duration_seconds": 3},
+            frame_result={"saved_count": 3},
+            pose_results=[{"pose_detected": False}] * 3,
+            face_results=[face] * 3,
+            audio_result={"text": "", "segments": []},
+            gesture_result={},
+            volume_result={},
+        )
+
+        self.assertEqual(result["gaze_score"], 100)
+        self.assertEqual(result["head_direction_score"], 40)
+        self.assertEqual(result["total_score"], 100)
+        self.assertNotIn("head_direction_score", result["score_availability"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,33 @@ class TimelineAnalyzerTests(unittest.TestCase):
         )
 
         self.assertIsNone(result["timeline"][0]["shoulder_score"])
+        self.assertIsNone(result["timeline"][0]["head_direction_score"])
         self.assertIsNone(result["timeline"][0]["frame_score"])
+
+    def test_head_direction_measurements_are_exposed_without_replacing_gaze_score(self):
+        face = {
+            "face_detected": True,
+            "landmarks": [
+                {"id": 1, "x": 0.5},
+                {"id": 33, "x": 0.4},
+                {"id": 263, "x": 0.6},
+            ],
+            "head_direction_score": 70,
+            "yaw_degrees": 20,
+            "pitch_degrees": 5,
+            "roll_degrees": 0,
+        }
+        result = analyze_timeline_scores(
+            {"duration_seconds": 3},
+            {"frames": ["1.jpg", "2.jpg", "3.jpg"]},
+            [{"pose_detected": False}] * 3,
+            [face] * 3,
+        )
+
+        frame = result["timeline"][0]
+        self.assertEqual(frame["gaze_score"], 100)
+        self.assertEqual(frame["head_direction_score"], 70)
+        self.assertEqual(frame["yaw_degrees"], 20)
 
 
 if __name__ == "__main__":

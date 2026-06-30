@@ -1,18 +1,36 @@
+# macOS
 .DS_Store
 
-# Python caches and virtual environments
+# IntelliJ / IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Java / Spring Boot / Gradle
+backend/build/
+backend/.gradle/
+backend/out/
+backend/.settings/
+backend/bin/
+
+# Python caches
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 *.so
 .Python
+
+# Python virtual environments
 .venv/
 venv/
 env/
 ENV/
 env.bak/
 venv.bak/
-__pypackages__/
+analysis-engine/.venv/
+video-llm-engine/.venv/
 
 # Python build and packaging output
 build/
@@ -35,7 +53,7 @@ MANIFEST
 *.manifest
 *.spec
 
-# Test, coverage, and lint caches
+# Python test, coverage, and lint caches
 .coverage
 .coverage.*
 htmlcov/
@@ -50,33 +68,58 @@ coverage.xml
 .nox/
 cover/
 
-# Local app/runtime state
-.runtime/
-logs/
-*.log
-db.sqlite3
-db.sqlite3-journal
+# Node / React
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
 
 # Environment files
 .env
 .envrc
-Back/.env
-Front/.env
+*.env
+!*.env.example
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+backend/.env
+backend/.env.local
+analysis-engine/.env
+video-llm-engine/.env
 
-# Backend runtime storage
-Back/storage/uploads/
-Back/storage/frames/
-Back/storage/results/
-Back/storage/practice_contexts/
-Back/storage/ai_coaching/
-Back/storage/.deletion_staging/
+# Runtime generated files
+.runtime/
+logs/
+*.log
 
-# Frontend dependencies and build output
-node_modules/
-Front/node_modules/
-Front/dist/
-Front/playwright-report/
-Front/test-results/
+# Runtime storage
+storage/uploads/*
+storage/results/*
+storage/temp/*
+storage/logs/*
+
+!storage/uploads/.gitkeep
+!storage/results/.gitkeep
+!storage/temp/.gitkeep
+!storage/logs/.gitkeep
+
+# Local database
+*.db
+*.sqlite
+*.sqlite3
+db.sqlite3
+db.sqlite3-journal
+
+# H2 Database files
+*.mv.db
+*.trace.db
+
+# Local project references / large assets
+Project/
 
 # Editor and tool state
 .cache/

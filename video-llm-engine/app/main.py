@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from app.api.video_llm_analysis import router as video_llm_analysis_router
+
 app = FastAPI(title="Video LLM Engine")
 
 
@@ -9,3 +11,6 @@ def health_check():
         "status": "ok",
         "service": "video-llm-engine"
     }
+
+
+app.include_router(video_llm_analysis_router)

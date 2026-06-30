@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from app.api.basic_analysis import router as basic_analysis_router
+
 app = FastAPI(title="Analysis Engine")
 
 
@@ -9,3 +11,6 @@ def health_check():
         "status": "ok",
         "service": "analysis-engine"
     }
+
+
+app.include_router(basic_analysis_router)

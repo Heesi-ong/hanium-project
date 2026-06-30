@@ -6,7 +6,6 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 
 @Service
@@ -31,7 +30,36 @@ public class ResultMergeService {
                 "practicePlan", openAiFeedbackResponse.practicePlan(),
                 "timelineFeedback", openAiFeedbackResponse.timelineFeedback(),
 
-                "pipeline", createPipeline()
+                "pipeline", createCompletedPipeline()
+        );
+    }
+
+    public Map<String, Object> createFailureResult(
+            String jobId,
+            String failedStep,
+            String failReason
+    ) {
+        return Map.of(
+                "jobId", jobId,
+                "status", "FAILED",
+                "createdAt", LocalDateTime.now().toString(),
+                "failedStep", failedStep == null ? "UNKNOWN" : failedStep,
+                "failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason,
+                "scoreSummary", Map.of(
+                        "totalScore", 0,
+                        "postureScore", 0,
+                        "gazeScore", 0,
+                        "speechScore", 0,
+                        "level", "FAILED"
+                ),
+                "feedback", Map.of(
+                        "overall", "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.",
+                        "strengths", java.util.List.of(),
+                        "improvements", java.util.List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요.")
+                ),
+                "practicePlan", java.util.List.of(),
+                "timelineFeedback", java.util.List.of(),
+                "pipeline", createFailedPipeline(failedStep)
         );
     }
 
@@ -81,7 +109,7 @@ public class ResultMergeService {
         );
     }
 
-    private Map<String, Object> createPipeline() {
+    private Map<String, Object> createCompletedPipeline() {
         return Map.of(
                 "basicAnalysis", "analysis-engine mock",
                 "videoLlmAnalysis", "video-llm-engine mock",
@@ -89,6 +117,28 @@ public class ResultMergeService {
                 "openAiFeedback", "openai mock",
                 "finalMerge", "spring-boot result merge"
         );
+    }
+
+    private Map<String, Object> createFailedPipeline(String failedStep) {
+        return Map.of(
+                "basicAnalysis", resolvePipelineStatus(failedStep, "BASIC_ANALYZING"),
+                "videoLlmAnalysis", resolvePipelineStatus(failedStep, "VIDEO_LLM_ANALYZING"),
+                "compactAnalysis", resolvePipelineStatus(failedStep, "COMPACTING"),
+                "openAiFeedback", resolvePipelineStatus(failedStep, "OPENAI_GENERATING"),
+                "finalMerge", resolvePipelineStatus(failedStep, "MERGING_RESULT")
+        );
+    }
+
+    private String resolvePipelineStatus(String failedStep, String stepName) {
+        if (failedStep == null) {
+            return "unknown";
+        }
+
+        if (failedStep.equals(stepName)) {
+            return "failed";
+        }
+
+        return "not-guaranteed";
     }
 
     private Map<String, Object> nullSafe(Map<String, Object> value) {

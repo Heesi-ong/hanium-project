@@ -48,6 +48,8 @@ public class AnalysisJob {
     public void startBasicAnalysis() {
         this.status = AnalysisStatus.BASIC_ANALYZING;
         this.startedAt = LocalDateTime.now();
+        this.completedAt = null;
+        this.failReason = null;
     }
 
     public void startVideoLlmAnalysis() {
@@ -75,5 +77,36 @@ public class AnalysisJob {
         this.status = AnalysisStatus.FAILED;
         this.failReason = failReason;
         this.completedAt = LocalDateTime.now();
+    }
+
+    public void resetForRetry() {
+        this.status = AnalysisStatus.UPLOADED;
+        this.failReason = null;
+        this.startedAt = null;
+        this.completedAt = null;
+    }
+
+    public boolean isRunning() {
+        return this.status == AnalysisStatus.BASIC_ANALYZING
+                || this.status == AnalysisStatus.VIDEO_LLM_ANALYZING
+                || this.status == AnalysisStatus.COMPACTING
+                || this.status == AnalysisStatus.OPENAI_GENERATING
+                || this.status == AnalysisStatus.MERGING_RESULT;
+    }
+
+    public boolean isCompleted() {
+        return this.status == AnalysisStatus.COMPLETED;
+    }
+
+    public boolean isFailed() {
+        return this.status == AnalysisStatus.FAILED;
+    }
+
+    public boolean canRun() {
+        return this.status == AnalysisStatus.UPLOADED;
+    }
+
+    public boolean canRetry() {
+        return this.status == AnalysisStatus.FAILED;
     }
 }

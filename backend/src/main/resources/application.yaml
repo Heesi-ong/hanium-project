@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: presentation-coaching-backend
+
+  profiles:
+    active: local
+
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB

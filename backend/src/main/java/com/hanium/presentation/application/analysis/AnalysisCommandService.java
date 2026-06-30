@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -90,10 +91,50 @@ public class AnalysisCommandService {
         );
     }
 
-    @Transactional
-    public AnalysisStatusResponse runAnalysis(String jobId) {
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AnalysisStatusResponse runAnalysis(
+            String jobId,
+            boolean useVideoLlm,
+            boolean useOpenAi
+    ) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        validateRunnable(analysisJob);
+
+        return executeAnalysis(
+                analysisJob,
+                useVideoLlm,
+                useOpenAi
+        );
+    }
+
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AnalysisStatusResponse retryAnalysis(
+            String jobId,
+            boolean useVideoLlm,
+            boolean useOpenAi
+    ) {
+        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        validateRetryable(analysisJob);
+
+        analysisJob.resetForRetry();
+
+        return executeAnalysis(
+                analysisJob,
+                useVideoLlm,
+                useOpenAi
+        );
+    }
+
+    private AnalysisStatusResponse executeAnalysis(
+            AnalysisJob analysisJob,
+            boolean useVideoLlm,
+            boolean useOpenAi
+    ) {
+        String jobId = analysisJob.getJobId();
 
         UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(
@@ -111,14 +152,20 @@ public class AnalysisCommandService {
                     )
             );
 
-            analysisJob.startVideoLlmAnalysis();
+            VideoLlmEngineResponse videoLlmEngineResponse;
 
-            VideoLlmEngineResponse videoLlmEngineResponse = videoLlmEngineClient.analyze(
-                    VideoLlmEngineRequest.defaultOption(
-                            jobId,
-                            uploadedVideo.getStoredFilePath()
-                    )
-            );
+            if (useVideoLlm) {
+                analysisJob.startVideoLlmAnalysis();
+
+                videoLlmEngineResponse = videoLlmEngineClient.analyze(
+                        VideoLlmEngineRequest.defaultOption(
+                                jobId,
+                                uploadedVideo.getStoredFilePath()
+                        )
+                );
+            } else {
+                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId);
+            }
 
             analysisJob.startCompacting();
 
@@ -128,11 +175,17 @@ public class AnalysisCommandService {
                     videoLlmEngineResponse
             );
 
-            analysisJob.startOpenAiGenerating();
+            OpenAiFeedbackResponse openAiFeedbackResponse;
 
-            OpenAiFeedbackResponse openAiFeedbackResponse = openAiClient.generateFeedback(
-                    new OpenAiFeedbackRequest(jobId, compactAnalysis)
-            );
+            if (useOpenAi) {
+                analysisJob.startOpenAiGenerating();
+
+                openAiFeedbackResponse = openAiClient.generateFeedback(
+                        new OpenAiFeedbackRequest(jobId, compactAnalysis)
+                );
+            } else {
+                openAiFeedbackResponse = createSkippedOpenAiResponse(jobId);
+            }
 
             resultCommandService.saveOpenAiFeedbackResult(
                     jobId,
@@ -153,13 +206,113 @@ public class AnalysisCommandService {
             return AnalysisStatusResponse.from(analysisJob);
         } catch (BusinessException e) {
             analysisJob.fail(e.getMessage());
+            saveFailureResultSafely(analysisJob, e.getMessage());
             throw e;
         } catch (Exception e) {
-            analysisJob.fail(e.getMessage());
+            String failReason = e.getMessage() == null
+                    ? "분석 실행 중 알 수 없는 오류가 발생했습니다."
+                    : e.getMessage();
+
+            analysisJob.fail(failReason);
+            saveFailureResultSafely(analysisJob, failReason);
+
             throw new BusinessException(
                     ErrorCode.INTERNAL_SERVER_ERROR,
                     "분석 실행 중 오류가 발생했습니다."
             );
         }
+    }
+
+    private void validateRunnable(AnalysisJob analysisJob) {
+        if (analysisJob.isRunning()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ALREADY_RUNNING,
+                    "현재 분석이 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
+            );
+        }
+
+        if (analysisJob.isCompleted()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ALREADY_COMPLETED,
+                    "이미 완료된 분석 작업입니다. jobId=" + analysisJob.getJobId()
+            );
+        }
+
+        if (!analysisJob.canRun()) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    "현재 상태에서는 분석을 실행할 수 없습니다. status=" + analysisJob.getStatus()
+            );
+        }
+    }
+
+    private void validateRetryable(AnalysisJob analysisJob) {
+        if (analysisJob.isRunning()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ALREADY_RUNNING,
+                    "현재 분석이 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
+            );
+        }
+
+        if (analysisJob.isCompleted()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ALREADY_COMPLETED,
+                    "이미 완료된 분석 작업입니다. jobId=" + analysisJob.getJobId()
+            );
+        }
+
+        if (!analysisJob.canRetry()) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    "실패 상태의 분석 작업만 재시도할 수 있습니다. status=" + analysisJob.getStatus()
+            );
+        }
+    }
+
+    private void saveFailureResultSafely(
+            AnalysisJob analysisJob,
+            String failReason
+    ) {
+        try {
+            resultCommandService.saveFailureResult(
+                    analysisJob.getJobId(),
+                    analysisJob.getStatus().name(),
+                    failReason
+            );
+        } catch (Exception ignored) {
+            // 실패 결과 저장 중 발생한 예외는 원래 분석 실패 원인을 덮어쓰지 않기 위해 무시합니다.
+        }
+    }
+
+    private VideoLlmEngineResponse createSkippedVideoLlmResponse(String jobId) {
+        return new VideoLlmEngineResponse(
+                jobId,
+                "skipped",
+                Map.of(
+                        "name", "video-llm-skipped",
+                        "version", "none"
+                ),
+                Map.of(),
+                Map.of(
+                        "visualDelivery", "Video LLM 분석을 사용하지 않았습니다.",
+                        "mainStrength", "Video LLM 분석 생략",
+                        "mainWeakness", "Video LLM 분석 생략"
+                )
+        );
+    }
+
+    private OpenAiFeedbackResponse createSkippedOpenAiResponse(String jobId) {
+        return new OpenAiFeedbackResponse(
+                jobId,
+                "OpenAI 피드백 생성을 사용하지 않았습니다. 기본 분석 결과만 저장되었습니다.",
+                List.of(
+                        "기본 분석 결과가 정상적으로 생성되었습니다."
+                ),
+                List.of(
+                        "OpenAI 피드백을 활성화하면 더 구체적인 개선점을 받을 수 있습니다."
+                ),
+                List.of(),
+                List.of()
+        );
     }
 }

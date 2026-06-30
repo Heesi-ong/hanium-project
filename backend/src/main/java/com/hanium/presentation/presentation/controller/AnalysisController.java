@@ -53,10 +53,39 @@ public class AnalysisController {
             @PathVariable String jobId,
             @RequestBody(required = false) AnalysisRunRequest request
     ) {
-        AnalysisStatusResponse response = analysisCommandService.runAnalysis(jobId);
+        AnalysisRunRequest runRequest = request == null
+                ? new AnalysisRunRequest(true, true)
+                : request;
+
+        AnalysisStatusResponse response = analysisCommandService.runAnalysis(
+                jobId,
+                runRequest.isUseVideoLlm(),
+                runRequest.isUseOpenAi()
+        );
 
         return ApiResponse.success(
                 "분석 실행이 완료되었습니다.",
+                response
+        );
+    }
+
+    @PostMapping("/{jobId}/retry")
+    public ApiResponse<AnalysisStatusResponse> retryAnalysis(
+            @PathVariable String jobId,
+            @RequestBody(required = false) AnalysisRunRequest request
+    ) {
+        AnalysisRunRequest runRequest = request == null
+                ? new AnalysisRunRequest(true, true)
+                : request;
+
+        AnalysisStatusResponse response = analysisCommandService.retryAnalysis(
+                jobId,
+                runRequest.isUseVideoLlm(),
+                runRequest.isUseOpenAi()
+        );
+
+        return ApiResponse.success(
+                "분석 재시도가 완료되었습니다.",
                 response
         );
     }

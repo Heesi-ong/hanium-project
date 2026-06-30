@@ -1,11 +1,19 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
+import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.video.entity.UploadedVideo;
+import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
+import com.hanium.presentation.global.exception.BusinessException;
+import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
+import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -17,17 +25,26 @@ public class ResultCommandService {
     private final AnalysisCompactor analysisCompactor;
     private final FilePathGenerator filePathGenerator;
     private final JsonFileStorage jsonFileStorage;
+    private final LocalFileStorage localFileStorage;
+    private final AnalysisJobRepository analysisJobRepository;
+    private final UploadedVideoRepository uploadedVideoRepository;
 
     public ResultCommandService(
             ResultMergeService resultMergeService,
             AnalysisCompactor analysisCompactor,
             FilePathGenerator filePathGenerator,
-            JsonFileStorage jsonFileStorage
+            JsonFileStorage jsonFileStorage,
+            LocalFileStorage localFileStorage,
+            AnalysisJobRepository analysisJobRepository,
+            UploadedVideoRepository uploadedVideoRepository
     ) {
         this.resultMergeService = resultMergeService;
         this.analysisCompactor = analysisCompactor;
         this.filePathGenerator = filePathGenerator;
         this.jsonFileStorage = jsonFileStorage;
+        this.localFileStorage = localFileStorage;
+        this.analysisJobRepository = analysisJobRepository;
+        this.uploadedVideoRepository = uploadedVideoRepository;
     }
 
     public void saveAnalysisEngineResult(
@@ -88,6 +105,21 @@ public class ResultCommandService {
         jsonFileStorage.saveJson(finalResultPath, finalResult);
     }
 
+    public void saveFailureResult(
+            String jobId,
+            String failedStep,
+            String failReason
+    ) {
+        Map<String, Object> failureResult = resultMergeService.createFailureResult(
+                jobId,
+                failedStep,
+                failReason
+        );
+
+        Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
+        jsonFileStorage.saveJson(finalResultPath, failureResult);
+    }
+
     public Map<String, Object> saveEngineResultsAndCompact(
             String jobId,
             AnalysisEngineResponse analysisEngineResponse,
@@ -101,5 +133,26 @@ public class ResultCommandService {
                 analysisEngineResponse,
                 videoLlmEngineResponse
         );
+    }
+
+    @Transactional
+    public void deleteResult(String jobId) {
+        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
+                .orElse(null);
+
+        Path uploadDirectory = filePathGenerator.generateUploadDirectory(jobId);
+        Path resultDirectory = filePathGenerator.generateResultDirectory(jobId);
+
+        localFileStorage.deleteDirectoryIfExists(uploadDirectory);
+        localFileStorage.deleteDirectoryIfExists(resultDirectory);
+
+        if (uploadedVideo != null) {
+            uploadedVideoRepository.delete(uploadedVideo);
+        }
+
+        analysisJobRepository.delete(analysisJob);
     }
 }

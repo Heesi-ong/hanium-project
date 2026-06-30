@@ -1,25 +1,524 @@
-import { useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
+import StateMessage from "../components/StateMessage";
+import StatusBadge from "../components/StatusBadge";
+import {
+    deleteResult,
+    getAnalysisStatus,
+    getResult,
+    retryAnalysis,
+} from "../api/analysisApi";
+
+const POLLING_INTERVAL_MS = 1500;
+const POLLING_TIMEOUT_MS = 120000;
+
+const RUNNING_STATUSES = [
+    "BASIC_ANALYZING",
+    "VIDEO_LLM_ANALYZING",
+    "COMPACTING",
+    "OPENAI_GENERATING",
+    "MERGING_RESULT",
+];
 
 function ResultDetailPage() {
     const { jobId } = useParams();
+    const navigate = useNavigate();
+
+    const pollingTimerRef = useRef(null);
+    const pollingStartedAtRef = useRef(null);
+
+    const [resultData, setResultData] = useState(null);
+    const [analysisStatus, setAnalysisStatus] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [retrying, setRetrying] = useState(false);
+    const [polling, setPolling] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [error, setError] = useState("");
+
+    const result = resultData?.result || {};
+
+    const scoreSummary = result.scoreSummary || {};
+    const basicAnalysis = result.basicAnalysis || {};
+    const visualAnalysis = result.visualAnalysis || {};
+    const feedback = result.feedback || {};
+    const practicePlan = result.practicePlan || [];
+    const timelineFeedback = result.timelineFeedback || [];
+    const pipeline = result.pipeline || {};
+
+    const currentStatus = analysisStatus?.status || result.status || null;
+    const currentStatusDescription =
+        analysisStatus?.statusDescription || currentStatus || "-";
+
+    const isFailed = currentStatus === "FAILED";
+    const isCompleted = currentStatus === "COMPLETED";
+    const isRunning = RUNNING_STATUSES.includes(currentStatus);
+
+    const scoreItems = useMemo(
+        () => [
+            {
+                label: "총점",
+                value: scoreSummary.totalScore,
+            },
+            {
+                label: "자세",
+                value: scoreSummary.postureScore,
+            },
+            {
+                label: "시선",
+                value: scoreSummary.gazeScore,
+            },
+            {
+                label: "음성",
+                value: scoreSummary.speechScore,
+            },
+        ],
+        [scoreSummary]
+    );
+
+    useEffect(() => {
+        loadResult();
+
+        return () => {
+            stopPolling();
+        };
+    }, [jobId]);
+
+    async function loadResult() {
+        if (!jobId) {
+            setError("조회할 jobId가 없습니다.");
+            setLoading(false);
+            return;
+        }
+
+        try {
+            setLoading(true);
+            setError("");
+
+            const response = await getResult(jobId);
+
+            setResultData(response.data);
+
+            if (response.data?.result?.status) {
+                setAnalysisStatus({
+                    jobId,
+                    status: response.data.result.status,
+                    statusDescription: response.data.result.status,
+                    failReason: response.data.result.failReason || null,
+                });
+            }
+        } catch (requestError) {
+            setError(
+                requestError.message ||
+                "분석 결과 상세 정보를 불러오는 중 오류가 발생했습니다."
+            );
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function fetchStatusOnce(targetJobId) {
+        const response = await getAnalysisStatus(targetJobId);
+        setAnalysisStatus(response.data);
+        return response.data;
+    }
+
+    function startStatusPolling(targetJobId) {
+        stopPolling();
+
+        pollingStartedAtRef.current = Date.now();
+        setPolling(true);
+
+        pollingTimerRef.current = setInterval(async () => {
+            try {
+                const elapsedMs = Date.now() - pollingStartedAtRef.current;
+
+                if (elapsedMs > POLLING_TIMEOUT_MS) {
+                    stopPolling();
+                    setError("분석 상태 확인 시간이 초과되었습니다. 잠시 후 다시 조회하세요.");
+                    return;
+                }
+
+                const statusData = await fetchStatusOnce(targetJobId);
+
+                if (statusData.status === "COMPLETED") {
+                    stopPolling();
+                    await loadResult();
+                    return;
+                }
+
+                if (statusData.status === "FAILED") {
+                    stopPolling();
+                    await loadResult();
+                    setError(statusData.failReason || "분석 재시도가 실패했습니다.");
+                }
+            } catch (requestError) {
+                stopPolling();
+                setError(
+                    requestError.message ||
+                    "분석 상태 확인 중 오류가 발생했습니다."
+                );
+            }
+        }, POLLING_INTERVAL_MS);
+    }
+
+    function stopPolling() {
+        if (pollingTimerRef.current) {
+            clearInterval(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+        }
+
+        pollingStartedAtRef.current = null;
+        setPolling(false);
+    }
+
+    async function handleRetry() {
+        if (!jobId) {
+            return;
+        }
+
+        try {
+            setRetrying(true);
+            setError("");
+
+            await retryAnalysis(jobId, {
+                useVideoLlm: true,
+                useOpenAi: true,
+            });
+
+            await fetchStatusOnce(jobId);
+            startStatusPolling(jobId);
+        } catch (requestError) {
+            setError(
+                requestError.message ||
+                "분석 재시도 중 오류가 발생했습니다."
+            );
+
+            try {
+                await fetchStatusOnce(jobId);
+            } catch {
+                // 재시도 실패 후 상태 조회 실패는 기존 오류 메시지를 유지합니다.
+            }
+        } finally {
+            setRetrying(false);
+        }
+    }
+
+    async function handleDelete() {
+        if (!jobId) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 JSON 파일도 함께 삭제됩니다."
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            stopPolling();
+            setDeleting(true);
+            setError("");
+
+            await deleteResult(jobId);
+
+            navigate("/results");
+        } catch (requestError) {
+            setError(
+                requestError.message ||
+                "분석 결과 삭제 중 오류가 발생했습니다."
+            );
+        } finally {
+            setDeleting(false);
+        }
+    }
+
+    function formatScore(value) {
+        if (value === null || value === undefined) {
+            return "-";
+        }
+
+        return value;
+    }
+
+    function getScoreClassName(value) {
+        if (typeof value !== "number") {
+            return "score-value muted";
+        }
+
+        if (value >= 85) {
+            return "score-value excellent";
+        }
+
+        if (value >= 70) {
+            return "score-value good";
+        }
+
+        if (value >= 50) {
+            return "score-value normal";
+        }
+
+        return "score-value poor";
+    }
+
+    function formatObjectValue(value) {
+        if (value === null || value === undefined) {
+            return "-";
+        }
+
+        if (typeof value === "object") {
+            return JSON.stringify(value, null, 2);
+        }
+
+        return String(value);
+    }
+
+    function renderKeyValueSection(title, data) {
+        const entries = Object.entries(data || {});
+
+        return (
+            <article className="detail-card">
+                <h2>{title}</h2>
+
+                {entries.length === 0 ? (
+                    <p className="muted-text">표시할 데이터가 없습니다.</p>
+                ) : (
+                    <div className="key-value-list">
+                        {entries.map(([key, value]) => (
+                            <div className="key-value-item" key={key}>
+                                <span>{key}</span>
+
+                                {typeof value === "object" && value !== null ? (
+                                    <pre>{formatObjectValue(value)}</pre>
+                                ) : (
+                                    <strong>{formatObjectValue(value)}</strong>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </article>
+        );
+    }
+
+    if (loading) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result Detail"
+                    title="분석 결과 상세"
+                    description="분석 결과를 불러오는 중입니다."
+                />
+
+                <EmptyState
+                    title="로딩 중"
+                    description="잠시만 기다려 주세요."
+                />
+            </section>
+        );
+    }
+
+    if (error && !resultData) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result Detail"
+                    title="분석 결과 상세"
+                    description={`현재 조회 대상 jobId: ${jobId}`}
+                />
+
+                <StateMessage type="error">{error}</StateMessage>
+
+                <div className="button-row">
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={loadResult}
+                    >
+                        다시 불러오기
+                    </button>
+
+                    <Link to="/results" className="primary-button">
+                        목록으로 이동
+                    </Link>
+                </div>
+            </section>
+        );
+    }
 
     return (
         <section className="page-section">
-            <div className="page-header">
-                <p className="eyebrow">Result Detail</p>
-                <h1>분석 결과 상세</h1>
-                <p>
-                    현재 조회 대상 jobId: <code>{jobId}</code>
-                </p>
+            <div className="detail-header-card">
+                <div>
+                    <p className="eyebrow">Result Detail</p>
+                    <h1>분석 결과 상세</h1>
+                    <p>
+                        현재 조회 대상 jobId: <code>{jobId}</code>
+                    </p>
+                </div>
+
+                <div className="detail-actions">
+                    <Link to="/results" className="secondary-button">
+                        목록으로
+                    </Link>
+
+                    {isFailed && (
+                        <button
+                            type="button"
+                            className="primary-button"
+                            onClick={handleRetry}
+                            disabled={retrying || polling || deleting}
+                        >
+                            {retrying || polling ? "재시도 진행 중..." : "분석 재시도"}
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        className="danger-button"
+                        onClick={handleDelete}
+                        disabled={retrying || polling || deleting || isRunning}
+                    >
+                        {deleting ? "삭제 중..." : "삭제"}
+                    </button>
+                </div>
             </div>
 
-            <div className="placeholder-card">
-                <h2>상세 결과 준비 단계</h2>
-                <p>
-                    이후 이 화면에서 <code>GET /api/results/{"{jobId}"}</code> API를
-                    호출해 점수, 피드백, 연습 계획, 타임라인 피드백을 표시합니다.
-                </p>
+            <StateMessage type="error">{error}</StateMessage>
+
+            <StateMessage type="polling">
+                {retrying || polling || isRunning
+                    ? (
+                        <>
+                            분석 상태를 자동으로 확인하는 중입니다. 현재 상태:{" "}
+                            <StatusBadge
+                                status={currentStatus}
+                                label={currentStatusDescription}
+                            />
+                        </>
+                    )
+                    : ""}
+            </StateMessage>
+
+            <StateMessage type="success">
+                {isCompleted
+                    ? "분석이 완료되었습니다. 최신 결과가 화면에 반영되었습니다."
+                    : ""}
+            </StateMessage>
+
+            <div className="score-panel">
+                <div className="score-panel-main">
+                    <span className="score-panel-label">종합 등급</span>
+                    <strong>{scoreSummary.level || "-"}</strong>
+                    <p>
+                        상태:{" "}
+                        <StatusBadge
+                            status={currentStatus}
+                            label={currentStatusDescription}
+                        />
+                    </p>
+                </div>
+
+                <div className="score-grid">
+                    {scoreItems.map((item) => (
+                        <article className="score-card" key={item.label}>
+                            <span>{item.label}</span>
+                            <strong className={getScoreClassName(item.value)}>
+                                {formatScore(item.value)}
+                            </strong>
+                        </article>
+                    ))}
+                </div>
             </div>
+
+            <div className="detail-grid">
+                <article className="detail-card wide">
+                    <h2>종합 피드백</h2>
+
+                    <div className="feedback-block">
+                        <h3>전체 평가</h3>
+                        <p>{feedback.overall || "표시할 종합 피드백이 없습니다."}</p>
+                    </div>
+
+                    <div className="feedback-columns">
+                        <div>
+                            <h3>강점</h3>
+                            {Array.isArray(feedback.strengths) &&
+                            feedback.strengths.length > 0 ? (
+                                <ul>
+                                    {feedback.strengths.map((item, index) => (
+                                        <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="muted-text">표시할 강점이 없습니다.</p>
+                            )}
+                        </div>
+
+                        <div>
+                            <h3>개선점</h3>
+                            {Array.isArray(feedback.improvements) &&
+                            feedback.improvements.length > 0 ? (
+                                <ul>
+                                    {feedback.improvements.map((item, index) => (
+                                        <li key={`${item}-${index}`}>{item}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="muted-text">표시할 개선점이 없습니다.</p>
+                            )}
+                        </div>
+                    </div>
+                </article>
+
+                {renderKeyValueSection("기본 분석", basicAnalysis)}
+                {renderKeyValueSection("시각 분석", visualAnalysis)}
+            </div>
+
+            <article className="detail-card">
+                <h2>연습 계획</h2>
+
+                {Array.isArray(practicePlan) && practicePlan.length > 0 ? (
+                    <div className="practice-list">
+                        {practicePlan.map((item, index) => (
+                            <div className="practice-item" key={`${item.title}-${index}`}>
+                                <span>{index + 1}</span>
+
+                                <div>
+                                    <h3>{item.title || "연습 항목"}</h3>
+                                    <p>{item.description || "-"}</p>
+                                    {item.duration && <strong>{item.duration}</strong>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="muted-text">표시할 연습 계획이 없습니다.</p>
+                )}
+            </article>
+
+            <article className="detail-card">
+                <h2>타임라인 피드백</h2>
+
+                {Array.isArray(timelineFeedback) && timelineFeedback.length > 0 ? (
+                    <div className="timeline-list">
+                        {timelineFeedback.map((item, index) => (
+                            <div className="timeline-item" key={`${item.category}-${index}`}>
+                                <span>{item.category || "feedback"}</span>
+                                <h3>{item.summary || "요약 정보가 없습니다."}</h3>
+                                <p>{item.recommendation || "-"}</p>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="muted-text">표시할 타임라인 피드백이 없습니다.</p>
+                )}
+            </article>
+
+            {renderKeyValueSection("파이프라인 정보", pipeline)}
         </section>
     );
 }

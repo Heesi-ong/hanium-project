@@ -1,13 +1,13 @@
-import apiClient from "./apiClient";
+import apiClient, { unwrapApiResponse } from "./apiClient";
 
 export async function healthCheck() {
     const response = await apiClient.get("/api/health");
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function engineHealthCheck() {
     const response = await apiClient.get("/api/health/engines");
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function uploadAnalysisVideo(file) {
@@ -20,7 +20,7 @@ export async function uploadAnalysisVideo(file) {
         },
     });
 
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function runAnalysis(jobId, options = {}) {
@@ -34,7 +34,7 @@ export async function runAnalysis(jobId, options = {}) {
         requestBody
     );
 
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function retryAnalysis(jobId, options = {}) {
@@ -48,25 +48,25 @@ export async function retryAnalysis(jobId, options = {}) {
         requestBody
     );
 
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function getAnalysisStatus(jobId) {
     const response = await apiClient.get(`/api/analysis/${jobId}/status`);
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function getResults() {
     const response = await apiClient.get("/api/results");
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function getResult(jobId) {
     const response = await apiClient.get(`/api/results/${jobId}`);
-    return response.data;
+    return unwrapApiResponse(response);
 }
 
 export async function deleteResult(jobId) {
     const response = await apiClient.delete(`/api/results/${jobId}`);
-    return response.data;
+    return unwrapApiResponse(response);
 }

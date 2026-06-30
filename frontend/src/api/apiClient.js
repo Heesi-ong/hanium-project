@@ -27,4 +27,12 @@ apiClient.interceptors.response.use(
     }
 );
 
+export function unwrapApiResponse(response) {
+    return response.data;
+}
+
+export function unwrapApiData(response) {
+    return response.data?.data;
+}
+
 export default apiClient;

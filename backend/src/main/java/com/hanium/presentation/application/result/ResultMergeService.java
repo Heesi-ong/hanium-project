@@ -6,6 +6,7 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -18,21 +19,20 @@ public class ResultMergeService {
             VideoLlmEngineResponse videoLlmEngineResponse,
             OpenAiFeedbackResponse openAiFeedbackResponse
     ) {
-        return Map.of(
-                "jobId", jobId,
-                "status", "COMPLETED",
-                "createdAt", LocalDateTime.now().toString(),
+        Map<String, Object> finalResult = new LinkedHashMap<>();
 
-                "scoreSummary", createScoreSummary(analysisEngineResponse),
-                "basicAnalysis", createBasicAnalysis(analysisEngineResponse),
-                "visualAnalysis", createVisualAnalysis(videoLlmEngineResponse),
+        finalResult.put("jobId", jobId);
+        finalResult.put("status", "COMPLETED");
+        finalResult.put("createdAt", LocalDateTime.now().toString());
+        finalResult.put("scoreSummary", createScoreSummary(analysisEngineResponse));
+        finalResult.put("basicAnalysis", createBasicAnalysis(analysisEngineResponse));
+        finalResult.put("visualAnalysis", createVisualAnalysis(videoLlmEngineResponse));
+        finalResult.put("feedback", createFeedback(openAiFeedbackResponse));
+        finalResult.put("practicePlan", nullSafeList(openAiFeedbackResponse.practicePlan()));
+        finalResult.put("timelineFeedback", nullSafeList(openAiFeedbackResponse.timelineFeedback()));
+        finalResult.put("pipeline", createCompletedPipeline());
 
-                "feedback", createFeedback(openAiFeedbackResponse),
-                "practicePlan", nullSafeList(openAiFeedbackResponse.practicePlan()),
-                "timelineFeedback", nullSafeList(openAiFeedbackResponse.timelineFeedback()),
-
-                "pipeline", createCompletedPipeline()
-        );
+        return finalResult;
     }
 
     public Map<String, Object> createFailureResult(
@@ -40,128 +40,161 @@ public class ResultMergeService {
             String failedStep,
             String failReason
     ) {
-        return Map.of(
-                "jobId", jobId,
-                "status", "FAILED",
-                "createdAt", LocalDateTime.now().toString(),
-                "failedStep", failedStep == null ? "UNKNOWN" : failedStep,
-                "failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason,
+        Map<String, Object> failureResult = new LinkedHashMap<>();
 
-                "scoreSummary", Map.of(
-                        "totalScore", 0,
-                        "postureScore", 0,
-                        "gazeScore", 0,
-                        "speechScore", 0,
-                        "gestureScore", 0,
-                        "emotionScore", 0,
-                        "level", "FAILED"
-                ),
+        failureResult.put("jobId", jobId);
+        failureResult.put("status", "FAILED");
+        failureResult.put("createdAt", LocalDateTime.now().toString());
+        failureResult.put("failedStep", failedStep == null ? "UNKNOWN" : failedStep);
+        failureResult.put("failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason);
+        failureResult.put("scoreSummary", createFailedScoreSummary());
+        failureResult.put("basicAnalysis", createFailedBasicAnalysis());
+        failureResult.put("visualAnalysis", createFailedVisualAnalysis());
+        failureResult.put("feedback", createFailedFeedback());
+        failureResult.put("practicePlan", List.of());
+        failureResult.put("timelineFeedback", List.of());
+        failureResult.put("pipeline", createFailedPipeline(failedStep));
 
-                "basicAnalysis", Map.of(
-                        "videoInfo", Map.of(),
-                        "frame", Map.of(),
-                        "audio", Map.of(),
-                        "filler", Map.of(),
-                        "pose", Map.of(),
-                        "gesture", Map.of(),
-                        "face", Map.of(),
-                        "emotion", Map.of()
-                ),
-
-                "visualAnalysis", Map.of(
-                        "model", Map.of(),
-                        "observations", Map.of(),
-                        "globalSummary", Map.of()
-                ),
-
-                "feedback", Map.of(
-                        "overall", "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.",
-                        "strengths", List.of(),
-                        "improvements", List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요.")
-                ),
-
-                "practicePlan", List.of(),
-                "timelineFeedback", List.of(),
-                "pipeline", createFailedPipeline(failedStep)
-        );
+        return failureResult;
     }
 
     private Map<String, Object> createScoreSummary(
             AnalysisEngineResponse analysisEngineResponse
     ) {
-        Map<String, Object> score = nullSafe(analysisEngineResponse.score());
+        Map<String, Object> score = nullSafeMap(analysisEngineResponse.score());
 
-        return Map.of(
-                "totalScore", getOrDefault(score, "totalScore", 0),
-                "postureScore", getOrDefault(score, "postureScore", 0),
-                "gazeScore", getOrDefault(score, "gazeScore", 0),
-                "speechScore", getOrDefault(score, "speechScore", 0),
-                "gestureScore", getOrDefault(score, "gestureScore", 0),
-                "emotionScore", getOrDefault(score, "emotionScore", 0),
-                "level", resolveLevel(getNumberValue(score, "totalScore"))
-        );
+        Map<String, Object> scoreSummary = new LinkedHashMap<>();
+
+        scoreSummary.put("totalScore", getOrDefault(score, "totalScore", 0));
+        scoreSummary.put("postureScore", getOrDefault(score, "postureScore", 0));
+        scoreSummary.put("gazeScore", getOrDefault(score, "gazeScore", 0));
+        scoreSummary.put("speechScore", getOrDefault(score, "speechScore", 0));
+        scoreSummary.put("gestureScore", getOrDefault(score, "gestureScore", 0));
+        scoreSummary.put("emotionScore", getOrDefault(score, "emotionScore", 0));
+        scoreSummary.put("level", resolveLevel(getNumberValue(score, "totalScore")));
+
+        return scoreSummary;
     }
 
     private Map<String, Object> createBasicAnalysis(
             AnalysisEngineResponse analysisEngineResponse
     ) {
-        return Map.of(
-                "videoInfo", nullSafe(analysisEngineResponse.videoInfo()),
-                "frame", nullSafe(analysisEngineResponse.frame()),
-                "audio", nullSafe(analysisEngineResponse.audio()),
-                "filler", nullSafe(analysisEngineResponse.filler()),
-                "pose", nullSafe(analysisEngineResponse.pose()),
-                "gesture", nullSafe(analysisEngineResponse.gesture()),
-                "face", nullSafe(analysisEngineResponse.face()),
-                "emotion", nullSafe(analysisEngineResponse.emotion())
-        );
+        Map<String, Object> basicAnalysis = new LinkedHashMap<>();
+
+        basicAnalysis.put("videoInfo", nullSafeMap(analysisEngineResponse.videoInfo()));
+        basicAnalysis.put("frame", nullSafeMap(analysisEngineResponse.frame()));
+        basicAnalysis.put("audio", nullSafeMap(analysisEngineResponse.audio()));
+        basicAnalysis.put("filler", nullSafeMap(analysisEngineResponse.filler()));
+        basicAnalysis.put("pose", nullSafeMap(analysisEngineResponse.pose()));
+        basicAnalysis.put("gesture", nullSafeMap(analysisEngineResponse.gesture()));
+        basicAnalysis.put("face", nullSafeMap(analysisEngineResponse.face()));
+        basicAnalysis.put("emotion", nullSafeMap(analysisEngineResponse.emotion()));
+
+        return basicAnalysis;
     }
 
     private Map<String, Object> createVisualAnalysis(
             VideoLlmEngineResponse videoLlmEngineResponse
     ) {
-        return Map.of(
-                "model", nullSafe(videoLlmEngineResponse.model()),
-                "observations", nullSafe(videoLlmEngineResponse.observations()),
-                "globalSummary", nullSafe(videoLlmEngineResponse.globalSummary())
-        );
+        Map<String, Object> visualAnalysis = new LinkedHashMap<>();
+
+        visualAnalysis.put("model", nullSafeMap(videoLlmEngineResponse.model()));
+        visualAnalysis.put("observations", nullSafeObject(videoLlmEngineResponse.observations()));
+        visualAnalysis.put("globalSummary", nullSafeMap(videoLlmEngineResponse.globalSummary()));
+
+        return visualAnalysis;
     }
 
     private Map<String, Object> createFeedback(
             OpenAiFeedbackResponse openAiFeedbackResponse
     ) {
-        return Map.of(
-                "overall", openAiFeedbackResponse.overallFeedback(),
-                "strengths", nullSafeStringList(openAiFeedbackResponse.strengths()),
-                "improvements", nullSafeStringList(openAiFeedbackResponse.improvements())
-        );
+        Map<String, Object> feedback = new LinkedHashMap<>();
+
+        feedback.put("overall", openAiFeedbackResponse.overallFeedback());
+        feedback.put("strengths", nullSafeStringList(openAiFeedbackResponse.strengths()));
+        feedback.put("improvements", nullSafeStringList(openAiFeedbackResponse.improvements()));
+
+        return feedback;
     }
 
     private Map<String, Object> createCompletedPipeline() {
-        return Map.of(
-                "basicAnalysis", "analysis-engine",
-                "frameExtraction", "analysis-engine opencv",
-                "audioExtraction", "analysis-engine ffmpeg",
-                "sttAnalysis", "analysis-engine faster-whisper",
-                "poseAnalysis", "analysis-engine mediapipe pose",
-                "gestureAnalysis", "analysis-engine mediapipe pose wrist elbow",
-                "faceAnalysis", "analysis-engine mediapipe face mesh",
-                "emotionAnalysis", "analysis-engine mediapipe face mesh expression",
-                "videoLlmAnalysis", "video-llm-engine mock",
-                "compactAnalysis", "spring-boot compact",
-                "openAiFeedback", "openai mock",
-                "finalMerge", "spring-boot result merge"
-        );
+        Map<String, Object> pipeline = new LinkedHashMap<>();
+
+        pipeline.put("basicAnalysis", "analysis-engine");
+        pipeline.put("frameExtraction", "analysis-engine opencv");
+        pipeline.put("audioExtraction", "analysis-engine ffmpeg");
+        pipeline.put("sttAnalysis", "analysis-engine faster-whisper");
+        pipeline.put("poseAnalysis", "analysis-engine mediapipe pose");
+        pipeline.put("gestureAnalysis", "analysis-engine mediapipe pose wrist elbow");
+        pipeline.put("faceAnalysis", "analysis-engine mediapipe face mesh");
+        pipeline.put("emotionAnalysis", "analysis-engine mediapipe face mesh expression");
+        pipeline.put("videoLlmAnalysis", "video-llm-engine mock");
+        pipeline.put("compactAnalysis", "spring-boot compact");
+        pipeline.put("openAiFeedback", "openai mock");
+        pipeline.put("finalMerge", "spring-boot result merge");
+
+        return pipeline;
     }
 
     private Map<String, Object> createFailedPipeline(String failedStep) {
-        return Map.of(
-                "basicAnalysis", resolvePipelineStatus(failedStep, "BASIC_ANALYZING"),
-                "videoLlmAnalysis", resolvePipelineStatus(failedStep, "VIDEO_LLM_ANALYZING"),
-                "compactAnalysis", resolvePipelineStatus(failedStep, "COMPACTING"),
-                "openAiFeedback", resolvePipelineStatus(failedStep, "OPENAI_GENERATING"),
-                "finalMerge", resolvePipelineStatus(failedStep, "MERGING_RESULT")
-        );
+        Map<String, Object> pipeline = new LinkedHashMap<>();
+
+        pipeline.put("basicAnalysis", resolvePipelineStatus(failedStep, "BASIC_ANALYZING"));
+        pipeline.put("videoLlmAnalysis", resolvePipelineStatus(failedStep, "VIDEO_LLM_ANALYZING"));
+        pipeline.put("compactAnalysis", resolvePipelineStatus(failedStep, "COMPACTING"));
+        pipeline.put("openAiFeedback", resolvePipelineStatus(failedStep, "OPENAI_GENERATING"));
+        pipeline.put("finalMerge", resolvePipelineStatus(failedStep, "MERGING_RESULT"));
+
+        return pipeline;
+    }
+
+    private Map<String, Object> createFailedScoreSummary() {
+        Map<String, Object> scoreSummary = new LinkedHashMap<>();
+
+        scoreSummary.put("totalScore", 0);
+        scoreSummary.put("postureScore", 0);
+        scoreSummary.put("gazeScore", 0);
+        scoreSummary.put("speechScore", 0);
+        scoreSummary.put("gestureScore", 0);
+        scoreSummary.put("emotionScore", 0);
+        scoreSummary.put("level", "FAILED");
+
+        return scoreSummary;
+    }
+
+    private Map<String, Object> createFailedBasicAnalysis() {
+        Map<String, Object> basicAnalysis = new LinkedHashMap<>();
+
+        basicAnalysis.put("videoInfo", Map.of());
+        basicAnalysis.put("frame", Map.of());
+        basicAnalysis.put("audio", Map.of());
+        basicAnalysis.put("filler", Map.of());
+        basicAnalysis.put("pose", Map.of());
+        basicAnalysis.put("gesture", Map.of());
+        basicAnalysis.put("face", Map.of());
+        basicAnalysis.put("emotion", Map.of());
+
+        return basicAnalysis;
+    }
+
+    private Map<String, Object> createFailedVisualAnalysis() {
+        Map<String, Object> visualAnalysis = new LinkedHashMap<>();
+
+        visualAnalysis.put("model", Map.of());
+        visualAnalysis.put("observations", Map.of());
+        visualAnalysis.put("globalSummary", Map.of());
+
+        return visualAnalysis;
+    }
+
+    private Map<String, Object> createFailedFeedback() {
+        Map<String, Object> feedback = new LinkedHashMap<>();
+
+        feedback.put("overall", "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.");
+        feedback.put("strengths", List.of());
+        feedback.put("improvements", List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요."));
+
+        return feedback;
     }
 
     private String resolvePipelineStatus(String failedStep, String stepName) {
@@ -176,11 +209,15 @@ public class ResultMergeService {
         return "not-guaranteed";
     }
 
-    private Map<String, Object> nullSafe(Map<String, Object> value) {
+    private Map<String, Object> nullSafeMap(Map<String, Object> value) {
         return value == null ? Map.of() : value;
     }
 
-    private List<Map<String, Object>> nullSafeList(List<Map<String, Object>> value) {
+    private Object nullSafeObject(Object value) {
+        return value == null ? Map.of() : value;
+    }
+
+    private List<?> nullSafeList(List<?> value) {
         return value == null ? List.of() : value;
     }
 

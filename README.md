@@ -477,6 +477,8 @@ storage/logs/.gitkeep
 
 현재 실제 분석으로 반영된 범위:
 
+
+
 ```text
 
 analysis-engine에서 실제 영상 파일 읽기
@@ -539,19 +541,26 @@ STT 기반 필러 분석
 - 필러 점수 계산
 - STT 실패 시 길이 기반 추정값으로 fallback
 
-MediaPipe Pose 기반 자세 분석
+MediaPipe Tasks PoseLandmarker 기반 자세 분석
 
-- 포즈 검출률
-- 검출 프레임 수
-- 좌우 어깨 위치 추출
+- Legacy mp.solutions.pose 미사용
+- MediaPipe Tasks API 사용
+- pose_landmarker_lite.task 모델 사용
+- storage/models/mediapipe/ 경로에 모델 파일 저장
+- 포즈 검출률 계산
+- 검출 프레임 수 계산
+- 좌우 어깨 landmark 추출
+- 좌우 팔꿈치 landmark 추출
+- 좌우 손목 landmark 추출
 - 어깨 높이 차이 계산
 - 어깨 균형 점수 계산
 - 자세 점수 계산
 - 프레임별 자세 분석 결과 저장
 
-MediaPipe Pose 기반 제스처 분석
+MediaPipe Tasks PoseLandmarker 기반 제스처 분석
 
-- 어깨, 팔꿈치, 손목 landmark 추출
+- Legacy mp.solutions.pose 미사용
+- PoseLandmarker 결과의 어깨, 팔꿈치, 손목 landmark 활용
 - 양손 손목 visibility 계산
 - 손목 위치와 팔 움직임 기반 제스처 감지
 - 제스처 감지 프레임 수 계산
@@ -565,10 +574,14 @@ MediaPipe Pose 기반 제스처 분석
 - 제스처 점수 계산
 - 프레임별 제스처 분석 결과 저장
 
-MediaPipe Face Mesh 기반 얼굴/시선 분석
+MediaPipe Tasks FaceLandmarker 기반 얼굴/시선 분석
 
-- 얼굴 검출률
-- 검출 프레임 수
+- Legacy mp.solutions.face_mesh 미사용
+- MediaPipe Tasks API 사용
+- face_landmarker.task 모델 사용
+- storage/models/mediapipe/ 경로에 모델 파일 저장
+- 얼굴 검출률 계산
+- 검출 프레임 수 계산
 - 눈 중심 좌표 계산
 - 코끝 위치 계산
 - 코 오프셋 계산
@@ -579,10 +592,12 @@ MediaPipe Face Mesh 기반 얼굴/시선 분석
 - 눈 뜸 정도 계산
 - 프레임별 얼굴/시선 분석 결과 저장
 
-MediaPipe Face Mesh 기반 표정/감정 분석
+MediaPipe Tasks FaceLandmarker 기반 표정/감정 분석
 
-- Face Mesh의 입 landmark 기반 입 벌림 정도 계산
-- Face Mesh의 눈 landmark 기반 눈 뜸 정도 계산
+- Legacy Face Mesh 미사용
+- FaceLandmarker landmark 기반 표정 특징 계산
+- 입 landmark 기반 입 벌림 정도 계산
+- 눈 landmark 기반 눈 뜸 정도 계산
 - 시선 안정성 점수와 표정 특징 결합
 - 프레임별 표정 상태 추정
 - neutral, engaged, speaking, low_energy, unknown 상태 분류
@@ -595,18 +610,22 @@ MediaPipe Face Mesh 기반 표정/감정 분석
 
 Spring Boot 결과 병합 반영
 
+- analysis-engine의 pose 결과 수신
 - analysis-engine의 gesture 결과 수신
+- analysis-engine의 face 결과 수신
 - analysis-engine의 emotion 결과 수신
+- basicAnalysis.pose에 자세 분석 결과 병합
 - basicAnalysis.gesture에 제스처 분석 결과 병합
+- basicAnalysis.face에 얼굴/시선 분석 결과 병합
 - basicAnalysis.emotion에 표정/감정 분석 결과 병합
+- scoreSummary.postureScore 추가
+- scoreSummary.gazeScore 추가
+- scoreSummary.speechScore 추가
 - scoreSummary.gestureScore 추가
 - scoreSummary.emotionScore 추가
-- 최종 totalScore에 gestureScore 반영
-- 최종 totalScore에 emotionScore 반영
-- compact 분석 데이터에 gesture 포함
-- compact 분석 데이터에 emotion 포함
-- pipeline 정보에 gestureAnalysis 단계 추가
-- pipeline 정보에 emotionAnalysis 단계 추가
+- 최종 totalScore에 실제 분석 점수 반영
+- compact 분석 데이터에 실제 분석 결과 포함
+- pipeline 정보에 분석 단계 표시
 
 프론트 상세 화면 실제 분석 결과 표시
 
@@ -626,6 +645,7 @@ Spring Boot 결과 병합 반영
 - 표정/감정 분석 카드
 - 표정 상태 집계 테이블
 - 프레임별 표정/감정 분석 테이블
+
 ```
 
 현재 점수 계산에 반영된 항목:
@@ -639,24 +659,36 @@ totalScore = postureScore * 0.20
            + emotionScore * 0.15
 
 postureScore
-
-- MediaPipe Pose 기반 자세 점수
+- MediaPipe Tasks PoseLandmarker 기반 자세 점수
 
 gazeScore
-
-- MediaPipe Face Mesh 기반 시선 점수
+- MediaPipe Tasks FaceLandmarker 기반 시선 점수
 
 speechScore
-
 - faster-whisper STT 기반 음성 점수
 
 gestureScore
-
-- MediaPipe Pose 기반 제스처 점수
+- MediaPipe Tasks PoseLandmarker 기반 제스처 점수
 
 emotionScore
+- MediaPipe Tasks FaceLandmarker 기반 표정/감정 점수
 
-- MediaPipe Face Mesh 기반 표정/감정 점수
+```
+
+현재 자동 저장되는 런타임 파일:
+
+```text
+
+storage/temp/{jobId}/frames/
+
+storage/temp/{jobId}/audio/audio.wav
+
+storage/models/mediapipe/pose_landmarker_lite.task
+
+storage/models/mediapipe/face_landmarker.task
+
+storage/results/{jobId}/
+
 ```
 
 아직 실제 구현이 필요한 범위:
@@ -667,6 +699,7 @@ emotionScore
 - 사용자 인증
 - DB 영속화 운영 설정
 - 배포 설정
+- 점수 기준 보정은 추후 진행 예정
 
 ## 15. 기본 실행 체크리스트
 

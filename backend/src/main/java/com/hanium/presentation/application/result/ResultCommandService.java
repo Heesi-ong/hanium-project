@@ -74,8 +74,11 @@ public class ResultCommandService {
                 videoLlmEngineResponse
         );
 
-        Path compactPath = filePathGenerator.generateVideoLlmCompactPath(jobId);
-        jsonFileStorage.saveJson(compactPath, compactResult);
+        Path videoLlmCompactPath = filePathGenerator.generateVideoLlmCompactPath(jobId);
+        jsonFileStorage.saveJson(videoLlmCompactPath, compactResult);
+
+        Path compactAnalysisPath = filePathGenerator.generateCompactAnalysisPath(jobId);
+        jsonFileStorage.saveJson(compactAnalysisPath, compactResult);
 
         return compactResult;
     }

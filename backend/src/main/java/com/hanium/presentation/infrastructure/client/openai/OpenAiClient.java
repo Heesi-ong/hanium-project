@@ -15,24 +15,28 @@ public class OpenAiClient {
     public OpenAiFeedbackResponse generateFeedback(OpenAiFeedbackRequest request) {
         Map<String, Object> compactAnalysis = nullSafeMap(request.compactAnalysis());
 
-        Map<String, Object> scoreSummary = nullSafeMap(compactAnalysis.get("scoreSummary"));
-        Map<String, Object> score = extractScoreMap(scoreSummary);
+        Map<String, Object> rawMetrics = nullSafeMap(compactAnalysis.get("rawMetrics"));
+        Map<String, Object> modelInputs = nullSafeMap(compactAnalysis.get("modelInputs"));
 
-        Map<String, Object> audio = nullSafeMap(scoreSummary.get("audio"));
-        Map<String, Object> filler = nullSafeMap(scoreSummary.get("filler"));
+        Map<String, Object> scoreSummary = nullSafeMap(modelInputs.get("scoreSummary"));
+        Map<String, Object> speechSummary = nullSafeMap(modelInputs.get("speechSummary"));
+        Map<String, Object> visualSummary = nullSafeMap(modelInputs.get("visualSummary"));
+        Map<String, Object> transcriptSummary = nullSafeMap(modelInputs.get("transcriptSummary"));
+        Map<String, Object> feedbackFocus = nullSafeMap(modelInputs.get("feedbackFocus"));
 
-        Map<String, Object> visualSummary = nullSafeMap(compactAnalysis.get("visualSummary"));
-        Map<String, Object> pose = nullSafeMap(visualSummary.get("pose"));
-        Map<String, Object> gesture = nullSafeMap(visualSummary.get("gesture"));
-        Map<String, Object> face = nullSafeMap(visualSummary.get("face"));
-        Map<String, Object> emotion = nullSafeMap(visualSummary.get("emotion"));
+        Map<String, Object> audio = nullSafeMap(rawMetrics.get("audio"));
+        Map<String, Object> filler = nullSafeMap(rawMetrics.get("filler"));
+        Map<String, Object> pose = nullSafeMap(rawMetrics.get("pose"));
+        Map<String, Object> gesture = nullSafeMap(rawMetrics.get("gesture"));
+        Map<String, Object> face = nullSafeMap(rawMetrics.get("face"));
+        Map<String, Object> emotion = nullSafeMap(rawMetrics.get("emotion"));
 
-        int totalScore = getInt(score, "totalScore");
-        int postureScore = getInt(score, "postureScore");
-        int gazeScore = getInt(score, "gazeScore");
-        int speechScore = getInt(score, "speechScore");
-        int gestureScore = getInt(score, "gestureScore");
-        int emotionScore = getInt(score, "emotionScore");
+        int totalScore = getInt(scoreSummary, "totalScore");
+        int postureScore = getInt(scoreSummary, "postureScore");
+        int gazeScore = getInt(scoreSummary, "gazeScore");
+        int speechScore = getInt(scoreSummary, "speechScore");
+        int gestureScore = getInt(scoreSummary, "gestureScore");
+        int emotionScore = getInt(scoreSummary, "emotionScore");
 
         List<String> strengths = createStrengths(
                 postureScore,
@@ -48,6 +52,9 @@ public class OpenAiClient {
                 speechScore,
                 gestureScore,
                 emotionScore,
+                speechSummary,
+                visualSummary,
+                transcriptSummary,
                 audio,
                 filler,
                 pose,
@@ -63,6 +70,7 @@ public class OpenAiClient {
                 speechScore,
                 gestureScore,
                 emotionScore,
+                feedbackFocus,
                 strengths,
                 improvements
         );
@@ -73,8 +81,7 @@ public class OpenAiClient {
                 speechScore,
                 gestureScore,
                 emotionScore,
-                audio,
-                filler
+                speechSummary
         );
 
         List<Map<String, Object>> timelineFeedback = createTimelineFeedback(
@@ -83,12 +90,8 @@ public class OpenAiClient {
                 speechScore,
                 gestureScore,
                 emotionScore,
-                audio,
-                filler,
-                pose,
-                gesture,
-                face,
-                emotion
+                speechSummary,
+                visualSummary
         );
 
         return new OpenAiFeedbackResponse(
@@ -99,16 +102,6 @@ public class OpenAiClient {
                 practicePlan,
                 timelineFeedback
         );
-    }
-
-    private Map<String, Object> extractScoreMap(Map<String, Object> scoreSummary) {
-        Map<String, Object> nestedScore = nullSafeMap(scoreSummary.get("score"));
-
-        if (!nestedScore.isEmpty()) {
-            return nestedScore;
-        }
-
-        return scoreSummary;
     }
 
     private List<String> createStrengths(
@@ -141,7 +134,7 @@ public class OpenAiClient {
         }
 
         if (strengths.isEmpty()) {
-            strengths.add("전체 분석 항목이 정상적으로 수집되어 발표 개선 방향을 구체적으로 확인할 수 있습니다.");
+            strengths.add("분석 가능한 영상·음성 데이터가 수집되어 발표 개선 방향을 구체적으로 확인할 수 있습니다.");
         }
 
         return strengths;
@@ -153,6 +146,9 @@ public class OpenAiClient {
             int speechScore,
             int gestureScore,
             int emotionScore,
+            Map<String, Object> speechSummary,
+            Map<String, Object> visualSummary,
+            Map<String, Object> transcriptSummary,
             Map<String, Object> audio,
             Map<String, Object> filler,
             Map<String, Object> pose,
@@ -163,71 +159,56 @@ public class OpenAiClient {
         List<String> improvements = new ArrayList<>();
 
         if (postureScore < 70) {
-            double detectionRate = getDouble(pose, "detectionRate");
-            double shoulderDiff = getDouble(pose, "averageShoulderDiff");
-
             improvements.add(
-                    "자세 안정성이 다소 부족합니다. 발표 중 몸이 화면에서 벗어나지 않도록 정면 위치를 유지하고, 좌우 어깨 높이가 크게 흔들리지 않도록 연습하는 것이 좋습니다."
-                            + createOptionalMetricText(" 자세 검출률", detectionRate, true)
-                            + createOptionalMetricText(" 평균 어깨 차이", shoulderDiff, false)
+                    "자세 안정성이 다소 부족합니다. 발표 중 몸이 화면 중앙에서 벗어나지 않도록 정면 위치를 유지하고, 좌우 어깨 높이가 크게 흔들리지 않도록 연습하는 것이 좋습니다."
+                            + createOptionalMetricText(" 자세 검출률", getDouble(visualSummary, "poseDetectionRate"), true)
+                            + createOptionalMetricText(" 평균 어깨 차이", getDouble(visualSummary, "averageShoulderDiff"), false)
             );
         }
 
         if (gazeScore < 70) {
-            double faceDetectionRate = getDouble(face, "detectionRate");
-            Object eyeContactLevel = face.get("eyeContactLevel");
-
             improvements.add(
-                    "시선 처리가 불안정하게 분석되었습니다. 발표 중 핵심 문장을 말할 때 카메라 또는 청중 방향을 2~3초 이상 유지하는 연습이 필요합니다."
-                            + createOptionalMetricText(" 얼굴 검출률", faceDetectionRate, true)
-                            + createOptionalText(" 아이컨택 수준", eyeContactLevel)
+                    "시선 처리가 불안정하게 분석되었습니다. 핵심 문장을 말할 때 카메라 또는 청중 방향을 2~3초 이상 유지하는 연습이 필요합니다."
+                            + createOptionalMetricText(" 얼굴 검출률", getDouble(visualSummary, "faceDetectionRate"), true)
+                            + createOptionalText(" 아이컨택 수준", visualSummary.get("eyeContactLevel"))
             );
         }
 
         if (speechScore < 70) {
-            int wpm = getInt(audio, "speechSpeedWpm");
-            int silenceCount = getInt(audio, "silenceCount");
-            double silenceRatio = getDouble(audio, "silenceRatio");
-
             improvements.add(
                     "음성 흐름 개선이 필요합니다. 말하기 속도가 너무 빠르거나 느리면 전달력이 떨어질 수 있고, 긴 침묵이 반복되면 발표 흐름이 끊겨 보일 수 있습니다."
-                            + createOptionalNumberText(" WPM", wpm)
-                            + createOptionalNumberText(" 침묵 횟수", silenceCount)
-                            + createOptionalMetricText(" 침묵 비율", silenceRatio, true)
+                            + createOptionalNumberText(" WPM", getInt(speechSummary, "speechSpeedWpm"))
+                            + createOptionalNumberText(" 침묵 횟수", getInt(speechSummary, "silenceCount"))
+                            + createOptionalMetricText(" 침묵 비율", getDouble(speechSummary, "silenceRatio"), true)
             );
         }
 
-        if (getInt(filler, "fillerScore") < 70 || getInt(filler, "fillerCount") > 0) {
-            int fillerCount = getInt(filler, "fillerCount");
-            double fillerRatio = getDouble(filler, "fillerRatio");
-
+        if (getInt(speechSummary, "fillerScore") < 70 || getInt(speechSummary, "fillerCount") > 0) {
             improvements.add(
                     "필러 표현 사용을 줄이면 발표가 더 명확해집니다. '음', '어', '그', '이제' 같은 표현이 나오는 구간에서는 잠시 멈추고 다음 문장을 또렷하게 시작하는 방식으로 연습하세요."
-                            + createOptionalNumberText(" 필러 수", fillerCount)
-                            + createOptionalMetricText(" 필러 비율", fillerRatio, true)
+                            + createOptionalNumberText(" 필러 수", getInt(speechSummary, "fillerCount"))
+                            + createOptionalMetricText(" 필러 비율", getDouble(speechSummary, "fillerRatio"), true)
             );
         }
 
         if (gestureScore < 70) {
-            double gestureRate = getDouble(gesture, "gestureRate");
-            double handVisibilityRate = getDouble(gesture, "handVisibilityRate");
-
             improvements.add(
                     "제스처 사용이 부족하거나 불안정하게 감지되었습니다. 중요한 키워드를 말할 때 손동작을 한 번씩 사용하는 방식으로 자연스러운 제스처 루틴을 만드는 것이 좋습니다."
-                            + createOptionalMetricText(" 제스처 비율", gestureRate, true)
-                            + createOptionalMetricText(" 손 검출률", handVisibilityRate, true)
+                            + createOptionalMetricText(" 제스처 비율", getDouble(visualSummary, "gestureRate"), true)
+                            + createOptionalMetricText(" 손 검출률", getDouble(visualSummary, "handVisibilityRate"), true)
             );
         }
 
         if (emotionScore < 70) {
-            Object dominantEmotion = emotion.get("dominantEmotion");
-            double detectionRate = getDouble(emotion, "detectionRate");
-
             improvements.add(
                     "표정 변화와 발표 몰입감이 다소 약하게 분석되었습니다. 문장 끝에서 미세한 미소, 고개 끄덕임, 눈 뜸 변화를 더하면 발표가 덜 단조롭게 보입니다."
-                            + createOptionalText(" 주요 표정", dominantEmotion)
-                            + createOptionalMetricText(" 표정 검출률", detectionRate, true)
+                            + createOptionalText(" 주요 표정", visualSummary.get("dominantEmotion"))
+                            + createOptionalMetricText(" 표정 점수", getDouble(visualSummary, "emotionScore"), false)
             );
+        }
+
+        if (getBoolean(transcriptSummary, "sttSuccess")) {
+            improvements.add("STT transcript는 현재 LLM 입력용 원문 데이터로만 사용됩니다. 발표 내용 구조 분석은 추후 LLM 또는 별도 분석 단계에서 처리하는 것이 좋습니다.");
         }
 
         if (improvements.isEmpty()) {
@@ -244,24 +225,19 @@ public class OpenAiClient {
             int speechScore,
             int gestureScore,
             int emotionScore,
+            Map<String, Object> feedbackFocus,
             List<String> strengths,
             List<String> improvements
     ) {
         String levelText = resolveLevelText(totalScore);
-        String strongestArea = resolveStrongestArea(
-                postureScore,
-                gazeScore,
-                speechScore,
-                gestureScore,
-                emotionScore
-        );
-        String weakestArea = resolveWeakestArea(
-                postureScore,
-                gazeScore,
-                speechScore,
-                gestureScore,
-                emotionScore
-        );
+        String strongestArea = translateArea(String.valueOf(feedbackFocus.getOrDefault(
+                "strongestArea",
+                resolveStrongestArea(postureScore, gazeScore, speechScore, gestureScore, emotionScore)
+        )));
+        String weakestArea = translateArea(String.valueOf(feedbackFocus.getOrDefault(
+                "weakestArea",
+                resolveWeakestArea(postureScore, gazeScore, speechScore, gestureScore, emotionScore)
+        )));
 
         return "이번 발표의 종합 점수는 "
                 + totalScore
@@ -272,7 +248,7 @@ public class OpenAiClient {
                 + "이며, 우선적으로 보완하면 좋은 영역은 "
                 + weakestArea
                 + "입니다. "
-                + "현재 분석 결과 기준으로는 "
+                + "현재 피드백은 LLM 입력용으로 정리된 rawMetrics와 modelInputs를 기반으로 생성된 Mock 응답입니다. "
                 + strengths.get(0)
                 + " 반면, "
                 + improvements.get(0);
@@ -284,8 +260,7 @@ public class OpenAiClient {
             int speechScore,
             int gestureScore,
             int emotionScore,
-            Map<String, Object> audio,
-            Map<String, Object> filler
+            Map<String, Object> speechSummary
     ) {
         List<Map<String, Object>> practicePlan = new ArrayList<>();
 
@@ -297,7 +272,7 @@ public class OpenAiClient {
             ));
         }
 
-        if (getInt(filler, "fillerCount") > 0) {
+        if (getInt(speechSummary, "fillerCount") > 0) {
             practicePlan.add(createPracticeItem(
                     "필러 표현 줄이기",
                     "녹음 후 '음', '어', '그', '이제' 같은 표현이 나온 문장을 표시하고, 해당 위치에서 1초 멈춘 뒤 다음 문장을 시작하는 방식으로 다시 연습합니다.",
@@ -354,47 +329,57 @@ public class OpenAiClient {
             int speechScore,
             int gestureScore,
             int emotionScore,
-            Map<String, Object> audio,
-            Map<String, Object> filler,
-            Map<String, Object> pose,
-            Map<String, Object> gesture,
-            Map<String, Object> face,
-            Map<String, Object> emotion
+            Map<String, Object> speechSummary,
+            Map<String, Object> visualSummary
     ) {
         List<Map<String, Object>> timelineFeedback = new ArrayList<>();
 
         timelineFeedback.add(createTimelineItem(
                 "speech",
                 "음성 흐름",
-                createSpeechTimelineSummary(speechScore, audio, filler),
+                "음성 점수는 " + speechScore + "점입니다. WPM "
+                        + getInt(speechSummary, "speechSpeedWpm")
+                        + ", 침묵 횟수 "
+                        + getInt(speechSummary, "silenceCount")
+                        + "회, 필러 수 "
+                        + getInt(speechSummary, "fillerCount")
+                        + "개가 확인되었습니다.",
                 "발표 초반에는 속도를 안정적으로 잡고, 중간 이후에는 문장 사이 호흡을 일정하게 유지하세요."
         ));
 
         timelineFeedback.add(createTimelineItem(
                 "posture",
                 "자세 안정성",
-                createPostureTimelineSummary(postureScore, pose),
+                "자세 점수는 " + postureScore + "점입니다. 자세 검출률은 "
+                        + formatPercent(getDouble(visualSummary, "poseDetectionRate"))
+                        + "입니다.",
                 "카메라 중앙에 몸을 유지하고, 말하는 동안 어깨와 고개 움직임이 과하게 흔들리지 않도록 조정하세요."
         ));
 
         timelineFeedback.add(createTimelineItem(
                 "gaze",
                 "시선 처리",
-                createGazeTimelineSummary(gazeScore, face),
+                "시선 점수는 " + gazeScore + "점입니다. 얼굴 검출률은 "
+                        + formatPercent(getDouble(visualSummary, "faceDetectionRate"))
+                        + "입니다.",
                 "핵심 문장을 말할 때는 원고보다 카메라 또는 청중 방향을 우선해 시선을 유지하세요."
         ));
 
         timelineFeedback.add(createTimelineItem(
                 "gesture",
                 "제스처 사용",
-                createGestureTimelineSummary(gestureScore, gesture),
+                "제스처 점수는 " + gestureScore + "점입니다. 제스처 비율은 "
+                        + formatPercent(getDouble(visualSummary, "gestureRate"))
+                        + "입니다.",
                 "중요한 내용 전환 지점마다 손동작을 넣으면 발표의 구조가 더 명확하게 보입니다."
         ));
 
         timelineFeedback.add(createTimelineItem(
                 "emotion",
                 "표정과 몰입감",
-                createEmotionTimelineSummary(emotionScore, emotion),
+                "표정 점수는 " + emotionScore + "점입니다. 주요 표정 상태는 "
+                        + visualSummary.getOrDefault("dominantEmotion", "unknown")
+                        + "입니다.",
                 "강조 문장과 결론 부분에서 표정 변화를 주면 발표의 설득력이 더 높아집니다."
         ));
 
@@ -427,94 +412,6 @@ public class OpenAiClient {
         return item;
     }
 
-    private String createSpeechTimelineSummary(
-            int speechScore,
-            Map<String, Object> audio,
-            Map<String, Object> filler
-    ) {
-        int wpm = getInt(audio, "speechSpeedWpm");
-        int silenceCount = getInt(audio, "silenceCount");
-        int fillerCount = getInt(filler, "fillerCount");
-
-        if (speechScore >= 75 && fillerCount == 0) {
-            return "말하기 속도와 침묵 흐름이 안정적이며, 필러 표현도 적게 감지되었습니다.";
-        }
-
-        return "음성 점수는 "
-                + speechScore
-                + "점입니다. WPM "
-                + wpm
-                + ", 침묵 횟수 "
-                + silenceCount
-                + "회, 필러 수 "
-                + fillerCount
-                + "개가 확인되었습니다.";
-    }
-
-    private String createPostureTimelineSummary(
-            int postureScore,
-            Map<String, Object> pose
-    ) {
-        double detectionRate = getDouble(pose, "detectionRate");
-        double shoulderDiff = getDouble(pose, "averageShoulderDiff");
-
-        return "자세 점수는 "
-                + postureScore
-                + "점입니다. 자세 검출률은 "
-                + formatPercent(detectionRate)
-                + "이며, 평균 어깨 차이는 "
-                + shoulderDiff
-                + "입니다.";
-    }
-
-    private String createGazeTimelineSummary(
-            int gazeScore,
-            Map<String, Object> face
-    ) {
-        double detectionRate = getDouble(face, "detectionRate");
-        Object eyeContactLevel = face.get("eyeContactLevel");
-
-        return "시선 점수는 "
-                + gazeScore
-                + "점입니다. 얼굴 검출률은 "
-                + formatPercent(detectionRate)
-                + "이며, 아이컨택 수준은 "
-                + nullToDash(eyeContactLevel)
-                + "입니다.";
-    }
-
-    private String createGestureTimelineSummary(
-            int gestureScore,
-            Map<String, Object> gesture
-    ) {
-        double gestureRate = getDouble(gesture, "gestureRate");
-        double handVisibilityRate = getDouble(gesture, "handVisibilityRate");
-
-        return "제스처 점수는 "
-                + gestureScore
-                + "점입니다. 제스처 비율은 "
-                + formatPercent(gestureRate)
-                + ", 손 검출률은 "
-                + formatPercent(handVisibilityRate)
-                + "입니다.";
-    }
-
-    private String createEmotionTimelineSummary(
-            int emotionScore,
-            Map<String, Object> emotion
-    ) {
-        Object dominantEmotion = emotion.get("dominantEmotion");
-        double detectionRate = getDouble(emotion, "detectionRate");
-
-        return "표정 점수는 "
-                + emotionScore
-                + "점입니다. 주요 표정 상태는 "
-                + nullToDash(dominantEmotion)
-                + "이며, 표정 검출률은 "
-                + formatPercent(detectionRate)
-                + "입니다.";
-    }
-
     private String resolveLevelText(int totalScore) {
         if (totalScore >= 85) {
             return "우수";
@@ -539,25 +436,25 @@ public class OpenAiClient {
             int emotionScore
     ) {
         int maxScore = postureScore;
-        String area = "자세";
+        String area = "posture";
 
         if (gazeScore > maxScore) {
             maxScore = gazeScore;
-            area = "시선";
+            area = "gaze";
         }
 
         if (speechScore > maxScore) {
             maxScore = speechScore;
-            area = "음성";
+            area = "speech";
         }
 
         if (gestureScore > maxScore) {
             maxScore = gestureScore;
-            area = "제스처";
+            area = "gesture";
         }
 
         if (emotionScore > maxScore) {
-            area = "표정";
+            area = "emotion";
         }
 
         return area;
@@ -571,28 +468,40 @@ public class OpenAiClient {
             int emotionScore
     ) {
         int minScore = postureScore;
-        String area = "자세";
+        String area = "posture";
 
         if (gazeScore < minScore) {
             minScore = gazeScore;
-            area = "시선";
+            area = "gaze";
         }
 
         if (speechScore < minScore) {
             minScore = speechScore;
-            area = "음성";
+            area = "speech";
         }
 
         if (gestureScore < minScore) {
             minScore = gestureScore;
-            area = "제스처";
+            area = "gesture";
         }
 
         if (emotionScore < minScore) {
-            area = "표정";
+            area = "emotion";
         }
 
         return area;
+    }
+
+    private String translateArea(String area) {
+        return switch (area) {
+            case "posture" -> "자세";
+            case "gaze" -> "시선";
+            case "speech" -> "음성";
+            case "gesture" -> "제스처";
+            case "emotion" -> "표정";
+            case "content_structure" -> "내용 구성";
+            default -> area;
+        };
     }
 
     private String createOptionalMetricText(
@@ -635,10 +544,6 @@ public class OpenAiClient {
 
     private String formatPercent(double value) {
         return Math.round(value * 100) + "%";
-    }
-
-    private String nullToDash(Object value) {
-        return value == null ? "-" : String.valueOf(value);
     }
 
     @SuppressWarnings("unchecked")
@@ -690,5 +595,22 @@ public class OpenAiClient {
         }
 
         return 0;
+    }
+
+    private boolean getBoolean(
+            Map<String, Object> map,
+            String key
+    ) {
+        Object value = map.get(key);
+
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+
+        if (value instanceof String stringValue) {
+            return Boolean.parseBoolean(stringValue);
+        }
+
+        return false;
     }
 }

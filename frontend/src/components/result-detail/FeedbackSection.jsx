@@ -1,4 +1,44 @@
-function FeedbackSection({ feedback, renderKeyValueSection, visualAnalysis }) {
+function formatObjectValue(value) {
+    if (value === null || value === undefined) {
+        return "-";
+    }
+
+    if (typeof value === "object") {
+        return JSON.stringify(value, null, 2);
+    }
+
+    return String(value);
+}
+
+function VisualAnalysisBox({ visualAnalysis }) {
+    const entries = Object.entries(visualAnalysis || {});
+
+    return (
+        <article className="detail-card">
+            <h2>시각 분석</h2>
+
+            {entries.length === 0 ? (
+                <p className="muted-text">표시할 데이터가 없습니다.</p>
+            ) : (
+                <div className="key-value-list">
+                    {entries.map(([key, value]) => (
+                        <div className="key-value-item" key={key}>
+                            <span>{key}</span>
+
+                            {typeof value === "object" && value !== null ? (
+                                <pre>{formatObjectValue(value)}</pre>
+                            ) : (
+                                <strong>{formatObjectValue(value)}</strong>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </article>
+    );
+}
+
+function FeedbackSection({ feedback, visualAnalysis }) {
     return (
         <div className="detail-grid">
             <article className="detail-card wide">
@@ -40,7 +80,7 @@ function FeedbackSection({ feedback, renderKeyValueSection, visualAnalysis }) {
                 </div>
             </article>
 
-            {renderKeyValueSection("시각 분석", visualAnalysis)}
+            <VisualAnalysisBox visualAnalysis={visualAnalysis} />
         </div>
     );
 }

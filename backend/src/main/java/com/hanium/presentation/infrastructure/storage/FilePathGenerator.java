@@ -47,6 +47,11 @@ public class FilePathGenerator {
                 .resolve("video-llm-compact.json");
     }
 
+    public Path generateCompactAnalysisPath(String jobId) {
+        return generateResultDirectory(jobId)
+                .resolve("compact-analysis.json");
+    }
+
     public Path generateOpenAiFeedbackPath(String jobId) {
         return generateResultDirectory(jobId)
                 .resolve("openai-feedback.json");

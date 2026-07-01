@@ -47,6 +47,21 @@ function ResultDetailPage() {
     const timelineFeedback = result.timelineFeedback || [];
     const pipeline = result.pipeline || {};
 
+    const videoInfo = basicAnalysis.videoInfo || {};
+    const frameInfo = basicAnalysis.frame || {};
+    const poseInfo = basicAnalysis.pose || {};
+    const audioInfo = basicAnalysis.audio || {};
+    const fillerInfo = basicAnalysis.filler || {};
+    const faceInfo = basicAnalysis.face || {};
+
+    const poseFrameResults = Array.isArray(poseInfo.frameResults)
+        ? poseInfo.frameResults
+        : [];
+
+    const faceFrameResults = Array.isArray(faceInfo.frameResults)
+        ? faceInfo.frameResults
+        : [];
+
     const currentStatus = analysisStatus?.status || result.status || null;
     const currentStatusDescription =
         analysisStatus?.statusDescription || currentStatus || "-";
@@ -244,6 +259,34 @@ function ResultDetailPage() {
         return value;
     }
 
+    function formatNumber(value, digits = 2) {
+        if (value === null || value === undefined || value === "") {
+            return "-";
+        }
+
+        if (typeof value !== "number") {
+            return value;
+        }
+
+        return Number.isInteger(value) ? value : value.toFixed(digits);
+    }
+
+    function formatPercent(value) {
+        if (value === null || value === undefined || typeof value !== "number") {
+            return "-";
+        }
+
+        return `${Math.round(value * 100)}%`;
+    }
+
+    function formatFileSize(fileSize) {
+        if (!fileSize && fileSize !== 0) {
+            return "-";
+        }
+
+        return `${(fileSize / 1024 / 1024).toFixed(2)}MB`;
+    }
+
     function getScoreClassName(value) {
         if (typeof value !== "number") {
             return "score-value muted";
@@ -262,6 +305,26 @@ function ResultDetailPage() {
         }
 
         return "score-value poor";
+    }
+
+    function getMetricLevelClassName(value) {
+        if (typeof value !== "number") {
+            return "metric-value muted";
+        }
+
+        if (value >= 85) {
+            return "metric-value excellent";
+        }
+
+        if (value >= 70) {
+            return "metric-value good";
+        }
+
+        if (value >= 50) {
+            return "metric-value normal";
+        }
+
+        return "metric-value poor";
     }
 
     function formatObjectValue(value) {
@@ -302,6 +365,66 @@ function ResultDetailPage() {
                 )}
             </article>
         );
+    }
+
+    function renderMetricCard(label, value, helper) {
+        return (
+            <article className="metric-card">
+                <span>{label}</span>
+                <strong className={getMetricLevelClassName(value)}>
+                    {formatScore(value)}
+                </strong>
+                {helper && <p>{helper}</p>}
+            </article>
+        );
+    }
+
+    function formatEyeContactLevel(level) {
+        if (level === "good") {
+            return "좋음";
+        }
+
+        if (level === "normal") {
+            return "보통";
+        }
+
+        if (level === "weak") {
+            return "약함";
+        }
+
+        if (level === "poor") {
+            return "부족";
+        }
+
+        return "알 수 없음";
+    }
+
+    function formatGazeDirection(direction) {
+        if (direction === "left") {
+            return "왼쪽";
+        }
+
+        if (direction === "right") {
+            return "오른쪽";
+        }
+
+        if (direction === "center") {
+            return "중앙";
+        }
+
+        return "알 수 없음";
+    }
+
+    function formatAnalysisMethod(method) {
+        if (method === "duration_based_estimation") {
+            return "영상 길이 기반 추정";
+        }
+
+        if (!method) {
+            return "-";
+        }
+
+        return method;
     }
 
     if (loading) {
@@ -434,6 +557,304 @@ function ResultDetailPage() {
                 </div>
             </div>
 
+            <article className="detail-card wide">
+                <h2>영상 및 프레임 정보</h2>
+
+                <div className="metric-grid">
+                    <article className="metric-card">
+                        <span>영상 길이</span>
+                        <strong>{formatNumber(videoInfo.durationSec)}초</strong>
+                        <p>전체 발표 영상 길이입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>FPS</span>
+                        <strong>{formatNumber(videoInfo.fps)}</strong>
+                        <p>초당 프레임 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>해상도</span>
+                        <strong>
+                            {videoInfo.width && videoInfo.height
+                                ? `${videoInfo.width} × ${videoInfo.height}`
+                                : "-"}
+                        </strong>
+                        <p>업로드된 영상의 가로·세로 크기입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>파일 크기</span>
+                        <strong>{formatFileSize(videoInfo.fileSize)}</strong>
+                        <p>업로드된 영상 파일 크기입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>추출 프레임</span>
+                        <strong>{frameInfo.savedCount ?? 0}개</strong>
+                        <p>자세·얼굴 분석에 사용된 샘플 프레임 수입니다.</p>
+                    </article>
+                </div>
+            </article>
+
+            <article className="detail-card wide">
+                <h2>음성 분석 요약</h2>
+
+                <div className="metric-grid">
+                    {renderMetricCard(
+                        "음성 점수",
+                        audioInfo.speechScore,
+                        "말하기 속도 점수와 침묵 점수를 합산한 음성 평가 점수입니다."
+                    )}
+
+                    {renderMetricCard(
+                        "말하기 속도 점수",
+                        audioInfo.speechSpeedScore,
+                        "추정 WPM이 적정 범위에 가까울수록 높은 점수입니다."
+                    )}
+
+                    {renderMetricCard(
+                        "침묵 점수",
+                        audioInfo.silenceScore,
+                        "전체 길이 대비 침묵 비율이 낮을수록 높은 점수입니다."
+                    )}
+
+                    <article className="metric-card">
+                        <span>추정 WPM</span>
+                        <strong>{audioInfo.speechSpeedWpm ?? 0}</strong>
+                        <p>영상 길이를 기준으로 추정한 분당 단어 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>추정 단어 수</span>
+                        <strong>{audioInfo.estimatedWordCount ?? 0}개</strong>
+                        <p>추정 발화 시간 기준으로 계산한 단어 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>추정 발화 시간</span>
+                        <strong>{formatNumber(audioInfo.estimatedSpeechDurationSec)}초</strong>
+                        <p>전체 영상 중 말하고 있다고 추정한 시간입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>추정 침묵 시간</span>
+                        <strong>{formatNumber(audioInfo.totalSilenceTime)}초</strong>
+                        <p>전체 영상 중 침묵 또는 정지 구간으로 추정한 시간입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>침묵 횟수</span>
+                        <strong>{audioInfo.silenceCount ?? 0}회</strong>
+                        <p>영상 길이를 기준으로 추정한 침묵 구간 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>침묵 비율</span>
+                        <strong>{formatPercent(audioInfo.silenceRatio)}</strong>
+                        <p>전체 발표 시간 대비 침묵 시간의 비율입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>분석 방식</span>
+                        <strong>{formatAnalysisMethod(audioInfo.analysisMethod)}</strong>
+                        <p>현재 음성 분석에 사용된 계산 방식입니다.</p>
+                    </article>
+                </div>
+
+                {audioInfo.note && (
+                    <p className="muted-text">{audioInfo.note}</p>
+                )}
+            </article>
+
+            <article className="detail-card wide">
+                <h2>필러 분석 요약</h2>
+
+                <div className="metric-grid">
+                    {renderMetricCard(
+                        "필러 점수",
+                        fillerInfo.fillerScore,
+                        "전체 단어 수 대비 필러 비율이 낮을수록 높은 점수입니다."
+                    )}
+
+                    <article className="metric-card">
+                        <span>추정 필러 수</span>
+                        <strong>{fillerInfo.fillerCount ?? 0}개</strong>
+                        <p>영상 길이와 추정 단어 수를 기반으로 계산한 필러 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>필러 비율</span>
+                        <strong>{formatPercent(fillerInfo.fillerRatio)}</strong>
+                        <p>추정 단어 수 대비 필러 표현의 비율입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>분석 방식</span>
+                        <strong>{formatAnalysisMethod(fillerInfo.analysisMethod)}</strong>
+                        <p>현재 필러 분석에 사용된 계산 방식입니다.</p>
+                    </article>
+                </div>
+
+                {fillerInfo.note && (
+                    <p className="muted-text">{fillerInfo.note}</p>
+                )}
+            </article>
+
+            <article className="detail-card wide">
+                <h2>자세 분석 요약</h2>
+
+                <div className="metric-grid">
+                    {renderMetricCard(
+                        "자세 점수",
+                        poseInfo.postureScore,
+                        "검출률과 어깨 균형 점수를 합산한 자세 평가 점수입니다."
+                    )}
+
+                    {renderMetricCard(
+                        "어깨 균형 점수",
+                        poseInfo.shoulderBalanceScore,
+                        "좌우 어깨 높이 차이를 기반으로 계산한 균형 점수입니다."
+                    )}
+
+                    <article className="metric-card">
+                        <span>자세 검출률</span>
+                        <strong>{formatPercent(poseInfo.detectionRate)}</strong>
+                        <p>추출된 프레임 중 포즈가 감지된 비율입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>검출 프레임</span>
+                        <strong>
+                            {poseInfo.detectedFrameCount ?? 0} / {poseInfo.totalFrameCount ?? 0}
+                        </strong>
+                        <p>포즈가 감지된 프레임 수와 전체 프레임 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>평균 어깨 차이</span>
+                        <strong>{formatNumber(poseInfo.averageShoulderDiff, 4)}</strong>
+                        <p>좌우 어깨 y좌표 차이의 평균값입니다.</p>
+                    </article>
+                </div>
+
+                {poseFrameResults.length > 0 ? (
+                    <div className="pose-frame-table-wrap">
+                        <h3>프레임별 자세 분석</h3>
+
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>검출</th>
+                                <th>어깨 차이</th>
+                                <th>어깨 균형 점수</th>
+                            </tr>
+                            </thead>
+
+                            <tbody>
+                            {poseFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.poseDetected ? (
+                                            <span className="mini-badge success">검출</span>
+                                        ) : (
+                                            <span className="mini-badge muted">미검출</span>
+                                        )}
+                                    </td>
+                                    <td>{formatNumber(frameResult.shoulderDiff, 4)}</td>
+                                    <td>{frameResult.shoulderBalanceScore ?? 0}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <p className="muted-text">표시할 프레임별 자세 분석 결과가 없습니다.</p>
+                )}
+            </article>
+
+            <article className="detail-card wide">
+                <h2>얼굴/시선 분석 요약</h2>
+
+                <div className="metric-grid">
+                    {renderMetricCard(
+                        "시선 점수",
+                        faceInfo.gazeScore,
+                        "코끝 위치와 양쪽 눈 중심의 차이를 기반으로 계산한 시선 안정성 점수입니다."
+                    )}
+
+                    <article className="metric-card">
+                        <span>얼굴 검출률</span>
+                        <strong>{formatPercent(faceInfo.detectionRate)}</strong>
+                        <p>추출된 프레임 중 얼굴이 감지된 비율입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>검출 프레임</span>
+                        <strong>
+                            {faceInfo.detectedFrameCount ?? 0} / {faceInfo.totalFrameCount ?? 0}
+                        </strong>
+                        <p>얼굴이 감지된 프레임 수와 전체 프레임 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>평균 코 오프셋</span>
+                        <strong>{formatNumber(faceInfo.averageNoseOffset, 4)}</strong>
+                        <p>눈 중심 대비 코끝 위치 차이의 평균값입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>아이컨택 수준</span>
+                        <strong>{formatEyeContactLevel(faceInfo.eyeContactLevel)}</strong>
+                        <p>시선 점수를 기준으로 환산한 발표 시선 안정성입니다.</p>
+                    </article>
+                </div>
+
+                {faceFrameResults.length > 0 ? (
+                    <div className="pose-frame-table-wrap">
+                        <h3>프레임별 얼굴/시선 분석</h3>
+
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>검출</th>
+                                <th>시선 방향</th>
+                                <th>코 오프셋</th>
+                                <th>시선 점수</th>
+                            </tr>
+                            </thead>
+
+                            <tbody>
+                            {faceFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.faceDetected ? (
+                                            <span className="mini-badge success">검출</span>
+                                        ) : (
+                                            <span className="mini-badge muted">미검출</span>
+                                        )}
+                                    </td>
+                                    <td>{formatGazeDirection(frameResult.gazeDirection)}</td>
+                                    <td>{formatNumber(frameResult.absNoseOffset, 4)}</td>
+                                    <td>{frameResult.gazeScore ?? 0}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <p className="muted-text">표시할 프레임별 얼굴/시선 분석 결과가 없습니다.</p>
+                )}
+            </article>
+
             <div className="detail-grid">
                 <article className="detail-card wide">
                     <h2>종합 피드백</h2>
@@ -474,7 +895,6 @@ function ResultDetailPage() {
                     </div>
                 </article>
 
-                {renderKeyValueSection("기본 분석", basicAnalysis)}
                 {renderKeyValueSection("시각 분석", visualAnalysis)}
             </div>
 

@@ -715,6 +715,41 @@ ResultDetailPage.jsx의 비대화 방지
 
 OpenAI 피드백 결과에 생성 방식을 구분하는 상태 필드를 추가했습니다.
 
+## 결과 목록 AI 피드백 생성 상태 표시 및 필터
+
+결과 목록 화면에서 각 분석 결과의 AI 피드백 생성 방식을 바로 확인할 수 있도록 개선했습니다.
+
+기존에는 결과 상세 화면에 들어가야 AI 피드백이 Mock인지, 실제 OpenAI 응답인지 확인할 수 있었습니다.
+
+현재는 결과 목록 카드에서도 `MOCK`, `REAL`, `FALLBACK`, `UNKNOWN`, `FAILED` 상태를 확인할 수 있습니다.
+
+### 표시되는 생성 상태
+
+```text
+
+MOCK
+
+- OpenAI API를 호출하지 않고 내부 Mock 로직으로 생성된 피드백
+
+REAL
+
+- 실제 OpenAI API 호출에 성공하여 생성된 피드백
+
+FALLBACK
+
+- 실제 OpenAI API 호출을 시도했지만 실패하여 Mock 피드백으로 대체된 결과
+
+UNKNOWN
+
+- 기존 결과 파일에 generationMode 필드가 없는 경우
+
+FAILED
+
+- 분석 실패 또는 피드백 생성 실패 상태
+
+```
+
+
 ### 아직 실제 구현이 필요한 범위:
 
 - 실제 Video LLM 모델 연결

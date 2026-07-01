@@ -1,66 +1,82 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { deleteResult, getResults } from "../api/analysisApi";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
+import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
-import { deleteResult, getResults } from "../api/analysisApi";
 
-const AUTO_REFRESH_INTERVAL_MS = 3000;
+const FILTER_OPTIONS = [
+    {
+        label: "전체",
+        value: "ALL",
+    },
+    {
+        label: "완료",
+        value: "COMPLETED",
+    },
+    {
+        label: "실패",
+        value: "FAILED",
+    },
+];
 
-const RUNNING_STATUSES = [
-    "BASIC_ANALYZING",
-    "VIDEO_LLM_ANALYZING",
-    "COMPACTING",
-    "OPENAI_GENERATING",
-    "MERGING_RESULT",
+const GENERATION_MODE_FILTER_OPTIONS = [
+    {
+        label: "AI 전체",
+        value: "ALL",
+    },
+    {
+        label: "MOCK",
+        value: "MOCK",
+    },
+    {
+        label: "REAL",
+        value: "REAL",
+    },
+    {
+        label: "FALLBACK",
+        value: "FALLBACK",
+    },
+    {
+        label: "UNKNOWN",
+        value: "UNKNOWN",
+    },
+    {
+        label: "FAILED",
+        value: "FAILED",
+    },
+];
+
+const SORT_OPTIONS = [
+    {
+        label: "최신순",
+        value: "LATEST",
+    },
+    {
+        label: "오래된순",
+        value: "OLDEST",
+    },
+    {
+        label: "점수 높은순",
+        value: "SCORE_DESC",
+    },
+    {
+        label: "점수 낮은순",
+        value: "SCORE_ASC",
+    },
 ];
 
 function ResultListPage() {
-    const autoRefreshTimerRef = useRef(null);
-
     const [results, setResults] = useState([]);
+    const [filterStatus, setFilterStatus] = useState("ALL");
+    const [generationModeFilter, setGenerationModeFilter] = useState("ALL");
+    const [sortType, setSortType] = useState("LATEST");
+    const [keyword, setKeyword] = useState("");
     const [loading, setLoading] = useState(true);
-    const [autoRefreshing, setAutoRefreshing] = useState(false);
     const [deletingJobId, setDeletingJobId] = useState("");
     const [error, setError] = useState("");
-    const [statusFilter, setStatusFilter] = useState("ALL");
-    const [searchKeyword, setSearchKeyword] = useState("");
-
-    const hasRunningJob = useMemo(() => {
-        return results.some((result) => RUNNING_STATUSES.includes(result.status));
-    }, [results]);
-
-    const filteredResults = useMemo(() => {
-        return results.filter((result) => {
-            const matchesStatus =
-                statusFilter === "ALL" ||
-                result.status === statusFilter ||
-                (statusFilter === "RUNNING" && RUNNING_STATUSES.includes(result.status));
-
-            const keyword = searchKeyword.trim().toLowerCase();
-
-            const originalFileName = result.originalFileName || "";
-            const jobId = result.jobId || "";
-
-            const matchesKeyword =
-                keyword.length === 0 ||
-                jobId.toLowerCase().includes(keyword) ||
-                originalFileName.toLowerCase().includes(keyword);
-
-            return matchesStatus && matchesKeyword;
-        });
-    }, [results, statusFilter, searchKeyword]);
-
-    const totalCount = results.length;
-
-    const uploadedCount = results.filter(
-        (result) => result.status === "UPLOADED"
-    ).length;
-
-    const runningCount = results.filter((result) =>
-        RUNNING_STATUSES.includes(result.status)
-    ).length;
 
     const completedCount = results.filter(
         (result) => result.status === "COMPLETED"
@@ -70,74 +86,118 @@ function ResultListPage() {
         (result) => result.status === "FAILED"
     ).length;
 
+    const mockCount = results.filter(
+        (result) => getGenerationMode(result) === "MOCK"
+    ).length;
+
+    const realCount = results.filter(
+        (result) => getGenerationMode(result) === "REAL"
+    ).length;
+
+    const fallbackCount = results.filter(
+        (result) => getGenerationMode(result) === "FALLBACK"
+    ).length;
+
+    const filteredResults = useMemo(() => {
+        const normalizedKeyword = keyword.trim().toLowerCase();
+
+        return results
+            .filter((result) => {
+                if (filterStatus === "ALL") {
+                    return true;
+                }
+
+                return result.status === filterStatus;
+            })
+            .filter((result) => {
+                if (generationModeFilter === "ALL") {
+                    return true;
+                }
+
+                return getGenerationMode(result) === generationModeFilter;
+            })
+            .filter((result) => {
+                if (!normalizedKeyword) {
+                    return true;
+                }
+
+                const searchableText = [
+                    result.jobId,
+                    result.fileName,
+                    result.originalFileName,
+                    result.videoFileName,
+                    result.status,
+                    result.statusDescription,
+                    result.feedback?.generationMode,
+                    result.feedback?.model,
+                    result.feedback?.fallbackReason,
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase();
+
+                return searchableText.includes(normalizedKeyword);
+            })
+            .sort((a, b) => {
+                if (sortType === "OLDEST") {
+                    return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+                }
+
+                if (sortType === "SCORE_DESC") {
+                    return getTotalScore(b) - getTotalScore(a);
+                }
+
+                if (sortType === "SCORE_ASC") {
+                    return getTotalScore(a) - getTotalScore(b);
+                }
+
+                return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+            });
+    }, [results, filterStatus, generationModeFilter, sortType, keyword]);
+
     useEffect(() => {
         loadResults();
-
-        return () => {
-            stopAutoRefresh();
-        };
     }, []);
 
-    useEffect(() => {
-        if (hasRunningJob) {
-            startAutoRefresh();
-            return;
-        }
-
-        stopAutoRefresh();
-    }, [hasRunningJob]);
-
-    function startAutoRefresh() {
-        if (autoRefreshTimerRef.current) {
-            return;
-        }
-
-        setAutoRefreshing(true);
-
-        autoRefreshTimerRef.current = setInterval(() => {
-            loadResults({ silent: true });
-        }, AUTO_REFRESH_INTERVAL_MS);
-    }
-
-    function stopAutoRefresh() {
-        if (autoRefreshTimerRef.current) {
-            clearInterval(autoRefreshTimerRef.current);
-            autoRefreshTimerRef.current = null;
-        }
-
-        setAutoRefreshing(false);
-    }
-
-    async function loadResults(options = {}) {
-        const silent = options.silent === true;
-
+    async function loadResults() {
         try {
-            if (!silent) {
-                setLoading(true);
-            }
-
+            setLoading(true);
             setError("");
 
             const response = await getResults();
+            const responseData = response.data;
 
-            setResults(response.data || []);
+            if (Array.isArray(responseData)) {
+                setResults(responseData);
+                return;
+            }
+
+            if (Array.isArray(responseData?.results)) {
+                setResults(responseData.results);
+                return;
+            }
+
+            if (Array.isArray(responseData?.data)) {
+                setResults(responseData.data);
+                return;
+            }
+
+            setResults([]);
         } catch (requestError) {
             setError(
                 requestError.message ||
                 "분석 결과 목록을 불러오는 중 오류가 발생했습니다."
             );
         } finally {
-            if (!silent) {
-                setLoading(false);
-            }
+            setLoading(false);
         }
     }
 
-    async function handleManualRefresh() {
-        await loadResults();
-    }
-
     async function handleDelete(jobId) {
+        if (!jobId) {
+            return;
+        }
+
         const confirmed = window.confirm(
             "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 JSON 파일도 함께 삭제됩니다."
         );
@@ -152,7 +212,9 @@ function ResultListPage() {
 
             await deleteResult(jobId);
 
-            await loadResults({ silent: true });
+            setResults((prevResults) =>
+                prevResults.filter((result) => result.jobId !== jobId)
+            );
         } catch (requestError) {
             setError(
                 requestError.message ||
@@ -161,6 +223,49 @@ function ResultListPage() {
         } finally {
             setDeletingJobId("");
         }
+    }
+
+    function getGenerationMode(result) {
+        return result?.feedback?.generationMode || "UNKNOWN";
+    }
+
+    function getTotalScore(result) {
+        const score = result?.scoreSummary?.totalScore;
+
+        if (typeof score === "number") {
+            return score;
+        }
+
+        return 0;
+    }
+
+    function getResultTitle(result) {
+        return (
+            result?.fileName ||
+            result?.originalFileName ||
+            result?.videoFileName ||
+            "분석 결과"
+        );
+    }
+
+    function getScoreClassName(score) {
+        if (typeof score !== "number") {
+            return "score-badge score-muted";
+        }
+
+        if (score >= 85) {
+            return "score-badge score-good";
+        }
+
+        if (score >= 70) {
+            return "score-badge score-normal";
+        }
+
+        if (score >= 50) {
+            return "score-badge score-warning";
+        }
+
+        return "score-badge score-bad";
     }
 
     function formatDateTime(value) {
@@ -183,184 +288,206 @@ function ResultListPage() {
         });
     }
 
-    function formatFileSize(fileSize) {
-        if (!fileSize && fileSize !== 0) {
+    function formatScore(value) {
+        if (value === null || value === undefined) {
             return "-";
         }
 
-        return `${(fileSize / 1024 / 1024).toFixed(2)}MB`;
+        return value;
     }
 
-    function getStatusText(result) {
-        return result.statusDescription || result.status || "-";
-    }
+    if (loading) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result List"
+                    title="분석 결과 목록"
+                    description="저장된 발표 분석 결과를 불러오는 중입니다."
+                />
 
-    function isDeleteDisabled(result) {
-        return deletingJobId === result.jobId || RUNNING_STATUSES.includes(result.status);
+                <EmptyState
+                    title="로딩 중"
+                    description="잠시만 기다려 주세요."
+                />
+            </section>
+        );
     }
 
     return (
         <section className="page-section">
             <PageHeader
-                eyebrow="Results"
+                eyebrow="Result List"
                 title="분석 결과 목록"
-                description="업로드된 발표 영상의 분석 상태, 파일 정보, 완료 시간을 확인하고 상세 결과로 이동할 수 있습니다."
+                description="업로드된 발표 영상의 분석 결과를 확인하고 상세 피드백으로 이동할 수 있습니다."
             />
 
-            <div className="summary-grid">
-                <article className="summary-card">
-                    <span>전체 분석</span>
-                    <strong>{totalCount}</strong>
-                </article>
+            <StateMessage type="error">{error}</StateMessage>
 
+            <div className="result-summary-grid">
                 <article className="summary-card">
-                    <span>업로드 완료</span>
-                    <strong>{uploadedCount}</strong>
-                </article>
-
-                <article className="summary-card">
-                    <span>진행 중</span>
-                    <strong>{runningCount}</strong>
+                    <span>전체 결과</span>
+                    <strong>{results.length}</strong>
+                    <p>저장된 전체 분석 결과 수입니다.</p>
                 </article>
 
                 <article className="summary-card">
                     <span>완료</span>
                     <strong>{completedCount}</strong>
+                    <p>정상적으로 분석이 완료된 결과입니다.</p>
                 </article>
 
                 <article className="summary-card">
                     <span>실패</span>
                     <strong>{failedCount}</strong>
+                    <p>분석 중 오류가 발생한 결과입니다.</p>
+                </article>
+
+                <article className="summary-card">
+                    <span>Mock</span>
+                    <strong>{mockCount}</strong>
+                    <p>내부 Mock 피드백으로 생성된 결과입니다.</p>
+                </article>
+
+                <article className="summary-card">
+                    <span>Real</span>
+                    <strong>{realCount}</strong>
+                    <p>실제 OpenAI API로 생성된 결과입니다.</p>
+                </article>
+
+                <article className="summary-card">
+                    <span>Fallback</span>
+                    <strong>{fallbackCount}</strong>
+                    <p>OpenAI 호출 실패 후 Mock으로 대체된 결과입니다.</p>
                 </article>
             </div>
 
-            <div className="result-toolbar">
-                <div className="filter-group">
-                    <button
-                        type="button"
-                        className={statusFilter === "ALL" ? "filter-button active" : "filter-button"}
-                        onClick={() => setStatusFilter("ALL")}
-                    >
-                        전체
-                    </button>
+            <div className="result-control-grid">
+                <div className="filter-button-group">
+                    {FILTER_OPTIONS.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            className={
+                                filterStatus === option.value
+                                    ? "filter-button active"
+                                    : "filter-button"
+                            }
+                            onClick={() => setFilterStatus(option.value)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
 
-                    <button
-                        type="button"
-                        className={
-                            statusFilter === "UPLOADED" ? "filter-button active" : "filter-button"
-                        }
-                        onClick={() => setStatusFilter("UPLOADED")}
-                    >
-                        업로드 완료
-                    </button>
-
-                    <button
-                        type="button"
-                        className={
-                            statusFilter === "RUNNING" ? "filter-button active" : "filter-button"
-                        }
-                        onClick={() => setStatusFilter("RUNNING")}
-                    >
-                        진행 중
-                    </button>
-
-                    <button
-                        type="button"
-                        className={
-                            statusFilter === "COMPLETED" ? "filter-button active" : "filter-button"
-                        }
-                        onClick={() => setStatusFilter("COMPLETED")}
-                    >
-                        완료
-                    </button>
-
-                    <button
-                        type="button"
-                        className={
-                            statusFilter === "FAILED" ? "filter-button active" : "filter-button"
-                        }
-                        onClick={() => setStatusFilter("FAILED")}
-                    >
-                        실패
-                    </button>
+                <div className="filter-button-group">
+                    {GENERATION_MODE_FILTER_OPTIONS.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            className={
+                                generationModeFilter === option.value
+                                    ? "filter-button active"
+                                    : "filter-button"
+                            }
+                            onClick={() => setGenerationModeFilter(option.value)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
                 </div>
 
                 <input
-                    className="search-input"
                     type="search"
-                    placeholder="jobId 또는 파일명 검색"
-                    value={searchKeyword}
-                    onChange={(event) => setSearchKeyword(event.target.value)}
+                    className="search-input"
+                    placeholder="파일명, jobId, 생성 방식 검색"
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
                 />
+
+                <select
+                    className="sort-select"
+                    value={sortType}
+                    onChange={(event) => setSortType(event.target.value)}
+                >
+                    {SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
+
+                <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={loadResults}
+                >
+                    새로고침
+                </button>
             </div>
 
-            <StateMessage type="polling">
-                {autoRefreshing
-                    ? `진행 중인 분석 작업이 있어 ${AUTO_REFRESH_INTERVAL_MS / 1000}초마다 목록을 자동 갱신합니다.`
-                    : ""}
-            </StateMessage>
+            {filteredResults.length === 0 ? (
+                <EmptyState
+                    title="표시할 분석 결과가 없습니다."
+                    description="검색 조건을 변경하거나 새 영상을 업로드해 주세요."
+                />
+            ) : (
+                <div className="result-list">
+                    {filteredResults.map((result) => {
+                        const totalScore = getTotalScore(result);
+                        const isDeleting = deletingJobId === result.jobId;
 
-            <StateMessage type="error">{error}</StateMessage>
-
-            <div className="result-list-card">
-                <div className="result-list-header">
-                    <h2>분석 작업 목록</h2>
-
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={handleManualRefresh}
-                        disabled={loading}
-                    >
-                        {loading ? "새로고침 중..." : "새로고침"}
-                    </button>
-                </div>
-
-                {loading ? (
-                    <EmptyState title="분석 결과 목록을 불러오는 중입니다." />
-                ) : filteredResults.length === 0 ? (
-                    <EmptyState
-                        title="표시할 분석 결과가 없습니다."
-                        description="영상을 업로드하고 분석을 실행하면 이곳에 결과가 표시됩니다."
-                    />
-                ) : (
-                    <div className="result-list">
-                        {filteredResults.map((result) => (
-                            <article className="result-item" key={result.jobId}>
-                                <div className="result-item-main">
-                                    <div className="result-item-title-row">
-                                        <h3>{result.originalFileName}</h3>
-
-                                        <StatusBadge
-                                            status={result.status}
-                                            label={getStatusText(result)}
-                                        />
+                        return (
+                            <article className="result-card" key={result.jobId}>
+                                <div className="result-card-header">
+                                    <div>
+                                        <h3>{getResultTitle(result)}</h3>
+                                        <p>
+                                            jobId: <code>{result.jobId}</code>
+                                        </p>
                                     </div>
 
-                                    <div className="result-meta-grid">
-                                        <div>
-                                            <span>Job ID</span>
-                                            <strong>{result.jobId}</strong>
-                                        </div>
+                                    <StatusBadge
+                                        status={result.status}
+                                        label={result.statusDescription || result.status}
+                                    />
+                                </div>
 
-                                        <div>
-                                            <span>파일 크기</span>
-                                            <strong>{formatFileSize(result.fileSize)}</strong>
-                                        </div>
+                                <OpenAiGenerationBadge feedback={result.feedback} />
 
-                                        <div>
-                                            <span>생성 시간</span>
-                                            <strong>{formatDateTime(result.createdAt)}</strong>
-                                        </div>
+                                <div className="result-score-row">
+                                    <div>
+                                        <span>총점</span>
+                                        <strong className={getScoreClassName(totalScore)}>
+                                            {formatScore(totalScore)}
+                                        </strong>
+                                    </div>
 
-                                        <div>
-                                            <span>완료 시간</span>
-                                            <strong>{formatDateTime(result.completedAt)}</strong>
-                                        </div>
+                                    <div>
+                                        <span>등급</span>
+                                        <strong>{result.scoreSummary?.level || "-"}</strong>
+                                    </div>
+
+                                    <div>
+                                        <span>생성일</span>
+                                        <strong>{formatDateTime(result.createdAt)}</strong>
                                     </div>
                                 </div>
 
-                                <div className="result-item-actions">
+                                <div className="result-metric-row">
+                                    <span>자세 {formatScore(result.scoreSummary?.postureScore)}</span>
+                                    <span>시선 {formatScore(result.scoreSummary?.gazeScore)}</span>
+                                    <span>음성 {formatScore(result.scoreSummary?.speechScore)}</span>
+                                    <span>제스처 {formatScore(result.scoreSummary?.gestureScore)}</span>
+                                    <span>표정 {formatScore(result.scoreSummary?.emotionScore)}</span>
+                                </div>
+
+                                {result.feedback?.overall && (
+                                    <p className="result-feedback-preview">
+                                        {result.feedback.overall}
+                                    </p>
+                                )}
+
+                                <div className="result-card-actions">
                                     <Link
                                         to={`/results/${result.jobId}`}
                                         className="primary-button"
@@ -372,16 +499,16 @@ function ResultListPage() {
                                         type="button"
                                         className="danger-button"
                                         onClick={() => handleDelete(result.jobId)}
-                                        disabled={isDeleteDisabled(result)}
+                                        disabled={isDeleting}
                                     >
-                                        {deletingJobId === result.jobId ? "삭제 중..." : "삭제"}
+                                        {isDeleting ? "삭제 중..." : "삭제"}
                                     </button>
                                 </div>
                             </article>
-                        ))}
-                    </div>
-                )}
-            </div>
+                        );
+                    })}
+                </div>
+            )}
         </section>
     );
 }

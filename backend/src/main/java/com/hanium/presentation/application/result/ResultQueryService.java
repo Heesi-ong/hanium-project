@@ -14,8 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
+
+import java.util.List;
 
 @Service
 public class ResultQueryService {
@@ -66,6 +67,23 @@ public class ResultQueryService {
                         "업로드된 영상 정보를 찾을 수 없습니다."
                 ));
 
-        return ResultSummaryResponse.of(analysisJob, uploadedVideo);
+        Map<String, Object> finalResult = readFinalResultSafely(analysisJob.getJobId());
+
+        return ResultSummaryResponse.of(
+                analysisJob,
+                uploadedVideo,
+                finalResult
+        );
+    }
+
+    private Map<String, Object> readFinalResultSafely(String jobId) {
+        try {
+            Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
+            Map<String, Object> finalResult = jsonFileStorage.readJson(finalResultPath, Map.class);
+
+            return finalResult == null ? Map.of() : finalResult;
+        } catch (RuntimeException exception) {
+            return Map.of();
+        }
     }
 }

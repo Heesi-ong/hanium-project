@@ -1,8 +1,17 @@
 package com.hanium.presentation.infrastructure.client.openai;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.global.properties.OpenAiProperties;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
+import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiRequest;
+import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiResponse;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -12,10 +21,129 @@ import java.util.Map;
 @Component
 public class OpenAiClient {
 
+    private static final String RESPONSES_API_PATH = "/v1/responses";
+
+    private final OpenAiProperties openAiProperties;
+    private final OpenAiPromptBuilder openAiPromptBuilder;
+    private final RestClient openAiRestClient;
+    private final ObjectMapper objectMapper;
+
+    public OpenAiClient(
+            OpenAiProperties openAiProperties,
+            OpenAiPromptBuilder openAiPromptBuilder,
+            RestClient openAiRestClient,
+            ObjectMapper objectMapper
+    ) {
+        this.openAiProperties = openAiProperties;
+        this.openAiPromptBuilder = openAiPromptBuilder;
+        this.openAiRestClient = openAiRestClient;
+        this.objectMapper = objectMapper;
+    }
+
     public OpenAiFeedbackResponse generateFeedback(OpenAiFeedbackRequest request) {
+        if (openAiProperties.canUseRealApi()) {
+            try {
+                return generateRealOpenAiFeedback(request);
+            } catch (RuntimeException exception) {
+                return generateMockFeedback(
+                        request,
+                        "FALLBACK",
+                        resolveFallbackReason(exception)
+                );
+            }
+        }
+
+        return generateMockFeedback(
+                request,
+                "MOCK",
+                resolveMockReason()
+        );
+    }
+
+    private OpenAiFeedbackResponse generateRealOpenAiFeedback(OpenAiFeedbackRequest request) {
+        OpenAiResponsesApiRequest apiRequest = createOpenAiResponsesApiRequest(request);
+
+        OpenAiResponsesApiResponse apiResponse = openAiRestClient
+                .post()
+                .uri(RESPONSES_API_PATH)
+                .body(apiRequest)
+                .retrieve()
+                .onStatus(
+                        HttpStatusCode::isError,
+                        (httpRequest, httpResponse) -> {
+                            throw new IllegalStateException(
+                                    "OpenAI API 호출 실패: HTTP "
+                                            + httpResponse.getStatusCode().value()
+                            );
+                        }
+                )
+                .body(OpenAiResponsesApiResponse.class);
+
+        if (apiResponse == null) {
+            throw new IllegalStateException("OpenAI API 응답이 비어 있습니다.");
+        }
+
+        if (!apiResponse.isCompleted()) {
+            throw new IllegalStateException(
+                    "OpenAI API 응답 상태가 completed가 아닙니다. status="
+                            + apiResponse.status()
+            );
+        }
+
+        String outputText = apiResponse.extractOutputText();
+
+        if (outputText == null || outputText.isBlank()) {
+            throw new IllegalStateException("OpenAI API 응답 텍스트가 비어 있습니다.");
+        }
+
+        return parseRealOpenAiFeedbackResponse(request.jobId(), outputText);
+    }
+
+    private OpenAiResponsesApiRequest createOpenAiResponsesApiRequest(
+            OpenAiFeedbackRequest request
+    ) {
+        String systemPrompt = openAiPromptBuilder.buildSystemPrompt();
+        String userPrompt = openAiPromptBuilder.buildUserPrompt(request);
+
+        return OpenAiResponsesApiRequest.create(
+                openAiProperties.getModel(),
+                systemPrompt,
+                userPrompt
+        );
+    }
+
+    private OpenAiFeedbackResponse parseRealOpenAiFeedbackResponse(
+            String jobId,
+            String outputText
+    ) {
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(
+                    outputText,
+                    new TypeReference<>() {
+                    }
+            );
+
+            return OpenAiFeedbackResponse.real(
+                    jobId,
+                    openAiProperties.getModel(),
+                    getString(parsed, "overall"),
+                    getStringList(parsed, "strengths"),
+                    getStringList(parsed, "improvements"),
+                    getMapList(parsed, "practicePlan"),
+                    getMapList(parsed, "timelineFeedback")
+            );
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("OpenAI 응답 JSON 파싱에 실패했습니다.", exception);
+        }
+    }
+
+    private OpenAiFeedbackResponse generateMockFeedback(
+            OpenAiFeedbackRequest request,
+            String generationMode,
+            String fallbackReason
+    ) {
         Map<String, Object> compactAnalysis = nullSafeMap(request.compactAnalysis());
 
-        Map<String, Object> rawMetrics = nullSafeMap(compactAnalysis.get("rawMetrics"));
         Map<String, Object> modelInputs = nullSafeMap(compactAnalysis.get("modelInputs"));
 
         Map<String, Object> scoreSummary = nullSafeMap(modelInputs.get("scoreSummary"));
@@ -23,13 +151,6 @@ public class OpenAiClient {
         Map<String, Object> visualSummary = nullSafeMap(modelInputs.get("visualSummary"));
         Map<String, Object> transcriptSummary = nullSafeMap(modelInputs.get("transcriptSummary"));
         Map<String, Object> feedbackFocus = nullSafeMap(modelInputs.get("feedbackFocus"));
-
-        Map<String, Object> audio = nullSafeMap(rawMetrics.get("audio"));
-        Map<String, Object> filler = nullSafeMap(rawMetrics.get("filler"));
-        Map<String, Object> pose = nullSafeMap(rawMetrics.get("pose"));
-        Map<String, Object> gesture = nullSafeMap(rawMetrics.get("gesture"));
-        Map<String, Object> face = nullSafeMap(rawMetrics.get("face"));
-        Map<String, Object> emotion = nullSafeMap(rawMetrics.get("emotion"));
 
         int totalScore = getInt(scoreSummary, "totalScore");
         int postureScore = getInt(scoreSummary, "postureScore");
@@ -54,13 +175,7 @@ public class OpenAiClient {
                 emotionScore,
                 speechSummary,
                 visualSummary,
-                transcriptSummary,
-                audio,
-                filler,
-                pose,
-                gesture,
-                face,
-                emotion
+                transcriptSummary
         );
 
         String overallFeedback = createOverallFeedback(
@@ -94,14 +209,53 @@ public class OpenAiClient {
                 visualSummary
         );
 
-        return new OpenAiFeedbackResponse(
+        if ("FALLBACK".equals(generationMode)) {
+            return OpenAiFeedbackResponse.fallback(
+                    request.jobId(),
+                    openAiProperties.getModel(),
+                    fallbackReason,
+                    overallFeedback,
+                    strengths,
+                    improvements,
+                    practicePlan,
+                    timelineFeedback
+            );
+        }
+
+        return OpenAiFeedbackResponse.mock(
                 request.jobId(),
+                openAiProperties.getModel(),
+                fallbackReason,
                 overallFeedback,
                 strengths,
                 improvements,
                 practicePlan,
                 timelineFeedback
         );
+    }
+
+    private String resolveMockReason() {
+        if (!openAiProperties.isEnabled()) {
+            return "openai.enabled=false";
+        }
+
+        if (!openAiProperties.hasApiKey()) {
+            return "OPENAI_API_KEY is empty";
+        }
+
+        return "mock mode";
+    }
+
+    private String resolveFallbackReason(RuntimeException exception) {
+        if (exception instanceof RestClientException) {
+            return "OpenAI HTTP client error: " + exception.getMessage();
+        }
+
+        if (exception.getMessage() == null || exception.getMessage().isBlank()) {
+            return exception.getClass().getSimpleName();
+        }
+
+        return exception.getMessage();
     }
 
     private List<String> createStrengths(
@@ -148,13 +302,7 @@ public class OpenAiClient {
             int emotionScore,
             Map<String, Object> speechSummary,
             Map<String, Object> visualSummary,
-            Map<String, Object> transcriptSummary,
-            Map<String, Object> audio,
-            Map<String, Object> filler,
-            Map<String, Object> pose,
-            Map<String, Object> gesture,
-            Map<String, Object> face,
-            Map<String, Object> emotion
+            Map<String, Object> transcriptSummary
     ) {
         List<String> improvements = new ArrayList<>();
 
@@ -230,10 +378,12 @@ public class OpenAiClient {
             List<String> improvements
     ) {
         String levelText = resolveLevelText(totalScore);
+
         String strongestArea = translateArea(String.valueOf(feedbackFocus.getOrDefault(
                 "strongestArea",
                 resolveStrongestArea(postureScore, gazeScore, speechScore, gestureScore, emotionScore)
         )));
+
         String weakestArea = translateArea(String.valueOf(feedbackFocus.getOrDefault(
                 "weakestArea",
                 resolveWeakestArea(postureScore, gazeScore, speechScore, gestureScore, emotionScore)
@@ -553,6 +703,46 @@ public class OpenAiClient {
         }
 
         return Map.of();
+    }
+
+    private String getString(
+            Map<String, Object> map,
+            String key
+    ) {
+        Object value = map.get(key);
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private List<String> getStringList(
+            Map<String, Object> map,
+            String key
+    ) {
+        Object value = map.get(key);
+
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .map(String::valueOf)
+                    .toList();
+        }
+
+        return List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> getMapList(
+            Map<String, Object> map,
+            String key
+    ) {
+        Object value = map.get(key);
+
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .filter(item -> item instanceof Map<?, ?>)
+                    .map(item -> (Map<String, Object>) item)
+                    .toList();
+        }
+
+        return List.of();
     }
 
     private int getInt(

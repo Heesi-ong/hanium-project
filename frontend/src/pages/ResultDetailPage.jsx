@@ -11,6 +11,7 @@ import FaceAnalysisSection from "../components/result-detail/FaceAnalysisSection
 import FeedbackSection from "../components/result-detail/FeedbackSection";
 import FillerAnalysisSection from "../components/result-detail/FillerAnalysisSection";
 import GestureAnalysisSection from "../components/result-detail/GestureAnalysisSection";
+import OpenAiFeedbackStatusSection from "../components/result-detail/OpenAiFeedbackStatusSection";
 import PipelineSection from "../components/result-detail/PipelineSection";
 import PoseAnalysisSection from "../components/result-detail/PoseAnalysisSection";
 import PracticePlanSection from "../components/result-detail/PracticePlanSection";
@@ -513,6 +514,8 @@ function ResultDetailPage() {
             </div>
 
             <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
+
+            <OpenAiFeedbackStatusSection feedback={feedback} />
 
             <FeedbackSection
                 feedback={feedback}

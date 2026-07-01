@@ -30,7 +30,7 @@ public class ResultMergeService {
         finalResult.put("feedback", createFeedback(openAiFeedbackResponse));
         finalResult.put("practicePlan", nullSafeList(openAiFeedbackResponse.practicePlan()));
         finalResult.put("timelineFeedback", nullSafeList(openAiFeedbackResponse.timelineFeedback()));
-        finalResult.put("pipeline", createCompletedPipeline());
+        finalResult.put("pipeline", createCompletedPipeline(openAiFeedbackResponse));
 
         return finalResult;
     }
@@ -110,14 +110,20 @@ public class ResultMergeService {
     ) {
         Map<String, Object> feedback = new LinkedHashMap<>();
 
-        feedback.put("overall", openAiFeedbackResponse.overallFeedback());
+        feedback.put("generationMode", nullSafeString(openAiFeedbackResponse.generationMode(), "UNKNOWN"));
+        feedback.put("model", nullSafeString(openAiFeedbackResponse.model(), "-"));
+        feedback.put("realApiUsed", openAiFeedbackResponse.realApiUsed());
+        feedback.put("fallbackReason", nullSafeString(openAiFeedbackResponse.fallbackReason(), "-"));
+        feedback.put("overall", nullSafeString(openAiFeedbackResponse.overallFeedback(), "표시할 종합 피드백이 없습니다."));
         feedback.put("strengths", nullSafeStringList(openAiFeedbackResponse.strengths()));
         feedback.put("improvements", nullSafeStringList(openAiFeedbackResponse.improvements()));
 
         return feedback;
     }
 
-    private Map<String, Object> createCompletedPipeline() {
+    private Map<String, Object> createCompletedPipeline(
+            OpenAiFeedbackResponse openAiFeedbackResponse
+    ) {
         Map<String, Object> pipeline = new LinkedHashMap<>();
 
         pipeline.put("basicAnalysis", "analysis-engine");
@@ -130,10 +136,34 @@ public class ResultMergeService {
         pipeline.put("emotionAnalysis", "analysis-engine mediapipe face mesh expression");
         pipeline.put("videoLlmAnalysis", "video-llm-engine mock");
         pipeline.put("compactAnalysis", "spring-boot compact");
-        pipeline.put("openAiFeedback", "openai mock");
+        pipeline.put("openAiFeedback", resolveOpenAiPipelineStatus(openAiFeedbackResponse));
+        pipeline.put("openAiGenerationMode", nullSafeString(openAiFeedbackResponse.generationMode(), "UNKNOWN"));
+        pipeline.put("openAiModel", nullSafeString(openAiFeedbackResponse.model(), "-"));
+        pipeline.put("openAiRealApiUsed", openAiFeedbackResponse.realApiUsed());
+        pipeline.put("openAiFallbackReason", nullSafeString(openAiFeedbackResponse.fallbackReason(), "-"));
         pipeline.put("finalMerge", "spring-boot result merge");
 
         return pipeline;
+    }
+
+    private String resolveOpenAiPipelineStatus(
+            OpenAiFeedbackResponse openAiFeedbackResponse
+    ) {
+        String generationMode = openAiFeedbackResponse.generationMode();
+
+        if ("REAL".equals(generationMode)) {
+            return "openai real";
+        }
+
+        if ("FALLBACK".equals(generationMode)) {
+            return "openai fallback mock";
+        }
+
+        if ("MOCK".equals(generationMode)) {
+            return "openai mock";
+        }
+
+        return "openai unknown";
     }
 
     private Map<String, Object> createFailedPipeline(String failedStep) {
@@ -190,6 +220,10 @@ public class ResultMergeService {
     private Map<String, Object> createFailedFeedback() {
         Map<String, Object> feedback = new LinkedHashMap<>();
 
+        feedback.put("generationMode", "FAILED");
+        feedback.put("model", "-");
+        feedback.put("realApiUsed", false);
+        feedback.put("fallbackReason", "analysis failed");
         feedback.put("overall", "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.");
         feedback.put("strengths", List.of());
         feedback.put("improvements", List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요."));
@@ -225,6 +259,14 @@ public class ResultMergeService {
         return value == null ? List.of() : value;
     }
 
+    private String nullSafeString(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+
+        return value;
+    }
+
     private Object getOrDefault(
             Map<String, Object> map,
             String key,
@@ -242,6 +284,14 @@ public class ResultMergeService {
 
         if (value instanceof Number number) {
             return number.intValue();
+        }
+
+        if (value instanceof String stringValue) {
+            try {
+                return Integer.parseInt(stringValue);
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
         }
 
         return 0;

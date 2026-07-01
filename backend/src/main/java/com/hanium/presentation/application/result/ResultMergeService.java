@@ -53,6 +53,7 @@ public class ResultMergeService {
                         "gazeScore", 0,
                         "speechScore", 0,
                         "gestureScore", 0,
+                        "emotionScore", 0,
                         "level", "FAILED"
                 ),
 
@@ -63,7 +64,8 @@ public class ResultMergeService {
                         "filler", Map.of(),
                         "pose", Map.of(),
                         "gesture", Map.of(),
-                        "face", Map.of()
+                        "face", Map.of(),
+                        "emotion", Map.of()
                 ),
 
                 "visualAnalysis", Map.of(
@@ -95,6 +97,7 @@ public class ResultMergeService {
                 "gazeScore", getOrDefault(score, "gazeScore", 0),
                 "speechScore", getOrDefault(score, "speechScore", 0),
                 "gestureScore", getOrDefault(score, "gestureScore", 0),
+                "emotionScore", getOrDefault(score, "emotionScore", 0),
                 "level", resolveLevel(getNumberValue(score, "totalScore"))
         );
     }
@@ -109,7 +112,8 @@ public class ResultMergeService {
                 "filler", nullSafe(analysisEngineResponse.filler()),
                 "pose", nullSafe(analysisEngineResponse.pose()),
                 "gesture", nullSafe(analysisEngineResponse.gesture()),
-                "face", nullSafe(analysisEngineResponse.face())
+                "face", nullSafe(analysisEngineResponse.face()),
+                "emotion", nullSafe(analysisEngineResponse.emotion())
         );
     }
 
@@ -142,6 +146,7 @@ public class ResultMergeService {
                 "poseAnalysis", "analysis-engine mediapipe pose",
                 "gestureAnalysis", "analysis-engine mediapipe pose wrist elbow",
                 "faceAnalysis", "analysis-engine mediapipe face mesh",
+                "emotionAnalysis", "analysis-engine mediapipe face mesh expression",
                 "videoLlmAnalysis", "video-llm-engine mock",
                 "compactAnalysis", "spring-boot compact",
                 "openAiFeedback", "openai mock",

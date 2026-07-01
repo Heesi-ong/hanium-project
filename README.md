@@ -475,11 +475,195 @@ storage/logs/.gitkeep
 - CORS 설정
 - README 실행 가이드
 
+현재 실제 분석으로 반영된 범위:
+
+```text
+
+analysis-engine에서 실제 영상 파일 읽기
+
+OpenCV 기반 영상 메타데이터 추출
+
+- 영상 길이
+- FPS
+- 전체 프레임 수
+- 해상도
+- 파일 크기
+
+OpenCV 기반 샘플 프레임 추출
+
+- storage/temp/{jobId}/frames/ 경로에 프레임 저장
+- 최대 20개 프레임 추출
+- 프레임별 timestamp 저장
+
+ffmpeg 기반 오디오 추출
+
+- imageio-ffmpeg 사용
+- 영상에서 audio.wav 추출
+- storage/temp/{jobId}/audio/audio.wav 저장
+- 16000Hz
+- mono channel
+- pcm_s16le wav 형식으로 변환
+
+faster-whisper 기반 STT 분석
+
+- audio.wav를 텍스트로 변환
+- 한국어 음성 인식
+- transcript 생성
+- segment 단위 발화 구간 생성
+- segment별 시작 시간, 종료 시간, 발화 길이, 텍스트 저장
+- STT 성공 여부 저장
+- 감지 언어와 언어 확률 저장
+- STT 실패 시 길이 기반 추정 분석으로 fallback
+
+STT 기반 음성 분석
+
+- STT transcript 기준 단어 수 계산
+- STT segment 기준 실제 발화 시간 계산
+- segment 사이 공백 기반 침묵 구간 계산
+- 1초 이상 공백을 침묵 구간으로 판정
+- WPM 계산
+- 말하기 속도 점수 계산
+- 침묵 횟수 계산
+- 침묵 시간 계산
+- 침묵 비율 계산
+- 침묵 점수 계산
+- 음성 점수 계산
+
+STT 기반 필러 분석
+
+- transcript에서 한국어 필러 표현 탐지
+- 감지 필러 목록 저장
+- 필러별 등장 횟수 저장
+- 전체 필러 수 계산
+- 전체 단어 수 대비 필러 비율 계산
+- 필러 점수 계산
+- STT 실패 시 길이 기반 추정값으로 fallback
+
+MediaPipe Pose 기반 자세 분석
+
+- 포즈 검출률
+- 검출 프레임 수
+- 좌우 어깨 위치 추출
+- 어깨 높이 차이 계산
+- 어깨 균형 점수 계산
+- 자세 점수 계산
+- 프레임별 자세 분석 결과 저장
+
+MediaPipe Pose 기반 제스처 분석
+
+- 어깨, 팔꿈치, 손목 landmark 추출
+- 양손 손목 visibility 계산
+- 손목 위치와 팔 움직임 기반 제스처 감지
+- 제스처 감지 프레임 수 계산
+- 제스처 비율 계산
+- 손 검출률 계산
+- 연속 프레임 간 손목 이동량 계산
+- 평균 손목 이동량 계산
+- 제스처 다양성 점수 계산
+- 손 검출 점수 계산
+- 손목 움직임 점수 계산
+- 제스처 점수 계산
+- 프레임별 제스처 분석 결과 저장
+
+MediaPipe Face Mesh 기반 얼굴/시선 분석
+
+- 얼굴 검출률
+- 검출 프레임 수
+- 눈 중심 좌표 계산
+- 코끝 위치 계산
+- 코 오프셋 계산
+- 시선 방향 추정
+- 시선 점수 계산
+- 아이컨택 수준 계산
+- 입 벌림 정도 계산
+- 눈 뜸 정도 계산
+- 프레임별 얼굴/시선 분석 결과 저장
+
+MediaPipe Face Mesh 기반 표정/감정 분석
+
+- Face Mesh의 입 landmark 기반 입 벌림 정도 계산
+- Face Mesh의 눈 landmark 기반 눈 뜸 정도 계산
+- 시선 안정성 점수와 표정 특징 결합
+- 프레임별 표정 상태 추정
+- neutral, engaged, speaking, low_energy, unknown 상태 분류
+- 표정 상태별 프레임 수 집계
+- 주요 표정 상태 계산
+- 표현력 점수 계산
+- 표정 다양성 점수 계산
+- 표정/감정 점수 계산
+- 프레임별 표정/감정 분석 결과 저장
+
+Spring Boot 결과 병합 반영
+
+- analysis-engine의 gesture 결과 수신
+- analysis-engine의 emotion 결과 수신
+- basicAnalysis.gesture에 제스처 분석 결과 병합
+- basicAnalysis.emotion에 표정/감정 분석 결과 병합
+- scoreSummary.gestureScore 추가
+- scoreSummary.emotionScore 추가
+- 최종 totalScore에 gestureScore 반영
+- 최종 totalScore에 emotionScore 반영
+- compact 분석 데이터에 gesture 포함
+- compact 분석 데이터에 emotion 포함
+- pipeline 정보에 gestureAnalysis 단계 추가
+- pipeline 정보에 emotionAnalysis 단계 추가
+
+프론트 상세 화면 실제 분석 결과 표시
+
+- 영상 및 프레임 정보 카드
+- 음성 분석 카드
+- STT 변환 결과 카드
+- Transcript 표시
+- STT Segment 테이블 표시
+- 필러 분석 카드
+- 감지된 필러 표현 테이블 표시
+- 자세 분석 카드
+- 프레임별 자세 분석 테이블
+- 제스처 분석 카드
+- 프레임별 제스처 분석 테이블
+- 얼굴/시선 분석 카드
+- 프레임별 얼굴/시선 분석 테이블
+- 표정/감정 분석 카드
+- 표정 상태 집계 테이블
+- 프레임별 표정/감정 분석 테이블
+```
+
+현재 점수 계산에 반영된 항목:
+
+```text
+
+totalScore = postureScore * 0.20
+           + gazeScore * 0.20
+           + speechScore * 0.30
+           + gestureScore * 0.15
+           + emotionScore * 0.15
+
+postureScore
+
+- MediaPipe Pose 기반 자세 점수
+
+gazeScore
+
+- MediaPipe Face Mesh 기반 시선 점수
+
+speechScore
+
+- faster-whisper STT 기반 음성 점수
+
+gestureScore
+
+- MediaPipe Pose 기반 제스처 점수
+
+emotionScore
+
+- MediaPipe Face Mesh 기반 표정/감정 점수
+```
+
 아직 실제 구현이 필요한 범위:
 
-- 실제 MediaPipe 분석 로직
 - 실제 Video LLM 모델 연결
 - 실제 OpenAI API 호출
+- 발표 내용 의미 분석
 - 사용자 인증
 - DB 영속화 운영 설정
 - 배포 설정

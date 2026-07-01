@@ -1,14 +1,18 @@
-package com.hanium.presentation.infrastructure.client.openai.dto;
+package com.hanium.presentation.infrastructure.client.analysis.dto;
 
-import java.util.List;
 import java.util.Map;
 
-public record OpenAiFeedbackResponse(
+public record AnalysisEngineResponse(
         String jobId,
-        String overallFeedback,
-        List<String> strengths,
-        List<String> improvements,
-        List<Map<String, Object>> practicePlan,
-        List<Map<String, Object>> timelineFeedback
+        String status,
+        Map<String, Object> videoInfo,
+        Map<String, Object> frame,
+        Map<String, Object> audio,
+        Map<String, Object> filler,
+        Map<String, Object> pose,
+        Map<String, Object> gesture,
+        Map<String, Object> face,
+        Map<String, Object> score,
+        Map<String, Object> error
 ) {
 }

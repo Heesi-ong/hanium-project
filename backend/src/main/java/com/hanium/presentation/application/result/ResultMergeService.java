@@ -52,6 +52,7 @@ public class ResultMergeService {
                         "postureScore", 0,
                         "gazeScore", 0,
                         "speechScore", 0,
+                        "gestureScore", 0,
                         "level", "FAILED"
                 ),
 
@@ -61,6 +62,7 @@ public class ResultMergeService {
                         "audio", Map.of(),
                         "filler", Map.of(),
                         "pose", Map.of(),
+                        "gesture", Map.of(),
                         "face", Map.of()
                 ),
 
@@ -92,6 +94,7 @@ public class ResultMergeService {
                 "postureScore", getOrDefault(score, "postureScore", 0),
                 "gazeScore", getOrDefault(score, "gazeScore", 0),
                 "speechScore", getOrDefault(score, "speechScore", 0),
+                "gestureScore", getOrDefault(score, "gestureScore", 0),
                 "level", resolveLevel(getNumberValue(score, "totalScore"))
         );
     }
@@ -105,6 +108,7 @@ public class ResultMergeService {
                 "audio", nullSafe(analysisEngineResponse.audio()),
                 "filler", nullSafe(analysisEngineResponse.filler()),
                 "pose", nullSafe(analysisEngineResponse.pose()),
+                "gesture", nullSafe(analysisEngineResponse.gesture()),
                 "face", nullSafe(analysisEngineResponse.face())
         );
     }
@@ -133,6 +137,11 @@ public class ResultMergeService {
         return Map.of(
                 "basicAnalysis", "analysis-engine",
                 "frameExtraction", "analysis-engine opencv",
+                "audioExtraction", "analysis-engine ffmpeg",
+                "sttAnalysis", "analysis-engine faster-whisper",
+                "poseAnalysis", "analysis-engine mediapipe pose",
+                "gestureAnalysis", "analysis-engine mediapipe pose wrist elbow",
+                "faceAnalysis", "analysis-engine mediapipe face mesh",
                 "videoLlmAnalysis", "video-llm-engine mock",
                 "compactAnalysis", "spring-boot compact",
                 "openAiFeedback", "openai mock",

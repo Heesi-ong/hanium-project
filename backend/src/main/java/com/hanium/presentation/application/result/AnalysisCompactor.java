@@ -32,6 +32,7 @@ public class AnalysisCompactor {
 
                 "visualSummary", Map.of(
                         "pose", nullSafe(analysisEngineResponse.pose()),
+                        "gesture", nullSafe(analysisEngineResponse.gesture()),
                         "face", nullSafe(analysisEngineResponse.face()),
                         "observations", nullSafe(videoLlmEngineResponse.observations()),
                         "globalSummary", nullSafe(videoLlmEngineResponse.globalSummary())

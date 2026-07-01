@@ -54,6 +54,17 @@ function ResultDetailPage() {
     const fillerInfo = basicAnalysis.filler || {};
     const faceInfo = basicAnalysis.face || {};
 
+    const sttInfo = audioInfo.stt || {};
+    const audioExtractionInfo = audioInfo.audioExtraction || {};
+
+    const sttSegments = Array.isArray(sttInfo.segments)
+        ? sttInfo.segments
+        : [];
+
+    const fillerWords = Array.isArray(fillerInfo.fillerWords)
+        ? fillerInfo.fillerWords
+        : [];
+
     const poseFrameResults = Array.isArray(poseInfo.frameResults)
         ? poseInfo.frameResults
         : [];
@@ -420,11 +431,39 @@ function ResultDetailPage() {
             return "영상 길이 기반 추정";
         }
 
+        if (method === "audio_extracted_duration_based_estimation") {
+            return "오디오 추출 + 길이 기반 추정";
+        }
+
+        if (method === "stt_based_analysis") {
+            return "STT 기반 분석";
+        }
+
+        if (method === "stt_based_filler_detection") {
+            return "STT 기반 필러 탐지";
+        }
+
+        if (method === "faster_whisper") {
+            return "faster-whisper";
+        }
+
         if (!method) {
             return "-";
         }
 
         return method;
+    }
+
+    function formatSttSuccess(success) {
+        if (success === true) {
+            return "성공";
+        }
+
+        if (success === false) {
+            return "실패";
+        }
+
+        return "-";
     }
 
     if (loading) {
@@ -610,7 +649,7 @@ function ResultDetailPage() {
                     {renderMetricCard(
                         "말하기 속도 점수",
                         audioInfo.speechSpeedScore,
-                        "추정 WPM이 적정 범위에 가까울수록 높은 점수입니다."
+                        "WPM이 적정 범위에 가까울수록 높은 점수입니다."
                     )}
 
                     {renderMetricCard(
@@ -620,33 +659,33 @@ function ResultDetailPage() {
                     )}
 
                     <article className="metric-card">
-                        <span>추정 WPM</span>
+                        <span>WPM</span>
                         <strong>{audioInfo.speechSpeedWpm ?? 0}</strong>
-                        <p>영상 길이를 기준으로 추정한 분당 단어 수입니다.</p>
+                        <p>STT 발화 구간과 단어 수를 기준으로 계산한 분당 단어 수입니다.</p>
                     </article>
 
                     <article className="metric-card">
-                        <span>추정 단어 수</span>
+                        <span>단어 수</span>
                         <strong>{audioInfo.estimatedWordCount ?? 0}개</strong>
-                        <p>추정 발화 시간 기준으로 계산한 단어 수입니다.</p>
+                        <p>STT transcript 기준 단어 수입니다.</p>
                     </article>
 
                     <article className="metric-card">
-                        <span>추정 발화 시간</span>
+                        <span>발화 시간</span>
                         <strong>{formatNumber(audioInfo.estimatedSpeechDurationSec)}초</strong>
-                        <p>전체 영상 중 말하고 있다고 추정한 시간입니다.</p>
+                        <p>STT segment 기준 실제 발화 시간 합계입니다.</p>
                     </article>
 
                     <article className="metric-card">
-                        <span>추정 침묵 시간</span>
+                        <span>침묵 시간</span>
                         <strong>{formatNumber(audioInfo.totalSilenceTime)}초</strong>
-                        <p>전체 영상 중 침묵 또는 정지 구간으로 추정한 시간입니다.</p>
+                        <p>STT segment 사이 공백으로 계산한 침묵 시간입니다.</p>
                     </article>
 
                     <article className="metric-card">
                         <span>침묵 횟수</span>
                         <strong>{audioInfo.silenceCount ?? 0}회</strong>
-                        <p>영상 길이를 기준으로 추정한 침묵 구간 수입니다.</p>
+                        <p>1초 이상 발화 공백이 발생한 횟수입니다.</p>
                     </article>
 
                     <article className="metric-card">
@@ -668,6 +707,98 @@ function ResultDetailPage() {
             </article>
 
             <article className="detail-card wide">
+                <h2>STT 변환 결과</h2>
+
+                <div className="metric-grid">
+                    <article className="metric-card">
+                        <span>STT 상태</span>
+                        <strong>{formatSttSuccess(sttInfo.success)}</strong>
+                        <p>음성 파일을 텍스트로 변환했는지 여부입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>STT 모델</span>
+                        <strong>{sttInfo.modelSize || "-"}</strong>
+                        <p>faster-whisper 모델 크기입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>언어</span>
+                        <strong>{sttInfo.language || "-"}</strong>
+                        <p>Whisper가 감지한 음성 언어입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>언어 확률</span>
+                        <strong>{formatPercent(sttInfo.languageProbability)}</strong>
+                        <p>감지 언어에 대한 모델의 추정 확률입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>Segment 수</span>
+                        <strong>{sttInfo.segmentCount ?? 0}개</strong>
+                        <p>STT가 나눈 발화 구간 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>오디오 추출</span>
+                        <strong>{audioExtractionInfo.success ? "성공" : "실패"}</strong>
+                        <p>영상에서 wav 오디오를 분리했는지 여부입니다.</p>
+                    </article>
+                </div>
+
+                {audioExtractionInfo.audioPath && (
+                    <div className="key-value-list">
+                        <div className="key-value-item">
+                            <span>audio.wav 저장 경로</span>
+                            <strong>{audioExtractionInfo.audioPath}</strong>
+                        </div>
+                    </div>
+                )}
+
+                {sttInfo.error && (
+                    <StateMessage type="error">{sttInfo.error}</StateMessage>
+                )}
+
+                <div className="feedback-block">
+                    <h3>Transcript</h3>
+                    <p>{sttInfo.transcript || "표시할 STT 변환 텍스트가 없습니다."}</p>
+                </div>
+
+                {sttSegments.length > 0 ? (
+                    <div className="pose-frame-table-wrap">
+                        <h3>STT Segment</h3>
+
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시작</th>
+                                <th>끝</th>
+                                <th>길이</th>
+                                <th>텍스트</th>
+                            </tr>
+                            </thead>
+
+                            <tbody>
+                            {sttSegments.map((segment, index) => (
+                                <tr key={`${segment.start}-${segment.end}-${index}`}>
+                                    <td>{index + 1}</td>
+                                    <td>{formatNumber(segment.start)}초</td>
+                                    <td>{formatNumber(segment.end)}초</td>
+                                    <td>{formatNumber(segment.duration)}초</td>
+                                    <td>{segment.text || "-"}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <p className="muted-text">표시할 STT segment가 없습니다.</p>
+                )}
+            </article>
+
+            <article className="detail-card wide">
                 <h2>필러 분석 요약</h2>
 
                 <div className="metric-grid">
@@ -678,15 +809,15 @@ function ResultDetailPage() {
                     )}
 
                     <article className="metric-card">
-                        <span>추정 필러 수</span>
+                        <span>필러 수</span>
                         <strong>{fillerInfo.fillerCount ?? 0}개</strong>
-                        <p>영상 길이와 추정 단어 수를 기반으로 계산한 필러 수입니다.</p>
+                        <p>STT transcript에서 감지한 필러 표현 수입니다.</p>
                     </article>
 
                     <article className="metric-card">
                         <span>필러 비율</span>
                         <strong>{formatPercent(fillerInfo.fillerRatio)}</strong>
-                        <p>추정 단어 수 대비 필러 표현의 비율입니다.</p>
+                        <p>전체 단어 수 대비 필러 표현의 비율입니다.</p>
                     </article>
 
                     <article className="metric-card">
@@ -698,6 +829,34 @@ function ResultDetailPage() {
 
                 {fillerInfo.note && (
                     <p className="muted-text">{fillerInfo.note}</p>
+                )}
+
+                {fillerWords.length > 0 ? (
+                    <div className="pose-frame-table-wrap">
+                        <h3>감지된 필러 표현</h3>
+
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>필러 표현</th>
+                                <th>횟수</th>
+                            </tr>
+                            </thead>
+
+                            <tbody>
+                            {fillerWords.map((item, index) => (
+                                <tr key={`${item.word}-${index}`}>
+                                    <td>{index + 1}</td>
+                                    <td>{item.word}</td>
+                                    <td>{item.count}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <p className="muted-text">감지된 필러 표현이 없습니다.</p>
                 )}
             </article>
 

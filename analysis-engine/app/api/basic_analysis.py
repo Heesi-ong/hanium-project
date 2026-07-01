@@ -1,7 +1,9 @@
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
 import cv2
+import imageio_ffmpeg
 import mediapipe as mp
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -19,6 +21,31 @@ LEFT_EYE_INNER_INDEX = 133
 RIGHT_EYE_INNER_INDEX = 362
 RIGHT_EYE_OUTER_INDEX = 263
 NOSE_TIP_INDEX = 1
+
+WHISPER_MODEL_SIZE = "base"
+WHISPER_DEVICE = "cpu"
+WHISPER_COMPUTE_TYPE = "int8"
+
+KOREAN_FILLER_WORDS = [
+    "음",
+    "어",
+    "아",
+    "그",
+    "저",
+    "음...",
+    "어...",
+    "아...",
+    "그...",
+    "저...",
+    "그러니까",
+    "뭐",
+    "약간",
+    "이제",
+    "사실",
+    "일단",
+    "막",
+    "좀",
+]
 
 
 class BasicAnalysisRequest(BaseModel):
@@ -53,10 +80,26 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
         frame_count=video_info["frameCount"],
     )
 
+    audio_extraction_result = extract_audio_from_video(
+        job_id=request.jobId,
+        video_path=resolved_video_path,
+    )
+
+    stt_result = transcribe_audio(audio_extraction_result)
+
     pose_result = analyze_pose_from_frames(frame_result["sampledFrames"])
     face_result = analyze_face_from_frames(frame_result["sampledFrames"])
-    audio_result = analyze_speech_from_video_duration(video_info["durationSec"])
-    filler_result = analyze_filler_from_speech(audio_result)
+
+    audio_result = analyze_speech(
+        duration_sec=video_info["durationSec"],
+        audio_extraction_result=audio_extraction_result,
+        stt_result=stt_result,
+    )
+
+    filler_result = analyze_filler_from_transcript(
+        stt_result=stt_result,
+        audio_result=audio_result,
+    )
 
     score_result = calculate_score(
         pose_result=pose_result,
@@ -244,6 +287,178 @@ def calculate_sample_frame_indexes(
         ]
 
     return sorted(set(frame_indexes))
+
+
+def extract_audio_from_video(
+        job_id: str,
+        video_path: Path,
+) -> Dict[str, Any]:
+    project_root = resolve_project_root()
+    audio_directory = project_root / "storage" / "temp" / job_id / "audio"
+    audio_directory.mkdir(parents=True, exist_ok=True)
+
+    audio_path = audio_directory / "audio.wav"
+
+    ffmpeg_executable = imageio_ffmpeg.get_ffmpeg_exe()
+
+    command = [
+        ffmpeg_executable,
+        "-y",
+        "-i",
+        str(video_path),
+        "-vn",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        str(audio_path),
+    ]
+
+    try:
+        completed_process = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+
+        if completed_process.returncode != 0:
+            return {
+                "success": False,
+                "audioPath": "",
+                "fileSize": 0,
+                "sampleRate": 16000,
+                "channelCount": 1,
+                "codec": "pcm_s16le",
+                "error": completed_process.stderr[-1000:],
+            }
+
+        if not audio_path.exists() or audio_path.stat().st_size == 0:
+            return {
+                "success": False,
+                "audioPath": "",
+                "fileSize": 0,
+                "sampleRate": 16000,
+                "channelCount": 1,
+                "codec": "pcm_s16le",
+                "error": "오디오 파일이 생성되지 않았습니다.",
+            }
+
+        return {
+            "success": True,
+            "audioPath": str(audio_path),
+            "fileSize": audio_path.stat().st_size,
+            "sampleRate": 16000,
+            "channelCount": 1,
+            "codec": "pcm_s16le",
+            "error": "",
+        }
+
+    except Exception as exception:
+        return {
+            "success": False,
+            "audioPath": "",
+            "fileSize": 0,
+            "sampleRate": 16000,
+            "channelCount": 1,
+            "codec": "pcm_s16le",
+            "error": str(exception),
+        }
+
+
+def transcribe_audio(audio_extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    if not audio_extraction_result.get("success"):
+        return create_empty_stt_result(
+            reason="오디오 추출에 실패하여 STT를 수행하지 못했습니다.",
+        )
+
+    audio_path = audio_extraction_result.get("audioPath", "")
+
+    if not audio_path or not Path(audio_path).exists():
+        return create_empty_stt_result(
+            reason="STT 대상 오디오 파일을 찾을 수 없습니다.",
+        )
+
+    try:
+        from faster_whisper import WhisperModel
+
+        model = WhisperModel(
+            WHISPER_MODEL_SIZE,
+            device=WHISPER_DEVICE,
+            compute_type=WHISPER_COMPUTE_TYPE,
+        )
+
+        segments_generator, info = model.transcribe(
+            audio_path,
+            language="ko",
+            beam_size=5,
+            vad_filter=True,
+        )
+
+        segments: List[Dict[str, Any]] = []
+        full_text_parts: List[str] = []
+
+        for segment in segments_generator:
+            text = segment.text.strip()
+
+            if text:
+                full_text_parts.append(text)
+
+            segments.append(
+                {
+                    "start": round(segment.start, 2),
+                    "end": round(segment.end, 2),
+                    "duration": round(segment.end - segment.start, 2),
+                    "text": text,
+                }
+            )
+
+        transcript = " ".join(full_text_parts).strip()
+
+        return {
+            "success": True,
+            "analysisMethod": "faster_whisper",
+            "modelSize": WHISPER_MODEL_SIZE,
+            "language": info.language,
+            "languageProbability": round(info.language_probability, 4),
+            "transcript": transcript,
+            "segments": segments,
+            "segmentCount": len(segments),
+            "wordCount": count_words_for_presentation(transcript),
+            "error": "",
+        }
+
+    except Exception as exception:
+        return create_empty_stt_result(
+            reason=str(exception),
+        )
+
+
+def create_empty_stt_result(reason: str) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "analysisMethod": "faster_whisper",
+        "modelSize": WHISPER_MODEL_SIZE,
+        "language": "unknown",
+        "languageProbability": 0,
+        "transcript": "",
+        "segments": [],
+        "segmentCount": 0,
+        "wordCount": 0,
+        "error": reason,
+    }
+
+
+def count_words_for_presentation(text: str) -> int:
+    normalized_text = text.strip()
+
+    if not normalized_text:
+        return 0
+
+    return len(normalized_text.split())
 
 
 def analyze_pose_from_frames(
@@ -471,18 +686,94 @@ def create_face_frame_result(
     }
 
 
-def analyze_speech_from_video_duration(duration_sec: float) -> Dict[str, Any]:
+def analyze_speech(
+        duration_sec: float,
+        audio_extraction_result: Dict[str, Any],
+        stt_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    if stt_result.get("success"):
+        return analyze_speech_from_stt(
+            duration_sec=duration_sec,
+            audio_extraction_result=audio_extraction_result,
+            stt_result=stt_result,
+        )
+
+    return analyze_speech_from_video_duration(
+        duration_sec=duration_sec,
+        audio_extraction_result=audio_extraction_result,
+        stt_result=stt_result,
+    )
+
+
+def analyze_speech_from_stt(
+        duration_sec: float,
+        audio_extraction_result: Dict[str, Any],
+        stt_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    safe_duration_sec = max(duration_sec, 0)
+
+    segments = stt_result.get("segments", [])
+    word_count = int(stt_result.get("wordCount", 0))
+
+    speech_duration_sec = calculate_segment_speech_duration(segments)
+    pause_analysis = analyze_pauses_from_segments(
+        segments=segments,
+        total_duration_sec=safe_duration_sec,
+    )
+
+    speech_speed_wpm = calculate_speech_speed_wpm(
+        word_count=word_count,
+        speech_duration_sec=speech_duration_sec,
+    )
+
+    speech_speed_score = calculate_speech_speed_score(speech_speed_wpm)
+    silence_score = calculate_silence_score(pause_analysis["silenceRatio"])
+
+    speech_score = int(
+        speech_speed_score * 0.7
+        + silence_score * 0.3
+    )
+
+    return {
+        "analysisMethod": "stt_based_analysis",
+        "audioExtraction": audio_extraction_result,
+        "stt": stt_result,
+        "durationSec": safe_duration_sec,
+        "estimatedSpeechDurationSec": speech_duration_sec,
+        "estimatedPauseDurationSec": pause_analysis["totalSilenceTime"],
+        "estimatedWordCount": word_count,
+        "speechSpeedWpm": speech_speed_wpm,
+        "speechSpeedScore": speech_speed_score,
+        "silenceCount": pause_analysis["silenceCount"],
+        "totalSilenceTime": pause_analysis["totalSilenceTime"],
+        "silenceRatio": pause_analysis["silenceRatio"],
+        "silenceScore": silence_score,
+        "speechScore": speech_score,
+        "note": "faster-whisper STT 결과를 기반으로 말하기 속도와 침묵 구간을 계산했습니다.",
+    }
+
+
+def analyze_speech_from_video_duration(
+        duration_sec: float,
+        audio_extraction_result: Dict[str, Any],
+        stt_result: Dict[str, Any],
+) -> Dict[str, Any]:
     safe_duration_sec = max(duration_sec, 0)
     estimated_speech_duration_sec = round(safe_duration_sec * 0.82, 2)
-    estimated_pause_duration_sec = round(safe_duration_sec - estimated_speech_duration_sec, 2)
+    estimated_pause_duration_sec = round(
+        safe_duration_sec - estimated_speech_duration_sec,
+        2,
+        )
 
     estimated_word_count = estimate_word_count(estimated_speech_duration_sec)
+
     speech_speed_wpm = calculate_speech_speed_wpm(
         word_count=estimated_word_count,
         speech_duration_sec=estimated_speech_duration_sec,
     )
 
     silence_count = estimate_silence_count(safe_duration_sec)
+
     silence_ratio = calculate_silence_ratio(
         silence_duration_sec=estimated_pause_duration_sec,
         duration_sec=safe_duration_sec,
@@ -497,7 +788,9 @@ def analyze_speech_from_video_duration(duration_sec: float) -> Dict[str, Any]:
     )
 
     return {
-        "analysisMethod": "duration_based_estimation",
+        "analysisMethod": "audio_extracted_duration_based_estimation",
+        "audioExtraction": audio_extraction_result,
+        "stt": stt_result,
         "durationSec": safe_duration_sec,
         "estimatedSpeechDurationSec": estimated_speech_duration_sec,
         "estimatedPauseDurationSec": estimated_pause_duration_sec,
@@ -509,7 +802,70 @@ def analyze_speech_from_video_duration(duration_sec: float) -> Dict[str, Any]:
         "silenceRatio": silence_ratio,
         "silenceScore": silence_score,
         "speechScore": speech_score,
-        "note": "현재 단계는 실제 음성 인식이 아닌 영상 길이 기반 추정 분석입니다.",
+        "note": "오디오는 추출했지만 STT에 실패하여 영상 길이 기반 추정값을 사용했습니다.",
+    }
+
+
+def calculate_segment_speech_duration(segments: List[Dict[str, Any]]) -> float:
+    total_duration = 0.0
+
+    for segment in segments:
+        duration = float(segment.get("duration", 0))
+        total_duration += max(duration, 0)
+
+    return round(total_duration, 2)
+
+
+def analyze_pauses_from_segments(
+        segments: List[Dict[str, Any]],
+        total_duration_sec: float,
+) -> Dict[str, Any]:
+    if not segments or total_duration_sec <= 0:
+        return {
+            "silenceCount": 0,
+            "totalSilenceTime": 0,
+            "silenceRatio": 0,
+        }
+
+    sorted_segments = sorted(
+        segments,
+        key=lambda segment: float(segment.get("start", 0)),
+    )
+
+    silence_threshold_sec = 1.0
+    silence_count = 0
+    total_silence_time = 0.0
+
+    previous_end = 0.0
+
+    for segment in sorted_segments:
+        start = float(segment.get("start", 0))
+        end = float(segment.get("end", 0))
+
+        gap = max(start - previous_end, 0)
+
+        if gap >= silence_threshold_sec:
+            silence_count += 1
+            total_silence_time += gap
+
+        previous_end = max(previous_end, end)
+
+    tail_gap = max(total_duration_sec - previous_end, 0)
+
+    if tail_gap >= silence_threshold_sec:
+        silence_count += 1
+        total_silence_time += tail_gap
+
+    total_silence_time = round(total_silence_time, 2)
+    silence_ratio = calculate_silence_ratio(
+        silence_duration_sec=total_silence_time,
+        duration_sec=total_duration_sec,
+    )
+
+    return {
+        "silenceCount": silence_count,
+        "totalSilenceTime": total_silence_time,
+        "silenceRatio": silence_ratio,
     }
 
 
@@ -580,13 +936,35 @@ def calculate_silence_score(silence_ratio: float) -> int:
     return 40
 
 
-def analyze_filler_from_speech(audio_result: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_filler_from_transcript(
+        stt_result: Dict[str, Any],
+        audio_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    transcript = stt_result.get("transcript", "")
     estimated_word_count = int(audio_result.get("estimatedWordCount", 0))
-    duration_sec = float(audio_result.get("durationSec", 0))
+
+    if stt_result.get("success") and transcript:
+        filler_detail = count_filler_words(transcript)
+        filler_count = filler_detail["totalCount"]
+        filler_ratio = calculate_filler_ratio(
+            filler_count=filler_count,
+            estimated_word_count=max(estimated_word_count, 1),
+        )
+
+        filler_score = calculate_filler_score(filler_ratio)
+
+        return {
+            "analysisMethod": "stt_based_filler_detection",
+            "fillerWords": filler_detail["items"],
+            "fillerCount": filler_count,
+            "fillerRatio": filler_ratio,
+            "fillerScore": filler_score,
+            "note": "STT 변환 텍스트에서 한국어 필러 표현을 탐지했습니다.",
+        }
 
     filler_count = estimate_filler_count(
         estimated_word_count=estimated_word_count,
-        duration_sec=duration_sec,
+        duration_sec=float(audio_result.get("durationSec", 0)),
     )
 
     filler_ratio = calculate_filler_ratio(
@@ -598,10 +976,40 @@ def analyze_filler_from_speech(audio_result: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "analysisMethod": "duration_based_estimation",
+        "fillerWords": [],
         "fillerCount": filler_count,
         "fillerRatio": filler_ratio,
         "fillerScore": filler_score,
-        "note": "현재 단계는 실제 STT 기반 필러 검출이 아닌 추정값입니다.",
+        "note": "STT 결과가 없어 필러 수를 추정값으로 계산했습니다.",
+    }
+
+
+def count_filler_words(transcript: str) -> Dict[str, Any]:
+    items: List[Dict[str, Any]] = []
+    total_count = 0
+
+    normalized_transcript = transcript.replace(",", " ").replace(".", " ")
+
+    tokens = normalized_transcript.split()
+
+    for filler_word in KOREAN_FILLER_WORDS:
+        count = tokens.count(filler_word)
+
+        if count <= 0:
+            continue
+
+        items.append(
+            {
+                "word": filler_word,
+                "count": count,
+            }
+        )
+
+        total_count += count
+
+    return {
+        "totalCount": total_count,
+        "items": items,
     }
 
 
@@ -760,8 +1168,22 @@ def create_empty_face_result() -> Dict[str, Any]:
 
 
 def create_empty_audio_result() -> Dict[str, Any]:
+    empty_stt = create_empty_stt_result(
+        reason="영상 정보를 읽지 못해 STT를 수행하지 못했습니다.",
+    )
+
     return {
-        "analysisMethod": "duration_based_estimation",
+        "analysisMethod": "stt_based_analysis",
+        "audioExtraction": {
+            "success": False,
+            "audioPath": "",
+            "fileSize": 0,
+            "sampleRate": 16000,
+            "channelCount": 1,
+            "codec": "pcm_s16le",
+            "error": "영상 정보를 읽지 못해 오디오를 추출하지 못했습니다.",
+        },
+        "stt": empty_stt,
         "durationSec": 0,
         "estimatedSpeechDurationSec": 0,
         "estimatedPauseDurationSec": 0,
@@ -779,7 +1201,8 @@ def create_empty_audio_result() -> Dict[str, Any]:
 
 def create_empty_filler_result() -> Dict[str, Any]:
     return {
-        "analysisMethod": "duration_based_estimation",
+        "analysisMethod": "stt_based_filler_detection",
+        "fillerWords": [],
         "fillerCount": 0,
         "fillerRatio": 0,
         "fillerScore": 0,

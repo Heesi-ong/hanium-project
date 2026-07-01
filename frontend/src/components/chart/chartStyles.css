@@ -1,0 +1,79 @@
+.chart-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.chart-card h2 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+}
+
+.chart-card-description {
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #6b7280;
+}
+
+.chart-container {
+    position: relative;
+    width: 100%;
+    min-height: 320px;
+}
+
+.chart-container.radar {
+    min-height: 380px;
+}
+
+.chart-container.bar {
+    min-height: 340px;
+}
+
+.chart-container.doughnut {
+    min-height: 340px;
+}
+
+.chart-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.chart-summary-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #f9fafb;
+    border: 1px solid #eef2f7;
+}
+
+.chart-summary-item span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.chart-summary-item strong {
+    font-size: 18px;
+    color: #111827;
+}
+
+@media (max-width: 768px) {
+    .chart-card {
+        padding: 18px;
+        border-radius: 14px;
+    }
+
+    .chart-container,
+    .chart-container.radar,
+    .chart-container.bar,
+    .chart-container.doughnut {
+        min-height: 280px;
+    }
+}

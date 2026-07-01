@@ -1,0 +1,117 @@
+.summary-overview {
+    margin: 24px 0;
+    padding: 28px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #111827 0%, #1f2937 55%, #0f172a 100%);
+    color: #ffffff;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
+}
+
+.summary-overview-main {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    align-items: flex-start;
+    margin-bottom: 24px;
+}
+
+.summary-eyebrow {
+    display: inline-block;
+    margin-bottom: 10px;
+    color: #93c5fd;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.summary-overview h2 {
+    margin: 0 0 10px;
+    font-size: 26px;
+    font-weight: 800;
+}
+
+.summary-overview p {
+    margin: 0;
+    max-width: 680px;
+    color: #d1d5db;
+    font-size: 15px;
+    line-height: 1.7;
+}
+
+.summary-score-box {
+    min-width: 150px;
+    padding: 18px 20px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    text-align: center;
+}
+
+.summary-score-box span {
+    display: block;
+    margin-bottom: 6px;
+    color: #d1d5db;
+    font-size: 13px;
+}
+
+.summary-score-box strong {
+    display: block;
+    font-size: 42px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.summary-score-box em {
+    display: inline-block;
+    margin-top: 8px;
+    font-style: normal;
+    font-size: 13px;
+    color: #bfdbfe;
+}
+
+.summary-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+}
+
+.summary-overview-item {
+    padding: 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.summary-overview-item span {
+    display: block;
+    margin-bottom: 8px;
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+.summary-overview-item strong {
+    display: block;
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 800;
+}
+
+@media (max-width: 768px) {
+    .summary-overview {
+        padding: 22px;
+        border-radius: 18px;
+    }
+
+    .summary-overview-main {
+        flex-direction: column;
+    }
+
+    .summary-score-box {
+        width: 100%;
+    }
+
+    .summary-overview h2 {
+        font-size: 22px;
+    }
+}

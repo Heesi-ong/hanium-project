@@ -1,7 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
+import EmotionDoughnutChart from "../components/chart/EmotionDoughnutChart";
+import ResultScoreChart from "../components/chart/ResultScoreChart";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
+import AudioAnalysisSection from "../components/result-detail/AudioAnalysisSection";
+import EmotionAnalysisSection from "../components/result-detail/EmotionAnalysisSection";
+import FaceAnalysisSection from "../components/result-detail/FaceAnalysisSection";
+import FeedbackSection from "../components/result-detail/FeedbackSection";
+import FillerAnalysisSection from "../components/result-detail/FillerAnalysisSection";
+import GestureAnalysisSection from "../components/result-detail/GestureAnalysisSection";
+import PipelineSection from "../components/result-detail/PipelineSection";
+import PoseAnalysisSection from "../components/result-detail/PoseAnalysisSection";
+import PracticePlanSection from "../components/result-detail/PracticePlanSection";
+import ResultSummaryOverview from "../components/result-detail/ResultSummaryOverview";
+import SttSection from "../components/result-detail/SttSection";
+import TimelineFeedbackSection from "../components/result-detail/TimelineFeedbackSection";
+import VideoInfoSection from "../components/result-detail/VideoInfoSection";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import {
@@ -290,34 +306,6 @@ function ResultDetailPage() {
         return value;
     }
 
-    function formatNumber(value, digits = 2) {
-        if (value === null || value === undefined || value === "") {
-            return "-";
-        }
-
-        if (typeof value !== "number") {
-            return value;
-        }
-
-        return Number.isInteger(value) ? value : value.toFixed(digits);
-    }
-
-    function formatPercent(value) {
-        if (value === null || value === undefined || typeof value !== "number") {
-            return "-";
-        }
-
-        return `${Math.round(value * 100)}%`;
-    }
-
-    function formatFileSize(fileSize) {
-        if (!fileSize && fileSize !== 0) {
-            return "-";
-        }
-
-        return `${(fileSize / 1024 / 1024).toFixed(2)}MB`;
-    }
-
     function getScoreClassName(value) {
         if (typeof value !== "number") {
             return "score-value muted";
@@ -358,46 +346,6 @@ function ResultDetailPage() {
         return "metric-value poor";
     }
 
-    function formatObjectValue(value) {
-        if (value === null || value === undefined) {
-            return "-";
-        }
-
-        if (typeof value === "object") {
-            return JSON.stringify(value, null, 2);
-        }
-
-        return String(value);
-    }
-
-    function renderKeyValueSection(title, data) {
-        const entries = Object.entries(data || {});
-
-        return (
-            <article className="detail-card">
-                <h2>{title}</h2>
-
-                {entries.length === 0 ? (
-                    <p className="muted-text">표시할 데이터가 없습니다.</p>
-                ) : (
-                    <div className="key-value-list">
-                        {entries.map(([key, value]) => (
-                            <div className="key-value-item" key={key}>
-                                <span>{key}</span>
-
-                                {typeof value === "object" && value !== null ? (
-                                    <pre>{formatObjectValue(value)}</pre>
-                                ) : (
-                                    <strong>{formatObjectValue(value)}</strong>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </article>
-        );
-    }
-
     function renderMetricCard(label, value, helper) {
         return (
             <article className="metric-card">
@@ -408,126 +356,6 @@ function ResultDetailPage() {
                 {helper && <p>{helper}</p>}
             </article>
         );
-    }
-
-    function formatEyeContactLevel(level) {
-        if (level === "good") {
-            return "좋음";
-        }
-
-        if (level === "normal") {
-            return "보통";
-        }
-
-        if (level === "weak") {
-            return "약함";
-        }
-
-        if (level === "poor") {
-            return "부족";
-        }
-
-        return "알 수 없음";
-    }
-
-    function formatGazeDirection(direction) {
-        if (direction === "left") {
-            return "왼쪽";
-        }
-
-        if (direction === "right") {
-            return "오른쪽";
-        }
-
-        if (direction === "center") {
-            return "중앙";
-        }
-
-        return "알 수 없음";
-    }
-
-    function formatAnalysisMethod(method) {
-        if (method === "duration_based_estimation") {
-            return "영상 길이 기반 추정";
-        }
-
-        if (method === "audio_extracted_duration_based_estimation") {
-            return "오디오 추출 + 길이 기반 추정";
-        }
-
-        if (method === "stt_based_analysis") {
-            return "STT 기반 분석";
-        }
-
-        if (method === "stt_based_filler_detection") {
-            return "STT 기반 필러 탐지";
-        }
-
-        if (method === "faster_whisper") {
-            return "faster-whisper";
-        }
-
-        if (method === "mediapipe_pose_wrist_elbow_based") {
-            return "MediaPipe 팔/손목 기반";
-        }
-
-        if (method === "mediapipe_face_mesh_expression_based") {
-            return "MediaPipe Face Mesh 표정 기반";
-        }
-
-        if (!method) {
-            return "-";
-        }
-
-        return method;
-    }
-
-    function formatSttSuccess(success) {
-        if (success === true) {
-            return "성공";
-        }
-
-        if (success === false) {
-            return "실패";
-        }
-
-        return "-";
-    }
-
-    function formatBoolean(value) {
-        if (value === true) {
-            return "예";
-        }
-
-        if (value === false) {
-            return "아니오";
-        }
-
-        return "-";
-    }
-
-    function formatEmotionLabel(label) {
-        if (label === "neutral") {
-            return "중립";
-        }
-
-        if (label === "engaged") {
-            return "몰입/집중";
-        }
-
-        if (label === "speaking") {
-            return "발화 중";
-        }
-
-        if (label === "low_energy") {
-            return "낮은 에너지";
-        }
-
-        if (label === "unknown") {
-            return "알 수 없음";
-        }
-
-        return label || "-";
     }
 
     if (loading) {
@@ -616,17 +444,17 @@ function ResultDetailPage() {
             <StateMessage type="error">{error}</StateMessage>
 
             <StateMessage type="polling">
-                {retrying || polling || isRunning
-                    ? (
-                        <>
-                            분석 상태를 자동으로 확인하는 중입니다. 현재 상태:{" "}
-                            <StatusBadge
-                                status={currentStatus}
-                                label={currentStatusDescription}
-                            />
-                        </>
-                    )
-                    : ""}
+                {retrying || polling || isRunning ? (
+                    <>
+                        분석 상태를 자동으로 확인하는 중입니다. 현재 상태:{" "}
+                        <StatusBadge
+                            status={currentStatus}
+                            label={currentStatusDescription}
+                        />
+                    </>
+                ) : (
+                    ""
+                )}
             </StateMessage>
 
             <StateMessage type="success">
@@ -660,744 +488,84 @@ function ResultDetailPage() {
                 </div>
             </div>
 
-            <article className="detail-card wide">
-                <h2>영상 및 프레임 정보</h2>
-
-                <div className="metric-grid">
-                    <article className="metric-card">
-                        <span>영상 길이</span>
-                        <strong>{formatNumber(videoInfo.durationSec)}초</strong>
-                        <p>전체 발표 영상 길이입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>FPS</span>
-                        <strong>{formatNumber(videoInfo.fps)}</strong>
-                        <p>초당 프레임 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>해상도</span>
-                        <strong>
-                            {videoInfo.width && videoInfo.height
-                                ? `${videoInfo.width} × ${videoInfo.height}`
-                                : "-"}
-                        </strong>
-                        <p>업로드된 영상의 가로·세로 크기입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>파일 크기</span>
-                        <strong>{formatFileSize(videoInfo.fileSize)}</strong>
-                        <p>업로드된 영상 파일 크기입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>추출 프레임</span>
-                        <strong>{frameInfo.savedCount ?? 0}개</strong>
-                        <p>자세·제스처·얼굴·표정 분석에 사용된 샘플 프레임 수입니다.</p>
-                    </article>
-                </div>
-            </article>
-
-            <article className="detail-card wide">
-                <h2>음성 분석 요약</h2>
-
-                <div className="metric-grid">
-                    {renderMetricCard(
-                        "음성 점수",
-                        audioInfo.speechScore,
-                        "말하기 속도 점수와 침묵 점수를 합산한 음성 평가 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "말하기 속도 점수",
-                        audioInfo.speechSpeedScore,
-                        "WPM이 적정 범위에 가까울수록 높은 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "침묵 점수",
-                        audioInfo.silenceScore,
-                        "전체 길이 대비 침묵 비율이 낮을수록 높은 점수입니다."
-                    )}
-
-                    <article className="metric-card">
-                        <span>WPM</span>
-                        <strong>{audioInfo.speechSpeedWpm ?? 0}</strong>
-                        <p>STT 발화 구간과 단어 수를 기준으로 계산한 분당 단어 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>단어 수</span>
-                        <strong>{audioInfo.estimatedWordCount ?? 0}개</strong>
-                        <p>STT transcript 기준 단어 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>발화 시간</span>
-                        <strong>{formatNumber(audioInfo.estimatedSpeechDurationSec)}초</strong>
-                        <p>STT segment 기준 실제 발화 시간 합계입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>침묵 시간</span>
-                        <strong>{formatNumber(audioInfo.totalSilenceTime)}초</strong>
-                        <p>STT segment 사이 공백으로 계산한 침묵 시간입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>침묵 횟수</span>
-                        <strong>{audioInfo.silenceCount ?? 0}회</strong>
-                        <p>1초 이상 발화 공백이 발생한 횟수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>침묵 비율</span>
-                        <strong>{formatPercent(audioInfo.silenceRatio)}</strong>
-                        <p>전체 발표 시간 대비 침묵 시간의 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>분석 방식</span>
-                        <strong>{formatAnalysisMethod(audioInfo.analysisMethod)}</strong>
-                        <p>현재 음성 분석에 사용된 계산 방식입니다.</p>
-                    </article>
-                </div>
-
-                {audioInfo.note && (
-                    <p className="muted-text">{audioInfo.note}</p>
-                )}
-            </article>
-
-            <article className="detail-card wide">
-                <h2>STT 변환 결과</h2>
-
-                <div className="metric-grid">
-                    <article className="metric-card">
-                        <span>STT 상태</span>
-                        <strong>{formatSttSuccess(sttInfo.success)}</strong>
-                        <p>음성 파일을 텍스트로 변환했는지 여부입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>STT 모델</span>
-                        <strong>{sttInfo.modelSize || "-"}</strong>
-                        <p>faster-whisper 모델 크기입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>언어</span>
-                        <strong>{sttInfo.language || "-"}</strong>
-                        <p>Whisper가 감지한 음성 언어입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>언어 확률</span>
-                        <strong>{formatPercent(sttInfo.languageProbability)}</strong>
-                        <p>감지 언어에 대한 모델의 추정 확률입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>Segment 수</span>
-                        <strong>{sttInfo.segmentCount ?? 0}개</strong>
-                        <p>STT가 나눈 발화 구간 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>오디오 추출</span>
-                        <strong>{audioExtractionInfo.success ? "성공" : "실패"}</strong>
-                        <p>영상에서 wav 오디오를 분리했는지 여부입니다.</p>
-                    </article>
-                </div>
-
-                {audioExtractionInfo.audioPath && (
-                    <div className="key-value-list">
-                        <div className="key-value-item">
-                            <span>audio.wav 저장 경로</span>
-                            <strong>{audioExtractionInfo.audioPath}</strong>
-                        </div>
-                    </div>
-                )}
-
-                {sttInfo.error && (
-                    <StateMessage type="error">{sttInfo.error}</StateMessage>
-                )}
-
-                <div className="feedback-block">
-                    <h3>Transcript</h3>
-                    <p>{sttInfo.transcript || "표시할 STT 변환 텍스트가 없습니다."}</p>
-                </div>
-
-                {sttSegments.length > 0 ? (
-                    <div className="pose-frame-table-wrap">
-                        <h3>STT Segment</h3>
-
-                        <table className="pose-frame-table">
-                            <thead>
-                            <tr>
-                                <th>순서</th>
-                                <th>시작</th>
-                                <th>끝</th>
-                                <th>길이</th>
-                                <th>텍스트</th>
-                            </tr>
-                            </thead>
-
-                            <tbody>
-                            {sttSegments.map((segment, index) => (
-                                <tr key={`${segment.start}-${segment.end}-${index}`}>
-                                    <td>{index + 1}</td>
-                                    <td>{formatNumber(segment.start)}초</td>
-                                    <td>{formatNumber(segment.end)}초</td>
-                                    <td>{formatNumber(segment.duration)}초</td>
-                                    <td>{segment.text || "-"}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 STT segment가 없습니다.</p>
-                )}
-            </article>
-
-            <article className="detail-card wide">
-                <h2>필러 분석 요약</h2>
-
-                <div className="metric-grid">
-                    {renderMetricCard(
-                        "필러 점수",
-                        fillerInfo.fillerScore,
-                        "전체 단어 수 대비 필러 비율이 낮을수록 높은 점수입니다."
-                    )}
-
-                    <article className="metric-card">
-                        <span>필러 수</span>
-                        <strong>{fillerInfo.fillerCount ?? 0}개</strong>
-                        <p>STT transcript에서 감지한 필러 표현 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>필러 비율</span>
-                        <strong>{formatPercent(fillerInfo.fillerRatio)}</strong>
-                        <p>전체 단어 수 대비 필러 표현의 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>분석 방식</span>
-                        <strong>{formatAnalysisMethod(fillerInfo.analysisMethod)}</strong>
-                        <p>현재 필러 분석에 사용된 계산 방식입니다.</p>
-                    </article>
-                </div>
-
-                {fillerInfo.note && (
-                    <p className="muted-text">{fillerInfo.note}</p>
-                )}
-
-                {fillerWords.length > 0 ? (
-                    <div className="pose-frame-table-wrap">
-                        <h3>감지된 필러 표현</h3>
-
-                        <table className="pose-frame-table">
-                            <thead>
-                            <tr>
-                                <th>순서</th>
-                                <th>필러 표현</th>
-                                <th>횟수</th>
-                            </tr>
-                            </thead>
-
-                            <tbody>
-                            {fillerWords.map((item, index) => (
-                                <tr key={`${item.word}-${index}`}>
-                                    <td>{index + 1}</td>
-                                    <td>{item.word}</td>
-                                    <td>{item.count}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="muted-text">감지된 필러 표현이 없습니다.</p>
-                )}
-            </article>
-
-            <article className="detail-card wide">
-                <h2>자세 분석 요약</h2>
-
-                <div className="metric-grid">
-                    {renderMetricCard(
-                        "자세 점수",
-                        poseInfo.postureScore,
-                        "검출률과 어깨 균형 점수를 합산한 자세 평가 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "어깨 균형 점수",
-                        poseInfo.shoulderBalanceScore,
-                        "좌우 어깨 높이 차이를 기반으로 계산한 균형 점수입니다."
-                    )}
-
-                    <article className="metric-card">
-                        <span>자세 검출률</span>
-                        <strong>{formatPercent(poseInfo.detectionRate)}</strong>
-                        <p>추출된 프레임 중 포즈가 감지된 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>검출 프레임</span>
-                        <strong>
-                            {poseInfo.detectedFrameCount ?? 0} / {poseInfo.totalFrameCount ?? 0}
-                        </strong>
-                        <p>포즈가 감지된 프레임 수와 전체 프레임 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>평균 어깨 차이</span>
-                        <strong>{formatNumber(poseInfo.averageShoulderDiff, 4)}</strong>
-                        <p>좌우 어깨 y좌표 차이의 평균값입니다.</p>
-                    </article>
-                </div>
-
-                {poseFrameResults.length > 0 ? (
-                    <div className="pose-frame-table-wrap">
-                        <h3>프레임별 자세 분석</h3>
-
-                        <table className="pose-frame-table">
-                            <thead>
-                            <tr>
-                                <th>순서</th>
-                                <th>시간</th>
-                                <th>검출</th>
-                                <th>어깨 차이</th>
-                                <th>어깨 균형 점수</th>
-                            </tr>
-                            </thead>
-
-                            <tbody>
-                            {poseFrameResults.map((frameResult, index) => (
-                                <tr key={`${frameResult.sequence}-${index}`}>
-                                    <td>{frameResult.sequence ?? index + 1}</td>
-                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                    <td>
-                                        {frameResult.poseDetected ? (
-                                            <span className="mini-badge success">검출</span>
-                                        ) : (
-                                            <span className="mini-badge muted">미검출</span>
-                                        )}
-                                    </td>
-                                    <td>{formatNumber(frameResult.shoulderDiff, 4)}</td>
-                                    <td>{frameResult.shoulderBalanceScore ?? 0}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 프레임별 자세 분석 결과가 없습니다.</p>
-                )}
-            </article>
-
-            <article className="detail-card wide">
-                <h2>제스처 분석 요약</h2>
-
-                <div className="metric-grid">
-                    {renderMetricCard(
-                        "제스처 점수",
-                        gestureInfo.gestureScore,
-                        "제스처 사용 비율, 손 검출률, 손목 움직임을 합산한 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "제스처 다양성 점수",
-                        gestureInfo.gestureVarietyScore,
-                        "제스처가 너무 적거나 과하지 않고 적정 비율일 때 높은 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "손 검출 점수",
-                        gestureInfo.handVisibilityScore,
-                        "프레임에서 양손 손목이 안정적으로 검출된 정도입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "손목 움직임 점수",
-                        gestureInfo.gestureMovementScore,
-                        "프레임 간 손목 이동량이 적절할수록 높은 점수입니다."
-                    )}
-
-                    <article className="metric-card">
-                        <span>제스처 비율</span>
-                        <strong>{formatPercent(gestureInfo.gestureRate)}</strong>
-                        <p>전체 포즈 프레임 중 제스처가 감지된 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>제스처 프레임</span>
-                        <strong>
-                            {gestureInfo.gestureFrameCount ?? 0} / {gestureInfo.totalFrameCount ?? 0}
-                        </strong>
-                        <p>제스처가 감지된 프레임 수와 전체 프레임 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>손 검출률</span>
-                        <strong>{formatPercent(gestureInfo.handVisibilityRate)}</strong>
-                        <p>양손 손목 landmark가 안정적으로 보인 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>평균 손목 이동량</span>
-                        <strong>{formatNumber(gestureInfo.averageWristMovement, 4)}</strong>
-                        <p>연속 프레임 간 손목 좌표 이동 거리의 평균입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>분석 방식</span>
-                        <strong>{formatAnalysisMethod(gestureInfo.analysisMethod)}</strong>
-                        <p>현재 제스처 분석에 사용된 계산 방식입니다.</p>
-                    </article>
-                </div>
-
-                {gestureInfo.note && (
-                    <p className="muted-text">{gestureInfo.note}</p>
-                )}
-
-                {gestureFrameResults.length > 0 ? (
-                    <div className="pose-frame-table-wrap">
-                        <h3>프레임별 제스처 분석</h3>
-
-                        <table className="pose-frame-table">
-                            <thead>
-                            <tr>
-                                <th>순서</th>
-                                <th>시간</th>
-                                <th>제스처</th>
-                                <th>왼손 보임</th>
-                                <th>오른손 보임</th>
-                                <th>왼손 활성</th>
-                                <th>오른손 활성</th>
-                                <th>왼손 이동</th>
-                                <th>오른손 이동</th>
-                            </tr>
-                            </thead>
-
-                            <tbody>
-                            {gestureFrameResults.map((frameResult, index) => (
-                                <tr key={`${frameResult.sequence}-${index}`}>
-                                    <td>{frameResult.sequence ?? index + 1}</td>
-                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                    <td>
-                                        {frameResult.gestureDetected ? (
-                                            <span className="mini-badge success">감지</span>
-                                        ) : (
-                                            <span className="mini-badge muted">없음</span>
-                                        )}
-                                    </td>
-                                    <td>{formatBoolean(frameResult.leftHandVisible)}</td>
-                                    <td>{formatBoolean(frameResult.rightHandVisible)}</td>
-                                    <td>{formatBoolean(frameResult.leftHandActive)}</td>
-                                    <td>{formatBoolean(frameResult.rightHandActive)}</td>
-                                    <td>{formatNumber(frameResult.leftWristMovement, 4)}</td>
-                                    <td>{formatNumber(frameResult.rightWristMovement, 4)}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 프레임별 제스처 분석 결과가 없습니다.</p>
-                )}
-            </article>
-
-            <article className="detail-card wide">
-                <h2>얼굴/시선 분석 요약</h2>
-
-                <div className="metric-grid">
-                    {renderMetricCard(
-                        "시선 점수",
-                        faceInfo.gazeScore,
-                        "코끝 위치와 양쪽 눈 중심의 차이를 기반으로 계산한 시선 안정성 점수입니다."
-                    )}
-
-                    <article className="metric-card">
-                        <span>얼굴 검출률</span>
-                        <strong>{formatPercent(faceInfo.detectionRate)}</strong>
-                        <p>추출된 프레임 중 얼굴이 감지된 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>검출 프레임</span>
-                        <strong>
-                            {faceInfo.detectedFrameCount ?? 0} / {faceInfo.totalFrameCount ?? 0}
-                        </strong>
-                        <p>얼굴이 감지된 프레임 수와 전체 프레임 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>평균 코 오프셋</span>
-                        <strong>{formatNumber(faceInfo.averageNoseOffset, 4)}</strong>
-                        <p>눈 중심 대비 코끝 위치 차이의 평균값입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>아이컨택 수준</span>
-                        <strong>{formatEyeContactLevel(faceInfo.eyeContactLevel)}</strong>
-                        <p>시선 점수를 기준으로 환산한 발표 시선 안정성입니다.</p>
-                    </article>
-                </div>
-
-                {faceFrameResults.length > 0 ? (
-                    <div className="pose-frame-table-wrap">
-                        <h3>프레임별 얼굴/시선 분석</h3>
-
-                        <table className="pose-frame-table">
-                            <thead>
-                            <tr>
-                                <th>순서</th>
-                                <th>시간</th>
-                                <th>검출</th>
-                                <th>시선 방향</th>
-                                <th>코 오프셋</th>
-                                <th>시선 점수</th>
-                                <th>입 벌림</th>
-                                <th>눈 뜸</th>
-                            </tr>
-                            </thead>
-
-                            <tbody>
-                            {faceFrameResults.map((frameResult, index) => (
-                                <tr key={`${frameResult.sequence}-${index}`}>
-                                    <td>{frameResult.sequence ?? index + 1}</td>
-                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                    <td>
-                                        {frameResult.faceDetected ? (
-                                            <span className="mini-badge success">검출</span>
-                                        ) : (
-                                            <span className="mini-badge muted">미검출</span>
-                                        )}
-                                    </td>
-                                    <td>{formatGazeDirection(frameResult.gazeDirection)}</td>
-                                    <td>{formatNumber(frameResult.absNoseOffset, 4)}</td>
-                                    <td>{frameResult.gazeScore ?? 0}</td>
-                                    <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
-                                    <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 프레임별 얼굴/시선 분석 결과가 없습니다.</p>
-                )}
-            </article>
-
-            <article className="detail-card wide">
-                <h2>표정/감정 분석 요약</h2>
-
-                <div className="metric-grid">
-                    {renderMetricCard(
-                        "표정 점수",
-                        emotionInfo.emotionScore,
-                        "표정 표현 점수, 다양성 점수, 얼굴 검출률을 합산한 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "표현력 점수",
-                        emotionInfo.expressionScore,
-                        "입 벌림, 눈 뜸 정도, 시선 안정성을 기반으로 계산한 점수입니다."
-                    )}
-
-                    {renderMetricCard(
-                        "표정 다양성 점수",
-                        emotionInfo.expressionVarietyScore,
-                        "분석된 표정 상태 종류가 다양할수록 높은 점수입니다."
-                    )}
-
-                    <article className="metric-card">
-                        <span>주요 표정 상태</span>
-                        <strong>{formatEmotionLabel(emotionInfo.dominantEmotion)}</strong>
-                        <p>가장 많이 감지된 표정 상태입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>얼굴 검출률</span>
-                        <strong>{formatPercent(emotionInfo.detectionRate)}</strong>
-                        <p>표정 분석에 사용할 수 있었던 얼굴 프레임 비율입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>검출 프레임</span>
-                        <strong>
-                            {emotionInfo.detectedFrameCount ?? 0} / {emotionInfo.totalFrameCount ?? 0}
-                        </strong>
-                        <p>얼굴이 검출되어 표정 분석에 사용된 프레임 수입니다.</p>
-                    </article>
-
-                    <article className="metric-card">
-                        <span>분석 방식</span>
-                        <strong>{formatAnalysisMethod(emotionInfo.analysisMethod)}</strong>
-                        <p>현재 표정/감정 분석에 사용된 계산 방식입니다.</p>
-                    </article>
-                </div>
-
-                {emotionInfo.note && (
-                    <p className="muted-text">{emotionInfo.note}</p>
-                )}
-
-                <div className="pose-frame-table-wrap">
-                    <h3>표정 상태 집계</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>표정 상태</th>
-                            <th>프레임 수</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {Object.entries(emotionCounts).map(([emotion, count]) => (
-                            <tr key={emotion}>
-                                <td>{formatEmotionLabel(emotion)}</td>
-                                <td>{count}</td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                {emotionFrameResults.length > 0 ? (
-                    <div className="pose-frame-table-wrap">
-                        <h3>프레임별 표정/감정 분석</h3>
-
-                        <table className="pose-frame-table">
-                            <thead>
-                            <tr>
-                                <th>순서</th>
-                                <th>시간</th>
-                                <th>얼굴 검출</th>
-                                <th>표정 상태</th>
-                                <th>표현 점수</th>
-                                <th>입 벌림</th>
-                                <th>눈 뜸</th>
-                                <th>시선 점수</th>
-                            </tr>
-                            </thead>
-
-                            <tbody>
-                            {emotionFrameResults.map((frameResult, index) => (
-                                <tr key={`${frameResult.sequence}-${index}`}>
-                                    <td>{frameResult.sequence ?? index + 1}</td>
-                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                    <td>
-                                        {frameResult.faceDetected ? (
-                                            <span className="mini-badge success">검출</span>
-                                        ) : (
-                                            <span className="mini-badge muted">미검출</span>
-                                        )}
-                                    </td>
-                                    <td>{formatEmotionLabel(frameResult.emotionLabel)}</td>
-                                    <td>{frameResult.expressionScore ?? 0}</td>
-                                    <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
-                                    <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
-                                    <td>{frameResult.gazeScore ?? 0}</td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 프레임별 표정/감정 분석 결과가 없습니다.</p>
-                )}
-            </article>
+            <ResultSummaryOverview
+                scoreSummary={scoreSummary}
+                videoInfo={videoInfo}
+                audioInfo={audioInfo}
+                fillerInfo={fillerInfo}
+                poseInfo={poseInfo}
+                faceInfo={faceInfo}
+                gestureInfo={gestureInfo}
+                emotionInfo={emotionInfo}
+            />
+
+            <ResultScoreChart scoreSummary={scoreSummary} />
 
             <div className="detail-grid">
-                <article className="detail-card wide">
-                    <h2>종합 피드백</h2>
+                <AnalysisMetricBarChart
+                    poseInfo={poseInfo}
+                    faceInfo={faceInfo}
+                    gestureInfo={gestureInfo}
+                    emotionInfo={emotionInfo}
+                />
 
-                    <div className="feedback-block">
-                        <h3>전체 평가</h3>
-                        <p>{feedback.overall || "표시할 종합 피드백이 없습니다."}</p>
-                    </div>
-
-                    <div className="feedback-columns">
-                        <div>
-                            <h3>강점</h3>
-                            {Array.isArray(feedback.strengths) &&
-                            feedback.strengths.length > 0 ? (
-                                <ul>
-                                    {feedback.strengths.map((item, index) => (
-                                        <li key={`${item}-${index}`}>{item}</li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="muted-text">표시할 강점이 없습니다.</p>
-                            )}
-                        </div>
-
-                        <div>
-                            <h3>개선점</h3>
-                            {Array.isArray(feedback.improvements) &&
-                            feedback.improvements.length > 0 ? (
-                                <ul>
-                                    {feedback.improvements.map((item, index) => (
-                                        <li key={`${item}-${index}`}>{item}</li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="muted-text">표시할 개선점이 없습니다.</p>
-                            )}
-                        </div>
-                    </div>
-                </article>
-
-                {renderKeyValueSection("시각 분석", visualAnalysis)}
+                <EmotionDoughnutChart emotionCounts={emotionCounts} />
             </div>
 
-            <article className="detail-card">
-                <h2>연습 계획</h2>
+            <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
 
-                {Array.isArray(practicePlan) && practicePlan.length > 0 ? (
-                    <div className="practice-list">
-                        {practicePlan.map((item, index) => (
-                            <div className="practice-item" key={`${item.title}-${index}`}>
-                                <span>{index + 1}</span>
+            <FeedbackSection
+                feedback={feedback}
+                visualAnalysis={visualAnalysis}
+            />
 
-                                <div>
-                                    <h3>{item.title || "연습 항목"}</h3>
-                                    <p>{item.description || "-"}</p>
-                                    {item.duration && <strong>{item.duration}</strong>}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 연습 계획이 없습니다.</p>
-                )}
-            </article>
+            <PracticePlanSection practicePlan={practicePlan} />
 
-            <article className="detail-card">
-                <h2>타임라인 피드백</h2>
+            <TimelineFeedbackSection timelineFeedback={timelineFeedback} />
 
-                {Array.isArray(timelineFeedback) && timelineFeedback.length > 0 ? (
-                    <div className="timeline-list">
-                        {timelineFeedback.map((item, index) => (
-                            <div className="timeline-item" key={`${item.category}-${index}`}>
-                                <span>{item.category || "feedback"}</span>
-                                <h3>{item.summary || "요약 정보가 없습니다."}</h3>
-                                <p>{item.recommendation || "-"}</p>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <p className="muted-text">표시할 타임라인 피드백이 없습니다.</p>
-                )}
-            </article>
+            <AudioAnalysisSection
+                audioInfo={audioInfo}
+                renderMetricCard={renderMetricCard}
+            />
 
-            {renderKeyValueSection("파이프라인 정보", pipeline)}
+            <SttSection
+                sttInfo={sttInfo}
+                audioExtractionInfo={audioExtractionInfo}
+                sttSegments={sttSegments}
+            />
+
+            <FillerAnalysisSection
+                fillerInfo={fillerInfo}
+                fillerWords={fillerWords}
+                renderMetricCard={renderMetricCard}
+            />
+
+            <PoseAnalysisSection
+                poseInfo={poseInfo}
+                poseFrameResults={poseFrameResults}
+                renderMetricCard={renderMetricCard}
+            />
+
+            <GestureAnalysisSection
+                gestureInfo={gestureInfo}
+                gestureFrameResults={gestureFrameResults}
+                renderMetricCard={renderMetricCard}
+            />
+
+            <FaceAnalysisSection
+                faceInfo={faceInfo}
+                faceFrameResults={faceFrameResults}
+                renderMetricCard={renderMetricCard}
+            />
+
+            <EmotionAnalysisSection
+                emotionInfo={emotionInfo}
+                emotionCounts={emotionCounts}
+                emotionFrameResults={emotionFrameResults}
+                renderMetricCard={renderMetricCard}
+            />
+
+            <PipelineSection pipeline={pipeline} />
         </section>
     );
 }

@@ -2,16 +2,11 @@ package com.hanium.presentation.domain.analysis.entity;
 
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-@Getter
 @Entity
 @Table(name = "analysis_jobs")
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class AnalysisJob {
 
     @Id
@@ -35,6 +30,9 @@ public class AnalysisJob {
 
     private LocalDateTime completedAt;
 
+    protected AnalysisJob() {
+    }
+
     private AnalysisJob(String jobId) {
         this.jobId = jobId;
         this.status = AnalysisStatus.UPLOADED;
@@ -43,6 +41,34 @@ public class AnalysisJob {
 
     public static AnalysisJob create(String jobId) {
         return new AnalysisJob(jobId);
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getJobId() {
+        return jobId;
+    }
+
+    public AnalysisStatus getStatus() {
+        return status;
+    }
+
+    public String getFailReason() {
+        return failReason;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getStartedAt() {
+        return startedAt;
+    }
+
+    public LocalDateTime getCompletedAt() {
+        return completedAt;
     }
 
     public void startBasicAnalysis() {

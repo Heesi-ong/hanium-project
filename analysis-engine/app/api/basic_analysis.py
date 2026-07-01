@@ -1,4 +1,5 @@
 import subprocess
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -6,6 +7,8 @@ import cv2
 import imageio_ffmpeg
 import mediapipe as mp
 from fastapi import APIRouter
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["basic-analysis"])
@@ -39,6 +42,18 @@ MOUTH_RIGHT_INDEX = 291
 WHISPER_MODEL_SIZE = "base"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
+
+POSE_TASK_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "pose_landmarker/pose_landmarker_lite/float16/latest/"
+    "pose_landmarker_lite.task"
+)
+
+FACE_TASK_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "face_landmarker/face_landmarker/float16/latest/"
+    "face_landmarker.task"
+)
 
 KOREAN_FILLER_WORDS = [
     "음",
@@ -103,6 +118,7 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
 
     pose_result = analyze_pose_from_frames(frame_result["sampledFrames"])
     gesture_result = analyze_gesture_from_pose_result(pose_result)
+
     face_result = analyze_face_from_frames(frame_result["sampledFrames"])
     emotion_result = analyze_emotion_from_face_result(face_result)
 
@@ -186,6 +202,50 @@ def resolve_project_root() -> Path:
         return current_path.parent
 
     return current_path.parent
+
+
+def resolve_model_directory() -> Path:
+    project_root = resolve_project_root()
+    model_directory = project_root / "storage" / "models" / "mediapipe"
+    model_directory.mkdir(parents=True, exist_ok=True)
+    return model_directory
+
+
+def download_file_if_missing(
+        url: str,
+        file_path: Path,
+) -> None:
+    if file_path.exists() and file_path.stat().st_size > 0:
+        return
+
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(url, file_path)
+
+
+def get_pose_model_path() -> Path:
+    model_path = resolve_model_directory() / "pose_landmarker_lite.task"
+    download_file_if_missing(POSE_TASK_MODEL_URL, model_path)
+    return model_path
+
+
+def get_face_model_path() -> Path:
+    model_path = resolve_model_directory() / "face_landmarker.task"
+    download_file_if_missing(FACE_TASK_MODEL_URL, model_path)
+    return model_path
+
+
+def create_mediapipe_image_from_frame_path(frame_path: str) -> mp.Image | None:
+    image = cv2.imread(frame_path)
+
+    if image is None:
+        return None
+
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    return mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=rgb_image,
+    )
 
 
 def extract_video_info(video_path: Path) -> Dict[str, Any]:
@@ -487,41 +547,53 @@ def analyze_pose_from_frames(
     if not sampled_frames:
         return create_empty_pose_result()
 
-    mp_pose = mp.solutions.pose
+    pose_model_path = get_pose_model_path()
+
+    base_options = python.BaseOptions(
+        model_asset_path=str(pose_model_path),
+    )
+
+    options = vision.PoseLandmarkerOptions(
+        base_options=base_options,
+        running_mode=vision.RunningMode.IMAGE,
+        num_poses=1,
+        min_pose_detection_confidence=0.5,
+        min_pose_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
 
     analyzed_frames: List[Dict[str, Any]] = []
     detected_count = 0
     shoulder_balance_scores: List[int] = []
     shoulder_diffs: List[float] = []
 
-    with mp_pose.Pose(
-            static_image_mode=True,
-            model_complexity=1,
-            enable_segmentation=False,
-            min_detection_confidence=0.5,
-    ) as pose:
+    with vision.PoseLandmarker.create_from_options(options) as landmarker:
         for frame_info in sampled_frames:
             frame_path = frame_info.get("framePath")
 
             if not frame_path:
-                continue
-
-            image = cv2.imread(frame_path)
-
-            if image is None:
                 analyzed_frames.append(create_pose_frame_result(frame_info, False))
                 continue
 
-            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            result = pose.process(rgb_image)
+            mp_image = create_mediapipe_image_from_frame_path(frame_path)
+
+            if mp_image is None:
+                analyzed_frames.append(create_pose_frame_result(frame_info, False))
+                continue
+
+            result = landmarker.detect(mp_image)
 
             if not result.pose_landmarks:
                 analyzed_frames.append(create_pose_frame_result(frame_info, False))
                 continue
 
-            detected_count += 1
+            landmarks = result.pose_landmarks[0]
 
-            landmarks = result.pose_landmarks.landmark
+            if len(landmarks) <= RIGHT_WRIST_INDEX:
+                analyzed_frames.append(create_pose_frame_result(frame_info, False))
+                continue
+
+            detected_count += 1
 
             left_shoulder = landmarks[LEFT_SHOULDER_INDEX]
             right_shoulder = landmarks[RIGHT_SHOULDER_INDEX]
@@ -564,6 +636,7 @@ def analyze_pose_from_frames(
     )
 
     return {
+        "analysisMethod": "mediapipe_tasks_pose_landmarker",
         "detectionRate": detection_rate,
         "detectedFrameCount": detected_count,
         "totalFrameCount": total_frames,
@@ -576,9 +649,17 @@ def analyze_pose_from_frames(
 
 def create_landmark_dict(landmark: Any) -> Dict[str, float]:
     return {
-        "x": round(landmark.x, 4),
-        "y": round(landmark.y, 4),
-        "visibility": round(landmark.visibility, 4),
+        "x": round(float(getattr(landmark, "x", 0)), 4),
+        "y": round(float(getattr(landmark, "y", 0)), 4),
+        "visibility": round(float(getattr(landmark, "visibility", 1)), 4),
+        "presence": round(float(getattr(landmark, "presence", 1)), 4),
+    }
+
+
+def create_face_landmark_dict(landmark: Any) -> Dict[str, float]:
+    return {
+        "x": round(float(getattr(landmark, "x", 0)), 4),
+        "y": round(float(getattr(landmark, "y", 0)), 4),
     }
 
 
@@ -700,7 +781,7 @@ def analyze_gesture_from_pose_result(
     gesture_score = max(0, min(gesture_score, 100))
 
     return {
-        "analysisMethod": "mediapipe_pose_wrist_elbow_based",
+        "analysisMethod": "mediapipe_tasks_pose_landmarker_wrist_elbow_based",
         "gestureScore": gesture_score,
         "gestureRate": gesture_rate,
         "gestureFrameCount": active_count,
@@ -711,7 +792,7 @@ def analyze_gesture_from_pose_result(
         "handVisibilityScore": hand_visibility_score,
         "gestureMovementScore": gesture_movement_score,
         "frameResults": gesture_frames,
-        "note": "손목, 팔꿈치, 어깨 위치를 기반으로 제스처 사용 여부와 움직임 정도를 추정했습니다.",
+        "note": "MediaPipe Tasks PoseLandmarker의 손목, 팔꿈치, 어깨 위치를 기반으로 제스처를 추정했습니다.",
     }
 
 
@@ -810,41 +891,61 @@ def analyze_face_from_frames(
     if not sampled_frames:
         return create_empty_face_result()
 
-    mp_face_mesh = mp.solutions.face_mesh
+    face_model_path = get_face_model_path()
+
+    base_options = python.BaseOptions(
+        model_asset_path=str(face_model_path),
+    )
+
+    options = vision.FaceLandmarkerOptions(
+        base_options=base_options,
+        running_mode=vision.RunningMode.IMAGE,
+        num_faces=1,
+        min_face_detection_confidence=0.5,
+        min_face_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+        output_face_blendshapes=False,
+        output_facial_transformation_matrixes=False,
+    )
 
     analyzed_frames: List[Dict[str, Any]] = []
     detected_count = 0
     gaze_scores: List[int] = []
     nose_offsets: List[float] = []
 
-    with mp_face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-    ) as face_mesh:
+    with vision.FaceLandmarker.create_from_options(options) as landmarker:
         for frame_info in sampled_frames:
             frame_path = frame_info.get("framePath")
 
             if not frame_path:
-                continue
-
-            image = cv2.imread(frame_path)
-
-            if image is None:
                 analyzed_frames.append(create_face_frame_result(frame_info, False))
                 continue
 
-            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            result = face_mesh.process(rgb_image)
+            mp_image = create_mediapipe_image_from_frame_path(frame_path)
 
-            if not result.multi_face_landmarks:
+            if mp_image is None:
+                analyzed_frames.append(create_face_frame_result(frame_info, False))
+                continue
+
+            result = landmarker.detect(mp_image)
+
+            if not result.face_landmarks:
+                analyzed_frames.append(create_face_frame_result(frame_info, False))
+                continue
+
+            landmarks = result.face_landmarks[0]
+
+            required_max_index = max(
+                RIGHT_EYE_OUTER_INDEX,
+                RIGHT_EYE_BOTTOM_INDEX,
+                MOUTH_RIGHT_INDEX,
+            )
+
+            if len(landmarks) <= required_max_index:
                 analyzed_frames.append(create_face_frame_result(frame_info, False))
                 continue
 
             detected_count += 1
-
-            landmarks = result.multi_face_landmarks[0].landmark
 
             left_eye_outer = landmarks[LEFT_EYE_OUTER_INDEX]
             left_eye_inner = landmarks[LEFT_EYE_INNER_INDEX]
@@ -903,18 +1004,9 @@ def analyze_face_from_frames(
                     "mouthOpenness": mouth_openness,
                     "eyeOpenness": eye_openness,
                     "landmarks": {
-                        "leftEyeOuter": {
-                            "x": round(left_eye_outer.x, 4),
-                            "y": round(left_eye_outer.y, 4),
-                        },
-                        "rightEyeOuter": {
-                            "x": round(right_eye_outer.x, 4),
-                            "y": round(right_eye_outer.y, 4),
-                        },
-                        "noseTip": {
-                            "x": round(nose_tip.x, 4),
-                            "y": round(nose_tip.y, 4),
-                        },
+                        "leftEyeOuter": create_face_landmark_dict(left_eye_outer),
+                        "rightEyeOuter": create_face_landmark_dict(right_eye_outer),
+                        "noseTip": create_face_landmark_dict(nose_tip),
                     },
                 }
             )
@@ -926,6 +1018,7 @@ def analyze_face_from_frames(
     eye_contact_level = resolve_eye_contact_level(average_gaze_score)
 
     return {
+        "analysisMethod": "mediapipe_tasks_face_landmarker",
         "detectionRate": detection_rate,
         "detectedFrameCount": detected_count,
         "totalFrameCount": total_frames,
@@ -1063,7 +1156,7 @@ def analyze_emotion_from_face_result(
     dominant_emotion = resolve_dominant_emotion(emotion_counts)
 
     return {
-        "analysisMethod": "mediapipe_face_mesh_expression_based",
+        "analysisMethod": "mediapipe_tasks_face_landmarker_expression_based",
         "emotionScore": emotion_score,
         "expressionScore": expression_score,
         "expressionVarietyScore": expression_variety_score,
@@ -1073,7 +1166,7 @@ def analyze_emotion_from_face_result(
         "detectedFrameCount": detected_frame_count,
         "totalFrameCount": total_frames,
         "frameResults": emotion_frames,
-        "note": "Face Mesh의 입 벌림, 눈 뜸 정도, 시선 안정성을 기반으로 발표 표정 상태를 추정했습니다.",
+        "note": "MediaPipe Tasks FaceLandmarker의 입 벌림, 눈 뜸 정도, 시선 안정성을 기반으로 발표 표정 상태를 추정했습니다.",
     }
 
 
@@ -1617,6 +1710,7 @@ def calculate_average_float(values: List[float]) -> float:
 
 def create_empty_pose_result() -> Dict[str, Any]:
     return {
+        "analysisMethod": "mediapipe_tasks_pose_landmarker",
         "detectionRate": 0,
         "detectedFrameCount": 0,
         "totalFrameCount": 0,
@@ -1629,7 +1723,7 @@ def create_empty_pose_result() -> Dict[str, Any]:
 
 def create_empty_gesture_result() -> Dict[str, Any]:
     return {
-        "analysisMethod": "mediapipe_pose_wrist_elbow_based",
+        "analysisMethod": "mediapipe_tasks_pose_landmarker_wrist_elbow_based",
         "gestureScore": 0,
         "gestureRate": 0,
         "gestureFrameCount": 0,
@@ -1646,6 +1740,7 @@ def create_empty_gesture_result() -> Dict[str, Any]:
 
 def create_empty_face_result() -> Dict[str, Any]:
     return {
+        "analysisMethod": "mediapipe_tasks_face_landmarker",
         "detectionRate": 0,
         "detectedFrameCount": 0,
         "totalFrameCount": 0,
@@ -1658,7 +1753,7 @@ def create_empty_face_result() -> Dict[str, Any]:
 
 def create_empty_emotion_result() -> Dict[str, Any]:
     return {
-        "analysisMethod": "mediapipe_face_mesh_expression_based",
+        "analysisMethod": "mediapipe_tasks_face_landmarker_expression_based",
         "emotionScore": 0,
         "expressionScore": 0,
         "expressionVarietyScore": 0,

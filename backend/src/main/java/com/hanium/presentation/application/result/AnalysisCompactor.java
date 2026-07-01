@@ -34,6 +34,7 @@ public class AnalysisCompactor {
                         "pose", nullSafe(analysisEngineResponse.pose()),
                         "gesture", nullSafe(analysisEngineResponse.gesture()),
                         "face", nullSafe(analysisEngineResponse.face()),
+                        "emotion", nullSafe(analysisEngineResponse.emotion()),
                         "observations", nullSafe(videoLlmEngineResponse.observations()),
                         "globalSummary", nullSafe(videoLlmEngineResponse.globalSummary())
                 ),

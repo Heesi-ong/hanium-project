@@ -10,7 +10,9 @@ public record AnalysisEngineResponse(
         Map<String, Object> audio,
         Map<String, Object> filler,
         Map<String, Object> pose,
+        Map<String, Object> gesture,
         Map<String, Object> face,
+        Map<String, Object> emotion,
         Map<String, Object> score,
         Map<String, Object> error
 ) {

@@ -54,6 +54,7 @@ function ResultDetailPage() {
     const audioInfo = basicAnalysis.audio || {};
     const fillerInfo = basicAnalysis.filler || {};
     const faceInfo = basicAnalysis.face || {};
+    const emotionInfo = basicAnalysis.emotion || {};
 
     const sttInfo = audioInfo.stt || {};
     const audioExtractionInfo = audioInfo.audioExtraction || {};
@@ -77,6 +78,12 @@ function ResultDetailPage() {
     const faceFrameResults = Array.isArray(faceInfo.frameResults)
         ? faceInfo.frameResults
         : [];
+
+    const emotionFrameResults = Array.isArray(emotionInfo.frameResults)
+        ? emotionInfo.frameResults
+        : [];
+
+    const emotionCounts = emotionInfo.emotionCounts || {};
 
     const currentStatus = analysisStatus?.status || result.status || null;
     const currentStatusDescription =
@@ -107,6 +114,10 @@ function ResultDetailPage() {
             {
                 label: "제스처",
                 value: scoreSummary.gestureScore,
+            },
+            {
+                label: "표정",
+                value: scoreSummary.emotionScore,
             },
         ],
         [scoreSummary]
@@ -460,6 +471,10 @@ function ResultDetailPage() {
             return "MediaPipe 팔/손목 기반";
         }
 
+        if (method === "mediapipe_face_mesh_expression_based") {
+            return "MediaPipe Face Mesh 표정 기반";
+        }
+
         if (!method) {
             return "-";
         }
@@ -489,6 +504,30 @@ function ResultDetailPage() {
         }
 
         return "-";
+    }
+
+    function formatEmotionLabel(label) {
+        if (label === "neutral") {
+            return "중립";
+        }
+
+        if (label === "engaged") {
+            return "몰입/집중";
+        }
+
+        if (label === "speaking") {
+            return "발화 중";
+        }
+
+        if (label === "low_energy") {
+            return "낮은 에너지";
+        }
+
+        if (label === "unknown") {
+            return "알 수 없음";
+        }
+
+        return label || "-";
     }
 
     if (loading) {
@@ -656,7 +695,7 @@ function ResultDetailPage() {
                     <article className="metric-card">
                         <span>추출 프레임</span>
                         <strong>{frameInfo.savedCount ?? 0}개</strong>
-                        <p>자세·제스처·얼굴 분석에 사용된 샘플 프레임 수입니다.</p>
+                        <p>자세·제스처·얼굴·표정 분석에 사용된 샘플 프레임 수입니다.</p>
                     </article>
                 </div>
             </article>
@@ -1123,6 +1162,8 @@ function ResultDetailPage() {
                                 <th>시선 방향</th>
                                 <th>코 오프셋</th>
                                 <th>시선 점수</th>
+                                <th>입 벌림</th>
+                                <th>눈 뜸</th>
                             </tr>
                             </thead>
 
@@ -1141,6 +1182,8 @@ function ResultDetailPage() {
                                     <td>{formatGazeDirection(frameResult.gazeDirection)}</td>
                                     <td>{formatNumber(frameResult.absNoseOffset, 4)}</td>
                                     <td>{frameResult.gazeScore ?? 0}</td>
+                                    <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
+                                    <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
                                 </tr>
                             ))}
                             </tbody>
@@ -1148,6 +1191,126 @@ function ResultDetailPage() {
                     </div>
                 ) : (
                     <p className="muted-text">표시할 프레임별 얼굴/시선 분석 결과가 없습니다.</p>
+                )}
+            </article>
+
+            <article className="detail-card wide">
+                <h2>표정/감정 분석 요약</h2>
+
+                <div className="metric-grid">
+                    {renderMetricCard(
+                        "표정 점수",
+                        emotionInfo.emotionScore,
+                        "표정 표현 점수, 다양성 점수, 얼굴 검출률을 합산한 점수입니다."
+                    )}
+
+                    {renderMetricCard(
+                        "표현력 점수",
+                        emotionInfo.expressionScore,
+                        "입 벌림, 눈 뜸 정도, 시선 안정성을 기반으로 계산한 점수입니다."
+                    )}
+
+                    {renderMetricCard(
+                        "표정 다양성 점수",
+                        emotionInfo.expressionVarietyScore,
+                        "분석된 표정 상태 종류가 다양할수록 높은 점수입니다."
+                    )}
+
+                    <article className="metric-card">
+                        <span>주요 표정 상태</span>
+                        <strong>{formatEmotionLabel(emotionInfo.dominantEmotion)}</strong>
+                        <p>가장 많이 감지된 표정 상태입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>얼굴 검출률</span>
+                        <strong>{formatPercent(emotionInfo.detectionRate)}</strong>
+                        <p>표정 분석에 사용할 수 있었던 얼굴 프레임 비율입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>검출 프레임</span>
+                        <strong>
+                            {emotionInfo.detectedFrameCount ?? 0} / {emotionInfo.totalFrameCount ?? 0}
+                        </strong>
+                        <p>얼굴이 검출되어 표정 분석에 사용된 프레임 수입니다.</p>
+                    </article>
+
+                    <article className="metric-card">
+                        <span>분석 방식</span>
+                        <strong>{formatAnalysisMethod(emotionInfo.analysisMethod)}</strong>
+                        <p>현재 표정/감정 분석에 사용된 계산 방식입니다.</p>
+                    </article>
+                </div>
+
+                {emotionInfo.note && (
+                    <p className="muted-text">{emotionInfo.note}</p>
+                )}
+
+                <div className="pose-frame-table-wrap">
+                    <h3>표정 상태 집계</h3>
+
+                    <table className="pose-frame-table">
+                        <thead>
+                        <tr>
+                            <th>표정 상태</th>
+                            <th>프레임 수</th>
+                        </tr>
+                        </thead>
+
+                        <tbody>
+                        {Object.entries(emotionCounts).map(([emotion, count]) => (
+                            <tr key={emotion}>
+                                <td>{formatEmotionLabel(emotion)}</td>
+                                <td>{count}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {emotionFrameResults.length > 0 ? (
+                    <div className="pose-frame-table-wrap">
+                        <h3>프레임별 표정/감정 분석</h3>
+
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>얼굴 검출</th>
+                                <th>표정 상태</th>
+                                <th>표현 점수</th>
+                                <th>입 벌림</th>
+                                <th>눈 뜸</th>
+                                <th>시선 점수</th>
+                            </tr>
+                            </thead>
+
+                            <tbody>
+                            {emotionFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.faceDetected ? (
+                                            <span className="mini-badge success">검출</span>
+                                        ) : (
+                                            <span className="mini-badge muted">미검출</span>
+                                        )}
+                                    </td>
+                                    <td>{formatEmotionLabel(frameResult.emotionLabel)}</td>
+                                    <td>{frameResult.expressionScore ?? 0}</td>
+                                    <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
+                                    <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
+                                    <td>{frameResult.gazeScore ?? 0}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <p className="muted-text">표시할 프레임별 표정/감정 분석 결과가 없습니다.</p>
                 )}
             </article>
 

@@ -19,6 +19,11 @@ public class AnalysisCompactor {
                 "jobId", jobId,
                 "createdAt", LocalDateTime.now().toString(),
 
+                "videoSummary", Map.of(
+                        "videoInfo", nullSafe(analysisEngineResponse.videoInfo()),
+                        "frame", nullSafe(analysisEngineResponse.frame())
+                ),
+
                 "scoreSummary", Map.of(
                         "score", nullSafe(analysisEngineResponse.score()),
                         "audio", nullSafe(analysisEngineResponse.audio()),
@@ -26,6 +31,8 @@ public class AnalysisCompactor {
                 ),
 
                 "visualSummary", Map.of(
+                        "pose", nullSafe(analysisEngineResponse.pose()),
+                        "face", nullSafe(analysisEngineResponse.face()),
                         "observations", nullSafe(videoLlmEngineResponse.observations()),
                         "globalSummary", nullSafe(videoLlmEngineResponse.globalSummary())
                 ),

@@ -6,6 +6,7 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -27,8 +28,8 @@ public class ResultMergeService {
                 "visualAnalysis", createVisualAnalysis(videoLlmEngineResponse),
 
                 "feedback", createFeedback(openAiFeedbackResponse),
-                "practicePlan", openAiFeedbackResponse.practicePlan(),
-                "timelineFeedback", openAiFeedbackResponse.timelineFeedback(),
+                "practicePlan", nullSafeList(openAiFeedbackResponse.practicePlan()),
+                "timelineFeedback", nullSafeList(openAiFeedbackResponse.timelineFeedback()),
 
                 "pipeline", createCompletedPipeline()
         );
@@ -45,6 +46,7 @@ public class ResultMergeService {
                 "createdAt", LocalDateTime.now().toString(),
                 "failedStep", failedStep == null ? "UNKNOWN" : failedStep,
                 "failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason,
+
                 "scoreSummary", Map.of(
                         "totalScore", 0,
                         "postureScore", 0,
@@ -52,13 +54,30 @@ public class ResultMergeService {
                         "speechScore", 0,
                         "level", "FAILED"
                 ),
+
+                "basicAnalysis", Map.of(
+                        "videoInfo", Map.of(),
+                        "frame", Map.of(),
+                        "audio", Map.of(),
+                        "filler", Map.of(),
+                        "pose", Map.of(),
+                        "face", Map.of()
+                ),
+
+                "visualAnalysis", Map.of(
+                        "model", Map.of(),
+                        "observations", Map.of(),
+                        "globalSummary", Map.of()
+                ),
+
                 "feedback", Map.of(
                         "overall", "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.",
-                        "strengths", java.util.List.of(),
-                        "improvements", java.util.List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요.")
+                        "strengths", List.of(),
+                        "improvements", List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요.")
                 ),
-                "practicePlan", java.util.List.of(),
-                "timelineFeedback", java.util.List.of(),
+
+                "practicePlan", List.of(),
+                "timelineFeedback", List.of(),
                 "pipeline", createFailedPipeline(failedStep)
         );
     }
@@ -82,6 +101,7 @@ public class ResultMergeService {
     ) {
         return Map.of(
                 "videoInfo", nullSafe(analysisEngineResponse.videoInfo()),
+                "frame", nullSafe(analysisEngineResponse.frame()),
                 "audio", nullSafe(analysisEngineResponse.audio()),
                 "filler", nullSafe(analysisEngineResponse.filler()),
                 "pose", nullSafe(analysisEngineResponse.pose()),
@@ -104,14 +124,15 @@ public class ResultMergeService {
     ) {
         return Map.of(
                 "overall", openAiFeedbackResponse.overallFeedback(),
-                "strengths", openAiFeedbackResponse.strengths(),
-                "improvements", openAiFeedbackResponse.improvements()
+                "strengths", nullSafeStringList(openAiFeedbackResponse.strengths()),
+                "improvements", nullSafeStringList(openAiFeedbackResponse.improvements())
         );
     }
 
     private Map<String, Object> createCompletedPipeline() {
         return Map.of(
-                "basicAnalysis", "analysis-engine mock",
+                "basicAnalysis", "analysis-engine",
+                "frameExtraction", "analysis-engine opencv",
                 "videoLlmAnalysis", "video-llm-engine mock",
                 "compactAnalysis", "spring-boot compact",
                 "openAiFeedback", "openai mock",
@@ -143,6 +164,14 @@ public class ResultMergeService {
 
     private Map<String, Object> nullSafe(Map<String, Object> value) {
         return value == null ? Map.of() : value;
+    }
+
+    private List<Map<String, Object>> nullSafeList(List<Map<String, Object>> value) {
+        return value == null ? List.of() : value;
+    }
+
+    private List<String> nullSafeStringList(List<String> value) {
+        return value == null ? List.of() : value;
     }
 
     private Object getOrDefault(

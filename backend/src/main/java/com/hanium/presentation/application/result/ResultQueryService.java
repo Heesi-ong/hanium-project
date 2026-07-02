@@ -39,10 +39,8 @@ public class ResultQueryService {
     }
 
     @Transactional(readOnly = true)
-    public AnalysisResultResponse getFinalResult(String jobId) {
-        if (!analysisJobRepository.existsByJobId(jobId)) {
-            throw new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND);
-        }
+    public AnalysisResultResponse getFinalResult(String jobId, Long ownerId) {
+        validateOwnership(jobId, ownerId);
 
         Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
 
@@ -52,8 +50,8 @@ public class ResultQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<ResultSummaryResponse> getResultSummaries() {
-        List<AnalysisJob> analysisJobs = analysisJobRepository.findAllByOrderByCreatedAtDesc();
+    public List<ResultSummaryResponse> getResultSummaries(Long ownerId) {
+        List<AnalysisJob> analysisJobs = analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId);
 
         return analysisJobs.stream()
                 .map(this::toSummaryResponse)
@@ -84,6 +82,15 @@ public class ResultQueryService {
             return finalResult == null ? Map.of() : finalResult;
         } catch (RuntimeException exception) {
             return Map.of();
+        }
+    }
+
+    private void validateOwnership(String jobId, Long ownerId) {
+        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        if (!ownerId.equals(analysisJob.getOwnerId())) {
+            throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
         }
     }
 }

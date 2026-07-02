@@ -6,6 +6,7 @@ import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import jakarta.validation.constraints.Pattern;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,8 +37,12 @@ public class ResultController {
     }
 
     @GetMapping
-    public ApiResponse<List<ResultSummaryResponse>> getResults() {
-        List<ResultSummaryResponse> response = resultQueryService.getResultSummaries();
+    public ApiResponse<List<ResultSummaryResponse>> getResults(
+            Authentication authentication
+    ) {
+        List<ResultSummaryResponse> response = resultQueryService.getResultSummaries(
+                getCurrentUserId(authentication)
+        );
 
         return ApiResponse.success(
                 "분석 결과 목록 조회가 완료되었습니다.",
@@ -47,9 +52,13 @@ public class ResultController {
 
     @GetMapping("/{jobId}")
     public ApiResponse<AnalysisResultResponse> getResult(
-            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication
     ) {
-        AnalysisResultResponse response = resultQueryService.getFinalResult(jobId);
+        AnalysisResultResponse response = resultQueryService.getFinalResult(
+                jobId,
+                getCurrentUserId(authentication)
+        );
 
         return ApiResponse.success(
                 "분석 결과 조회가 완료되었습니다.",
@@ -59,10 +68,27 @@ public class ResultController {
 
     @DeleteMapping("/{jobId}")
     public ApiResponse<Void> deleteResult(
-            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication
     ) {
-        resultCommandService.deleteResult(jobId);
+        resultCommandService.deleteResult(
+                jobId,
+                getCurrentUserId(authentication)
+        );
 
         return ApiResponse.success("분석 결과가 삭제되었습니다.");
+    }
+
+    private Long getCurrentUserId(Authentication authentication) {
+        Object details = authentication.getDetails();
+        if (details instanceof Long userId) {
+            return userId;
+        }
+
+        if (details instanceof Number number) {
+            return number.longValue();
+        }
+
+        throw new IllegalStateException("인증 정보에서 사용자 id를 찾을 수 없습니다.");
     }
 }

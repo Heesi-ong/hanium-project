@@ -1,6 +1,9 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 function MainLayout() {
+    const { user, logout } = useAuth();
+
     return (
         <div className="app-shell">
             <header className="app-header">
@@ -37,6 +40,22 @@ function MainLayout() {
                         >
                             분석 결과
                         </NavLink>
+
+                        <span className="nav-link">
+                            {user?.email || "사용자"}
+                        </span>
+
+                        <button
+                            type="button"
+                            className="nav-link"
+                            style={{
+                                border: 0,
+                                background: "transparent",
+                            }}
+                            onClick={logout}
+                        >
+                            로그아웃
+                        </button>
                     </nav>
                 </div>
             </header>

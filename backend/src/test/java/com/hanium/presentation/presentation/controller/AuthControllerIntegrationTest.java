@@ -72,22 +72,29 @@ class AuthControllerIntegrationTest {
         String accessToken = loginBody.path("data").path("accessToken").asText();
         assertThat(accessToken).isNotBlank();
 
-        ResponseEntity<String> unauthorizedHealthResponse = restTemplate.getForEntity(
+        ResponseEntity<String> publicHealthResponse = restTemplate.getForEntity(
                 "/api/health",
                 String.class
         );
 
-        assertThat(unauthorizedHealthResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(publicHealthResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> unauthorizedResultsResponse = restTemplate.getForEntity(
+                "/api/results",
+                String.class
+        );
+
+        assertThat(unauthorizedResultsResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(accessToken);
-        ResponseEntity<String> authorizedHealthResponse = restTemplate.exchange(
-                "/api/health",
+        ResponseEntity<String> authorizedResultsResponse = restTemplate.exchange(
+                "/api/results",
                 HttpMethod.GET,
                 new HttpEntity<>(headers),
                 String.class
         );
 
-        assertThat(authorizedHealthResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(authorizedResultsResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 }

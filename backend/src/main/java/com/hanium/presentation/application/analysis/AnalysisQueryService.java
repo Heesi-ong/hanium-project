@@ -18,10 +18,22 @@ public class AnalysisQueryService {
     }
 
     @Transactional(readOnly = true)
-    public AnalysisStatusResponse getStatus(String jobId) {
-        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+    public AnalysisStatusResponse getStatus(String jobId, Long ownerId) {
+        AnalysisJob analysisJob = getAnalysisJob(jobId);
+
+        validateOwnership(analysisJob, ownerId);
 
         return AnalysisStatusResponse.from(analysisJob);
+    }
+
+    private AnalysisJob getAnalysisJob(String jobId) {
+        return analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+    }
+
+    private void validateOwnership(AnalysisJob analysisJob, Long ownerId) {
+        if (!ownerId.equals(analysisJob.getOwnerId())) {
+            throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
+        }
     }
 }

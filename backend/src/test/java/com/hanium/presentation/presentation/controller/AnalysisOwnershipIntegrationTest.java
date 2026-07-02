@@ -1,0 +1,183 @@
+package com.hanium.presentation.presentation.controller;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.application.analysis.AnalysisProgressService;
+import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
+import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.user.entity.User;
+import com.hanium.presentation.domain.user.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class AnalysisOwnershipIntegrationTest {
+
+    private static final String STATUS_JOB_ID = "20260702200000-aaaaaaaa";
+    private static final String RUN_JOB_ID = "20260702200001-bbbbbbbb";
+    private static final String RETRY_JOB_ID = "20260702200002-cccccccc";
+
+    @Autowired
+    private TestRestTemplate restTemplate;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private AnalysisJobRepository analysisJobRepository;
+
+    @MockBean
+    private AnalysisProgressService analysisProgressService;
+
+    @BeforeEach
+    void setUp() {
+        analysisJobRepository.deleteAll();
+        userRepository.deleteAll();
+    }
+
+    @Test
+    void analysisApisOnlyAllowOwnerAccess() throws Exception {
+        String ownerToken = signupAndLogin("analysis-owner@example.com");
+        String otherToken = signupAndLogin("analysis-other@example.com");
+
+        Long ownerId = userRepository.findByEmail("analysis-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createUploadedJob(STATUS_JOB_ID, ownerId);
+        createUploadedJob(RUN_JOB_ID, ownerId);
+        createFailedJob(RETRY_JOB_ID, ownerId);
+
+        when(analysisProgressService.getProgress(STATUS_JOB_ID)).thenReturn(Map.of(
+                "jobId", STATUS_JOB_ID,
+                "status", "UPLOADED",
+                "percent", 25,
+                "message", "cached progress"
+        ));
+
+        assertForbidden(otherToken, HttpMethod.GET, "/api/analysis/" + STATUS_JOB_ID + "/status");
+        assertForbidden(otherToken, HttpMethod.GET, "/api/analysis/" + STATUS_JOB_ID + "/progress");
+        verify(analysisProgressService, never()).getProgress(STATUS_JOB_ID);
+
+        assertForbidden(otherToken, HttpMethod.POST, "/api/analysis/" + RUN_JOB_ID + "/run");
+        assertForbidden(otherToken, HttpMethod.POST, "/api/analysis/" + RETRY_JOB_ID + "/retry");
+
+        ResponseEntity<String> ownerStatusResponse = exchange(
+                ownerToken,
+                HttpMethod.GET,
+                "/api/analysis/" + STATUS_JOB_ID + "/status"
+        );
+
+        assertThat(ownerStatusResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ownerStatusResponse.getBody()).contains(STATUS_JOB_ID);
+
+        clearInvocations(analysisProgressService);
+        ResponseEntity<String> ownerProgressResponse = exchange(
+                ownerToken,
+                HttpMethod.GET,
+                "/api/analysis/" + STATUS_JOB_ID + "/progress"
+        );
+
+        assertThat(ownerProgressResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ownerProgressResponse.getBody()).contains("cached progress");
+        verify(analysisProgressService).getProgress(STATUS_JOB_ID);
+
+        ResponseEntity<String> ownerRunResponse = exchange(
+                ownerToken,
+                HttpMethod.POST,
+                "/api/analysis/" + RUN_JOB_ID + "/run"
+        );
+
+        assertThat(ownerRunResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> ownerRetryResponse = exchange(
+                ownerToken,
+                HttpMethod.POST,
+                "/api/analysis/" + RETRY_JOB_ID + "/retry"
+        );
+
+        assertThat(ownerRetryResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    private void assertForbidden(
+            String token,
+            HttpMethod method,
+            String path
+    ) {
+        ResponseEntity<String> response = exchange(token, method, path);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).contains("ANALYSIS_JOB_ACCESS_DENIED");
+    }
+
+    private ResponseEntity<String> exchange(
+            String token,
+            HttpMethod method,
+            String path
+    ) {
+        return restTemplate.exchange(
+                path,
+                method,
+                createAuthorizedEntity(token),
+                String.class
+        );
+    }
+
+    private String signupAndLogin(String email) throws Exception {
+        Map<String, String> request = Map.of(
+                "email", email,
+                "password", "password123"
+        );
+
+        restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        ResponseEntity<String> loginResponse = restTemplate.postForEntity(
+                "/api/auth/login",
+                request,
+                String.class
+        );
+
+        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
+        return loginBody.path("data").path("accessToken").asText();
+    }
+
+    private HttpEntity<Void> createAuthorizedEntity(String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        return new HttpEntity<>(headers);
+    }
+
+    private void createUploadedJob(String jobId, Long ownerId) {
+        analysisJobRepository.save(AnalysisJob.create(jobId, ownerId));
+    }
+
+    private void createFailedJob(String jobId, Long ownerId) {
+        AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
+        analysisJob.fail("테스트 실패 상태");
+        analysisJobRepository.save(analysisJob);
+    }
+}

@@ -1,5 +1,6 @@
 package com.hanium.presentation.global.exception;
 
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -24,6 +25,21 @@ public class GlobalExceptionHandler {
                 .stream()
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
+                .orElse(ErrorCode.INVALID_INPUT_VALUE.getMessage());
+
+        ErrorCode errorCode = ErrorCode.INVALID_INPUT_VALUE;
+
+        return ResponseEntity
+                .status(errorCode.getStatus())
+                .body(ErrorResponse.of(errorCode, message));
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolationException(ConstraintViolationException exception) {
+        String message = exception.getConstraintViolations()
+                .stream()
+                .findFirst()
+                .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
                 .orElse(ErrorCode.INVALID_INPUT_VALUE.getMessage());
 
         ErrorCode errorCode = ErrorCode.INVALID_INPUT_VALUE;

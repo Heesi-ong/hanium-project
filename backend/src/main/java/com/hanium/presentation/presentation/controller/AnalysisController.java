@@ -1,6 +1,7 @@
 package com.hanium.presentation.presentation.controller;
 
 import com.hanium.presentation.application.analysis.AnalysisCommandService;
+import com.hanium.presentation.application.analysis.AnalysisProgressService;
 import com.hanium.presentation.application.analysis.AnalysisQueryService;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.request.AnalysisRunRequest;
@@ -9,19 +10,25 @@ import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/analysis")
 public class AnalysisController {
 
     private final AnalysisCommandService analysisCommandService;
     private final AnalysisQueryService analysisQueryService;
+    private final AnalysisProgressService analysisProgressService;
 
     public AnalysisController(
             AnalysisCommandService analysisCommandService,
-            AnalysisQueryService analysisQueryService
+            AnalysisQueryService analysisQueryService,
+            AnalysisProgressService analysisProgressService
     ) {
         this.analysisCommandService = analysisCommandService;
         this.analysisQueryService = analysisQueryService;
+        this.analysisProgressService = analysisProgressService;
     }
 
     @PostMapping("/upload")
@@ -46,6 +53,51 @@ public class AnalysisController {
                 "분석 상태 조회가 완료되었습니다.",
                 response
         );
+    }
+
+    @GetMapping("/{jobId}/progress")
+    public ApiResponse<Map<String, Object>> getAnalysisProgress(
+            @PathVariable String jobId
+    ) {
+        Map<String, Object> progress = analysisProgressService.getProgress(jobId);
+
+        if (progress == null) {
+            // Redis에 진행률 캐시가 없으면(만료되었거나 아직 시작 전이면) DB에 저장된
+            // 최종 상태를 기준으로 대략적인 진행률을 만들어 대신 반환합니다.
+            AnalysisStatusResponse statusResponse = analysisQueryService.getStatus(jobId);
+            progress = createFallbackProgress(statusResponse);
+        }
+
+        return ApiResponse.success(
+                "분석 진행률 조회가 완료되었습니다.",
+                progress
+        );
+    }
+
+    private Map<String, Object> createFallbackProgress(AnalysisStatusResponse statusResponse) {
+        Map<String, Object> fallback = new LinkedHashMap<>();
+
+        fallback.put("jobId", statusResponse.jobId());
+        fallback.put("step", null);
+        fallback.put("status", statusResponse.status().name());
+        fallback.put("statusDescription", statusResponse.statusDescription());
+        fallback.put(
+                "percent",
+                switch (statusResponse.status()) {
+                    case UPLOADED -> 0;
+                    case BASIC_ANALYZING -> 10;
+                    case VIDEO_LLM_ANALYZING -> 40;
+                    case COMPACTING -> 60;
+                    case OPENAI_GENERATING -> 75;
+                    case MERGING_RESULT -> 90;
+                    case COMPLETED -> 100;
+                    case FAILED -> 0;
+                }
+        );
+        fallback.put("message", "Redis 진행률 캐시가 없어 DB에 저장된 상태 기준으로 표시합니다.");
+        fallback.put("updatedAt", statusResponse.startedAt());
+
+        return fallback;
     }
 
     @PostMapping("/{jobId}/run")

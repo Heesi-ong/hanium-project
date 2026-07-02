@@ -7,6 +7,8 @@ import com.hanium.presentation.application.video.dto.VideoUploadCommand;
 import com.hanium.presentation.common.util.JobIdGenerator;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.analysis.type.AnalysisStep;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.exception.BusinessException;
@@ -22,6 +24,8 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,6 +36,8 @@ import java.util.Map;
 @Service
 public class AnalysisCommandService {
 
+    private static final Logger log = LoggerFactory.getLogger(AnalysisCommandService.class);
+
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
     private final VideoFileCommandService videoFileCommandService;
@@ -40,6 +46,8 @@ public class AnalysisCommandService {
     private final VideoLlmEngineClient videoLlmEngineClient;
     private final OpenAiClient openAiClient;
     private final JobIdGenerator jobIdGenerator;
+    private final AnalysisProgressService analysisProgressService;
+    private final AnalysisJobStatusService analysisJobStatusService;
 
     public AnalysisCommandService(
             AnalysisJobRepository analysisJobRepository,
@@ -49,7 +57,9 @@ public class AnalysisCommandService {
             AnalysisEngineClient analysisEngineClient,
             VideoLlmEngineClient videoLlmEngineClient,
             OpenAiClient openAiClient,
-            JobIdGenerator jobIdGenerator
+            JobIdGenerator jobIdGenerator,
+            AnalysisProgressService analysisProgressService,
+            AnalysisJobStatusService analysisJobStatusService
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
@@ -59,6 +69,8 @@ public class AnalysisCommandService {
         this.videoLlmEngineClient = videoLlmEngineClient;
         this.openAiClient = openAiClient;
         this.jobIdGenerator = jobIdGenerator;
+        this.analysisProgressService = analysisProgressService;
+        this.analysisJobStatusService = analysisJobStatusService;
     }
 
     @Transactional
@@ -142,8 +154,20 @@ public class AnalysisCommandService {
                         "업로드된 영상 정보를 찾을 수 없습니다."
                 ));
 
+        log.info("[{}] 분석 파이프라인 시작 (useVideoLlm={}, useOpenAi={})", jobId, useVideoLlm, useOpenAi);
+        analysisProgressService.start(jobId);
+
+        int lastPercent = 0;
+
         try {
             analysisJob.startBasicAnalysis();
+            analysisJobStatusService.updateStatus(jobId, AnalysisStatus.BASIC_ANALYZING);
+            lastPercent = 10;
+            log.info("[{}] ({}%) 기본 분석 요청을 analysis-engine으로 전송합니다.", jobId, lastPercent);
+            analysisProgressService.update(
+                    jobId, AnalysisStep.BASIC_ANALYSIS, AnalysisStatus.BASIC_ANALYZING,
+                    lastPercent, "영상/음성 기본 분석을 실행하는 중입니다."
+            );
 
             AnalysisEngineResponse analysisEngineResponse = analysisEngineClient.analyze(
                     new AnalysisEngineRequest(
@@ -151,11 +175,19 @@ public class AnalysisCommandService {
                             uploadedVideo.getStoredFilePath()
                     )
             );
+            log.info("[{}] 기본 분석 응답을 받았습니다.", jobId);
 
             VideoLlmEngineResponse videoLlmEngineResponse;
 
             if (useVideoLlm) {
                 analysisJob.startVideoLlmAnalysis();
+                analysisJobStatusService.updateStatus(jobId, AnalysisStatus.VIDEO_LLM_ANALYZING);
+                lastPercent = 40;
+                log.info("[{}] ({}%) Video LLM 분석 요청을 전송합니다.", jobId, lastPercent);
+                analysisProgressService.update(
+                        jobId, AnalysisStep.VIDEO_LLM_ANALYSIS, AnalysisStatus.VIDEO_LLM_ANALYZING,
+                        lastPercent, "Video LLM 분석을 실행하는 중입니다."
+                );
 
                 videoLlmEngineResponse = videoLlmEngineClient.analyze(
                         VideoLlmEngineRequest.defaultOption(
@@ -163,11 +195,20 @@ public class AnalysisCommandService {
                                 uploadedVideo.getStoredFilePath()
                         )
                 );
+                log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);
             } else {
+                log.info("[{}] Video LLM 분석을 건너뜁니다. (useVideoLlm=false)", jobId);
                 videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId);
             }
 
             analysisJob.startCompacting();
+            analysisJobStatusService.updateStatus(jobId, AnalysisStatus.COMPACTING);
+            lastPercent = 60;
+            log.info("[{}] ({}%) 분석 결과를 정리(compact)하는 중입니다.", jobId, lastPercent);
+            analysisProgressService.update(
+                    jobId, AnalysisStep.COMPACT_ANALYSIS, AnalysisStatus.COMPACTING,
+                    lastPercent, "분석 결과를 정리하는 중입니다."
+            );
 
             Map<String, Object> compactAnalysis = resultCommandService.saveEngineResultsAndCompact(
                     jobId,
@@ -179,11 +220,20 @@ public class AnalysisCommandService {
 
             if (useOpenAi) {
                 analysisJob.startOpenAiGenerating();
+                analysisJobStatusService.updateStatus(jobId, AnalysisStatus.OPENAI_GENERATING);
+                lastPercent = 75;
+                log.info("[{}] ({}%) AI 피드백을 생성하는 중입니다.", jobId, lastPercent);
+                analysisProgressService.update(
+                        jobId, AnalysisStep.OPENAI_FEEDBACK, AnalysisStatus.OPENAI_GENERATING,
+                        lastPercent, "AI 피드백을 생성하는 중입니다."
+                );
 
                 openAiFeedbackResponse = openAiClient.generateFeedback(
                         new OpenAiFeedbackRequest(jobId, compactAnalysis)
                 );
+                log.info("[{}] AI 피드백 생성이 끝났습니다. (mode={})", jobId, openAiFeedbackResponse.generationMode());
             } else {
+                log.info("[{}] OpenAI 피드백 생성을 건너뜁니다. (useOpenAi=false)", jobId);
                 openAiFeedbackResponse = createSkippedOpenAiResponse(jobId);
             }
 
@@ -193,6 +243,13 @@ public class AnalysisCommandService {
             );
 
             analysisJob.startMergingResult();
+            analysisJobStatusService.updateStatus(jobId, AnalysisStatus.MERGING_RESULT);
+            lastPercent = 90;
+            log.info("[{}] ({}%) 최종 결과를 병합하는 중입니다.", jobId, lastPercent);
+            analysisProgressService.update(
+                    jobId, AnalysisStep.RESULT_MERGE, AnalysisStatus.MERGING_RESULT,
+                    lastPercent, "최종 결과를 병합하는 중입니다."
+            );
 
             resultCommandService.saveFinalResult(
                     jobId,
@@ -202,10 +259,14 @@ public class AnalysisCommandService {
             );
 
             analysisJob.complete();
+            analysisProgressService.complete(jobId);
+            log.info("[{}] (100%) 분석 파이프라인이 완료되었습니다.", jobId);
 
             return AnalysisStatusResponse.from(analysisJob);
         } catch (BusinessException e) {
+            log.warn("[{}] 분석이 실패했습니다: {}", jobId, e.getMessage());
             analysisJob.fail(e.getMessage());
+            analysisProgressService.fail(jobId, lastPercent, e.getMessage());
             saveFailureResultSafely(analysisJob, e.getMessage());
             throw e;
         } catch (Exception e) {
@@ -213,7 +274,9 @@ public class AnalysisCommandService {
                     ? "분석 실행 중 알 수 없는 오류가 발생했습니다."
                     : e.getMessage();
 
+            log.error("[{}] 분석 중 예상하지 못한 오류가 발생했습니다.", jobId, e);
             analysisJob.fail(failReason);
+            analysisProgressService.fail(jobId, lastPercent, failReason);
             saveFailureResultSafely(analysisJob, failReason);
 
             throw new BusinessException(

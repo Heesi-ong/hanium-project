@@ -22,6 +22,9 @@ public class AnalysisJob {
     @Column(nullable = false, unique = true, length = 50)
     private String jobId;
 
+    @Column(name = "owner_id")
+    private Long ownerId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private AnalysisStatus status;
@@ -39,14 +42,19 @@ public class AnalysisJob {
     protected AnalysisJob() {
     }
 
-    private AnalysisJob(String jobId) {
+    private AnalysisJob(String jobId, Long ownerId) {
         this.jobId = jobId;
+        this.ownerId = ownerId;
         this.status = AnalysisStatus.UPLOADED;
         this.createdAt = LocalDateTime.now();
     }
 
     public static AnalysisJob create(String jobId) {
-        return new AnalysisJob(jobId);
+        return new AnalysisJob(jobId, null);
+    }
+
+    public static AnalysisJob create(String jobId, Long ownerId) {
+        return new AnalysisJob(jobId, ownerId);
     }
 
     public Long getId() {
@@ -55,6 +63,10 @@ public class AnalysisJob {
 
     public String getJobId() {
         return jobId;
+    }
+
+    public Long getOwnerId() {
+        return ownerId;
     }
 
     public AnalysisStatus getStatus() {

@@ -81,10 +81,10 @@ public class AnalysisCommandService {
     }
 
     @Transactional
-    public AnalysisUploadResponse uploadVideo(MultipartFile file) {
+    public AnalysisUploadResponse uploadVideo(MultipartFile file, Long ownerId) {
         String jobId = jobIdGenerator.generate();
 
-        AnalysisJob analysisJob = AnalysisJob.create(jobId);
+        AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
         AnalysisJob savedJob = analysisJobRepository.save(analysisJob);
 
         StoredVideoInfo storedVideoInfo = videoFileCommandService.store(

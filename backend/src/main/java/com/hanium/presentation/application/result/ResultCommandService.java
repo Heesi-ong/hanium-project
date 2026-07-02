@@ -139,9 +139,13 @@ public class ResultCommandService {
     }
 
     @Transactional
-    public void deleteResult(String jobId) {
+    public void deleteResult(String jobId, Long ownerId) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        if (!ownerId.equals(analysisJob.getOwnerId())) {
+            throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
+        }
 
         UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
                 .orElse(null);

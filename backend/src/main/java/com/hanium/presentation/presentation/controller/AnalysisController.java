@@ -8,6 +8,7 @@ import com.hanium.presentation.presentation.dto.request.AnalysisRunRequest;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
 import jakarta.validation.constraints.Pattern;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,14 +42,31 @@ public class AnalysisController {
 
     @PostMapping("/upload")
     public ApiResponse<AnalysisUploadResponse> uploadVideo(
-            @RequestPart("file") MultipartFile file
+            @RequestPart("file") MultipartFile file,
+            Authentication authentication
     ) {
-        AnalysisUploadResponse response = analysisCommandService.uploadVideo(file);
+        AnalysisUploadResponse response = analysisCommandService.uploadVideo(
+                file,
+                getCurrentUserId(authentication)
+        );
 
         return ApiResponse.success(
                 "영상 업로드가 완료되었습니다.",
                 response
         );
+    }
+
+    private Long getCurrentUserId(Authentication authentication) {
+        Object details = authentication.getDetails();
+        if (details instanceof Long userId) {
+            return userId;
+        }
+
+        if (details instanceof Number number) {
+            return number.longValue();
+        }
+
+        throw new IllegalStateException("인증 정보에서 사용자 id를 찾을 수 없습니다.");
     }
 
     @GetMapping("/{jobId}/status")

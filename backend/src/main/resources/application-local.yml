@@ -1,3 +1,5 @@
+# 로컬 개발 전용 설정입니다. DB/Redis 등은 별도 설치 없이 바로 뜰 수 있도록
+# H2 인메모리 DB를 그대로 사용합니다. (dev/prod는 MySQL + Flyway 사용, 각 yml 참고)
 spring:
   datasource:
     url: jdbc:h2:mem:presentation
@@ -17,25 +19,3 @@ spring:
     properties:
       hibernate:
         format_sql: true
-
-spring.data.redis:
-  host: localhost
-  port: 6379
-
-external:
-  analysis-engine:
-    base-url: http://localhost:8001
-
-  video-llm-engine:
-    base-url: http://localhost:8002
-
-  openai:
-    api-key: dummy
-    model: gpt-4o-mini
-
-storage:
-  root-path: ../storage
-  upload-path: ../storage/uploads
-  result-path: ../storage/results
-  temp-path: ../storage/temp
-  log-path: ../storage/logs

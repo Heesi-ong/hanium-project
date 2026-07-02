@@ -71,9 +71,13 @@ public class AnalysisController {
 
     @GetMapping("/{jobId}/status")
     public ApiResponse<AnalysisStatusResponse> getAnalysisStatus(
-            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication
     ) {
-        AnalysisStatusResponse response = analysisQueryService.getStatus(jobId);
+        AnalysisStatusResponse response = analysisQueryService.getStatus(
+                jobId,
+                getCurrentUserId(authentication)
+        );
 
         return ApiResponse.success(
                 "분석 상태 조회가 완료되었습니다.",
@@ -83,14 +87,18 @@ public class AnalysisController {
 
     @GetMapping("/{jobId}/progress")
     public ApiResponse<Map<String, Object>> getAnalysisProgress(
-            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication
     ) {
+        AnalysisStatusResponse statusResponse = analysisQueryService.getStatus(
+                jobId,
+                getCurrentUserId(authentication)
+        );
         Map<String, Object> progress = analysisProgressService.getProgress(jobId);
 
         if (progress == null) {
             // Redis에 진행률 캐시가 없으면(만료되었거나 아직 시작 전이면) DB에 저장된
             // 최종 상태를 기준으로 대략적인 진행률을 만들어 대신 반환합니다.
-            AnalysisStatusResponse statusResponse = analysisQueryService.getStatus(jobId);
             progress = createFallbackProgress(statusResponse);
         }
 
@@ -129,7 +137,8 @@ public class AnalysisController {
     @PostMapping("/{jobId}/run")
     public ApiResponse<AnalysisStatusResponse> runAnalysis(
             @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
-            @RequestBody(required = false) AnalysisRunRequest request
+            @RequestBody(required = false) AnalysisRunRequest request,
+            Authentication authentication
     ) {
         AnalysisRunRequest runRequest = request == null
                 ? new AnalysisRunRequest(true, true)
@@ -137,6 +146,7 @@ public class AnalysisController {
 
         AnalysisStatusResponse response = analysisCommandService.runAnalysis(
                 jobId,
+                getCurrentUserId(authentication),
                 runRequest.isUseVideoLlm(),
                 runRequest.isUseOpenAi()
         );
@@ -150,7 +160,8 @@ public class AnalysisController {
     @PostMapping("/{jobId}/retry")
     public ApiResponse<AnalysisStatusResponse> retryAnalysis(
             @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
-            @RequestBody(required = false) AnalysisRunRequest request
+            @RequestBody(required = false) AnalysisRunRequest request,
+            Authentication authentication
     ) {
         AnalysisRunRequest runRequest = request == null
                 ? new AnalysisRunRequest(true, true)
@@ -158,6 +169,7 @@ public class AnalysisController {
 
         AnalysisStatusResponse response = analysisCommandService.retryAnalysis(
                 jobId,
+                getCurrentUserId(authentication),
                 runRequest.isUseVideoLlm(),
                 runRequest.isUseOpenAi()
         );

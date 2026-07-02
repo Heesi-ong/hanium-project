@@ -118,12 +118,14 @@ public class AnalysisCommandService {
     @Transactional
     public AnalysisStatusResponse runAnalysis(
             String jobId,
+            Long ownerId,
             boolean useVideoLlm,
             boolean useOpenAi
     ) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
+        validateOwnership(analysisJob, ownerId);
         validateRunnable(analysisJob);
 
         return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi);
@@ -132,12 +134,14 @@ public class AnalysisCommandService {
     @Transactional
     public AnalysisStatusResponse retryAnalysis(
             String jobId,
+            Long ownerId,
             boolean useVideoLlm,
             boolean useOpenAi
     ) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
+        validateOwnership(analysisJob, ownerId);
         validateRetryable(analysisJob);
         analysisJob.resetForRetry();
 
@@ -370,6 +374,12 @@ public class AnalysisCommandService {
                     ErrorCode.INVALID_INPUT_VALUE,
                     "실패 상태의 분석 작업만 재시도할 수 있습니다. status=" + analysisJob.getStatus()
             );
+        }
+    }
+
+    private void validateOwnership(AnalysisJob analysisJob, Long ownerId) {
+        if (!ownerId.equals(analysisJob.getOwnerId())) {
+            throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
         }
     }
 

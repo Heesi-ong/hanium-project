@@ -13,6 +13,8 @@ import java.util.Map;
 @Component
 public class AnalysisEngineClient {
 
+    private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
+
     private final RestClient restClient;
     private final AnalysisEngineProperties properties;
 
@@ -52,6 +54,7 @@ public class AnalysisEngineClient {
         try {
             return restClient.post()
                     .uri("/api/basic-analysis")
+                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey())
                     .body(request)
                     .retrieve()
                     .body(AnalysisEngineResponse.class);

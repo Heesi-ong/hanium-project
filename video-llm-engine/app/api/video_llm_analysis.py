@@ -1,8 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Dict, Any
 
-router = APIRouter(prefix="/api/video-llm", tags=["video-llm-analysis"])
+from app.core.security import verify_internal_api_key
+
+router = APIRouter(
+    prefix="/api/video-llm",
+    tags=["video-llm-analysis"],
+    dependencies=[Depends(verify_internal_api_key)],
+)
 
 
 class VideoLlmAnalysisRequest(BaseModel):

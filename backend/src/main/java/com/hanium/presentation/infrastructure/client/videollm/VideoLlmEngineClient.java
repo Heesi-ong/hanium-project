@@ -13,6 +13,8 @@ import java.util.Map;
 @Component
 public class VideoLlmEngineClient {
 
+    private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
+
     private final RestClient restClient;
     private final VideoLlmEngineProperties properties;
 
@@ -52,6 +54,7 @@ public class VideoLlmEngineClient {
         try {
             return restClient.post()
                     .uri("/api/video-llm/analyze")
+                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey())
                     .body(request)
                     .retrieve()
                     .body(VideoLlmEngineResponse.class);

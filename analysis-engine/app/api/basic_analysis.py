@@ -6,12 +6,18 @@ from typing import Any, Dict, List
 import cv2
 import imageio_ffmpeg
 import mediapipe as mp
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api", tags=["basic-analysis"])
+from app.core.security import verify_internal_api_key
+
+router = APIRouter(
+    prefix="/api",
+    tags=["basic-analysis"],
+    dependencies=[Depends(verify_internal_api_key)],
+)
 
 MAX_EXTRACTED_FRAMES = 20
 FRAME_EXTRACT_INTERVAL_SEC = 1

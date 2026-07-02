@@ -26,9 +26,11 @@ spring:
 external:
   analysis-engine:
     base-url: ${ANALYSIS_ENGINE_BASE_URL:http://localhost:8001}
+    api-key: ${INTERNAL_ENGINE_API_KEY:}
 
   video-llm-engine:
     base-url: ${VIDEO_LLM_ENGINE_BASE_URL:http://localhost:8002}
+    api-key: ${INTERNAL_ENGINE_API_KEY:}
 
 # OpenAiProperties(prefix="openai")가 실제로 읽는 키와 일치시켰습니다.
 # 이전에는 external.openai.* 로 되어 있어서 값을 넣어도 바인딩되지 않는 문제가 있었습니다.

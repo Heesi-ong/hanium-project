@@ -35,6 +35,8 @@ services:
     build:
       context: ./analysis-engine
     restart: unless-stopped
+    environment:
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
     ports:
       - "8001:8001"
     volumes:
@@ -44,6 +46,8 @@ services:
     build:
       context: ./video-llm-engine
     restart: unless-stopped
+    environment:
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
     ports:
       - "8002:8002"
     volumes:
@@ -73,6 +77,7 @@ services:
       REDIS_PORT: 6379
       ANALYSIS_ENGINE_BASE_URL: http://analysis-engine:8001
       VIDEO_LLM_ENGINE_BASE_URL: http://video-llm-engine:8002
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
       OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}

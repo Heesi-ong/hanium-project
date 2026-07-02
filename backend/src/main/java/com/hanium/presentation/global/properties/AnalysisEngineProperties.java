@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "external.analysis-engine")
 public record AnalysisEngineProperties(
-        String baseUrl
+        String baseUrl,
+        String apiKey
 ) {
 }

@@ -7,15 +7,23 @@ import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.request.AnalysisRunRequest;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
+import jakarta.validation.constraints.Pattern;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Validated
 @RestController
 @RequestMapping("/api/analysis")
 public class AnalysisController {
+
+    // jobId는 JobIdGenerator가 생성하는 형식(yyyyMMddHHmmss-xxxxxxxx)과만 일치해야 합니다.
+    // 형식을 검사하지 않으면 경로 조작(예: "../")이 섞인 값이 파일 경로 생성에 그대로 쓰일 수 있습니다.
+    private static final String JOB_ID_PATTERN = "^\\d{14}-[0-9a-f]{8}$";
+    private static final String JOB_ID_MESSAGE = "jobId 형식이 올바르지 않습니다.";
 
     private final AnalysisCommandService analysisCommandService;
     private final AnalysisQueryService analysisQueryService;
@@ -45,7 +53,7 @@ public class AnalysisController {
 
     @GetMapping("/{jobId}/status")
     public ApiResponse<AnalysisStatusResponse> getAnalysisStatus(
-            @PathVariable String jobId
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId
     ) {
         AnalysisStatusResponse response = analysisQueryService.getStatus(jobId);
 
@@ -57,7 +65,7 @@ public class AnalysisController {
 
     @GetMapping("/{jobId}/progress")
     public ApiResponse<Map<String, Object>> getAnalysisProgress(
-            @PathVariable String jobId
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId
     ) {
         Map<String, Object> progress = analysisProgressService.getProgress(jobId);
 
@@ -102,7 +110,7 @@ public class AnalysisController {
 
     @PostMapping("/{jobId}/run")
     public ApiResponse<AnalysisStatusResponse> runAnalysis(
-            @PathVariable String jobId,
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
             @RequestBody(required = false) AnalysisRunRequest request
     ) {
         AnalysisRunRequest runRequest = request == null
@@ -123,7 +131,7 @@ public class AnalysisController {
 
     @PostMapping("/{jobId}/retry")
     public ApiResponse<AnalysisStatusResponse> retryAnalysis(
-            @PathVariable String jobId,
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
             @RequestBody(required = false) AnalysisRunRequest request
     ) {
         AnalysisRunRequest runRequest = request == null

@@ -13,6 +13,12 @@ public class AnalysisJob {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 같은 jobId로 거의 동시에 두 번 실행 요청이 들어왔을 때 하나만 통과시키기 위한
+    // 낙관적 락(optimistic lock)입니다. 두 트랜잭션이 동시에 이 엔티티를 저장하려 하면
+    // 버전이 이미 바뀐 쪽은 실패(ObjectOptimisticLockingFailureException)합니다.
+    @Version
+    private Long version;
+
     @Column(nullable = false, unique = true, length = 50)
     private String jobId;
 

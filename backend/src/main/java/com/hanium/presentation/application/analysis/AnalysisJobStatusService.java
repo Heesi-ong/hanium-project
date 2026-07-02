@@ -12,12 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 분석 파이프라인이 실행되는 "동안" AnalysisJob 상태를 즉시 DB에 커밋하기 위한 서비스입니다.
  *
- * <p>{@code AnalysisCommandService.executeAnalysis()}는 업로드부터 결과 병합까지 전체
- * 파이프라인을 하나의 {@code @Transactional} 메서드 안에서 실행합니다. 그 메서드 안에서
- * {@code analysisJob.startBasicAnalysis()} 같은 상태 변경은 메서드가 끝나고 트랜잭션이
- * 커밋될 때 한 번에 DB에 반영되기 때문에, 분석이 진행되는 도중에 다른 요청(예: 진행률
- * 조회 API)이 DB를 조회해도 중간 상태를 볼 수 없고 처음(UPLOADED) 상태만 계속 보이게
- * 됩니다.</p>
+ * <p>{@code AnalysisCommandService.executeAnalysisAsync()}는 업로드부터 결과 병합까지 전체
+ * 파이프라인을 백그라운드 스레드에서 실행합니다. 이 메서드 자체는 하나의 큰 트랜잭션으로
+ * 묶여 있지 않기 때문에(HTTP 요청이 이미 끝난 뒤에 실행되므로), 상태 변경마다 이 서비스의
+ * 메서드를 호출해 그 자리에서 바로 커밋합니다.</p>
  *
  * <p>이 서비스의 메서드는 {@code REQUIRES_NEW}로 별도의 트랜잭션을 열어서 그 자리에서
  * 바로 커밋합니다. 그래서 Redis가 꺼져 있거나 응답이 늦어도, DB 상태 조회만으로도
@@ -41,6 +39,33 @@ public class AnalysisJobStatusService {
                     applyStatus(analysisJob, status);
                     analysisJobRepository.save(analysisJob);
                     log.info("[{}] 상태 즉시 반영: {} ({})", jobId, status, status.getDescription());
+                },
+                () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
+        );
+    }
+
+    // 분석 파이프라인은 이제 백그라운드 스레드에서 실행되고, 그 스레드에는 요청을
+    // 감싸는 큰 트랜잭션이 없습니다. 그래서 완료/실패도 updateStatus와 동일하게
+    // 그 자리에서 바로 커밋하는 메서드가 필요합니다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void completeStatus(String jobId) {
+        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+                analysisJob -> {
+                    analysisJob.complete();
+                    analysisJobRepository.save(analysisJob);
+                    log.info("[{}] 상태 즉시 반영: COMPLETED", jobId);
+                },
+                () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void failStatus(String jobId, String failReason) {
+        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+                analysisJob -> {
+                    analysisJob.fail(failReason);
+                    analysisJobRepository.save(analysisJob);
+                    log.info("[{}] 상태 즉시 반영: FAILED ({})", jobId, failReason);
                 },
                 () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
         );

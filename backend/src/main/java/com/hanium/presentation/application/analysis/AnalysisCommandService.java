@@ -26,8 +26,12 @@ import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -48,6 +52,7 @@ public class AnalysisCommandService {
     private final JobIdGenerator jobIdGenerator;
     private final AnalysisProgressService analysisProgressService;
     private final AnalysisJobStatusService analysisJobStatusService;
+    private final ThreadPoolTaskExecutor analysisTaskExecutor;
 
     public AnalysisCommandService(
             AnalysisJobRepository analysisJobRepository,
@@ -59,7 +64,8 @@ public class AnalysisCommandService {
             OpenAiClient openAiClient,
             JobIdGenerator jobIdGenerator,
             AnalysisProgressService analysisProgressService,
-            AnalysisJobStatusService analysisJobStatusService
+            AnalysisJobStatusService analysisJobStatusService,
+            ThreadPoolTaskExecutor analysisTaskExecutor
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
@@ -71,6 +77,7 @@ public class AnalysisCommandService {
         this.jobIdGenerator = jobIdGenerator;
         this.analysisProgressService = analysisProgressService;
         this.analysisJobStatusService = analysisJobStatusService;
+        this.analysisTaskExecutor = analysisTaskExecutor;
     }
 
     @Transactional
@@ -103,7 +110,12 @@ public class AnalysisCommandService {
         );
     }
 
-    @Transactional(noRollbackFor = BusinessException.class)
+    // 분석 실행/재시도는 더 이상 파이프라인이 끝날 때까지 기다리지 않습니다.
+    // "시작 상태로 전환하고 커밋"까지만 이 트랜잭션에서 처리하고, 실제 무거운 작업
+    // (analysis-engine/video-llm-engine/OpenAI 호출)은 트랜잭션이 커밋된 뒤
+    // 백그라운드 스레드에서 실행합니다. 프론트는 이미 /run 호출 후 /status를
+    // 폴링하는 구조라 이 변경으로 화면 쪽 코드를 바꿀 필요가 없습니다.
+    @Transactional
     public AnalysisStatusResponse runAnalysis(
             String jobId,
             boolean useVideoLlm,
@@ -114,14 +126,10 @@ public class AnalysisCommandService {
 
         validateRunnable(analysisJob);
 
-        return executeAnalysis(
-                analysisJob,
-                useVideoLlm,
-                useOpenAi
-        );
+        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi);
     }
 
-    @Transactional(noRollbackFor = BusinessException.class)
+    @Transactional
     public AnalysisStatusResponse retryAnalysis(
             String jobId,
             boolean useVideoLlm,
@@ -131,38 +139,83 @@ public class AnalysisCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
         validateRetryable(analysisJob);
-
         analysisJob.resetForRetry();
 
-        return executeAnalysis(
-                analysisJob,
-                useVideoLlm,
-                useOpenAi
-        );
+        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi);
     }
 
-    private AnalysisStatusResponse executeAnalysis(
+    private AnalysisStatusResponse acceptAndDispatch(
             AnalysisJob analysisJob,
             boolean useVideoLlm,
             boolean useOpenAi
     ) {
         String jobId = analysisJob.getJobId();
 
-        UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.FILE_NOT_FOUND,
-                        "업로드된 영상 정보를 찾을 수 없습니다."
-                ));
+        analysisJob.startBasicAnalysis();
+
+        AnalysisJob savedJob;
+        try {
+            savedJob = analysisJobRepository.saveAndFlush(analysisJob);
+        } catch (OptimisticLockingFailureException e) {
+            // 같은 jobId로 거의 동시에 들어온 다른 실행 요청이 먼저 상태를 바꾼 경우입니다.
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ALREADY_RUNNING,
+                    "다른 요청이 먼저 분석을 시작했습니다. jobId=" + jobId
+            );
+        }
+
+        // 지금 트랜잭션이 실제로 커밋된 뒤에만 백그라운드 작업을 시작합니다.
+        // 커밋 전에 시작하면, 백그라운드 스레드가 아직 DB에 반영되지 않은
+        // (다른 트랜잭션 기준으로는 보이지 않는) 상태를 참조할 수 있습니다.
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    analysisTaskExecutor.execute(
+                            () -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi)
+                    );
+                }
+            });
+        } else {
+            // 트랜잭션 없이 호출되는 경우(예: 테스트 코드)를 대비한 안전장치입니다.
+            analysisTaskExecutor.execute(() -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi));
+        }
+
+        return AnalysisStatusResponse.from(savedJob);
+    }
+
+    // 백그라운드 스레드에서 실행되는 실제 분석 파이프라인입니다.
+    // 이 메서드 자체에는 @Transactional을 걸지 않습니다. 각 단계는
+    // analysisJobStatusService / resultCommandService 안에서 그때그때 커밋되므로,
+    // 여기서 실패해도 이미 커밋된 중간 결과는 그대로 남습니다.
+    private void executeAnalysisAsync(
+            String jobId,
+            boolean useVideoLlm,
+            boolean useOpenAi
+    ) {
+        UploadedVideo uploadedVideo;
+
+        try {
+            uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
+                    .orElseThrow(() -> new BusinessException(
+                            ErrorCode.FILE_NOT_FOUND,
+                            "업로드된 영상 정보를 찾을 수 없습니다."
+                    ));
+        } catch (Exception e) {
+            log.error("[{}] 업로드 영상 정보를 찾지 못해 분석을 시작할 수 없습니다.", jobId, e);
+            String failReason = "업로드된 영상 정보를 찾을 수 없습니다.";
+            analysisJobStatusService.failStatus(jobId, failReason);
+            analysisProgressService.fail(jobId, 0, failReason);
+            saveFailureResultSafely(jobId, failReason);
+            return;
+        }
 
         log.info("[{}] 분석 파이프라인 시작 (useVideoLlm={}, useOpenAi={})", jobId, useVideoLlm, useOpenAi);
         analysisProgressService.start(jobId);
 
-        int lastPercent = 0;
+        int lastPercent = 10;
 
         try {
-            analysisJob.startBasicAnalysis();
-            analysisJobStatusService.updateStatus(jobId, AnalysisStatus.BASIC_ANALYZING);
-            lastPercent = 10;
             log.info("[{}] ({}%) 기본 분석 요청을 analysis-engine으로 전송합니다.", jobId, lastPercent);
             analysisProgressService.update(
                     jobId, AnalysisStep.BASIC_ANALYSIS, AnalysisStatus.BASIC_ANALYZING,
@@ -180,7 +233,6 @@ public class AnalysisCommandService {
             VideoLlmEngineResponse videoLlmEngineResponse;
 
             if (useVideoLlm) {
-                analysisJob.startVideoLlmAnalysis();
                 analysisJobStatusService.updateStatus(jobId, AnalysisStatus.VIDEO_LLM_ANALYZING);
                 lastPercent = 40;
                 log.info("[{}] ({}%) Video LLM 분석 요청을 전송합니다.", jobId, lastPercent);
@@ -201,7 +253,6 @@ public class AnalysisCommandService {
                 videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId);
             }
 
-            analysisJob.startCompacting();
             analysisJobStatusService.updateStatus(jobId, AnalysisStatus.COMPACTING);
             lastPercent = 60;
             log.info("[{}] ({}%) 분석 결과를 정리(compact)하는 중입니다.", jobId, lastPercent);
@@ -219,7 +270,6 @@ public class AnalysisCommandService {
             OpenAiFeedbackResponse openAiFeedbackResponse;
 
             if (useOpenAi) {
-                analysisJob.startOpenAiGenerating();
                 analysisJobStatusService.updateStatus(jobId, AnalysisStatus.OPENAI_GENERATING);
                 lastPercent = 75;
                 log.info("[{}] ({}%) AI 피드백을 생성하는 중입니다.", jobId, lastPercent);
@@ -242,7 +292,6 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
-            analysisJob.startMergingResult();
             analysisJobStatusService.updateStatus(jobId, AnalysisStatus.MERGING_RESULT);
             lastPercent = 90;
             log.info("[{}] ({}%) 최종 결과를 병합하는 중입니다.", jobId, lastPercent);
@@ -258,31 +307,23 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
-            analysisJob.complete();
+            analysisJobStatusService.completeStatus(jobId);
             analysisProgressService.complete(jobId);
             log.info("[{}] (100%) 분석 파이프라인이 완료되었습니다.", jobId);
-
-            return AnalysisStatusResponse.from(analysisJob);
         } catch (BusinessException e) {
             log.warn("[{}] 분석이 실패했습니다: {}", jobId, e.getMessage());
-            analysisJob.fail(e.getMessage());
+            analysisJobStatusService.failStatus(jobId, e.getMessage());
             analysisProgressService.fail(jobId, lastPercent, e.getMessage());
-            saveFailureResultSafely(analysisJob, e.getMessage());
-            throw e;
+            saveFailureResultSafely(jobId, e.getMessage());
         } catch (Exception e) {
             String failReason = e.getMessage() == null
                     ? "분석 실행 중 알 수 없는 오류가 발생했습니다."
                     : e.getMessage();
 
             log.error("[{}] 분석 중 예상하지 못한 오류가 발생했습니다.", jobId, e);
-            analysisJob.fail(failReason);
+            analysisJobStatusService.failStatus(jobId, failReason);
             analysisProgressService.fail(jobId, lastPercent, failReason);
-            saveFailureResultSafely(analysisJob, failReason);
-
-            throw new BusinessException(
-                    ErrorCode.INTERNAL_SERVER_ERROR,
-                    "분석 실행 중 오류가 발생했습니다."
-            );
+            saveFailureResultSafely(jobId, failReason);
         }
     }
 
@@ -333,13 +374,13 @@ public class AnalysisCommandService {
     }
 
     private void saveFailureResultSafely(
-            AnalysisJob analysisJob,
+            String jobId,
             String failReason
     ) {
         try {
             resultCommandService.saveFailureResult(
-                    analysisJob.getJobId(),
-                    analysisJob.getStatus().name(),
+                    jobId,
+                    AnalysisStatus.FAILED.name(),
                     failReason
             );
         } catch (Exception ignored) {

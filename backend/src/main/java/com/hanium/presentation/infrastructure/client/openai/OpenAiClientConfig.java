@@ -1,10 +1,12 @@
 package com.hanium.presentation.infrastructure.client.openai;
 
 import com.hanium.presentation.global.properties.OpenAiProperties;
-import org.springframework.boot.web.client.RestClientCustomizer;
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
+import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
@@ -19,8 +21,17 @@ public class OpenAiClientConfig {
             RestClient.Builder restClientBuilder,
             OpenAiProperties openAiProperties
     ) {
+        // openai.timeout-ms 설정값을 실제 요청 timeout으로 적용합니다.
+        // (restClientBuilder는 prototype 빈이라 다른 클라이언트의 타임아웃 설정과 섞이지 않습니다.)
+        ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()
+                .withReadTimeout(Duration.ofMillis(openAiProperties.getTimeoutMs()));
+
+        ClientHttpRequestFactory requestFactory = ClientHttpRequestFactoryBuilder.detect()
+                .build(settings);
+
         RestClient.Builder builder = restClientBuilder
                 .baseUrl(OPENAI_BASE_URL)
+                .requestFactory(requestFactory)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, "application/json");
 
         if (openAiProperties.hasApiKey()) {
@@ -31,17 +42,5 @@ public class OpenAiClientConfig {
         }
 
         return builder.build();
-    }
-
-    @Bean
-    public RestClientCustomizer openAiRestClientTimeoutCustomizer(
-            OpenAiProperties openAiProperties
-    ) {
-        return restClientBuilder -> {
-            // Spring Boot의 기본 RestClient.Builder를 그대로 사용합니다.
-            // 실제 요청 timeout 세부 제어가 필요하면 다음 단계에서
-            // ClientHttpRequestFactory 기반 설정으로 확장합니다.
-            Duration.ofMillis(openAiProperties.getTimeoutMs());
-        };
     }
 }

@@ -14,6 +14,8 @@ class VideoLlmAnalysisRequest(BaseModel):
 
 @router.post("/analyze")
 def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
+    print(f"[video-llm-engine] ({request.jobId}) Mock 영상 관찰 결과를 생성하는 중...", flush=True)
+
     return {
         "jobId": request.jobId,
         "status": "success",

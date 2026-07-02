@@ -28,7 +28,7 @@ function ResultScoreChart({ scoreSummary }) {
     const gazeScore = toScore(scoreSummary?.gazeScore);
     const speechScore = toScore(scoreSummary?.speechScore);
     const gestureScore = toScore(scoreSummary?.gestureScore);
-    const emotionScore = toScore(scoreSummary?.emotionScore);
+    const expressionScore = toScore(scoreSummary?.expressionScore);
 
     const chartData = {
         labels: ["자세", "시선", "음성", "제스처", "표정"],
@@ -40,7 +40,7 @@ function ResultScoreChart({ scoreSummary }) {
                     gazeScore,
                     speechScore,
                     gestureScore,
-                    emotionScore,
+                    expressionScore,
                 ],
                 fill: true,
                 tension: 0.25,
@@ -111,7 +111,7 @@ function ResultScoreChart({ scoreSummary }) {
                 </div>
                 <div className="chart-summary-item">
                     <span>표정</span>
-                    <strong>{emotionScore}</strong>
+                    <strong>{expressionScore}</strong>
                 </div>
             </div>
         </article>

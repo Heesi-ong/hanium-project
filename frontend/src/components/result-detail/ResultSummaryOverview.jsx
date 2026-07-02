@@ -118,8 +118,8 @@ function ResultSummaryOverview({
                 </div>
 
                 <div className="summary-overview-item">
-                    <span>주요 표정</span>
-                    <strong>{formatEmotionLabel(emotionInfo?.dominantEmotion)}</strong>
+                    <span>주요 표정 (참고용)</span>
+                    <strong>{formatEmotionLabel(emotionInfo?.emotionState?.dominantEmotion)}</strong>
                 </div>
             </div>
         </article>

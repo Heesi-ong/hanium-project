@@ -100,7 +100,7 @@ function ResultDetailPage() {
         ? emotionInfo.frameResults
         : [];
 
-    const emotionCounts = emotionInfo.emotionCounts || {};
+    const emotionCounts = emotionInfo.emotionState?.emotionCounts || {};
 
     const currentStatus = analysisStatus?.status || result.status || null;
     const currentStatusDescription =
@@ -134,7 +134,7 @@ function ResultDetailPage() {
             },
             {
                 label: "표정",
-                value: scoreSummary.emotionScore,
+                value: scoreSummary.expressionScore,
             },
         ],
         [scoreSummary]

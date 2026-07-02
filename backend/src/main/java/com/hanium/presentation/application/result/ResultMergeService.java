@@ -70,7 +70,7 @@ public class ResultMergeService {
         scoreSummary.put("gazeScore", getOrDefault(score, "gazeScore", 0));
         scoreSummary.put("speechScore", getOrDefault(score, "speechScore", 0));
         scoreSummary.put("gestureScore", getOrDefault(score, "gestureScore", 0));
-        scoreSummary.put("emotionScore", getOrDefault(score, "emotionScore", 0));
+        scoreSummary.put("expressionScore", getOrDefault(score, "expressionScore", 0));
         scoreSummary.put("level", resolveLevel(getNumberValue(score, "totalScore")));
 
         return scoreSummary;
@@ -186,7 +186,7 @@ public class ResultMergeService {
         scoreSummary.put("gazeScore", 0);
         scoreSummary.put("speechScore", 0);
         scoreSummary.put("gestureScore", 0);
-        scoreSummary.put("emotionScore", 0);
+        scoreSummary.put("expressionScore", 0);
         scoreSummary.put("level", "FAILED");
 
         return scoreSummary;

@@ -155,6 +155,10 @@ export function formatAnalysisMethod(method) {
         return "MediaPipe Tasks 표정 기반";
     }
 
+    if (method === "mediapipe_tasks_face_landmarker_iris_gaze_ratio") {
+        return "MediaPipe Tasks 눈동자(Iris) 응시 비율 기반";
+    }
+
     if (!method) {
         return "-";
     }

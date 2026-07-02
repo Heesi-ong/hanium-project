@@ -1,76 +1,56 @@
 name: verify
 
+# 이 워크플로우는 실제 디렉토리 구조(backend/frontend/analysis-engine/video-llm-engine) 기준으로
+# 작성되었습니다. 파이썬 엔진(analysis-engine, video-llm-engine)에는 아직 테스트 코드가 없어서
+# 우선 문법 오류만 잡는 최소 점검(compileall)만 수행합니다. 실제 pytest 테스트가 추가되면
+# 이 자리에 테스트 실행 단계를 추가할 예정입니다 (서비스화 로드맵 Phase 6).
+
 on:
   push:
   pull_request:
 
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-java@v4
         with:
-          python-version: "3.12"
+          distribution: temurin
+          java-version: "17"
+      - run: chmod +x ./gradlew
+      - run: ./gradlew test --no-daemon
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: Front/package-lock.json
-      - run: python -m pip install -r Back/requirements-dev.txt
-      - run: python -m ruff check Back scripts
-      - run: python scripts/verify-config.py --env-file Back/.env.example
-      - run: python scripts/verify-storage.py
-      - run: python -m coverage run --source=Back/app -m unittest discover -s Back/tests -v
-      - run: python -m coverage report --fail-under=48
+          cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-        working-directory: Front
-      - run: npm run format:check
-        working-directory: Front
       - run: npm run lint
-        working-directory: Front
-      - run: npm run test
-        working-directory: Front
       - run: npm run build
-        working-directory: Front
-      - run: npm audit --omit=dev
-        working-directory: Front
 
-  mysql-integration:
+  python-engines:
     runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-          MYSQL_DATABASE: gpt_conversation_app
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd "mysqladmin ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: 3307
-      DB_USER: root
-      DB_PASSWORD: ""
-      DB_NAME: gpt_conversation_app
-      DB_MIGRATION_USER: root
-      DB_MIGRATION_PASSWORD: ""
+    strategy:
+      matrix:
+        engine: [analysis-engine, video-llm-engine]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r Back/requirements-dev.txt
-      - run: python scripts/migrate.py
-      - run: python scripts/migrate.py
-      - run: |
-          python - <<'PY'
-          from Back.app.services.database import ping_database
-          from Back.app.services.analysis_jobs import get_analysis_queue_status
-          ping_database()
-          assert get_analysis_queue_status() == {"queued": 0, "processing": 0, "failed": 0, "stalled": 0}
-          PY
+      # requirements.txt에 OpenCV/MediaPipe/torch 등 대용량 의존성이 있어 매번 전체 설치는
+      # 비용이 크므로, 현재 단계에서는 의존성 설치 없이 문법 오류만 검사합니다.
+      - run: python -m compileall -q app
+        working-directory: ${{ matrix.engine }}

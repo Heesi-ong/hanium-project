@@ -21,15 +21,23 @@ repositories {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     // 분석 진행률(%) 캐시 용도로만 사용합니다. 결과 JSON/DB 저장 구조는 그대로 유지합니다.
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     runtimeOnly 'com.h2database:h2'
     runtimeOnly 'com.mysql:mysql-connector-j'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    // dev/prod(MySQL) 프로필에서 DB 스키마 버전 관리를 위해 사용합니다.
+    // local(H2) 프로필은 spring.flyway.enabled=false 로 꺼져 있어 영향 없습니다.
+    implementation 'org.flywaydb:flyway-mysql'
 
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
 

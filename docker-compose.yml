@@ -1,0 +1,103 @@
+# 전체 서비스(mysql, redis, analysis-engine, video-llm-engine, backend, frontend)를
+# 한 번에 띄우기 위한 구성입니다. 로컬 개발은 기존처럼 각 서비스를 따로 실행해도 되고,
+# 이 파일로 한 번에 띄워서 "실제 배포와 비슷한 구조"를 미리 확인해볼 수도 있습니다.
+#
+# 사용법:
+#   1) 프로젝트 루트에 .env 파일을 만들고 .env.example을 참고해 값을 채웁니다.
+#   2) docker compose up --build
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-hanium_dev}
+      MYSQL_USER: ${DB_USERNAME:-hanium}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-changeme}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeme}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  analysis-engine:
+    build:
+      context: ./analysis-engine
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./storage:/storage
+
+  video-llm-engine:
+    build:
+      context: ./video-llm-engine
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./storage:/storage
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      analysis-engine:
+        condition: service_started
+      video-llm-engine:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-hanium_dev}
+      DB_USERNAME: ${DB_USERNAME:-hanium}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ANALYSIS_ENGINE_BASE_URL: http://analysis-engine:8001
+      VIDEO_LLM_ENGINE_BASE_URL: http://video-llm-engine:8002
+      OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      STORAGE_ROOT_PATH: /storage
+      STORAGE_UPLOAD_PATH: /storage/uploads
+      STORAGE_RESULT_PATH: /storage/results
+      STORAGE_TEMP_PATH: /storage/temp
+      STORAGE_LOG_PATH: /storage/logs
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./storage:/storage
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql-data:

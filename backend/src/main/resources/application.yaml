@@ -1,14 +1,50 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
     name: presentation-coaching-backend
 
   profiles:
-    active: local
+    active: ${SPRING_PROFILES_ACTIVE:local}
 
   servlet:
     multipart:
       max-file-size: 500MB
       max-request-size: 500MB
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+  # local 프로필(H2)에서는 Flyway를 쓰지 않고 Hibernate가 스키마를 자동 생성합니다.
+  # dev/prod 프로필에서 true로 켭니다.
+  flyway:
+    enabled: false
+
+external:
+  analysis-engine:
+    base-url: ${ANALYSIS_ENGINE_BASE_URL:http://localhost:8001}
+
+  video-llm-engine:
+    base-url: ${VIDEO_LLM_ENGINE_BASE_URL:http://localhost:8002}
+
+# OpenAiProperties(prefix="openai")가 실제로 읽는 키와 일치시켰습니다.
+# 이전에는 external.openai.* 로 되어 있어서 값을 넣어도 바인딩되지 않는 문제가 있었습니다.
+openai:
+  enabled: ${OPENAI_ENABLED:false}
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  timeout-ms: ${OPENAI_TIMEOUT_MS:15000}
+
+storage:
+  root-path: ${STORAGE_ROOT_PATH:../storage}
+  upload-path: ${STORAGE_UPLOAD_PATH:../storage/uploads}
+  result-path: ${STORAGE_RESULT_PATH:../storage/results}
+  temp-path: ${STORAGE_TEMP_PATH:../storage/temp}
+  log-path: ${STORAGE_LOG_PATH:../storage/logs}
+
+cors:
+  # 쉼표로 구분된 허용 origin 목록. 배포 도메인이 생기면 코드 수정 없이 이 값만 바꾸면 됩니다.
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

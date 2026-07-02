@@ -5,6 +5,7 @@ import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import {
+    getAnalysisProgress,
     getAnalysisStatus,
     runAnalysis,
     uploadAnalysisVideo,
@@ -13,6 +14,7 @@ import {
 const MAX_FILE_SIZE_MB = 500;
 const POLLING_INTERVAL_MS = 1500;
 const POLLING_TIMEOUT_MS = 120000;
+const PROGRESS_POLLING_INTERVAL_MS = 1000;
 
 const RUNNING_STATUSES = [
     "BASIC_ANALYZING",
@@ -37,10 +39,12 @@ function UploadPage() {
     const navigate = useNavigate();
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
+    const progressTimerRef = useRef(null);
 
     const [file, setFile] = useState(null);
     const [uploadedResult, setUploadedResult] = useState(null);
     const [analysisStatus, setAnalysisStatus] = useState(null);
+    const [progress, setProgress] = useState(null);
     const [useVideoLlm, setUseVideoLlm] = useState(true);
     const [useOpenAi, setUseOpenAi] = useState(true);
     const [loading, setLoading] = useState(false);
@@ -66,6 +70,7 @@ function UploadPage() {
     useEffect(() => {
         return () => {
             stopPolling();
+            stopProgressPolling();
         };
     }, []);
 
@@ -77,6 +82,30 @@ function UploadPage() {
 
         pollingStartedAtRef.current = null;
         setPolling(false);
+    }
+
+    function stopProgressPolling() {
+        if (progressTimerRef.current) {
+            clearInterval(progressTimerRef.current);
+            progressTimerRef.current = null;
+        }
+    }
+
+    // 분석 파이프라인이 실행되는 동안(POST /run 응답을 기다리는 동안) 별도로
+    // 진행률 API를 계속 조회해서 지금 몇 %인지 화면에 보여줍니다.
+    // /run 요청 자체는 분석이 다 끝나야 응답이 오기 때문에, 이 폴링이 없으면
+    // 사용자는 분석이 끝날 때까지 아무 진행 상황도 볼 수 없습니다.
+    function startProgressPolling(jobId) {
+        stopProgressPolling();
+
+        progressTimerRef.current = setInterval(async () => {
+            try {
+                const response = await getAnalysisProgress(jobId);
+                setProgress(response.data);
+            } catch {
+                // 진행률 조회 실패는 분석 자체의 실패가 아니므로 조용히 무시합니다.
+            }
+        }, PROGRESS_POLLING_INTERVAL_MS);
     }
 
     function handleFileChange(event) {
@@ -155,6 +184,9 @@ function UploadPage() {
         try {
             setRunning(true);
             setError("");
+            setProgress(null);
+
+            startProgressPolling(uploadedResult.jobId);
 
             await runAnalysis(uploadedResult.jobId, {
                 useVideoLlm,
@@ -174,6 +206,7 @@ function UploadPage() {
             }
         } finally {
             setRunning(false);
+            stopProgressPolling();
         }
     }
 
@@ -400,6 +433,20 @@ function UploadPage() {
 
                             <div className="pipeline-box">
                                 <h3>분석 진행 단계</h3>
+
+                                {(running || polling) && (
+                                    <div className="progress-bar-wrap">
+                                        <div className="progress-bar-track">
+                                            <div
+                                                className="progress-bar-fill"
+                                                style={{ width: `${progress?.percent ?? 0}%` }}
+                                            />
+                                        </div>
+                                        <span className="progress-bar-label">
+                                            {progress?.percent ?? 0}% · {progress?.message || "진행률을 확인하는 중입니다."}
+                                        </span>
+                                    </div>
+                                )}
 
                                 <div className="pipeline-steps">
                                     {Object.entries(STATUS_STEP_LABELS).map(([status, label]) => (

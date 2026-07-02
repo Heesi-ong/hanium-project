@@ -59,16 +59,33 @@ frontend           : http://localhost:5173
 backend            : http://localhost:8080
 analysis-engine    : http://localhost:8001
 video-llm-engine   : http://localhost:8002
+redis (선택)        : localhost:6379
 ```
+
+Redis는 분석 진행률(%)을 잠깐 보여주기 위한 캐시 용도로만 사용합니다. 실행하지 않아도
+분석 자체는 정상 동작하며, 이 경우 진행률 화면은 저장된 상태 기준으로 대략적인 값만
+보여줍니다.
 
 ## 3. 실행 순서
 
 전체 기능을 정상적으로 사용하려면 아래 순서로 실행합니다.
 
-1. analysis-engine 실행
-2. video-llm-engine 실행
-3. backend 실행
-4. frontend 실행
+1. (선택) Redis 실행
+2. analysis-engine 실행
+3. video-llm-engine 실행
+4. backend 실행
+5. frontend 실행
+
+## 3-1. Redis 실행 (선택)
+
+```bash
+# 도커를 사용하는 경우
+docker compose -f infra/docker/docker-compose.redis.yml up -d
+
+# 로컬에 설치한 경우 (예: macOS)
+brew install redis
+brew services start redis
+```
 
 ## 4. analysis-engine 실행
 

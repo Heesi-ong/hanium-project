@@ -56,6 +56,12 @@ export async function getAnalysisStatus(jobId) {
     return unwrapApiResponse(response);
 }
 
+// 분석이 진행되는 동안 몇 %쯤 진행됐는지 확인합니다. (Redis 기반 진행률 캐시)
+export async function getAnalysisProgress(jobId) {
+    const response = await apiClient.get(`/api/analysis/${jobId}/progress`);
+    return unwrapApiResponse(response);
+}
+
 export async function getResults() {
     const response = await apiClient.get("/api/results");
     return unwrapApiResponse(response);

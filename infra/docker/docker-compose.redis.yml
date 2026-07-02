@@ -1,0 +1,18 @@
+# 분석 진행률 표시용 Redis 서버입니다.
+# 기존 JSON 파일 / MySQL 저장 구조는 그대로 두고, Redis는 "지금 몇 % 진행됐는지"를
+# 잠깐 저장했다가 프론트에 보여주는 용도로만 추가로 사용합니다.
+#
+# 실행: docker compose -f infra/docker/docker-compose.redis.yml up -d
+# 중지: docker compose -f infra/docker/docker-compose.redis.yml down
+#
+# 도커를 쓰지 않는 경우, 로컬에 redis-server를 설치해 기본 포트(6379)로 띄워도 됩니다.
+# (예: brew install redis && brew services start redis)
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: hanium-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped

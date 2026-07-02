@@ -665,30 +665,31 @@ Spring Boot 결과 병합 반영
 
 ```
 
-현재 점수 계산에 반영된 항목:
+현재 점수 계산에 반영된 항목 (`발표_코칭_점수화_알고리즘_선정_자료_정리본` 기준으로 변경됨):
 
 ```text
 
-totalScore = postureScore * 0.20
+totalScore = postureScore * 0.25
+           + expressionScore * 0.20
            + gazeScore * 0.20
-           + speechScore * 0.30
-           + gestureScore * 0.15
-           + emotionScore * 0.15
+           + speechScore * 0.25
+           + gestureScore * 0.10
 
 postureScore
-- MediaPipe Tasks PoseLandmarker 기반 자세 점수
+- MediaPipe Tasks PoseLandmarker 기반 자세 점수 (Pose Landmark Angle Analysis)
 
 gazeScore
-- MediaPipe Tasks FaceLandmarker 기반 시선 점수
+- MediaPipe Tasks FaceLandmarker의 눈동자(Iris) 랜드마크 기반 카메라 응시 비율 점수 (Gaze Tracking)
 
 speechScore
-- faster-whisper STT 기반 음성 점수
+- faster-whisper STT 기반 음성 점수 (Speech Rate Analysis)
 
 gestureScore
-- MediaPipe Tasks PoseLandmarker 기반 제스처 점수
+- MediaPipe Tasks PoseLandmarker 기반 제스처 점수 (Motion Tracking)
 
-emotionScore
-- MediaPipe Tasks FaceLandmarker 기반 표정/감정 점수
+expressionScore
+- MediaPipe Tasks FaceLandmarker 기반 표정 점수 (Facial Landmark Distance Analysis)
+- 감정 상태 분류(happy/neutral/anxious 등)는 emotionState 필드에 참고용으로만 표시하며 총점에는 반영하지 않음
 
 ```
 

@@ -39,6 +39,15 @@ MOUTH_BOTTOM_INDEX = 14
 MOUTH_LEFT_INDEX = 61
 MOUTH_RIGHT_INDEX = 291
 
+# MediaPipe Face Landmarker는 478개 랜드마크를 반환하며, 468~477번이 눈동자(Iris) 좌표입니다.
+LEFT_IRIS_CENTER_INDEX = 468
+RIGHT_IRIS_CENTER_INDEX = 473
+
+# 눈동자가 눈 영역 중 어느 위치에 있으면 "카메라를 응시 중"으로 볼지 정하는 기준값입니다.
+# 0.5가 눈 정중앙이며, 값이 좁을수록(0.5에 가까울수록) 정면 응시로 판단합니다.
+GAZE_CAMERA_CENTER = 0.5
+GAZE_CAMERA_CENTER_TOLERANCE = 0.15
+
 WHISPER_MODEL_SIZE = "base"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
@@ -82,13 +91,29 @@ class BasicAnalysisRequest(BaseModel):
     videoPath: str
 
 
+TOTAL_ANALYSIS_STEPS = 9
+
+
+def log_step(job_id: str, step_no: int, message: str) -> None:
+    """분석 중 지금 무슨 작업을 하고 있는지 터미널(콘솔)에 바로 출력합니다.
+
+    영상 하나를 분석하는 데 시간이 꽤 걸리기 때문에, 이 print가 없으면
+    analysis-engine 터미널 화면이 아무 반응 없이 멈춘 것처럼 보입니다.
+    """
+    print(f"[analysis-engine] ({job_id}) {step_no}/{TOTAL_ANALYSIS_STEPS} {message}", flush=True)
+
+
 @router.post("/basic-analysis")
 def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
+    job_id = request.jobId
+
+    log_step(job_id, 1, "영상 파일 확인 중...")
     resolved_video_path = resolve_video_path(request.videoPath)
 
     if resolved_video_path is None:
+        log_step(job_id, 1, "영상 파일을 찾지 못해 분석을 중단합니다.")
         return create_failed_response(
-            job_id=request.jobId,
+            job_id=job_id,
             video_path=request.videoPath,
             reason="영상 파일을 찾을 수 없습니다.",
         )
@@ -96,32 +121,39 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
     video_info = extract_video_info(resolved_video_path)
 
     if video_info["readable"] is False:
+        log_step(job_id, 1, "영상 파일을 읽지 못해 분석을 중단합니다.")
         return create_failed_response(
-            job_id=request.jobId,
+            job_id=job_id,
             video_path=str(resolved_video_path),
             reason="영상 파일을 읽을 수 없습니다.",
         )
 
+    log_step(job_id, 2, "영상에서 프레임(장면 이미지)을 추출하는 중...")
     frame_result = extract_sample_frames(
-        job_id=request.jobId,
+        job_id=job_id,
         video_path=resolved_video_path,
         fps=video_info["fps"],
         frame_count=video_info["frameCount"],
     )
 
+    log_step(job_id, 3, "영상에서 오디오(소리)를 분리하는 중...")
     audio_extraction_result = extract_audio_from_video(
-        job_id=request.jobId,
+        job_id=job_id,
         video_path=resolved_video_path,
     )
 
+    log_step(job_id, 4, "음성을 텍스트로 변환(STT)하는 중... (영상 길이에 따라 시간이 걸릴 수 있습니다)")
     stt_result = transcribe_audio(audio_extraction_result)
 
+    log_step(job_id, 5, "자세(포즈)를 분석하는 중...")
     pose_result = analyze_pose_from_frames(frame_result["sampledFrames"])
     gesture_result = analyze_gesture_from_pose_result(pose_result)
 
+    log_step(job_id, 6, "얼굴/시선/표정을 분석하는 중...")
     face_result = analyze_face_from_frames(frame_result["sampledFrames"])
     emotion_result = analyze_emotion_from_face_result(face_result)
 
+    log_step(job_id, 7, "말하기 속도와 침묵 구간을 분석하는 중...")
     audio_result = analyze_speech(
         duration_sec=video_info["durationSec"],
         audio_extraction_result=audio_extraction_result,
@@ -133,6 +165,7 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
         audio_result=audio_result,
     )
 
+    log_step(job_id, 8, "항목별 점수와 최종 점수를 계산하는 중...")
     score_result = calculate_score(
         pose_result=pose_result,
         face_result=face_result,
@@ -140,6 +173,8 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
         gesture_result=gesture_result,
         emotion_result=emotion_result,
     )
+
+    log_step(job_id, 9, f"기본 분석 완료. 총점 {score_result['totalScore']}점")
 
     return {
         "jobId": request.jobId,
@@ -911,7 +946,7 @@ def analyze_face_from_frames(
     analyzed_frames: List[Dict[str, Any]] = []
     detected_count = 0
     gaze_scores: List[int] = []
-    nose_offsets: List[float] = []
+    camera_gaze_frame_count = 0
 
     with vision.FaceLandmarker.create_from_options(options) as landmarker:
         for frame_info in sampled_frames:
@@ -939,6 +974,7 @@ def analyze_face_from_frames(
                 RIGHT_EYE_OUTER_INDEX,
                 RIGHT_EYE_BOTTOM_INDEX,
                 MOUTH_RIGHT_INDEX,
+                RIGHT_IRIS_CENTER_INDEX,
             )
 
             if len(landmarks) <= required_max_index:
@@ -963,15 +999,36 @@ def analyze_face_from_frames(
             mouth_left = landmarks[MOUTH_LEFT_INDEX]
             mouth_right = landmarks[MOUTH_RIGHT_INDEX]
 
-            left_eye_center_x = (left_eye_outer.x + left_eye_inner.x) / 2
-            right_eye_center_x = (right_eye_outer.x + right_eye_inner.x) / 2
-            eye_center_x = (left_eye_center_x + right_eye_center_x) / 2
+            left_iris_center = landmarks[LEFT_IRIS_CENTER_INDEX]
+            right_iris_center = landmarks[RIGHT_IRIS_CENTER_INDEX]
 
-            nose_offset = nose_tip.x - eye_center_x
-            abs_nose_offset = abs(nose_offset)
+            # 눈동자(Iris) 중심이 눈 영역 안에서 어디쯤 있는지를 0~1 비율로 계산합니다.
+            # 0.5에 가까울수록 눈동자가 눈 정중앙, 즉 정면(카메라 방향)을 보고 있다는 뜻입니다.
+            left_gaze_ratio = calculate_iris_gaze_ratio(
+                iris_center=left_iris_center,
+                eye_horizontal_a=left_eye_outer,
+                eye_horizontal_b=left_eye_inner,
+                eye_top=left_eye_top,
+                eye_bottom=left_eye_bottom,
+            )
+            right_gaze_ratio = calculate_iris_gaze_ratio(
+                iris_center=right_iris_center,
+                eye_horizontal_a=right_eye_outer,
+                eye_horizontal_b=right_eye_inner,
+                eye_top=right_eye_top,
+                eye_bottom=right_eye_bottom,
+            )
 
-            gaze_score = calculate_gaze_score(abs_nose_offset)
-            gaze_direction = estimate_gaze_direction(nose_offset)
+            horizontal_ratio, vertical_ratio = average_gaze_ratios(
+                left_gaze_ratio,
+                right_gaze_ratio,
+            )
+
+            gaze_score = calculate_gaze_score_from_ratios(horizontal_ratio, vertical_ratio)
+            gazing_at_camera = is_gazing_at_camera(horizontal_ratio, vertical_ratio)
+
+            if gazing_at_camera:
+                camera_gaze_frame_count += 1
 
             mouth_openness = calculate_mouth_openness(
                 mouth_top=mouth_top,
@@ -990,16 +1047,15 @@ def analyze_face_from_frames(
             )
 
             gaze_scores.append(gaze_score)
-            nose_offsets.append(abs_nose_offset)
 
             analyzed_frames.append(
                 {
                     "sequence": frame_info.get("sequence"),
                     "timestampSec": frame_info.get("timestampSec"),
                     "faceDetected": True,
-                    "noseOffset": round(nose_offset, 4),
-                    "absNoseOffset": round(abs_nose_offset, 4),
-                    "gazeDirection": gaze_direction,
+                    "irisHorizontalRatio": horizontal_ratio,
+                    "irisVerticalRatio": vertical_ratio,
+                    "gazingAtCamera": gazing_at_camera,
                     "gazeScore": gaze_score,
                     "mouthOpenness": mouth_openness,
                     "eyeOpenness": eye_openness,
@@ -1014,16 +1070,22 @@ def analyze_face_from_frames(
     total_frames = len(sampled_frames)
     detection_rate = round(detected_count / total_frames, 4) if total_frames > 0 else 0
     average_gaze_score = calculate_average_int(gaze_scores)
-    average_nose_offset = calculate_average_float(nose_offsets)
-    eye_contact_level = resolve_eye_contact_level(average_gaze_score)
+    # 문서(점수화 알고리즘 선정 자료)가 권장하는 "카메라 응시 비율" 방식입니다.
+    # 얼굴이 검출된 프레임 중 카메라를 본 프레임의 비율을 최종 시선 점수의 기준으로 삼습니다.
+    camera_gaze_ratio = (
+        round(camera_gaze_frame_count / detected_count, 4) if detected_count > 0 else 0
+    )
+    gaze_score = calculate_gaze_score_from_camera_ratio(camera_gaze_ratio)
+    eye_contact_level = resolve_eye_contact_level(gaze_score)
 
     return {
-        "analysisMethod": "mediapipe_tasks_face_landmarker",
+        "analysisMethod": "mediapipe_tasks_face_landmarker_iris_gaze_ratio",
         "detectionRate": detection_rate,
         "detectedFrameCount": detected_count,
         "totalFrameCount": total_frames,
-        "gazeScore": average_gaze_score,
-        "averageNoseOffset": average_nose_offset,
+        "gazeScore": gaze_score,
+        "averageFrameGazeScore": average_gaze_score,
+        "cameraGazeRatio": camera_gaze_ratio,
         "eyeContactLevel": eye_contact_level,
         "frameResults": analyzed_frames,
     }
@@ -1072,9 +1134,9 @@ def create_face_frame_result(
         "sequence": frame_info.get("sequence"),
         "timestampSec": frame_info.get("timestampSec"),
         "faceDetected": detected,
-        "noseOffset": None,
-        "absNoseOffset": None,
-        "gazeDirection": "unknown",
+        "irisHorizontalRatio": None,
+        "irisVerticalRatio": None,
+        "gazingAtCamera": False,
         "gazeScore": 0,
         "mouthOpenness": 0,
         "eyeOpenness": 0,
@@ -1142,26 +1204,31 @@ def analyze_emotion_from_face_result(
     detected_frame_count = sum(1 for frame in frame_results if frame.get("faceDetected"))
     detection_rate = round(detected_frame_count / total_frames, 4) if total_frames > 0 else 0
 
-    expression_score = calculate_average_int(expressiveness_scores)
+    expression_raw_score = calculate_average_int(expressiveness_scores)
     expression_variety_score = calculate_expression_variety_score(emotion_counts)
 
-    emotion_score = int(
-        expression_score * 0.65
+    # '발표_코칭_점수화_알고리즘_선정_자료'의 "4. 표정 점수(Facial Landmark Distance Analysis)"에
+    # 해당하는 점수입니다. 최종 가중합에 직접 반영되는 표정 항목입니다.
+    expression_score = int(
+        expression_raw_score * 0.65
         + expression_variety_score * 0.20
         + int(detection_rate * 100) * 0.15
     )
 
-    emotion_score = max(0, min(emotion_score, 100))
+    expression_score = max(0, min(expression_score, 100))
 
     dominant_emotion = resolve_dominant_emotion(emotion_counts)
 
     return {
         "analysisMethod": "mediapipe_tasks_face_landmarker_expression_based",
-        "emotionScore": emotion_score,
         "expressionScore": expression_score,
+        "expressionRawScore": expression_raw_score,
         "expressionVarietyScore": expression_variety_score,
-        "dominantEmotion": dominant_emotion,
-        "emotionCounts": emotion_counts,
+        "emotionState": {
+            "dominantEmotion": dominant_emotion,
+            "emotionCounts": emotion_counts,
+            "note": "감정 상태 분류는 표정 점수의 보조 지표이며 총점에는 반영하지 않습니다.",
+        },
         "detectionRate": detection_rate,
         "detectedFrameCount": detected_frame_count,
         "totalFrameCount": total_frames,
@@ -1603,27 +1670,90 @@ def calculate_filler_score(filler_ratio: float) -> int:
     return 40
 
 
-def calculate_gaze_score(abs_nose_offset: float) -> int:
-    if abs_nose_offset < 0.015:
+def calculate_iris_gaze_ratio(
+        iris_center: Any,
+        eye_horizontal_a: Any,
+        eye_horizontal_b: Any,
+        eye_top: Any,
+        eye_bottom: Any,
+) -> Dict[str, float] | None:
+    """눈동자(iris) 중심이 눈 영역 안에서 어디에 위치하는지를 0~1 비율로 계산합니다.
+
+    0.5, 0.5는 눈 정중앙(정면 응시)을 의미합니다.
+    """
+    horizontal_span = abs(eye_horizontal_a.x - eye_horizontal_b.x)
+    vertical_span = abs(eye_bottom.y - eye_top.y)
+
+    if horizontal_span <= 0 or vertical_span <= 0:
+        return None
+
+    left_bound_x = min(eye_horizontal_a.x, eye_horizontal_b.x)
+    top_bound_y = min(eye_top.y, eye_bottom.y)
+
+    horizontal_ratio = (iris_center.x - left_bound_x) / horizontal_span
+    vertical_ratio = (iris_center.y - top_bound_y) / vertical_span
+
+    return {
+        "horizontalRatio": horizontal_ratio,
+        "verticalRatio": vertical_ratio,
+    }
+
+
+def average_gaze_ratios(
+        left_gaze_ratio: Dict[str, float] | None,
+        right_gaze_ratio: Dict[str, float] | None,
+) -> tuple[float, float]:
+    ratios = [ratio for ratio in (left_gaze_ratio, right_gaze_ratio) if ratio is not None]
+
+    if not ratios:
+        return GAZE_CAMERA_CENTER, GAZE_CAMERA_CENTER
+
+    horizontal_ratio = sum(ratio["horizontalRatio"] for ratio in ratios) / len(ratios)
+    vertical_ratio = sum(ratio["verticalRatio"] for ratio in ratios) / len(ratios)
+
+    return round(horizontal_ratio, 4), round(vertical_ratio, 4)
+
+
+def is_gazing_at_camera(horizontal_ratio: float, vertical_ratio: float) -> bool:
+    horizontal_offset = abs(horizontal_ratio - GAZE_CAMERA_CENTER)
+    vertical_offset = abs(vertical_ratio - GAZE_CAMERA_CENTER)
+
+    return (
+        horizontal_offset <= GAZE_CAMERA_CENTER_TOLERANCE
+        and vertical_offset <= GAZE_CAMERA_CENTER_TOLERANCE
+    )
+
+
+def calculate_gaze_score_from_ratios(horizontal_ratio: float, vertical_ratio: float) -> int:
+    offset = max(
+        abs(horizontal_ratio - GAZE_CAMERA_CENTER),
+        abs(vertical_ratio - GAZE_CAMERA_CENTER),
+    )
+
+    if offset < 0.12:
         return 100
 
-    if abs_nose_offset < 0.035:
+    if offset < 0.20:
         return 80
 
-    if abs_nose_offset < 0.06:
+    if offset < 0.30:
         return 60
 
     return 40
 
 
-def estimate_gaze_direction(nose_offset: float) -> str:
-    if nose_offset < -0.035:
-        return "left"
+def calculate_gaze_score_from_camera_ratio(camera_gaze_ratio: float) -> int:
+    """'발표_코칭_점수화_알고리즘_선정_자료'의 시선 점수화 기준을 따릅니다.
 
-    if nose_offset > 0.035:
-        return "right"
+    카메라 응시 비율 70% 이상: 우수, 40~70%: 보통, 40% 미만: 시선 개선 필요.
+    """
+    if camera_gaze_ratio >= 0.70:
+        return 90
 
-    return "center"
+    if camera_gaze_ratio >= 0.40:
+        return int(60 + (camera_gaze_ratio - 0.40) / 0.30 * 29)
+
+    return int(camera_gaze_ratio / 0.40 * 59)
 
 
 def resolve_eye_contact_level(gaze_score: int) -> str:
@@ -1670,18 +1800,20 @@ def calculate_score(
         gesture_result: Dict[str, Any],
         emotion_result: Dict[str, Any],
 ) -> Dict[str, Any]:
+    # '발표_코칭_점수화_알고리즘_선정_자료'의 "9. 최종 점수화" 기준 가중치입니다.
+    # 자세 25% + 표정 20% + 시선 20% + 음성 25% + 제스처 10%
     posture_score = int(pose_result.get("postureScore", 0))
     gaze_score = int(face_result.get("gazeScore", 0))
     speech_score = int(audio_result.get("speechScore", 0))
     gesture_score = int(gesture_result.get("gestureScore", 0))
-    emotion_score = int(emotion_result.get("emotionScore", 0))
+    expression_score = int(emotion_result.get("expressionScore", 0))
 
     total_score = int(
-        posture_score * 0.20
+        posture_score * 0.25
+        + expression_score * 0.20
         + gaze_score * 0.20
-        + speech_score * 0.30
-        + gesture_score * 0.15
-        + emotion_score * 0.15
+        + speech_score * 0.25
+        + gesture_score * 0.10
     )
 
     return {
@@ -1690,7 +1822,7 @@ def calculate_score(
         "gazeScore": gaze_score,
         "speechScore": speech_score,
         "gestureScore": gesture_score,
-        "emotionScore": emotion_score,
+        "expressionScore": expression_score,
     }
 
 
@@ -1740,12 +1872,13 @@ def create_empty_gesture_result() -> Dict[str, Any]:
 
 def create_empty_face_result() -> Dict[str, Any]:
     return {
-        "analysisMethod": "mediapipe_tasks_face_landmarker",
+        "analysisMethod": "mediapipe_tasks_face_landmarker_iris_gaze_ratio",
         "detectionRate": 0,
         "detectedFrameCount": 0,
         "totalFrameCount": 0,
         "gazeScore": 0,
-        "averageNoseOffset": 0,
+        "averageFrameGazeScore": 0,
+        "cameraGazeRatio": 0,
         "eyeContactLevel": "unknown",
         "frameResults": [],
     }
@@ -1754,22 +1887,25 @@ def create_empty_face_result() -> Dict[str, Any]:
 def create_empty_emotion_result() -> Dict[str, Any]:
     return {
         "analysisMethod": "mediapipe_tasks_face_landmarker_expression_based",
-        "emotionScore": 0,
         "expressionScore": 0,
+        "expressionRawScore": 0,
         "expressionVarietyScore": 0,
-        "dominantEmotion": "unknown",
-        "emotionCounts": {
-            "neutral": 0,
-            "engaged": 0,
-            "speaking": 0,
-            "low_energy": 0,
-            "unknown": 0,
+        "emotionState": {
+            "dominantEmotion": "unknown",
+            "emotionCounts": {
+                "neutral": 0,
+                "engaged": 0,
+                "speaking": 0,
+                "low_energy": 0,
+                "unknown": 0,
+            },
+            "note": "감정 상태 분류는 표정 점수의 보조 지표이며 총점에는 반영하지 않습니다.",
         },
         "detectionRate": 0,
         "detectedFrameCount": 0,
         "totalFrameCount": 0,
         "frameResults": [],
-        "note": "얼굴 분석 결과가 없어 감정 분석을 수행하지 못했습니다.",
+        "note": "얼굴 분석 결과가 없어 표정 분석을 수행하지 못했습니다.",
     }
 
 
@@ -1850,7 +1986,7 @@ def create_failed_response(
             "gazeScore": 0,
             "speechScore": 0,
             "gestureScore": 0,
-            "emotionScore": 0,
+            "expressionScore": 0,
         },
         "error": {
             "reason": reason,

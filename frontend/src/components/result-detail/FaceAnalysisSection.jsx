@@ -1,7 +1,6 @@
 import {
     formatAnalysisMethod,
     formatEyeContactLevel,
-    formatGazeDirection,
     formatNumber,
     formatPercent,
 } from "./resultDetailFormatters";
@@ -19,7 +18,7 @@ function FaceAnalysisSection({
                 {renderMetricCard(
                     "시선 점수",
                     faceInfo?.gazeScore,
-                    "코끝 위치와 양쪽 눈 중심의 차이를 기반으로 계산한 시선 안정성 점수입니다."
+                    "눈동자(Iris) 위치가 눈 영역 중앙에 머문 시간 비율(카메라 응시 비율)을 기반으로 계산한 점수입니다."
                 )}
 
                 <article className="metric-card">
@@ -37,9 +36,9 @@ function FaceAnalysisSection({
                 </article>
 
                 <article className="metric-card">
-                    <span>평균 코 오프셋</span>
-                    <strong>{formatNumber(faceInfo?.averageNoseOffset, 4)}</strong>
-                    <p>눈 중심 대비 코끝 위치 차이의 평균값입니다.</p>
+                    <span>카메라 응시 비율</span>
+                    <strong>{formatPercent(faceInfo?.cameraGazeRatio)}</strong>
+                    <p>얼굴이 검출된 프레임 중 눈동자가 카메라(정면)를 향한 프레임의 비율입니다.</p>
                 </article>
 
                 <article className="metric-card">
@@ -65,8 +64,8 @@ function FaceAnalysisSection({
                             <th>순서</th>
                             <th>시간</th>
                             <th>검출</th>
-                            <th>시선 방향</th>
-                            <th>코 오프셋</th>
+                            <th>카메라 응시</th>
+                            <th>눈동자 위치(가로/세로)</th>
                             <th>시선 점수</th>
                             <th>입 벌림</th>
                             <th>눈 뜸</th>
@@ -85,8 +84,16 @@ function FaceAnalysisSection({
                                         <span className="mini-badge muted">미검출</span>
                                     )}
                                 </td>
-                                <td>{formatGazeDirection(frameResult.gazeDirection)}</td>
-                                <td>{formatNumber(frameResult.absNoseOffset, 4)}</td>
+                                <td>
+                                    {frameResult.gazingAtCamera ? (
+                                        <span className="mini-badge success">응시</span>
+                                    ) : (
+                                        <span className="mini-badge muted">이탈</span>
+                                    )}
+                                </td>
+                                <td>
+                                    {formatNumber(frameResult.irisHorizontalRatio, 2)} / {formatNumber(frameResult.irisVerticalRatio, 2)}
+                                </td>
                                 <td>{frameResult.gazeScore ?? 0}</td>
                                 <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
                                 <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>

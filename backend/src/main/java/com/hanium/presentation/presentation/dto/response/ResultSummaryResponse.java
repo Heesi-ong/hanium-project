@@ -102,7 +102,7 @@ public record ResultSummaryResponse(
         scoreSummary.put("gazeScore", 0);
         scoreSummary.put("speechScore", 0);
         scoreSummary.put("gestureScore", 0);
-        scoreSummary.put("emotionScore", 0);
+        scoreSummary.put("expressionScore", 0);
         scoreSummary.put("level", "-");
 
         return scoreSummary;

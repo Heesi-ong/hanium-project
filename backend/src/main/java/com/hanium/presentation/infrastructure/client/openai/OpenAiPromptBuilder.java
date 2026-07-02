@@ -50,7 +50,7 @@ public class OpenAiPromptBuilder {
                 - gazeScore는 시선 처리 판단에 사용합니다.
                 - speechScore는 말하기 속도, 침묵, 음성 흐름 판단에 사용합니다.
                 - gestureScore는 제스처 사용 판단에 사용합니다.
-                - emotionScore는 표정 변화와 발표 몰입감 판단에 사용합니다.
+                - expressionScore는 표정 변화와 발표 몰입감 판단에 사용합니다. (감정 상태 분류는 참고용 보조 지표이며 점수에는 포함되지 않습니다)
                 - STT transcript는 발표 내용 참고용으로만 사용하고, 별도 내용 분석이 없는 경우 논리 구조를 단정하지 않습니다.
                 """;
     }

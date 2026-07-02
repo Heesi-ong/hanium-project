@@ -478,7 +478,7 @@ function ResultListPage() {
                                     <span>시선 {formatScore(result.scoreSummary?.gazeScore)}</span>
                                     <span>음성 {formatScore(result.scoreSummary?.speechScore)}</span>
                                     <span>제스처 {formatScore(result.scoreSummary?.gestureScore)}</span>
-                                    <span>표정 {formatScore(result.scoreSummary?.emotionScore)}</span>
+                                    <span>표정 {formatScore(result.scoreSummary?.expressionScore)}</span>
                                 </div>
 
                                 {result.feedback?.overall && (

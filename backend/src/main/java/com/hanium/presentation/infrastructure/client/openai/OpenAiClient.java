@@ -157,14 +157,14 @@ public class OpenAiClient {
         int gazeScore = getInt(scoreSummary, "gazeScore");
         int speechScore = getInt(scoreSummary, "speechScore");
         int gestureScore = getInt(scoreSummary, "gestureScore");
-        int emotionScore = getInt(scoreSummary, "emotionScore");
+        int expressionScore = getInt(scoreSummary, "expressionScore");
 
         List<String> strengths = createStrengths(
                 postureScore,
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore
+                expressionScore
         );
 
         List<String> improvements = createImprovements(
@@ -172,7 +172,7 @@ public class OpenAiClient {
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore,
+                expressionScore,
                 speechSummary,
                 visualSummary,
                 transcriptSummary
@@ -184,7 +184,7 @@ public class OpenAiClient {
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore,
+                expressionScore,
                 feedbackFocus,
                 strengths,
                 improvements
@@ -195,7 +195,7 @@ public class OpenAiClient {
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore,
+                expressionScore,
                 speechSummary
         );
 
@@ -204,7 +204,7 @@ public class OpenAiClient {
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore,
+                expressionScore,
                 speechSummary,
                 visualSummary
         );
@@ -263,7 +263,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore
+            int expressionScore
     ) {
         List<String> strengths = new ArrayList<>();
 
@@ -283,7 +283,7 @@ public class OpenAiClient {
             strengths.add("제스처 사용이 발표 흐름에 적절히 반영되어 전달력을 높여줍니다.");
         }
 
-        if (emotionScore >= 75) {
+        if (expressionScore >= 75) {
             strengths.add("표정과 발표 몰입도가 비교적 잘 드러나 발표가 생동감 있게 보입니다.");
         }
 
@@ -299,7 +299,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore,
+            int expressionScore,
             Map<String, Object> speechSummary,
             Map<String, Object> visualSummary,
             Map<String, Object> transcriptSummary
@@ -347,11 +347,11 @@ public class OpenAiClient {
             );
         }
 
-        if (emotionScore < 70) {
+        if (expressionScore < 70) {
             improvements.add(
                     "표정 변화와 발표 몰입감이 다소 약하게 분석되었습니다. 문장 끝에서 미세한 미소, 고개 끄덕임, 눈 뜸 변화를 더하면 발표가 덜 단조롭게 보입니다."
                             + createOptionalText(" 주요 표정", visualSummary.get("dominantEmotion"))
-                            + createOptionalMetricText(" 표정 점수", getDouble(visualSummary, "emotionScore"), false)
+                            + createOptionalMetricText(" 표정 점수", getDouble(visualSummary, "expressionScore"), false)
             );
         }
 
@@ -372,7 +372,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore,
+            int expressionScore,
             Map<String, Object> feedbackFocus,
             List<String> strengths,
             List<String> improvements
@@ -381,12 +381,12 @@ public class OpenAiClient {
 
         String strongestArea = translateArea(String.valueOf(feedbackFocus.getOrDefault(
                 "strongestArea",
-                resolveStrongestArea(postureScore, gazeScore, speechScore, gestureScore, emotionScore)
+                resolveStrongestArea(postureScore, gazeScore, speechScore, gestureScore, expressionScore)
         )));
 
         String weakestArea = translateArea(String.valueOf(feedbackFocus.getOrDefault(
                 "weakestArea",
-                resolveWeakestArea(postureScore, gazeScore, speechScore, gestureScore, emotionScore)
+                resolveWeakestArea(postureScore, gazeScore, speechScore, gestureScore, expressionScore)
         )));
 
         return "이번 발표의 종합 점수는 "
@@ -409,7 +409,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore,
+            int expressionScore,
             Map<String, Object> speechSummary
     ) {
         List<Map<String, Object>> practicePlan = new ArrayList<>();
@@ -454,7 +454,7 @@ public class OpenAiClient {
             ));
         }
 
-        if (emotionScore < 75) {
+        if (expressionScore < 75) {
             practicePlan.add(createPracticeItem(
                     "표정 변화 연습",
                     "도입부, 강조 문장, 마무리 문장에서 미세한 미소와 고개 끄덕임을 넣어 발표의 생동감을 높입니다.",
@@ -478,7 +478,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore,
+            int expressionScore,
             Map<String, Object> speechSummary,
             Map<String, Object> visualSummary
     ) {
@@ -525,9 +525,9 @@ public class OpenAiClient {
         ));
 
         timelineFeedback.add(createTimelineItem(
-                "emotion",
+                "expression",
                 "표정과 몰입감",
-                "표정 점수는 " + emotionScore + "점입니다. 주요 표정 상태는 "
+                "표정 점수는 " + expressionScore + "점입니다. 주요 표정 상태는 "
                         + visualSummary.getOrDefault("dominantEmotion", "unknown")
                         + "입니다.",
                 "강조 문장과 결론 부분에서 표정 변화를 주면 발표의 설득력이 더 높아집니다."
@@ -583,7 +583,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore
+            int expressionScore
     ) {
         int maxScore = postureScore;
         String area = "posture";
@@ -603,8 +603,8 @@ public class OpenAiClient {
             area = "gesture";
         }
 
-        if (emotionScore > maxScore) {
-            area = "emotion";
+        if (expressionScore > maxScore) {
+            area = "expression";
         }
 
         return area;
@@ -615,7 +615,7 @@ public class OpenAiClient {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore
+            int expressionScore
     ) {
         int minScore = postureScore;
         String area = "posture";
@@ -635,8 +635,8 @@ public class OpenAiClient {
             area = "gesture";
         }
 
-        if (emotionScore < minScore) {
-            area = "emotion";
+        if (expressionScore < minScore) {
+            area = "expression";
         }
 
         return area;
@@ -648,7 +648,7 @@ public class OpenAiClient {
             case "gaze" -> "시선";
             case "speech" -> "음성";
             case "gesture" -> "제스처";
-            case "emotion" -> "표정";
+            case "expression" -> "표정";
             case "content_structure" -> "내용 구성";
             default -> area;
         };

@@ -18,14 +18,14 @@ function EmotionAnalysisSection({
             <div className="metric-grid">
                 {renderMetricCard(
                     "표정 점수",
-                    emotionInfo?.emotionScore,
-                    "표정 표현 점수, 다양성 점수, 얼굴 검출률을 합산한 점수입니다."
+                    emotionInfo?.expressionScore,
+                    "표정 표현 점수, 다양성 점수, 얼굴 검출률을 합산한 점수입니다. 자세·시선·음성·제스처와 함께 최종 점수에 20% 가중치로 반영됩니다."
                 )}
 
                 {renderMetricCard(
-                    "표현력 점수",
-                    emotionInfo?.expressionScore,
-                    "입 벌림, 눈 뜸 정도, 시선 안정성을 기반으로 계산한 점수입니다."
+                    "표현력 원점수",
+                    emotionInfo?.expressionRawScore,
+                    "입 벌림, 눈 뜸 정도, 시선 안정성을 기반으로 계산한 프레임 평균 점수입니다."
                 )}
 
                 {renderMetricCard(
@@ -35,9 +35,9 @@ function EmotionAnalysisSection({
                 )}
 
                 <article className="metric-card">
-                    <span>주요 표정 상태</span>
-                    <strong>{formatEmotionLabel(emotionInfo?.dominantEmotion)}</strong>
-                    <p>가장 많이 감지된 표정 상태입니다.</p>
+                    <span>주요 표정 상태 (참고용)</span>
+                    <strong>{formatEmotionLabel(emotionInfo?.emotionState?.dominantEmotion)}</strong>
+                    <p>가장 많이 감지된 표정 상태입니다. 감정 상태 분류는 보조 지표이며 점수에는 반영되지 않습니다.</p>
                 </article>
 
                 <article className="metric-card">

@@ -50,16 +50,17 @@ public class AnalysisCompactor {
         Map<String, Object> scoringPolicy = new LinkedHashMap<>();
 
         Map<String, Object> weights = new LinkedHashMap<>();
-        weights.put("postureScore", 0.20);
+        weights.put("postureScore", 0.25);
+        weights.put("expressionScore", 0.20);
         weights.put("gazeScore", 0.20);
-        weights.put("speechScore", 0.30);
-        weights.put("gestureScore", 0.15);
-        weights.put("emotionScore", 0.15);
+        weights.put("speechScore", 0.25);
+        weights.put("gestureScore", 0.10);
 
-        scoringPolicy.put("totalScoreFormula", "postureScore * 0.20 + gazeScore * 0.20 + speechScore * 0.30 + gestureScore * 0.15 + emotionScore * 0.15");
+        scoringPolicy.put("totalScoreFormula", "postureScore * 0.25 + expressionScore * 0.20 + gazeScore * 0.20 + speechScore * 0.25 + gestureScore * 0.10");
         scoringPolicy.put("weights", weights);
         scoringPolicy.put("scoreRange", "0-100");
-        scoringPolicy.put("note", "점수 기준 완화 및 보정은 추후 별도 단계에서 진행합니다.");
+        scoringPolicy.put("source", "발표_코칭_점수화_알고리즘_선정_자료_정리본 기준 (자세 25% / 표정 20% / 시선 20% / 음성 25% / 제스처 10%)");
+        scoringPolicy.put("note", "감정 상태 분류(emotionState)는 표정 점수의 보조 지표로만 사용하며 총점 가중합에는 포함하지 않습니다.");
 
         return scoringPolicy;
     }
@@ -112,7 +113,7 @@ public class AnalysisCompactor {
         scoreSummary.put("gazeScore", getOrDefault(score, "gazeScore", 0));
         scoreSummary.put("speechScore", getOrDefault(score, "speechScore", 0));
         scoreSummary.put("gestureScore", getOrDefault(score, "gestureScore", 0));
-        scoreSummary.put("emotionScore", getOrDefault(score, "emotionScore", 0));
+        scoreSummary.put("expressionScore", getOrDefault(score, "expressionScore", 0));
         scoreSummary.put("level", resolveLevel(getNumberValue(score, "totalScore")));
 
         return scoreSummary;
@@ -162,18 +163,20 @@ public class AnalysisCompactor {
         visualSummary.put("gazeScore", getOrDefault(face, "gazeScore", 0));
         visualSummary.put("faceDetectionRate", getOrDefault(face, "detectionRate", 0));
         visualSummary.put("eyeContactLevel", getOrDefault(face, "eyeContactLevel", "unknown"));
-        visualSummary.put("averageNoseOffset", getOrDefault(face, "averageNoseOffset", 0));
+        visualSummary.put("cameraGazeRatio", getOrDefault(face, "cameraGazeRatio", 0));
 
         visualSummary.put("gestureScore", getOrDefault(gesture, "gestureScore", 0));
         visualSummary.put("gestureRate", getOrDefault(gesture, "gestureRate", 0));
         visualSummary.put("handVisibilityRate", getOrDefault(gesture, "handVisibilityRate", 0));
         visualSummary.put("averageWristMovement", getOrDefault(gesture, "averageWristMovement", 0));
 
-        visualSummary.put("emotionScore", getOrDefault(emotion, "emotionScore", 0));
-        visualSummary.put("dominantEmotion", getOrDefault(emotion, "dominantEmotion", "unknown"));
-        visualSummary.put("emotionCounts", getOrDefault(emotion, "emotionCounts", Map.of()));
+        Map<String, Object> emotionState = nullSafeMap(emotion.get("emotionState"));
+
         visualSummary.put("expressionScore", getOrDefault(emotion, "expressionScore", 0));
+        visualSummary.put("expressionRawScore", getOrDefault(emotion, "expressionRawScore", 0));
         visualSummary.put("expressionVarietyScore", getOrDefault(emotion, "expressionVarietyScore", 0));
+        visualSummary.put("dominantEmotion", getOrDefault(emotionState, "dominantEmotion", "unknown"));
+        visualSummary.put("emotionCounts", getOrDefault(emotionState, "emotionCounts", Map.of()));
 
         visualSummary.put("videoLlmModel", nullSafeMap(videoLlmEngineResponse.model()));
         visualSummary.put("videoLlmObservations", nullSafeObject(videoLlmEngineResponse.observations()));
@@ -210,7 +213,7 @@ public class AnalysisCompactor {
         int gazeScore = getNumberValue(score, "gazeScore");
         int speechScore = getNumberValue(score, "speechScore");
         int gestureScore = getNumberValue(score, "gestureScore");
-        int emotionScore = getNumberValue(score, "emotionScore");
+        int expressionScore = getNumberValue(score, "expressionScore");
 
         Map<String, Object> feedbackFocus = new LinkedHashMap<>();
 
@@ -219,21 +222,21 @@ public class AnalysisCompactor {
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore
+                expressionScore
         ));
         feedbackFocus.put("weakestArea", resolveWeakestArea(
                 postureScore,
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore
+                expressionScore
         ));
         feedbackFocus.put("priority", createPriority(
                 postureScore,
                 gazeScore,
                 speechScore,
                 gestureScore,
-                emotionScore
+                expressionScore
         ));
 
         return feedbackFocus;
@@ -257,7 +260,7 @@ public class AnalysisCompactor {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore
+            int expressionScore
     ) {
         java.util.List<String> priority = new java.util.ArrayList<>();
 
@@ -277,8 +280,8 @@ public class AnalysisCompactor {
             priority.add("gesture");
         }
 
-        if (emotionScore < 70) {
-            priority.add("emotion");
+        if (expressionScore < 70) {
+            priority.add("expression");
         }
 
         if (priority.isEmpty()) {
@@ -309,7 +312,7 @@ public class AnalysisCompactor {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore
+            int expressionScore
     ) {
         int maxScore = postureScore;
         String area = "posture";
@@ -329,8 +332,8 @@ public class AnalysisCompactor {
             area = "gesture";
         }
 
-        if (emotionScore > maxScore) {
-            area = "emotion";
+        if (expressionScore > maxScore) {
+            area = "expression";
         }
 
         return area;
@@ -341,7 +344,7 @@ public class AnalysisCompactor {
             int gazeScore,
             int speechScore,
             int gestureScore,
-            int emotionScore
+            int expressionScore
     ) {
         int minScore = postureScore;
         String area = "posture";
@@ -361,8 +364,8 @@ public class AnalysisCompactor {
             area = "gesture";
         }
 
-        if (emotionScore < minScore) {
-            area = "emotion";
+        if (expressionScore < minScore) {
+            area = "expression";
         }
 
         return area;

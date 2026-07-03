@@ -30,6 +30,8 @@
 
     <logger name="com.hanium.presentation" level="INFO"/>
     <logger name="org.springframework" level="WARN"/>
+    <!-- Spring Boot 3.5.x의 generated security password WARN은 이 FQCN에서 발생합니다.
+         bootRun으로 현재 설정 로딩을 확인했으며, 재발 시 stale log 또는 logback 초기화 전 출력 여부를 먼저 확인합니다. -->
     <logger name="org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration" level="ERROR"/>
     <logger name="org.hibernate" level="WARN"/>
 

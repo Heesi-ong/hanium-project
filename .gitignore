@@ -107,6 +107,7 @@ storage/backups/*
 !storage/results/.gitkeep
 !storage/temp/.gitkeep
 !storage/logs/.gitkeep
+!storage/backups/.gitkeep
 
 # Local database
 *.db

@@ -510,6 +510,24 @@ storage/uploads/{jobId}/
 
 ## 12. 전체 테스트 순서
 
+### 12.0 엔진 단위 테스트
+
+analysis-engine의 정량 분석 순수 함수 테스트는 Python 3.13 환경에서 아래처럼 실행할 수 있습니다.
+
+```bash
+cd ~/Desktop/hanium\ project/analysis-engine
+pip install -r requirements.txt
+pytest
+```
+
+video-llm-engine의 mock 엔드포인트 테스트는 무거운 모델 의존성 없이 필요한 최소 패키지만 설치해 실행할 수 있습니다.
+
+```bash
+cd ~/Desktop/hanium\ project/video-llm-engine
+pip install pytest==8.4.2 fastapi==0.138.2 httpx==0.28.1 pydantic==2.13.4
+pytest
+```
+
 ### 12.1 모든 서버 실행
 
 터미널 1:

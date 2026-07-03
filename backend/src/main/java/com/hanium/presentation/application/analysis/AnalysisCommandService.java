@@ -13,6 +13,7 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
@@ -53,6 +54,7 @@ public class AnalysisCommandService {
     private final AnalysisProgressService analysisProgressService;
     private final AnalysisJobStatusService analysisJobStatusService;
     private final ThreadPoolTaskExecutor analysisTaskExecutor;
+    private final AnalysisRetryProperties analysisRetryProperties;
 
     public AnalysisCommandService(
             AnalysisJobRepository analysisJobRepository,
@@ -65,7 +67,8 @@ public class AnalysisCommandService {
             JobIdGenerator jobIdGenerator,
             AnalysisProgressService analysisProgressService,
             AnalysisJobStatusService analysisJobStatusService,
-            ThreadPoolTaskExecutor analysisTaskExecutor
+            ThreadPoolTaskExecutor analysisTaskExecutor,
+            AnalysisRetryProperties analysisRetryProperties
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
@@ -78,6 +81,7 @@ public class AnalysisCommandService {
         this.analysisProgressService = analysisProgressService;
         this.analysisJobStatusService = analysisJobStatusService;
         this.analysisTaskExecutor = analysisTaskExecutor;
+        this.analysisRetryProperties = analysisRetryProperties;
     }
 
     @Transactional
@@ -282,9 +286,17 @@ public class AnalysisCommandService {
                         lastPercent, "AI 피드백을 생성하는 중입니다."
                 );
 
-                openAiFeedbackResponse = openAiClient.generateFeedback(
-                        new OpenAiFeedbackRequest(jobId, compactAnalysis)
-                );
+                openAiFeedbackResponse = resultCommandService.loadExistingRealOpenAiFeedback(jobId)
+                        .map(existingFeedback -> {
+                            log.info(
+                                    "OPENAI_REUSE jobId={} 이전에 성공한 실제 OpenAI 응답을 재사용합니다. (재호출 생략)",
+                                    jobId
+                            );
+                            return existingFeedback;
+                        })
+                        .orElseGet(() -> openAiClient.generateFeedback(
+                                new OpenAiFeedbackRequest(jobId, compactAnalysis)
+                        ));
                 log.info("[{}] AI 피드백 생성이 끝났습니다. (mode={})", jobId, openAiFeedbackResponse.generationMode());
             } else {
                 log.info("[{}] OpenAI 피드백 생성을 건너뜁니다. (useOpenAi=false)", jobId);
@@ -373,6 +385,15 @@ public class AnalysisCommandService {
             throw new BusinessException(
                     ErrorCode.INVALID_INPUT_VALUE,
                     "실패 상태의 분석 작업만 재시도할 수 있습니다. status=" + analysisJob.getStatus()
+            );
+        }
+
+        if (analysisJob.getRetryCount() >= analysisRetryProperties.maxCount()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_RETRY_LIMIT_EXCEEDED,
+                    "재시도 가능 횟수를 초과했습니다. jobId=" + analysisJob.getJobId()
+                            + ", retryCount=" + analysisJob.getRetryCount()
+                            + ", maxRetryCount=" + analysisRetryProperties.maxCount()
             );
         }
     }

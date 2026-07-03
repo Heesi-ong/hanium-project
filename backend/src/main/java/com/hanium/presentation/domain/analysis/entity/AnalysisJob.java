@@ -32,6 +32,9 @@ public class AnalysisJob {
     @Column(length = 500)
     private String failReason;
 
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -46,6 +49,7 @@ public class AnalysisJob {
         this.jobId = jobId;
         this.ownerId = ownerId;
         this.status = AnalysisStatus.UPLOADED;
+        this.retryCount = 0;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -75,6 +79,10 @@ public class AnalysisJob {
 
     public String getFailReason() {
         return failReason;
+    }
+
+    public int getRetryCount() {
+        return retryCount;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -124,6 +132,7 @@ public class AnalysisJob {
     }
 
     public void resetForRetry() {
+        this.retryCount++;
         this.status = AnalysisStatus.UPLOADED;
         this.failReason = null;
         this.startedAt = null;

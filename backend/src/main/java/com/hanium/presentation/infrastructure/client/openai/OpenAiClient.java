@@ -8,6 +8,8 @@ import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRe
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -21,6 +23,7 @@ import java.util.Map;
 @Component
 public class OpenAiClient {
 
+    private static final Logger log = LoggerFactory.getLogger(OpenAiClient.class);
     private static final String RESPONSES_API_PATH = "/v1/responses";
 
     private final OpenAiProperties openAiProperties;
@@ -83,6 +86,8 @@ public class OpenAiClient {
             throw new IllegalStateException("OpenAI API 응답이 비어 있습니다.");
         }
 
+        logOpenAiUsage(request, apiResponse);
+
         if (!apiResponse.isCompleted()) {
             throw new IllegalStateException(
                     "OpenAI API 응답 상태가 completed가 아닙니다. status="
@@ -97,6 +102,31 @@ public class OpenAiClient {
         }
 
         return parseRealOpenAiFeedbackResponse(request.jobId(), outputText);
+    }
+
+    private void logOpenAiUsage(
+            OpenAiFeedbackRequest request,
+            OpenAiResponsesApiResponse apiResponse
+    ) {
+        OpenAiResponsesApiResponse.Usage usage = apiResponse.usage();
+
+        if (usage == null) {
+            log.info(
+                    "OPENAI_USAGE jobId={} model={} usage=none",
+                    request.jobId(),
+                    openAiProperties.getModel()
+            );
+            return;
+        }
+
+        log.info(
+                "OPENAI_USAGE jobId={} model={} inputTokens={} outputTokens={} totalTokens={}",
+                request.jobId(),
+                openAiProperties.getModel(),
+                usage.input_tokens(),
+                usage.output_tokens(),
+                usage.total_tokens()
+        );
     }
 
     private OpenAiResponsesApiRequest createOpenAiResponsesApiRequest(

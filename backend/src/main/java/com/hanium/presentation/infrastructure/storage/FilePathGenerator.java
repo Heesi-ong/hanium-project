@@ -18,6 +18,10 @@ public class FilePathGenerator {
         return Path.of(storageProperties.uploadPath(), jobId);
     }
 
+    public Path generateUploadRootDirectory() {
+        return Path.of(storageProperties.uploadPath());
+    }
+
     public Path generateOriginalVideoPath(String jobId, String extension) {
         return generateUploadDirectory(jobId)
                 .resolve("original" + extension);
@@ -25,6 +29,14 @@ public class FilePathGenerator {
 
     public Path generateResultDirectory(String jobId) {
         return Path.of(storageProperties.resultPath(), jobId);
+    }
+
+    public Path generateResultRootDirectory() {
+        return Path.of(storageProperties.resultPath());
+    }
+
+    public Path generateTempRootDirectory() {
+        return Path.of(storageProperties.tempPath());
     }
 
     public Path generateUploadMetaPath(String jobId) {

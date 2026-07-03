@@ -23,6 +23,15 @@ spring:
   flyway:
     enabled: false
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: ${ACTUATOR_HEALTH_SHOW_DETAILS:when-authorized}
+
 external:
   analysis-engine:
     base-url: ${ANALYSIS_ENGINE_BASE_URL:http://localhost:8001}
@@ -46,6 +55,10 @@ storage:
   result-path: ${STORAGE_RESULT_PATH:../storage/results}
   temp-path: ${STORAGE_TEMP_PATH:../storage/temp}
   log-path: ${STORAGE_LOG_PATH:../storage/logs}
+  cleanup:
+    cron: "${STORAGE_CLEANUP_CRON:0 0 * * * *}"
+    temp-max-age-hours: ${STORAGE_CLEANUP_TEMP_MAX_AGE_HOURS:6}
+    orphan-max-age-hours: ${STORAGE_CLEANUP_ORPHAN_MAX_AGE_HOURS:24}
 
 cors:
   # 쉼표로 구분된 허용 origin 목록. 배포 도메인이 생기면 코드 수정 없이 이 값만 바꾸면 됩니다.

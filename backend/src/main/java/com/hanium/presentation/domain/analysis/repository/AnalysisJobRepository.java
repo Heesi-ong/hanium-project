@@ -1,6 +1,8 @@
 package com.hanium.presentation.domain.analysis.repository;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -17,4 +19,6 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
     List<AnalysisJob> findAllByOrderByCreatedAtDesc();
 
     List<AnalysisJob> findAllByOwnerIdOrderByCreatedAtDesc(Long ownerId);
+
+    Page<AnalysisJob> findAllByOwnerIdOrderByCreatedAtDesc(Long ownerId, Pageable pageable);
 }

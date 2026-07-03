@@ -33,6 +33,8 @@ class ResultOwnershipIntegrationTest {
 
     private static final String OWNER_JOB_ID = "20260702180000-aaaaaaaa";
     private static final String OTHER_JOB_ID = "20260702180001-bbbbbbbb";
+    private static final String OWNER_SECOND_JOB_ID = "20260702180002-cccccccc";
+    private static final String OWNER_THIRD_JOB_ID = "20260702180003-dddddddd";
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -86,8 +88,9 @@ class ResultOwnershipIntegrationTest {
 
         assertThat(otherListResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode otherListBody = objectMapper.readTree(otherListResponse.getBody());
-        assertThat(otherListBody.path("data")).hasSize(1);
-        assertThat(otherListBody.path("data").get(0).path("jobId").asText()).isEqualTo(OTHER_JOB_ID);
+        assertThat(otherListBody.path("data").path("content")).hasSize(1);
+        assertThat(otherListBody.path("data").path("content").get(0).path("jobId").asText())
+                .isEqualTo(OTHER_JOB_ID);
 
         ResponseEntity<String> deniedGetResponse = restTemplate.exchange(
                 "/api/results/" + OWNER_JOB_ID,
@@ -131,6 +134,34 @@ class ResultOwnershipIntegrationTest {
         assertThat(ownerDeleteResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(analysisJobRepository.existsByJobId(OWNER_JOB_ID)).isFalse();
         assertThat(uploadedVideoRepository.existsByJobId(OWNER_JOB_ID)).isFalse();
+    }
+
+    @Test
+    void resultListSupportsPagination() throws Exception {
+        String ownerToken = signupAndLogin("pagination-owner@example.com");
+        Long ownerId = userRepository.findByEmail("pagination-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createResultFixture(OWNER_JOB_ID, ownerId, "first-video.mp4");
+        createResultFixture(OWNER_SECOND_JOB_ID, ownerId, "second-video.mp4");
+        createResultFixture(OWNER_THIRD_JOB_ID, ownerId, "third-video.mp4");
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/results?page=0&size=2",
+                HttpMethod.GET,
+                createAuthorizedEntity(ownerToken),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode responseBody = objectMapper.readTree(response.getBody());
+        JsonNode data = responseBody.path("data");
+
+        assertThat(data.path("content")).hasSize(2);
+        assertThat(data.path("totalElements").asLong()).isEqualTo(3L);
+        assertThat(data.path("number").asInt()).isEqualTo(0);
+        assertThat(data.path("size").asInt()).isEqualTo(2);
     }
 
     private String signupAndLogin(String email) throws Exception {

@@ -10,13 +10,17 @@ import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Path;
+import java.util.function.Function;
 import java.util.Map;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class ResultQueryService {
@@ -50,20 +54,48 @@ public class ResultQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<ResultSummaryResponse> getResultSummaries(Long ownerId) {
-        List<AnalysisJob> analysisJobs = analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId);
+    public Page<ResultSummaryResponse> getResultSummaries(Long ownerId, Pageable pageable) {
+        Page<AnalysisJob> analysisJobs = analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(
+                ownerId,
+                pageable
+        );
+        Map<String, UploadedVideo> uploadedVideosByJobId = getUploadedVideosByJobId(
+                analysisJobs.getContent()
+        );
 
-        return analysisJobs.stream()
-                .map(this::toSummaryResponse)
-                .toList();
+        return analysisJobs.map(analysisJob -> toSummaryResponse(
+                analysisJob,
+                uploadedVideosByJobId
+        ));
     }
 
-    private ResultSummaryResponse toSummaryResponse(AnalysisJob analysisJob) {
-        UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(analysisJob.getJobId())
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.FILE_NOT_FOUND,
-                        "업로드된 영상 정보를 찾을 수 없습니다."
+    private Map<String, UploadedVideo> getUploadedVideosByJobId(List<AnalysisJob> analysisJobs) {
+        List<String> jobIds = analysisJobs.stream()
+                .map(AnalysisJob::getJobId)
+                .toList();
+
+        if (jobIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return uploadedVideoRepository.findAllByJobIdIn(jobIds).stream()
+                .collect(Collectors.toMap(
+                        UploadedVideo::getJobId,
+                        Function.identity()
                 ));
+    }
+
+    private ResultSummaryResponse toSummaryResponse(
+            AnalysisJob analysisJob,
+            Map<String, UploadedVideo> uploadedVideosByJobId
+    ) {
+        UploadedVideo uploadedVideo = uploadedVideosByJobId.get(analysisJob.getJobId());
+        if (uploadedVideo == null) {
+            throw new BusinessException(
+                    ErrorCode.FILE_NOT_FOUND,
+                    "업로드된 영상 정보를 찾을 수 없습니다."
+            );
+        }
 
         Map<String, Object> finalResult = readFinalResultSafely(analysisJob.getJobId());
 

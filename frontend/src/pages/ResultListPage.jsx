@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteResult, getResults } from "../api/analysisApi";
+import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
@@ -167,6 +168,11 @@ function ResultListPage() {
             const response = await getResults();
             const responseData = response.data;
 
+            if (Array.isArray(responseData?.content)) {
+                setResults(responseData.content);
+                return;
+            }
+
             if (Array.isArray(responseData)) {
                 setResults(responseData);
                 return;
@@ -184,10 +190,10 @@ function ResultListPage() {
 
             setResults([]);
         } catch (requestError) {
-            setError(
-                requestError.message ||
+            setError(getErrorMessage(
+                requestError,
                 "분석 결과 목록을 불러오는 중 오류가 발생했습니다."
-            );
+            ));
         } finally {
             setLoading(false);
         }
@@ -216,10 +222,14 @@ function ResultListPage() {
                 prevResults.filter((result) => result.jobId !== jobId)
             );
         } catch (requestError) {
-            setError(
-                requestError.message ||
-                "분석 결과 삭제 중 오류가 발생했습니다."
-            );
+            if (getErrorCode(requestError) === ERROR_CODES.ANALYSIS_JOB_ACCESS_DENIED) {
+                setError("본인 소유의 결과만 삭제할 수 있습니다.");
+            } else {
+                setError(getErrorMessage(
+                    requestError,
+                    "분석 결과 삭제 중 오류가 발생했습니다."
+                ));
+            }
         } finally {
             setDeletingJobId("");
         }

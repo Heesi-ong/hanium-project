@@ -2,6 +2,7 @@ package com.hanium.presentation;
 
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.global.properties.OpenAiProperties;
+import com.hanium.presentation.global.properties.RateLimitProperties;
 import com.hanium.presentation.global.properties.StorageProperties;
 import com.hanium.presentation.global.properties.VideoLlmEngineProperties;
 import org.springframework.boot.SpringApplication;
@@ -12,7 +13,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         StorageProperties.class,
         AnalysisEngineProperties.class,
         VideoLlmEngineProperties.class,
-        OpenAiProperties.class
+        OpenAiProperties.class,
+        RateLimitProperties.class
 })
 @SpringBootApplication
 public class BackendApplication {

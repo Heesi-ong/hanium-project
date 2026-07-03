@@ -23,7 +23,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
-    // 분석 진행률(%) 캐시 용도로만 사용합니다. 결과 JSON/DB 저장 구조는 그대로 유지합니다.
+    // 분석 진행률(%) 캐시와 사용자별 비싼 분석 API rate limit 카운터에 사용합니다.
+    // Redis INCR/EXPIRE로 여러 backend 인스턴스에서도 동일한 제한을 공유합니다.
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 

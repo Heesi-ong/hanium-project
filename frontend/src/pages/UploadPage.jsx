@@ -10,11 +10,13 @@ import {
     runAnalysis,
     uploadAnalysisVideo,
 } from "../api/analysisApi";
+import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 
 const MAX_FILE_SIZE_MB = 500;
 const POLLING_INTERVAL_MS = 1500;
 const POLLING_TIMEOUT_MS = 120000;
 const PROGRESS_POLLING_INTERVAL_MS = 1000;
+const RATE_LIMIT_COOLDOWN_MS = 12000;
 
 const RUNNING_STATUSES = [
     "BASIC_ANALYZING",
@@ -40,6 +42,7 @@ function UploadPage() {
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
     const progressTimerRef = useRef(null);
+    const cooldownTimerRef = useRef(null);
 
     const [file, setFile] = useState(null);
     const [uploadedResult, setUploadedResult] = useState(null);
@@ -51,6 +54,7 @@ function UploadPage() {
     const [running, setRunning] = useState(false);
     const [polling, setPolling] = useState(false);
     const [error, setError] = useState("");
+    const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
 
     const selectedFileSizeMb = file
         ? (file.size / 1024 / 1024).toFixed(2)
@@ -66,11 +70,13 @@ function UploadPage() {
     const isRunningStatus = RUNNING_STATUSES.includes(currentStatus);
     const isCompleted = currentStatus === "COMPLETED";
     const isFailed = currentStatus === "FAILED";
+    const isRateLimited = rateLimitedUntil > Date.now();
 
     useEffect(() => {
         return () => {
             stopPolling();
             stopProgressPolling();
+            stopRateLimitCooldown();
         };
     }, []);
 
@@ -89,6 +95,33 @@ function UploadPage() {
             clearInterval(progressTimerRef.current);
             progressTimerRef.current = null;
         }
+    }
+
+    function startRateLimitCooldown() {
+        stopRateLimitCooldown();
+        setRateLimitedUntil(Date.now() + RATE_LIMIT_COOLDOWN_MS);
+
+        cooldownTimerRef.current = setTimeout(() => {
+            setRateLimitedUntil(0);
+            cooldownTimerRef.current = null;
+        }, RATE_LIMIT_COOLDOWN_MS);
+    }
+
+    function stopRateLimitCooldown() {
+        if (cooldownTimerRef.current) {
+            clearTimeout(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+        }
+    }
+
+    function applyRateLimitMessage(requestError) {
+        if (getErrorCode(requestError) !== ERROR_CODES.TOO_MANY_REQUESTS) {
+            return false;
+        }
+
+        setError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        startRateLimitCooldown();
+        return true;
     }
 
     // 분석 파이프라인이 실행되는 동안(POST /run 응답을 기다리는 동안) 별도로
@@ -166,10 +199,12 @@ function UploadPage() {
                 failReason: null,
             });
         } catch (requestError) {
-            setError(
-                requestError.message ||
-                "영상 업로드 중 오류가 발생했습니다."
-            );
+            if (!applyRateLimitMessage(requestError)) {
+                setError(getErrorMessage(
+                    requestError,
+                    "영상 업로드 중 오류가 발생했습니다."
+                ));
+            }
         } finally {
             setLoading(false);
         }
@@ -196,12 +231,17 @@ function UploadPage() {
             await fetchStatusOnce(uploadedResult.jobId);
             startStatusPolling(uploadedResult.jobId);
         } catch (requestError) {
-            setError(
-                requestError.message ||
-                "분석 실행 중 오류가 발생했습니다."
-            );
+            if (!applyRateLimitMessage(requestError)) {
+                setError(getErrorMessage(
+                    requestError,
+                    "분석 실행 중 오류가 발생했습니다."
+                ));
+            }
 
-            if (uploadedResult?.jobId) {
+            if (
+                getErrorCode(requestError) !== ERROR_CODES.TOO_MANY_REQUESTS &&
+                uploadedResult?.jobId
+            ) {
                 await fetchStatusOnce(uploadedResult.jobId);
             }
         } finally {
@@ -246,10 +286,10 @@ function UploadPage() {
                 }
             } catch (requestError) {
                 stopPolling();
-                setError(
-                    requestError.message ||
+                setError(getErrorMessage(
+                    requestError,
                     "분석 상태 확인 중 오류가 발생했습니다."
-                );
+                ));
             }
         }, POLLING_INTERVAL_MS);
     }
@@ -371,7 +411,7 @@ function UploadPage() {
                             type="button"
                             className="primary-button"
                             onClick={handleUpload}
-                            disabled={!file || loading || running || polling}
+                            disabled={!file || loading || running || polling || isRateLimited}
                         >
                             {loading ? "업로드 중..." : "영상 업로드"}
                         </button>
@@ -486,7 +526,7 @@ function UploadPage() {
                             type="button"
                             className="primary-button"
                             onClick={handleRunAnalysis}
-                            disabled={!uploadedResult || running || loading || polling || isCompleted}
+                            disabled={!uploadedResult || running || loading || polling || isCompleted || isRateLimited}
                         >
                             {running || polling ? "분석 진행 중..." : "분석 실행"}
                         </button>

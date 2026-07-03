@@ -91,3 +91,125 @@
 ## D. 참고: 의존성 버전 관련 의문점
 
 `analysis-engine/requirements.txt`와 `frontend/package.json`에 명시된 일부 버전(`fastapi==0.138.2`, `pydantic==2.13.4`, `uvicorn==0.49.0`, `vite: ^8.1.0`, `react: ^19.2.7`)이 알려진 실제 릴리스 흐름과 맞지 않아 보입니다. 인터넷 조회 없이 위조 여부를 단정할 수는 없지만, 실제로 설치되는 패키지가 맞는지, 사설/미러 레지스트리를 쓰고 있는 것은 아닌지 한 번 확인해보시는 것을 권장합니다.
+
+---
+
+## 업데이트: 2026-07-03 현재 상태
+
+이 섹션은 2026-07-02 본문을 삭제하지 않고 남겨둔 상태에서, 2026-07-03 기준 실제 코드 재확인 결과를 덧붙인 최신 상태입니다.
+
+### A1. analysis-engine / video-llm-engine 직접 호출 인증 없음
+
+- **판정: 해결**
+- `analysis-engine/app/core/security.py:9-29`, `video-llm-engine/app/core/security.py:9-29`에서 `INTERNAL_ENGINE_API_KEY`와 `X-Internal-Api-Key`를 비교하며, 키가 설정되지 않으면 fail-closed로 401을 반환합니다.
+- `analysis-engine/app/api/basic_analysis.py:20-24`, `video-llm-engine/app/api/video_llm_analysis.py:11-15`에서 `/api/**` 라우터에 `Depends(verify_internal_api_key)`가 걸려 있습니다. `/health`는 각 `main.py`에 남아 있어 공개 상태입니다.
+- backend 호출부도 `AnalysisEngineClient.java:53-58`, `VideoLlmEngineClient.java:53-58`에서 `X-Internal-Api-Key` 헤더를 붙입니다.
+- 단, 이는 애플리케이션 레벨의 공유 키 인증입니다. 네트워크 레벨 방화벽/보안그룹으로 8001/8002 포트를 외부에 닫는 운영 설정은 별도 확인이 필요합니다.
+
+### A2. 업로드 파일 내용 검증 없음
+
+- **판정: 부분해결**
+- `VideoFileCommandService.java:72-82`에서 확장자 검증 뒤 `validateFileSignature()`를 호출하고, `VideoFileCommandService.java:96-104`에서 `MultipartFile.getBytes()`가 아니라 스트림으로 앞부분만 읽습니다.
+- `VideoSignatureValidator.java:7-17`에서 MP4/MOV(`ftyp`), AVI(`RIFF`/`AVI `), MKV(EBML magic)를 검사합니다.
+- 확장자 위조 방지는 해결됐지만, 재생 가능한 정상 영상인지, 코덱이 안전한지, 악성 페이로드가 섞였는지까지 검증하는 `ffprobe`/백신/샌드박스 검사는 아직 없습니다.
+
+### A3. 서비스 간 HTTP 호출 타임아웃 없음
+
+- **판정: 해결**
+- `RestClientConfig.java:17-21`에 connect timeout 5초, read timeout 10분이 명시됐고, `RestClientConfig.java:31-39`에서 공통 `RestClient.Builder`에 적용됩니다.
+- 영상 분석 특성상 read timeout은 길게 잡혀 있지만, 무한 대기는 더 이상 발생하지 않습니다.
+
+### A4. 입력 검증 미흡
+
+- **판정: 부분해결**
+- 인증 요청은 `AuthController.java:38-40`, `AuthController.java:90-98`에서 `@Valid`, `@Email`, `@NotBlank`, `@Size`로 검증합니다.
+- 분석/결과 jobId 경로는 `AnalysisController.java:19-27`, `AnalysisController.java:72-91`, `ResultController.java:61-80`에서 `@Validated`와 `@Pattern`으로 형식을 제한합니다.
+- 다만 모든 요청 DTO가 동일한 수준으로 체계화됐는지는 별도 전체 감사가 필요합니다. 현재는 핵심 공개 입력부 중심으로 보강된 상태입니다.
+
+### A5. Rate limiting 없음
+
+- **판정: 해결**
+- `UserRateLimitFilter.java:22-27`, `UserRateLimitFilter.java:64-79`에서 `/api/analysis/upload`, `/api/analysis/{jobId}/run`, `/retry` 요청을 사용자별 버킷으로 분리합니다.
+- `UserRateLimiter.java:32-49`는 Redis 기반 카운터/TTL로 제한을 적용하고, `application.yaml:74-80`에서 업로드/분석 실행 제한값을 환경변수로 조정할 수 있습니다.
+- 범위는 비용이 큰 업로드/분석 실행 API 중심입니다. IP 기반 DDoS 방어, 전역 WAF 수준의 제한은 아직 별도 과제입니다.
+
+### A6. CORS origin 하드코딩
+
+- **판정: 해결**
+- `application.yaml:70-72`에서 `CORS_ALLOWED_ORIGINS` 환경변수를 읽고, `CorsConfig.java:11-14`, `CorsConfig.java:30-40`에서 쉼표 구분 origin 목록을 적용합니다.
+- 배포 도메인 변경 시 코드 수정 없이 환경변수로 대응할 수 있습니다.
+
+### A7. 비밀값 커밋 위험
+
+- **판정: 부분해결**
+- 내부 엔진 키와 OpenAI 키는 `application.yaml:35-50`에서 `${INTERNAL_ENGINE_API_KEY:}`, `${OPENAI_API_KEY:}` 형태로 외부 주입합니다.
+- dev/prod DB 설정은 `application-dev.yml:4-8`, `application-prod.yml:1-10`에서 환경변수 기반으로 분리됐고, prod는 DB 값에 기본값을 두지 않습니다.
+- `.env.example`은 플레이스홀더/빈 값 중심으로 정리됐습니다.
+- 다만 `SecurityConfig.java:80-85`에는 로컬 개발용 JWT secret 기본값이 남아 있습니다. 운영에서는 반드시 `SECURITY_JWT_SECRET` 계열 설정을 주입하도록 배포 체크리스트가 필요합니다.
+
+### B1. 모델을 매 요청마다 다시 로딩
+
+- **판정: 미해결**
+- `basic_analysis.py:531-533`에서 `WhisperModel`이 함수 호출 중 생성됩니다.
+- `basic_analysis.py:621-635`에서 `PoseLandmarkerOptions` 생성 후 `PoseLandmarker.create_from_options(...)`가 요청 처리 중 호출됩니다.
+- `basic_analysis.py:965-981`에서도 `FaceLandmarker.create_from_options(...)`가 요청 처리 중 호출됩니다.
+- 모델 싱글톤/프로세스 시작 시 프리로딩/워커 재사용 구조는 아직 도입되지 않았습니다. analysis-engine 성능에서 가장 큰 잔여 병목 중 하나입니다.
+
+### B2. 동시 처리량 제한 없음
+
+- **판정: 부분해결**
+- `AsyncConfig.java:16-29`에서 `ThreadPoolTaskExecutor`를 core 2, max 4, queue 20으로 제한하고, `AnalysisCommandService.java:196-210`에서 트랜잭션 커밋 후 백그라운드 스레드풀에 분석 작업을 넘깁니다.
+- 단, 이는 backend 단일 프로세스 내부 스레드풀입니다. Redis/RabbitMQ/SQS 같은 분산 작업 큐가 아니므로, 다중 인스턴스 환경에서는 job이 특정 인스턴스에 묶이고 장애 복구/재분배가 제한됩니다.
+
+### B3. 백엔드↔분석엔진 호출 타임아웃 없음
+
+- **판정: 해결**
+- A3와 동일하게 `RestClientConfig.java:17-21`, `RestClientConfig.java:31-39`에서 공통 타임아웃이 적용됩니다.
+
+### B4. 로컬 파일 저장 + 인메모리 DB로 수평 확장 불가
+
+- **판정: 부분해결**
+- DB는 dev/prod에서 MySQL + Flyway로 이동했습니다. `application-dev.yml:1-17`, `application-prod.yml:1-20`이 MySQL datasource와 Flyway를 설정하고, `backend/src/main/resources/db/migration/V1__init_schema.sql:5-29` 이후 V2~V5 마이그레이션이 존재합니다.
+- 그러나 파일은 여전히 로컬 디스크입니다. `application.yaml:59-68`의 `storage.upload-path`, `storage.result-path`, `storage.temp-path`가 로컬 경로를 가리키고, `FilePathGenerator.java:17-40`, `VideoFileCommandService.java:40-45`가 `storage/uploads`, `storage/results`, `storage/temp` 기반으로 동작합니다.
+- S3/MinIO/NFS 같은 공유 스토리지나 오브젝트 스토리지 추상화는 아직 없습니다.
+
+### B5. 결과 목록 페이지네이션 없음 + UploadedVideo N+1
+
+- **판정: 해결**
+- `ResultController.java:44-58`, `ResultController.java:103-110`에서 `page`, `size`를 받고 size를 최대 100으로 제한합니다.
+- `ResultQueryService.java:56-69`는 `Page<AnalysisJob>`를 사용하고, `ResultQueryService.java:72-85`는 현재 페이지의 jobId를 모아 `UploadedVideoRepository.findAllByJobIdIn(...)`로 한 번에 조회합니다.
+- `readFinalResultSafely()`의 결과 JSON 파일 읽기는 남아 있지만, 지적된 DB N+1은 제거됐습니다.
+
+### B6. 같은 jobId 동시 재실행 락 없음
+
+- **판정: 해결**
+- `AnalysisJob.java:16-20`에 `@Version` 낙관적 락이 추가됐습니다.
+- `AnalysisCommandService.java:183-194`에서 실행 시작 상태 저장 시 `saveAndFlush()`를 사용하고, 동시 수정 실패를 `ANALYSIS_ALREADY_RUNNING`으로 변환합니다.
+
+### B7. 프론트엔드 ErrorBoundary 없음
+
+- **판정: 해결**
+- `frontend/src/components/common/ErrorBoundary.jsx:8-45`에 렌더링 오류를 잡는 ErrorBoundary가 추가됐고, `frontend/src/App.jsx:5-10`에서 전체 라우트를 감쌉니다.
+- API 실패는 기존 페이지별 처리와 별개로, 예상치 못한 렌더링 오류에 대한 마지막 방어선이 생겼습니다.
+
+### 2026-07-03까지 추가 완료된 주요 항목
+
+- **인증/소유권 검증**: `AuthController.java:38-83`에서 회원가입/로그인/JWT 발급을 처리하고, `SecurityConfig.java:62-71`에서 `/api/**` 인증을 요구합니다. `SecurityConfig.java:181-189`는 인증 객체 details에 userId를 심고, `ResultQueryService.java:120-126`은 결과 조회 소유권을 검증합니다.
+- **분석 상태/진행률/실행/재시도 소유권 검증**: `AnalysisController.java:72-150`에서 인증 사용자 id를 서비스 호출에 전달하고, 진행률 조회도 Redis 캐시를 읽기 전에 DB 상태 조회로 소유권을 검증합니다.
+- **분석 취소**: `AnalysisCommandService.java:155-174`에서 취소 요청을 받고, `AnalysisJob.java:143-164`, `AnalysisCommandService.java:387-400`에서 협조적 취소 상태 전환을 처리합니다.
+- **멈춘 작업 워치도그**: `StuckAnalysisJobWatchdogService.java:24-30`, `StuckAnalysisJobWatchdogService.java:52-83`에서 오래 실행 중인 job을 주기적으로 FAILED 처리합니다.
+- **OpenAI 비용 관리**: `OpenAiClient.java:107-130`에서 `OPENAI_USAGE` 토큰 사용량 로그를 남기고, `ResultCommandService.java:100-126`, `AnalysisCommandService.java:322-333`에서 기존 `REAL` OpenAI 응답을 재사용해 재시도 중복 호출을 줄입니다.
+- **구조화 파일 로깅**: `logback-spring.xml:3-8`, `logback-spring.xml:17-28`, `logback-spring.xml:38-40`에서 콘솔 + rolling file 로그를 구성합니다.
+- **Actuator 헬스체크**: `application.yaml:26-33`, `SecurityConfig.java:64-67`에서 `/actuator/health`만 공개하고 세부 노출은 제한합니다.
+- **스토리지 정리 스케줄러**: `StorageCleanupService.java:41-67`, `StorageCleanupService.java:73-77`에서 오래된 temp와 DB에 없는 upload/result 고아 디렉토리를 정리합니다.
+- **MySQL 백업 스크립트**: `scripts/backup-mysql.sh:30-35`, `scripts/backup-mysql.sh:60-86`에서 `mysqldump | gzip` 백업과 보존 기간 삭제를 수행합니다. 단, 현재까지 실제 MySQL 인스턴스 대상 검증은 완료되지 않았고, fake `mysqldump` 대체 검증만 수행된 한계가 있습니다.
+- **pytest/CI 매트릭스**: `.github/workflows/verify.yml:11-67`에서 backend, frontend, analysis-engine, video-llm-engine 검증 job을 분리합니다. `analysis-engine/tests/test_basic_analysis_scoring.py`, `analysis-engine/tests/test_security.py`, `video-llm-engine/tests/test_security.py`, `video-llm-engine/tests/test_video_llm_analysis.py`가 추가됐습니다.
+
+### 2026-07-03 기준 가장 큰 잔여 리스크
+
+1. **Video LLM은 아직 mock입니다.** `video-llm-engine/app/api/video_llm_analysis.py:25-35`는 `mock-video-llm` 결과를 반환합니다. 서비스 품질 관점에서 가장 큰 미해결 과제입니다.
+2. **분산 작업 큐가 아닙니다.** 현재 비동기 처리는 backend 내부 `ThreadPoolTaskExecutor` 기반입니다. 다중 인스턴스에서 작업 재분배, 중복 실행 방지, 작업 소유권 이전을 보장하지 않습니다.
+3. **스케줄러에 분산 락이 없습니다.** `StorageCleanupService`, `StuckAnalysisJobWatchdogService`는 `@Scheduled`로 동작하므로 backend 인스턴스를 여러 대 띄우면 같은 정리/워치도그 작업이 중복 실행될 수 있습니다.
+4. **파일 저장소가 로컬입니다.** MySQL 전환은 됐지만 업로드/결과 파일은 여전히 로컬 디스크에 묶여 있습니다.
+5. **analysis-engine 모델 프리로딩이 없습니다.** MediaPipe/Whisper 모델 생성이 요청 경로에 남아 있어 성능/지연시간 리스크가 큽니다.
+6. **백업은 스크립트만 있고 운영 검증이 부족합니다.** 실제 MySQL 대상 백업/복구 리허설, 원격 보관, 암호화, 알림은 아직 없습니다.

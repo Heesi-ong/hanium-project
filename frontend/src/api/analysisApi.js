@@ -62,8 +62,18 @@ export async function getAnalysisProgress(jobId) {
     return unwrapApiResponse(response);
 }
 
-export async function getResults() {
-    const response = await apiClient.get("/api/results");
+export async function getResults({ page, size } = {}) {
+    const params = {};
+
+    if (page !== undefined) {
+        params.page = page;
+    }
+
+    if (size !== undefined) {
+        params.size = size;
+    }
+
+    const response = await apiClient.get("/api/results", { params });
     return unwrapApiResponse(response);
 }
 

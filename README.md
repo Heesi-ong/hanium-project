@@ -902,6 +902,14 @@ ResultDetailPage.jsx의 비대화 방지
 
 OpenAI 피드백 결과에 생성 방식을 구분하는 상태 필드를 추가했습니다.
 
+### OpenAI 호출 및 비용 제어 정책
+
+- `openai.enabled=false`이거나 `OPENAI_API_KEY`가 비어 있으면 실제 API를 호출하지 않고 내부 Mock 피드백으로 동작합니다.
+- 실제 API 호출은 `openai.timeout-ms`(`OPENAI_TIMEOUT_MS`, 기본 15000ms)를 요청 read timeout으로 사용합니다.
+- timeout, HTTP 에러, 빈 응답, completed가 아닌 응답, 응답 텍스트 누락, JSON 파싱 실패가 발생하면 별도 재시도 없이 즉시 fallback Mock 피드백으로 전환합니다.
+- 실제 OpenAI API 응답에 usage 정보가 있으면 backend 로그 파일에 `OPENAI_USAGE` 접두어로 `jobId`, `model`, `inputTokens`, `outputTokens`, `totalTokens`가 남습니다. usage가 없을 때도 `usage=none` 로그가 남습니다.
+- 실패한 분석 작업 재시도는 `analysis.retry.max-count`(`ANALYSIS_RETRY_MAX_COUNT`, 기본 3회)까지만 허용됩니다. 초과 시 `/api/analysis/{jobId}/retry`는 `ANALYSIS_RETRY_LIMIT_EXCEEDED` 409 응답을 반환합니다.
+
 ## 결과 목록 AI 피드백 생성 상태 표시 및 필터
 
 결과 목록 화면에서 각 분석 결과의 AI 피드백 생성 방식을 바로 확인할 수 있도록 개선했습니다.

@@ -50,3 +50,11 @@ storage:
 cors:
   # 쉼표로 구분된 허용 origin 목록. 배포 도메인이 생기면 코드 수정 없이 이 값만 바꾸면 됩니다.
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+
+rate-limit:
+  upload:
+    capacity: ${UPLOAD_RATE_LIMIT_CAPACITY:5}
+    refill-minutes: ${UPLOAD_RATE_LIMIT_REFILL_MINUTES:1}
+  analysis:
+    capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:5}
+    refill-minutes: ${ANALYSIS_RATE_LIMIT_REFILL_MINUTES:1}

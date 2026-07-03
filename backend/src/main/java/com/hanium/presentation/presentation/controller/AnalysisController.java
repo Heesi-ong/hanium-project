@@ -126,6 +126,7 @@ public class AnalysisController {
                     case MERGING_RESULT -> 90;
                     case COMPLETED -> 100;
                     case FAILED -> 0;
+                    case CANCELLED -> 0;
                 }
         );
         fallback.put("message", "Redis 진행률 캐시가 없어 DB에 저장된 상태 기준으로 표시합니다.");
@@ -176,6 +177,22 @@ public class AnalysisController {
 
         return ApiResponse.success(
                 "분석 재시도가 완료되었습니다.",
+                response
+        );
+    }
+
+    @PostMapping("/{jobId}/cancel")
+    public ApiResponse<AnalysisStatusResponse> cancelAnalysis(
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication
+    ) {
+        AnalysisStatusResponse response = analysisCommandService.cancelAnalysis(
+                jobId,
+                getCurrentUserId(authentication)
+        );
+
+        return ApiResponse.success(
+                "분석 취소 요청이 접수되었습니다. 현재 진행 중인 단계가 끝나면 취소 상태로 반영됩니다.",
                 response
         );
     }

@@ -152,6 +152,27 @@ public class AnalysisCommandService {
         return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi);
     }
 
+    @Transactional
+    public AnalysisStatusResponse cancelAnalysis(String jobId, Long ownerId) {
+        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        validateOwnership(analysisJob, ownerId);
+
+        if (!analysisJob.isRunning()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_CANCEL_NOT_ALLOWED,
+                    "진행 중인 분석 작업만 취소할 수 있습니다. status=" + analysisJob.getStatus()
+            );
+        }
+
+        analysisJobStatusService.requestCancel(jobId);
+
+        return analysisJobRepository.findByJobId(jobId)
+                .map(AnalysisStatusResponse::from)
+                .orElseGet(() -> AnalysisStatusResponse.from(analysisJob));
+    }
+
     private AnalysisStatusResponse acceptAndDispatch(
             AnalysisJob analysisJob,
             boolean useVideoLlm,
@@ -224,6 +245,10 @@ public class AnalysisCommandService {
         int lastPercent = 10;
 
         try {
+            if (stopIfCancellationRequested(jobId, lastPercent)) {
+                return;
+            }
+
             log.info("[{}] ({}%) 기본 분석 요청을 analysis-engine으로 전송합니다.", jobId, lastPercent);
             analysisProgressService.update(
                     jobId, AnalysisStep.BASIC_ANALYSIS, AnalysisStatus.BASIC_ANALYZING,
@@ -241,6 +266,10 @@ public class AnalysisCommandService {
             VideoLlmEngineResponse videoLlmEngineResponse;
 
             if (useVideoLlm) {
+                if (stopIfCancellationRequested(jobId, lastPercent)) {
+                    return;
+                }
+
                 analysisJobStatusService.updateStatus(jobId, AnalysisStatus.VIDEO_LLM_ANALYZING);
                 lastPercent = 40;
                 log.info("[{}] ({}%) Video LLM 분석 요청을 전송합니다.", jobId, lastPercent);
@@ -278,6 +307,10 @@ public class AnalysisCommandService {
             OpenAiFeedbackResponse openAiFeedbackResponse;
 
             if (useOpenAi) {
+                if (stopIfCancellationRequested(jobId, lastPercent)) {
+                    return;
+                }
+
                 analysisJobStatusService.updateStatus(jobId, AnalysisStatus.OPENAI_GENERATING);
                 lastPercent = 75;
                 log.info("[{}] ({}%) AI 피드백을 생성하는 중입니다.", jobId, lastPercent);
@@ -308,6 +341,10 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
+            if (stopIfCancellationRequested(jobId, lastPercent)) {
+                return;
+            }
+
             analysisJobStatusService.updateStatus(jobId, AnalysisStatus.MERGING_RESULT);
             lastPercent = 90;
             log.info("[{}] ({}%) 최종 결과를 병합하는 중입니다.", jobId, lastPercent);
@@ -322,6 +359,10 @@ public class AnalysisCommandService {
                     videoLlmEngineResponse,
                     openAiFeedbackResponse
             );
+
+            if (stopIfCancellationRequested(jobId, lastPercent)) {
+                return;
+            }
 
             analysisJobStatusService.completeStatus(jobId);
             analysisProgressService.complete(jobId);
@@ -341,6 +382,22 @@ public class AnalysisCommandService {
             analysisProgressService.fail(jobId, lastPercent, failReason);
             saveFailureResultSafely(jobId, failReason);
         }
+    }
+
+    private boolean stopIfCancellationRequested(String jobId, int lastPercent) {
+        boolean cancelRequested = analysisJobRepository.findByJobId(jobId)
+                .map(AnalysisJob::isCancelRequested)
+                .orElse(false);
+
+        if (!cancelRequested) {
+            return false;
+        }
+
+        log.info("[{}] 취소 요청을 감지해 남은 분석 단계를 중단합니다.", jobId);
+        analysisJobStatusService.cancelStatus(jobId);
+        analysisProgressService.cancel(jobId, lastPercent);
+        saveCancelledResultSafely(jobId);
+        return true;
     }
 
     private void validateRunnable(AnalysisJob analysisJob) {
@@ -384,7 +441,7 @@ public class AnalysisCommandService {
         if (!analysisJob.canRetry()) {
             throw new BusinessException(
                     ErrorCode.INVALID_INPUT_VALUE,
-                    "실패 상태의 분석 작업만 재시도할 수 있습니다. status=" + analysisJob.getStatus()
+                    "실패 또는 취소 상태의 분석 작업만 재시도할 수 있습니다. status=" + analysisJob.getStatus()
             );
         }
 
@@ -416,6 +473,18 @@ public class AnalysisCommandService {
             );
         } catch (Exception ignored) {
             // 실패 결과 저장 중 발생한 예외는 원래 분석 실패 원인을 덮어쓰지 않기 위해 무시합니다.
+        }
+    }
+
+    private void saveCancelledResultSafely(String jobId) {
+        try {
+            resultCommandService.saveFailureResult(
+                    jobId,
+                    AnalysisStatus.CANCELLED.name(),
+                    "사용자 요청으로 분석 작업이 취소되었습니다."
+            );
+        } catch (Exception ignored) {
+            // 취소 결과 저장 실패가 취소 상태 반영을 덮어쓰지 않도록 무시합니다.
         }
     }
 

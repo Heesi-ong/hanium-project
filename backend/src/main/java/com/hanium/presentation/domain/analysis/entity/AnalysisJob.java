@@ -35,6 +35,9 @@ public class AnalysisJob {
     @Column(name = "retry_count", nullable = false)
     private int retryCount;
 
+    @Column(name = "cancel_requested", nullable = false)
+    private boolean cancelRequested;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -50,6 +53,7 @@ public class AnalysisJob {
         this.ownerId = ownerId;
         this.status = AnalysisStatus.UPLOADED;
         this.retryCount = 0;
+        this.cancelRequested = false;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -85,6 +89,10 @@ public class AnalysisJob {
         return retryCount;
     }
 
+    public boolean isCancelRequested() {
+        return cancelRequested;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -102,6 +110,7 @@ public class AnalysisJob {
         this.startedAt = LocalDateTime.now();
         this.completedAt = null;
         this.failReason = null;
+        this.cancelRequested = false;
     }
 
     public void startVideoLlmAnalysis() {
@@ -131,12 +140,27 @@ public class AnalysisJob {
         this.completedAt = LocalDateTime.now();
     }
 
+    public boolean requestCancel() {
+        if (!isRunning()) {
+            return false;
+        }
+
+        this.cancelRequested = true;
+        return true;
+    }
+
+    public void markCancelled() {
+        this.status = AnalysisStatus.CANCELLED;
+        this.completedAt = LocalDateTime.now();
+    }
+
     public void resetForRetry() {
         this.retryCount++;
         this.status = AnalysisStatus.UPLOADED;
         this.failReason = null;
         this.startedAt = null;
         this.completedAt = null;
+        this.cancelRequested = false;
     }
 
     public boolean isRunning() {
@@ -160,6 +184,7 @@ public class AnalysisJob {
     }
 
     public boolean canRetry() {
-        return this.status == AnalysisStatus.FAILED;
+        return this.status == AnalysisStatus.FAILED
+                || this.status == AnalysisStatus.CANCELLED;
     }
 }

@@ -43,7 +43,7 @@ public class ResultMergeService {
         Map<String, Object> failureResult = new LinkedHashMap<>();
 
         failureResult.put("jobId", jobId);
-        failureResult.put("status", "FAILED");
+        failureResult.put("status", "CANCELLED".equals(failedStep) ? "CANCELLED" : "FAILED");
         failureResult.put("createdAt", LocalDateTime.now().toString());
         failureResult.put("failedStep", failedStep == null ? "UNKNOWN" : failedStep);
         failureResult.put("failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason);

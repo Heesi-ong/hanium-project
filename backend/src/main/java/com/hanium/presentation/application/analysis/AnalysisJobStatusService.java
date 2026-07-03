@@ -71,6 +71,38 @@ public class AnalysisJobStatusService {
         );
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void requestCancel(String jobId) {
+        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+                analysisJob -> {
+                    if (!analysisJob.requestCancel()) {
+                        log.info(
+                                "[{}] 취소 요청을 반영하지 않았습니다. status={}",
+                                jobId,
+                                analysisJob.getStatus()
+                        );
+                        return;
+                    }
+
+                    analysisJobRepository.save(analysisJob);
+                    log.info("[{}] 취소 요청 즉시 반영", jobId);
+                },
+                () -> log.warn("[{}] 취소 요청을 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void cancelStatus(String jobId) {
+        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+                analysisJob -> {
+                    analysisJob.markCancelled();
+                    analysisJobRepository.save(analysisJob);
+                    log.info("[{}] 상태 즉시 반영: CANCELLED", jobId);
+                },
+                () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
+        );
+    }
+
     private void applyStatus(AnalysisJob analysisJob, AnalysisStatus status) {
         switch (status) {
             case BASIC_ANALYZING -> analysisJob.startBasicAnalysis();

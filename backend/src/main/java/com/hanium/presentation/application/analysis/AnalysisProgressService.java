@@ -71,6 +71,16 @@ public class AnalysisProgressService {
         );
     }
 
+    public void cancel(String jobId, int lastPercent) {
+        write(
+                jobId,
+                null,
+                AnalysisStatus.CANCELLED,
+                lastPercent,
+                "사용자 요청으로 분석 작업이 취소되었습니다."
+        );
+    }
+
     /**
      * 진행률 정보를 반환합니다. Redis에 값이 없으면(캐시가 만료됐거나 아직 시작 전이면) null을
      * 반환하며, 이 경우 호출하는 쪽에서 DB에 저장된 최종 상태(AnalysisStatusResponse)로

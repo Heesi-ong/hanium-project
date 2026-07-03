@@ -25,6 +25,10 @@ function getStatusClassName(status) {
         return "status-badge failed";
     }
 
+    if (status === "CANCELLED") {
+        return "status-badge cancelled";
+    }
+
     if (RUNNING_STATUSES.includes(status)) {
         return "status-badge running";
     }

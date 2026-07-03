@@ -775,6 +775,11 @@ pre {
   color: #b91c1c;
 }
 
+.status-badge.cancelled {
+  background: #e5e7eb;
+  color: #374151;
+}
+
 .status-badge.running {
   background: #fef3c7;
   color: #92400e;

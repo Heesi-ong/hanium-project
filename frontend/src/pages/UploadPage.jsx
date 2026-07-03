@@ -35,6 +35,7 @@ const STATUS_STEP_LABELS = {
     MERGING_RESULT: "최종 결과 병합 중",
     COMPLETED: "분석 완료",
     FAILED: "분석 실패",
+    CANCELLED: "분석 취소됨",
 };
 
 function UploadPage() {
@@ -70,6 +71,7 @@ function UploadPage() {
     const isRunningStatus = RUNNING_STATUSES.includes(currentStatus);
     const isCompleted = currentStatus === "COMPLETED";
     const isFailed = currentStatus === "FAILED";
+    const isCancelled = currentStatus === "CANCELLED";
     const isRateLimited = rateLimitedUntil > Date.now();
 
     useEffect(() => {
@@ -283,6 +285,12 @@ function UploadPage() {
                 if (statusData.status === "FAILED") {
                     stopPolling();
                     setError(statusData.failReason || "분석이 실패했습니다.");
+                    return;
+                }
+
+                if (statusData.status === "CANCELLED") {
+                    stopPolling();
+                    setError("분석이 취소되었습니다. 결과 상세 화면에서 다시 시도할 수 있습니다.");
                 }
             } catch (requestError) {
                 stopPolling();
@@ -320,7 +328,7 @@ function UploadPage() {
             return "pipeline-step done";
         }
 
-        if (isFailed && currentIndex >= stepIndex) {
+        if ((isFailed || isCancelled) && currentIndex >= stepIndex) {
             return "pipeline-step failed";
         }
 

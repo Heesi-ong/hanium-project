@@ -22,6 +22,7 @@ import VideoInfoSection from "../components/result-detail/VideoInfoSection";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import {
+    cancelAnalysis,
     deleteResult,
     getAnalysisStatus,
     getResult,
@@ -53,6 +54,7 @@ function ResultDetailPage() {
     const [analysisStatus, setAnalysisStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState(false);
+    const [cancelling, setCancelling] = useState(false);
     const [polling, setPolling] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState("");
@@ -112,6 +114,7 @@ function ResultDetailPage() {
         analysisStatus?.statusDescription || currentStatus || "-";
 
     const isFailed = currentStatus === "FAILED";
+    const isCancelled = currentStatus === "CANCELLED";
     const isCompleted = currentStatus === "COMPLETED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
     const isRateLimited = rateLimitedUntil > Date.now();
@@ -236,6 +239,13 @@ function ResultDetailPage() {
                     stopPolling();
                     await loadResult();
                     setError(statusData.failReason || "분석 재시도가 실패했습니다.");
+                    return;
+                }
+
+                if (statusData.status === "CANCELLED") {
+                    stopPolling();
+                    await loadResult();
+                    setError("");
                 }
             } catch (requestError) {
                 stopPolling();
@@ -317,6 +327,42 @@ function ResultDetailPage() {
             }
         } finally {
             setRetrying(false);
+        }
+    }
+
+    async function handleCancel() {
+        if (!jobId) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "진행 중인 분석을 취소하시겠습니까? 현재 실행 중인 단계가 끝난 뒤 취소됩니다."
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setCancelling(true);
+            setError("");
+
+            await cancelAnalysis(jobId);
+            await fetchStatusOnce(jobId);
+            startStatusPolling(jobId);
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "분석 취소 요청 중 오류가 발생했습니다."
+            ));
+
+            try {
+                await fetchStatusOnce(jobId);
+            } catch {
+                // 취소 요청 실패 후 상태 조회 실패는 기존 오류 메시지를 유지합니다.
+            }
+        } finally {
+            setCancelling(false);
         }
     }
 
@@ -526,14 +572,25 @@ function ResultDetailPage() {
                         목록으로
                     </Link>
 
-                    {isFailed && (
+                    {(isFailed || isCancelled) && (
                         <button
                             type="button"
                             className="primary-button"
                             onClick={handleRetry}
-                            disabled={retrying || polling || deleting || isRateLimited}
+                            disabled={retrying || polling || deleting || cancelling || isRateLimited}
                         >
                             {retrying || polling ? "재시도 진행 중..." : "분석 재시도"}
+                        </button>
+                    )}
+
+                    {isRunning && (
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={handleCancel}
+                            disabled={retrying || deleting || cancelling || isRateLimited}
+                        >
+                            {cancelling ? "취소 요청 중..." : "분석 취소"}
                         </button>
                     )}
 
@@ -541,7 +598,7 @@ function ResultDetailPage() {
                         type="button"
                         className="danger-button"
                         onClick={handleDelete}
-                        disabled={retrying || polling || deleting || isRunning}
+                        disabled={retrying || polling || deleting || cancelling || isRunning}
                     >
                         {deleting ? "삭제 중..." : "삭제"}
                     </button>
@@ -551,7 +608,7 @@ function ResultDetailPage() {
             <StateMessage type="error">{error}</StateMessage>
 
             <StateMessage type="polling">
-                {retrying || polling || isRunning ? (
+                {retrying || polling || cancelling || isRunning ? (
                     <>
                         분석 상태를 자동으로 확인하는 중입니다. 현재 상태:{" "}
                         <StatusBadge
@@ -565,7 +622,9 @@ function ResultDetailPage() {
             </StateMessage>
 
             <StateMessage type="success">
-                {isCompleted
+                {isCancelled
+                    ? "분석이 취소되었습니다. 필요하면 다시 시도할 수 있습니다."
+                    : isCompleted
                     ? "분석이 완료되었습니다. 최신 결과가 화면에 반영되었습니다."
                     : ""}
             </StateMessage>

@@ -51,6 +51,11 @@ export async function retryAnalysis(jobId, options = {}) {
     return unwrapApiResponse(response);
 }
 
+export async function cancelAnalysis(jobId) {
+    const response = await apiClient.post(`/api/analysis/${jobId}/cancel`);
+    return unwrapApiResponse(response);
+}
+
 export async function getAnalysisStatus(jobId) {
     const response = await apiClient.get(`/api/analysis/${jobId}/status`);
     return unwrapApiResponse(response);

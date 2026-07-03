@@ -105,11 +105,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+export LOG_DIR=../storage/logs
 uvicorn app.main:app --reload --port 8001
 ```
 
 `INTERNAL_ENGINE_API_KEY`가 비어 있으면 analysis-engine의 `/api/**` 분석 요청은 401로 거부됩니다.
 이 값은 backend 실행 터미널의 `INTERNAL_ENGINE_API_KEY`와 반드시 같아야 합니다.
+`LOG_DIR`을 지정하면 analysis-engine 로그가 콘솔과 함께 `${LOG_DIR}/analysis-engine.log`에도 기록됩니다.
 
 정상 확인:
 
@@ -137,11 +139,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+export LOG_DIR=../storage/logs
 uvicorn app.main:app --reload --port 8002
 ```
 
 `INTERNAL_ENGINE_API_KEY`가 비어 있으면 video-llm-engine의 `/api/**` 분석 요청은 401로 거부됩니다.
 이 값은 backend 실행 터미널의 `INTERNAL_ENGINE_API_KEY`와 반드시 같아야 합니다.
+`LOG_DIR`을 지정하면 video-llm-engine 로그가 콘솔과 함께 `${LOG_DIR}/video-llm-engine.log`에도 기록됩니다.
 
 정상 확인:
 
@@ -175,6 +179,7 @@ analysis-engine/video-llm-engine 터미널과 같은 값을 설정해야 분석 
 
 ```bash
 curl http://localhost:8080/api/health
+curl http://localhost:8080/actuator/health
 ```
 
 예상 응답:
@@ -513,6 +518,7 @@ storage/uploads/{jobId}/
 cd ~/Desktop/hanium\ project/analysis-engine
 source .venv/bin/activate
 export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+export LOG_DIR=../storage/logs
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -522,6 +528,7 @@ uvicorn app.main:app --reload --port 8001
 cd ~/Desktop/hanium\ project/video-llm-engine
 source .venv/bin/activate
 export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+export LOG_DIR=../storage/logs
 uvicorn app.main:app --reload --port 8002
 ```
 
@@ -574,6 +581,7 @@ storage/uploads/*
 storage/results/*
 storage/temp/*
 storage/logs/*
+storage/backups/*
 .runtime/
 Project/
 .DS_Store
@@ -588,7 +596,41 @@ storage/temp/.gitkeep
 storage/logs/.gitkeep
 ```
 
-## 14. 현재 구현 범위
+## 14. MySQL 백업
+
+MySQL 데이터는 `mysql-data` Docker 볼륨에 저장되지만, 볼륨 손상이나 실수 삭제에 대비해 `mysqldump` 백업을 별도로 남길 수 있습니다.
+
+수동 실행 예시:
+
+```bash
+cd ~/Desktop/hanium\ project
+
+DB_HOST=127.0.0.1 \
+DB_PORT=3306 \
+DB_NAME=hanium_dev \
+DB_USERNAME=hanium \
+DB_PASSWORD=실제비밀번호 \
+BACKUP_DIR=./storage/backups \
+BACKUP_RETENTION_DAYS=14 \
+./scripts/backup-mysql.sh
+```
+
+`docker-compose.yml`은 `${DB_PORT:-3306}:3306`으로 MySQL 포트를 호스트에 노출하므로, compose로 MySQL을 띄운 뒤 호스트에서 위 스크립트를 실행할 수 있습니다. 백업 파일은 기본적으로 `storage/backups/{DB_NAME}_YYYYMMDD_HHMMSS.sql.gz`에 저장되고, `BACKUP_RETENTION_DAYS`보다 오래된 같은 DB의 백업 파일은 자동 삭제됩니다. 실행 로그는 stdout과 `storage/logs/backup.log`에 함께 남습니다.
+
+crontab 자동화 예시(매일 새벽 3시):
+
+```cron
+0 3 * * * cd /path/to/hanium\ project && DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=hanium_dev DB_USERNAME=hanium DB_PASSWORD=실제비밀번호 BACKUP_DIR=./storage/backups BACKUP_RETENTION_DAYS=14 ./scripts/backup-mysql.sh >> ./storage/logs/backup-cron.log 2>&1
+```
+
+복구 예시:
+
+```bash
+gunzip -c storage/backups/hanium_dev_YYYYMMDD_HHMMSS.sql.gz \
+  | MYSQL_PWD=실제비밀번호 mysql -h 127.0.0.1 -P 3306 -u hanium hanium_dev
+```
+
+## 15. 현재 구현 범위
 
 현재 구현된 범위:
 
@@ -905,7 +947,7 @@ FAILED
 - 배포 설정
 - 점수 기준 보정은 추후 진행 예정
 
-## 15. 기본 실행 체크리스트
+## 16. 기본 실행 체크리스트
 
 - analysis-engine 8001 실행 여부 확인
 - video-llm-engine 8002 실행 여부 확인

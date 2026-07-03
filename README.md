@@ -76,6 +76,13 @@ Redis는 분석 진행률(%)을 잠깐 보여주기 위한 캐시 용도로만 �
 4. backend 실행
 5. frontend 실행
 
+analysis-engine, video-llm-engine, backend는 같은 내부 공유 키를 사용해야 합니다.
+로컬 개발에서는 아래 예시처럼 같은 값을 세 터미널에 모두 설정하세요.
+
+```bash
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+```
+
 ## 3-1. Redis 실행 (선택)
 
 ```bash
@@ -97,8 +104,12 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 uvicorn app.main:app --reload --port 8001
 ```
+
+`INTERNAL_ENGINE_API_KEY`가 비어 있으면 analysis-engine의 `/api/**` 분석 요청은 401로 거부됩니다.
+이 값은 backend 실행 터미널의 `INTERNAL_ENGINE_API_KEY`와 반드시 같아야 합니다.
 
 정상 확인:
 
@@ -125,8 +136,12 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 uvicorn app.main:app --reload --port 8002
 ```
+
+`INTERNAL_ENGINE_API_KEY`가 비어 있으면 video-llm-engine의 `/api/**` 분석 요청은 401로 거부됩니다.
+이 값은 backend 실행 터미널의 `INTERNAL_ENGINE_API_KEY`와 반드시 같아야 합니다.
 
 정상 확인:
 
@@ -148,8 +163,13 @@ curl http://localhost:8002/health
 ```bash
 cd ~/Desktop/hanium\ project/backend
 
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 ./gradlew bootRun
 ```
+
+backend는 `application.yaml`의 `external.analysis-engine.api-key`,
+`external.video-llm-engine.api-key` 값을 `${INTERNAL_ENGINE_API_KEY:}`에서 읽습니다.
+analysis-engine/video-llm-engine 터미널과 같은 값을 설정해야 분석 요청이 401로 막히지 않습니다.
 
 정상 확인:
 
@@ -193,6 +213,24 @@ http://localhost:5173
 ```
 
 ## 8. 주요 기능
+
+### 8.0 회원가입 / 로그인
+
+경로:
+
+```text
+/signup
+/login
+```
+
+기능:
+
+- 이메일/비밀번호 회원가입
+- 로그인 후 JWT 토큰 저장
+- 로그인한 사용자만 홈, 업로드, 결과 목록, 결과 상세 화면 접근 가능
+- 본인이 업로드한 분석 작업과 결과만 조회/삭제 가능
+
+영상 업로드와 결과 조회를 테스트하기 전에 반드시 `/signup`에서 회원가입한 뒤 `/login`에서 로그인하세요.
 
 ### 8.1 홈 화면
 
@@ -279,6 +317,13 @@ http://localhost:5173
 
 ## 9. 백엔드 주요 API
 
+`/api/auth/**`, `/api/health`, `/api/health/**`를 제외한 `/api/**` 요청은
+로그인 후 받은 토큰을 아래 헤더로 보내야 합니다.
+
+```http
+Authorization: Bearer {accessToken}
+```
+
 ### 9.1 Health Check
 
 ```http
@@ -286,10 +331,36 @@ GET /api/health
 GET /api/health/engines
 ```
 
-### 9.2 영상 업로드
+인증 없이 호출할 수 있습니다.
+
+### 9.2 인증
+
+```http
+POST /api/auth/signup
+POST /api/auth/login
+```
+
+Request Body:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+로그인 성공 시 `data.accessToken`이 반환됩니다.
+
+### 9.3 영상 업로드
 
 ```http
 POST /api/analysis/upload
+```
+
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
 ```
 
 Form Data:
@@ -298,12 +369,18 @@ Form Data:
 file: 영상 파일
 ```
 
-### 9.3 분석 실행
+### 9.4 분석 실행
 
 ```http
 POST /api/analysis/{jobId}/run
 ```
 
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
+```
+
 Request Body:
 
 ```json
@@ -313,12 +390,18 @@ Request Body:
 }
 ```
 
-### 9.4 분석 재시도
+### 9.5 분석 재시도
 
 ```http
 POST /api/analysis/{jobId}/retry
 ```
 
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
+```
+
 Request Body:
 
 ```json
@@ -328,28 +411,60 @@ Request Body:
 }
 ```
 
-### 9.5 분석 상태 조회
+### 9.6 분석 상태 조회
 
 ```http
 GET /api/analysis/{jobId}/status
 ```
 
-### 9.6 결과 목록 조회
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
+```
+
+### 9.7 결과 목록 조회
 
 ```http
 GET /api/results
+GET /api/results?page=0&size=50
 ```
 
-### 9.7 결과 상세 조회
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
+```
+
+Query Parameters:
+
+```text
+page: 0부터 시작하는 페이지 번호 (기본값 0)
+size: 페이지 크기 (기본값 50, 최대 100)
+```
+
+### 9.8 결과 상세 조회
 
 ```http
 GET /api/results/{jobId}
 ```
 
-### 9.8 결과 삭제
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
+```
+
+### 9.9 결과 삭제
 
 ```http
 DELETE /api/results/{jobId}
+```
+
+인증 필요:
+
+```http
+Authorization: Bearer {accessToken}
 ```
 
 ## 10. 분석 상태 흐름
@@ -397,6 +512,7 @@ storage/uploads/{jobId}/
 ```bash
 cd ~/Desktop/hanium\ project/analysis-engine
 source .venv/bin/activate
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -405,6 +521,7 @@ uvicorn app.main:app --reload --port 8001
 ```bash
 cd ~/Desktop/hanium\ project/video-llm-engine
 source .venv/bin/activate
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 uvicorn app.main:app --reload --port 8002
 ```
 
@@ -412,6 +529,7 @@ uvicorn app.main:app --reload --port 8002
 
 ```bash
 cd ~/Desktop/hanium\ project/backend
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 ./gradlew bootRun
 ```
 
@@ -425,16 +543,18 @@ npm run dev
 ### 12.2 브라우저 테스트
 
 1. http://localhost:5173 접속
-2. 서버 및 엔진 상태 확인
-3. /upload 이동
-4. 영상 파일 선택
-5. 영상 업로드
-6. 분석 실행
-7. 분석 완료 후 상세 페이지 자동 이동 확인
-8. /results 이동
-9. 결과 목록 확인
-10. 상세 보기 확인
-11. 삭제 기능 확인
+2. /signup 이동 후 이메일/비밀번호로 회원가입
+3. /login 이동 후 로그인
+4. 서버 및 엔진 상태 확인
+5. /upload 이동
+6. 영상 파일 선택
+7. 영상 업로드
+8. 분석 실행
+9. 분석 완료 후 상세 페이지 자동 이동 확인
+10. /results 이동
+11. 결과 목록 확인
+12. 상세 보기 확인
+13. 삭제 기능 확인
 
 ## 13. Git에 올리지 않는 항목
 
@@ -473,17 +593,24 @@ storage/logs/.gitkeep
 현재 구현된 범위:
 
 - Spring Boot 백엔드 기본 API
+- 이메일/비밀번호 회원가입 및 로그인
+- JWT 기반 API 인증
 - 영상 업로드
+- 업로드 영상 매직바이트 검증
 - 분석 작업 상태 관리
+- 분석 작업/결과 소유권 검증
 - 외부 Python 엔진 Mock 연동
+- 내부 엔진 API 키 인증
 - Video LLM Mock 분석
 - OpenAI Mock 피드백
 - 결과 JSON 저장
-- 결과 목록 조회
+- 결과 목록 조회 및 페이지네이션
 - 결과 상세 조회
 - 결과 삭제
 - 실패 결과 재시도
+- 사용자별 요청 제한(rate limiting)
 - React 프론트 기본 화면
+- 로그인 / 회원가입 화면
 - 업로드 화면
 - 결과 목록 화면
 - 결과 상세 화면

@@ -4,12 +4,14 @@ import com.hanium.presentation.application.result.ResultCommandService;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -33,24 +35,35 @@ public class StuckAnalysisJobWatchdogService {
     private final AnalysisJobStatusService analysisJobStatusService;
     private final AnalysisProgressService analysisProgressService;
     private final ResultCommandService resultCommandService;
+    private final SchedulerDistributedLock schedulerDistributedLock;
     private final long maxRunningMinutes;
+    private final Duration lockTtl;
 
     public StuckAnalysisJobWatchdogService(
             AnalysisJobRepository analysisJobRepository,
             AnalysisJobStatusService analysisJobStatusService,
             AnalysisProgressService analysisProgressService,
             ResultCommandService resultCommandService,
-            @Value("${analysis.stuck-job.max-running-minutes:30}") long maxRunningMinutes
+            SchedulerDistributedLock schedulerDistributedLock,
+            @Value("${analysis.stuck-job.max-running-minutes:30}") long maxRunningMinutes,
+            @Value("${scheduler.lock.stuck-job-watchdog-ttl-minutes:5}") long lockTtlMinutes
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.analysisJobStatusService = analysisJobStatusService;
         this.analysisProgressService = analysisProgressService;
         this.resultCommandService = resultCommandService;
+        this.schedulerDistributedLock = schedulerDistributedLock;
         this.maxRunningMinutes = maxRunningMinutes;
+        this.lockTtl = Duration.ofMinutes(lockTtlMinutes);
     }
 
     @Scheduled(cron = "${analysis.stuck-job.cron:0 */10 * * * *}")
     public void failStuckAnalysisJobs() {
+        if (!schedulerDistributedLock.tryLock("stuck-job-watchdog", lockTtl)) {
+            log.info("멈춘 분석 작업 워치도그 실행을 건너뜁니다. 다른 backend 인스턴스가 락을 보유 중입니다.");
+            return;
+        }
+
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(maxRunningMinutes);
         List<AnalysisJob> stuckJobs = analysisJobRepository.findByStatusInAndStartedAtBefore(
                 RUNNING_STATUSES,

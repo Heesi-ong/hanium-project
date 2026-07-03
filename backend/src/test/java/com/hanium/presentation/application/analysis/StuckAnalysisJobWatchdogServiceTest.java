@@ -3,6 +3,7 @@ package com.hanium.presentation.application.analysis;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.support.AsyncAnalysisTestSupport;
@@ -11,13 +12,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -43,10 +49,14 @@ class StuckAnalysisJobWatchdogServiceTest {
     @Autowired
     private JsonFileStorage jsonFileStorage;
 
+    @MockBean
+    private SchedulerDistributedLock schedulerDistributedLock;
+
     @BeforeEach
     void setUp() {
         AsyncAnalysisTestSupport.awaitAllAnalysisJobsNotRunning(analysisJobRepository);
         analysisJobRepository.deleteAll();
+        when(schedulerDistributedLock.tryLock(eq("stuck-job-watchdog"), any(Duration.class))).thenReturn(true);
     }
 
     @AfterEach
@@ -89,6 +99,19 @@ class StuckAnalysisJobWatchdogServiceTest {
         assertThat(failureResult.get("failedStep")).isEqualTo("FAILED");
         assertThat(failureResult.get("failReason")).asString()
                 .contains("자동으로 실패 처리");
+    }
+
+    @Test
+    void failStuckAnalysisJobsSkipsWhenDistributedLockIsAlreadyHeld() {
+        AnalysisJob oldRunningJob = runningJob(OLD_RUNNING_JOB_ID, LocalDateTime.now().minusMinutes(45));
+        analysisJobRepository.saveAndFlush(oldRunningJob);
+        when(schedulerDistributedLock.tryLock(eq("stuck-job-watchdog"), any(Duration.class))).thenReturn(false);
+
+        watchdogService.failStuckAnalysisJobs();
+
+        AnalysisJob updatedOldRunningJob = findJob(OLD_RUNNING_JOB_ID);
+        assertThat(updatedOldRunningJob.getStatus()).isEqualTo(AnalysisStatus.BASIC_ANALYZING);
+        assertThat(updatedOldRunningJob.getFailReason()).isNull();
     }
 
     private AnalysisJob runningJob(String jobId, LocalDateTime startedAt) {

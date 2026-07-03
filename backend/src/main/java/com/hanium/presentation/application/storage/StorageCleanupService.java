@@ -1,6 +1,7 @@
 package com.hanium.presentation.application.storage;
 
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,23 +24,34 @@ public class StorageCleanupService {
 
     private final AnalysisJobRepository analysisJobRepository;
     private final FilePathGenerator filePathGenerator;
+    private final SchedulerDistributedLock schedulerDistributedLock;
     private final Duration tempMaxAge;
     private final Duration orphanMaxAge;
+    private final Duration lockTtl;
 
     public StorageCleanupService(
             AnalysisJobRepository analysisJobRepository,
             FilePathGenerator filePathGenerator,
+            SchedulerDistributedLock schedulerDistributedLock,
             @Value("${storage.cleanup.temp-max-age-hours:6}") long tempMaxAgeHours,
-            @Value("${storage.cleanup.orphan-max-age-hours:24}") long orphanMaxAgeHours
+            @Value("${storage.cleanup.orphan-max-age-hours:24}") long orphanMaxAgeHours,
+            @Value("${scheduler.lock.storage-cleanup-ttl-minutes:10}") long lockTtlMinutes
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.filePathGenerator = filePathGenerator;
+        this.schedulerDistributedLock = schedulerDistributedLock;
         this.tempMaxAge = Duration.ofHours(tempMaxAgeHours);
         this.orphanMaxAge = Duration.ofHours(orphanMaxAgeHours);
+        this.lockTtl = Duration.ofMinutes(lockTtlMinutes);
     }
 
     @Scheduled(cron = "${storage.cleanup.cron:0 0 * * * *}")
     public void cleanupStorage() {
+        if (!schedulerDistributedLock.tryLock("storage-cleanup", lockTtl)) {
+            log.info("스토리지 정리 스케줄러 실행을 건너뜁니다. 다른 backend 인스턴스가 락을 보유 중입니다.");
+            return;
+        }
+
         Instant now = Instant.now();
 
         int deletedTempDirectories = cleanupOldDirectories(

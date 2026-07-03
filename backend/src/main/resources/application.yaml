@@ -78,3 +78,8 @@ rate-limit:
   analysis:
     capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:5}
     refill-minutes: ${ANALYSIS_RATE_LIMIT_REFILL_MINUTES:1}
+
+scheduler:
+  lock:
+    storage-cleanup-ttl-minutes: ${SCHEDULER_LOCK_STORAGE_CLEANUP_TTL_MINUTES:10}
+    stuck-job-watchdog-ttl-minutes: ${SCHEDULER_LOCK_STUCK_JOB_WATCHDOG_TTL_MINUTES:5}

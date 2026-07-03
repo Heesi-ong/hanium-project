@@ -27,9 +27,11 @@ import {
     getResult,
     retryAnalysis,
 } from "../api/analysisApi";
+import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 
 const POLLING_INTERVAL_MS = 1500;
 const POLLING_TIMEOUT_MS = 120000;
+const RATE_LIMIT_COOLDOWN_MS = 12000;
 
 const RUNNING_STATUSES = [
     "BASIC_ANALYZING",
@@ -45,6 +47,7 @@ function ResultDetailPage() {
 
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
+    const cooldownTimerRef = useRef(null);
 
     const [resultData, setResultData] = useState(null);
     const [analysisStatus, setAnalysisStatus] = useState(null);
@@ -53,6 +56,8 @@ function ResultDetailPage() {
     const [polling, setPolling] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState("");
+    const [loadErrorCode, setLoadErrorCode] = useState("");
+    const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
 
     const result = resultData?.result || {};
 
@@ -109,6 +114,7 @@ function ResultDetailPage() {
     const isFailed = currentStatus === "FAILED";
     const isCompleted = currentStatus === "COMPLETED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
+    const isRateLimited = rateLimitedUntil > Date.now();
 
     const scoreItems = useMemo(
         () => [
@@ -145,6 +151,7 @@ function ResultDetailPage() {
 
         return () => {
             stopPolling();
+            stopRateLimitCooldown();
         };
     }, [jobId]);
 
@@ -158,6 +165,7 @@ function ResultDetailPage() {
         try {
             setLoading(true);
             setError("");
+            setLoadErrorCode("");
 
             const response = await getResult(jobId);
 
@@ -172,10 +180,23 @@ function ResultDetailPage() {
                 });
             }
         } catch (requestError) {
-            setError(
-                requestError.message ||
+            const errorCode = getErrorCode(requestError);
+            setLoadErrorCode(errorCode);
+
+            if (errorCode === ERROR_CODES.ANALYSIS_JOB_ACCESS_DENIED) {
+                setError("접근 권한이 없는 결과입니다.");
+                return;
+            }
+
+            if (errorCode === ERROR_CODES.ANALYSIS_JOB_NOT_FOUND) {
+                setError("삭제되었거나 존재하지 않는 결과입니다.");
+                return;
+            }
+
+            setError(getErrorMessage(
+                requestError,
                 "분석 결과 상세 정보를 불러오는 중 오류가 발생했습니다."
-            );
+            ));
         } finally {
             setLoading(false);
         }
@@ -218,10 +239,10 @@ function ResultDetailPage() {
                 }
             } catch (requestError) {
                 stopPolling();
-                setError(
-                    requestError.message ||
+                setError(getErrorMessage(
+                    requestError,
                     "분석 상태 확인 중 오류가 발생했습니다."
-                );
+                ));
             }
         }, POLLING_INTERVAL_MS);
     }
@@ -234,6 +255,33 @@ function ResultDetailPage() {
 
         pollingStartedAtRef.current = null;
         setPolling(false);
+    }
+
+    function startRateLimitCooldown() {
+        stopRateLimitCooldown();
+        setRateLimitedUntil(Date.now() + RATE_LIMIT_COOLDOWN_MS);
+
+        cooldownTimerRef.current = setTimeout(() => {
+            setRateLimitedUntil(0);
+            cooldownTimerRef.current = null;
+        }, RATE_LIMIT_COOLDOWN_MS);
+    }
+
+    function stopRateLimitCooldown() {
+        if (cooldownTimerRef.current) {
+            clearTimeout(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+        }
+    }
+
+    function applyRateLimitMessage(requestError) {
+        if (getErrorCode(requestError) !== ERROR_CODES.TOO_MANY_REQUESTS) {
+            return false;
+        }
+
+        setError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+        startRateLimitCooldown();
+        return true;
     }
 
     async function handleRetry() {
@@ -253,15 +301,19 @@ function ResultDetailPage() {
             await fetchStatusOnce(jobId);
             startStatusPolling(jobId);
         } catch (requestError) {
-            setError(
-                requestError.message ||
-                "분석 재시도 중 오류가 발생했습니다."
-            );
+            if (!applyRateLimitMessage(requestError)) {
+                setError(getErrorMessage(
+                    requestError,
+                    "분석 재시도 중 오류가 발생했습니다."
+                ));
+            }
 
-            try {
-                await fetchStatusOnce(jobId);
-            } catch {
-                // 재시도 실패 후 상태 조회 실패는 기존 오류 메시지를 유지합니다.
+            if (getErrorCode(requestError) !== ERROR_CODES.TOO_MANY_REQUESTS) {
+                try {
+                    await fetchStatusOnce(jobId);
+                } catch {
+                    // 재시도 실패 후 상태 조회 실패는 기존 오류 메시지를 유지합니다.
+                }
             }
         } finally {
             setRetrying(false);
@@ -290,10 +342,10 @@ function ResultDetailPage() {
 
             navigate("/results");
         } catch (requestError) {
-            setError(
-                requestError.message ||
+            setError(getErrorMessage(
+                requestError,
                 "분석 결과 삭제 중 오류가 발생했습니다."
-            );
+            ));
         } finally {
             setDeleting(false);
         }
@@ -356,6 +408,60 @@ function ResultDetailPage() {
                 </strong>
                 {helper && <p>{helper}</p>}
             </article>
+        );
+    }
+
+    if (
+        !loading &&
+        !resultData &&
+        loadErrorCode === ERROR_CODES.ANALYSIS_JOB_ACCESS_DENIED
+    ) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result Detail"
+                    title="분석 결과 상세"
+                    description={`현재 조회 대상 jobId: ${jobId}`}
+                />
+
+                <EmptyState
+                    title="접근 권한이 없는 결과입니다."
+                    description="본인이 업로드한 분석 결과만 조회할 수 있습니다."
+                />
+
+                <div className="button-row">
+                    <Link to="/results" className="primary-button">
+                        목록으로 이동
+                    </Link>
+                </div>
+            </section>
+        );
+    }
+
+    if (
+        !loading &&
+        !resultData &&
+        loadErrorCode === ERROR_CODES.ANALYSIS_JOB_NOT_FOUND
+    ) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result Detail"
+                    title="분석 결과 상세"
+                    description={`현재 조회 대상 jobId: ${jobId}`}
+                />
+
+                <EmptyState
+                    title="삭제되었거나 존재하지 않는 결과입니다."
+                    description="결과 목록에서 현재 접근 가능한 분석 결과를 다시 확인하세요."
+                />
+
+                <div className="button-row">
+                    <Link to="/results" className="primary-button">
+                        목록으로 이동
+                    </Link>
+                </div>
+            </section>
         );
     }
 
@@ -425,7 +531,7 @@ function ResultDetailPage() {
                             type="button"
                             className="primary-button"
                             onClick={handleRetry}
-                            disabled={retrying || polling || deleting}
+                            disabled={retrying || polling || deleting || isRateLimited}
                         >
                             {retrying || polling ? "재시도 진행 중..." : "분석 재시도"}
                         </button>

@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Dict, Any
 
 from app.core.security import verify_internal_api_key
+
+logger = logging.getLogger("video-llm-engine")
 
 router = APIRouter(
     prefix="/api/video-llm",
@@ -20,7 +24,7 @@ class VideoLlmAnalysisRequest(BaseModel):
 
 @router.post("/analyze")
 def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
-    print(f"[video-llm-engine] ({request.jobId}) Mock 영상 관찰 결과를 생성하는 중...", flush=True)
+    logger.info("(%s) Mock 영상 관찰 결과를 생성하는 중...", request.jobId)
 
     return {
         "jobId": request.jobId,

@@ -101,6 +101,7 @@ storage/uploads/*
 storage/results/*
 storage/temp/*
 storage/logs/*
+storage/backups/*
 
 !storage/uploads/.gitkeep
 !storage/results/.gitkeep

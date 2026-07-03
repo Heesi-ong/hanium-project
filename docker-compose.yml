@@ -37,6 +37,7 @@ services:
     restart: unless-stopped
     environment:
       INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      LOG_DIR: /storage/logs
     ports:
       - "8001:8001"
     volumes:
@@ -48,6 +49,7 @@ services:
     restart: unless-stopped
     environment:
       INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      LOG_DIR: /storage/logs
     ports:
       - "8002:8002"
     volumes:
@@ -92,6 +94,12 @@ services:
       - "8080:8080"
     volumes:
       - ./storage:/storage
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   frontend:
     build:

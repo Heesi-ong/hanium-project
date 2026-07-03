@@ -1,3 +1,5 @@
+import logging
+import shutil
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -12,6 +14,8 @@ from mediapipe.tasks.python import vision
 from pydantic import BaseModel
 
 from app.core.security import verify_internal_api_key
+
+logger = logging.getLogger("analysis-engine")
 
 router = APIRouter(
     prefix="/api",
@@ -101,112 +105,132 @@ TOTAL_ANALYSIS_STEPS = 9
 
 
 def log_step(job_id: str, step_no: int, message: str) -> None:
-    """분석 중 지금 무슨 작업을 하고 있는지 터미널(콘솔)에 바로 출력합니다.
+    """분석 중 지금 무슨 작업을 하고 있는지 콘솔과 파일 로그에 기록합니다.
 
-    영상 하나를 분석하는 데 시간이 꽤 걸리기 때문에, 이 print가 없으면
+    영상 하나를 분석하는 데 시간이 꽤 걸리기 때문에, 이 로그가 없으면
     analysis-engine 터미널 화면이 아무 반응 없이 멈춘 것처럼 보입니다.
     """
-    print(f"[analysis-engine] ({job_id}) {step_no}/{TOTAL_ANALYSIS_STEPS} {message}", flush=True)
+    logger.info("(%s) %s/%s %s", job_id, step_no, TOTAL_ANALYSIS_STEPS, message)
+
+
+def cleanup_temp_directory(job_id: str) -> None:
+    project_root = resolve_project_root()
+    temp_root = (project_root / "storage" / "temp").resolve()
+    temp_directory = (temp_root / job_id).resolve()
+
+    if temp_directory == temp_root or temp_root not in temp_directory.parents:
+        logger.warning("(%s) 임시 파일 정리 경로가 허용 범위를 벗어나 건너뜁니다: %s", job_id, temp_directory)
+        return
+
+    if not temp_directory.exists():
+        logger.info("(%s) 정리할 임시 파일이 없습니다: %s", job_id, temp_directory)
+        return
+
+    shutil.rmtree(temp_directory, ignore_errors=True)
+    logger.info("(%s) 임시 파일 정리 완료: %s", job_id, temp_directory)
 
 
 @router.post("/basic-analysis")
 def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
     job_id = request.jobId
 
-    log_step(job_id, 1, "영상 파일 확인 중...")
-    resolved_video_path = resolve_video_path(request.videoPath)
+    try:
+        log_step(job_id, 1, "영상 파일 확인 중...")
+        resolved_video_path = resolve_video_path(request.videoPath)
 
-    if resolved_video_path is None:
-        log_step(job_id, 1, "영상 파일을 찾지 못해 분석을 중단합니다.")
-        return create_failed_response(
+        if resolved_video_path is None:
+            log_step(job_id, 1, "영상 파일을 찾지 못해 분석을 중단합니다.")
+            return create_failed_response(
+                job_id=job_id,
+                video_path=request.videoPath,
+                reason="영상 파일을 찾을 수 없습니다.",
+            )
+
+        video_info = extract_video_info(resolved_video_path)
+
+        if video_info["readable"] is False:
+            log_step(job_id, 1, "영상 파일을 읽지 못해 분석을 중단합니다.")
+            return create_failed_response(
+                job_id=job_id,
+                video_path=str(resolved_video_path),
+                reason="영상 파일을 읽을 수 없습니다.",
+            )
+
+        log_step(job_id, 2, "영상에서 프레임(장면 이미지)을 추출하는 중...")
+        frame_result = extract_sample_frames(
             job_id=job_id,
-            video_path=request.videoPath,
-            reason="영상 파일을 찾을 수 없습니다.",
+            video_path=resolved_video_path,
+            fps=video_info["fps"],
+            frame_count=video_info["frameCount"],
         )
 
-    video_info = extract_video_info(resolved_video_path)
-
-    if video_info["readable"] is False:
-        log_step(job_id, 1, "영상 파일을 읽지 못해 분석을 중단합니다.")
-        return create_failed_response(
+        log_step(job_id, 3, "영상에서 오디오(소리)를 분리하는 중...")
+        audio_extraction_result = extract_audio_from_video(
             job_id=job_id,
-            video_path=str(resolved_video_path),
-            reason="영상 파일을 읽을 수 없습니다.",
+            video_path=resolved_video_path,
         )
 
-    log_step(job_id, 2, "영상에서 프레임(장면 이미지)을 추출하는 중...")
-    frame_result = extract_sample_frames(
-        job_id=job_id,
-        video_path=resolved_video_path,
-        fps=video_info["fps"],
-        frame_count=video_info["frameCount"],
-    )
+        log_step(job_id, 4, "음성을 텍스트로 변환(STT)하는 중... (영상 길이에 따라 시간이 걸릴 수 있습니다)")
+        stt_result = transcribe_audio(audio_extraction_result)
 
-    log_step(job_id, 3, "영상에서 오디오(소리)를 분리하는 중...")
-    audio_extraction_result = extract_audio_from_video(
-        job_id=job_id,
-        video_path=resolved_video_path,
-    )
+        log_step(job_id, 5, "자세(포즈)를 분석하는 중...")
+        pose_result = analyze_pose_from_frames(frame_result["sampledFrames"])
+        gesture_result = analyze_gesture_from_pose_result(pose_result)
 
-    log_step(job_id, 4, "음성을 텍스트로 변환(STT)하는 중... (영상 길이에 따라 시간이 걸릴 수 있습니다)")
-    stt_result = transcribe_audio(audio_extraction_result)
+        log_step(job_id, 6, "얼굴/시선/표정을 분석하는 중...")
+        face_result = analyze_face_from_frames(frame_result["sampledFrames"])
+        emotion_result = analyze_emotion_from_face_result(face_result)
 
-    log_step(job_id, 5, "자세(포즈)를 분석하는 중...")
-    pose_result = analyze_pose_from_frames(frame_result["sampledFrames"])
-    gesture_result = analyze_gesture_from_pose_result(pose_result)
+        log_step(job_id, 7, "말하기 속도와 침묵 구간을 분석하는 중...")
+        audio_result = analyze_speech(
+            duration_sec=video_info["durationSec"],
+            audio_extraction_result=audio_extraction_result,
+            stt_result=stt_result,
+        )
 
-    log_step(job_id, 6, "얼굴/시선/표정을 분석하는 중...")
-    face_result = analyze_face_from_frames(frame_result["sampledFrames"])
-    emotion_result = analyze_emotion_from_face_result(face_result)
+        filler_result = analyze_filler_from_transcript(
+            stt_result=stt_result,
+            audio_result=audio_result,
+        )
 
-    log_step(job_id, 7, "말하기 속도와 침묵 구간을 분석하는 중...")
-    audio_result = analyze_speech(
-        duration_sec=video_info["durationSec"],
-        audio_extraction_result=audio_extraction_result,
-        stt_result=stt_result,
-    )
+        log_step(job_id, 8, "항목별 점수와 최종 점수를 계산하는 중...")
+        score_result = calculate_score(
+            pose_result=pose_result,
+            face_result=face_result,
+            audio_result=audio_result,
+            gesture_result=gesture_result,
+            emotion_result=emotion_result,
+        )
 
-    filler_result = analyze_filler_from_transcript(
-        stt_result=stt_result,
-        audio_result=audio_result,
-    )
+        log_step(job_id, 9, f"기본 분석 완료. 총점 {score_result['totalScore']}점")
 
-    log_step(job_id, 8, "항목별 점수와 최종 점수를 계산하는 중...")
-    score_result = calculate_score(
-        pose_result=pose_result,
-        face_result=face_result,
-        audio_result=audio_result,
-        gesture_result=gesture_result,
-        emotion_result=emotion_result,
-    )
-
-    log_step(job_id, 9, f"기본 분석 완료. 총점 {score_result['totalScore']}점")
-
-    return {
-        "jobId": request.jobId,
-        "status": "success",
-        "videoInfo": {
-            "videoPath": str(resolved_video_path),
-            "durationSec": video_info["durationSec"],
-            "fps": video_info["fps"],
-            "frameCount": video_info["frameCount"],
-            "width": video_info["width"],
-            "height": video_info["height"],
-            "fileSize": video_info["fileSize"],
-        },
-        "frame": {
-            "savedCount": frame_result["savedCount"],
-            "frameDirectory": frame_result["frameDirectory"],
-            "sampledFrames": frame_result["sampledFrames"],
-        },
-        "audio": audio_result,
-        "filler": filler_result,
-        "pose": pose_result,
-        "gesture": gesture_result,
-        "face": face_result,
-        "emotion": emotion_result,
-        "score": score_result,
-    }
+        return {
+            "jobId": request.jobId,
+            "status": "success",
+            "videoInfo": {
+                "videoPath": str(resolved_video_path),
+                "durationSec": video_info["durationSec"],
+                "fps": video_info["fps"],
+                "frameCount": video_info["frameCount"],
+                "width": video_info["width"],
+                "height": video_info["height"],
+                "fileSize": video_info["fileSize"],
+            },
+            "frame": {
+                "savedCount": frame_result["savedCount"],
+                "frameDirectory": frame_result["frameDirectory"],
+                "sampledFrames": frame_result["sampledFrames"],
+            },
+            "audio": audio_result,
+            "filler": filler_result,
+            "pose": pose_result,
+            "gesture": gesture_result,
+            "face": face_result,
+            "emotion": emotion_result,
+            "score": score_result,
+        }
+    finally:
+        cleanup_temp_directory(job_id)
 
 
 def resolve_video_path(video_path: str) -> Path | None:

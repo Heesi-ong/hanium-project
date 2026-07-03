@@ -52,6 +52,9 @@ openai:
 analysis:
   retry:
     max-count: ${ANALYSIS_RETRY_MAX_COUNT:3}
+  stuck-job:
+    cron: "${ANALYSIS_STUCK_JOB_CRON:0 */10 * * * *}"
+    max-running-minutes: ${ANALYSIS_STUCK_JOB_MAX_RUNNING_MINUTES:30}
 
 storage:
   root-path: ${STORAGE_ROOT_PATH:../storage}

@@ -1,7 +1,6 @@
 import logging
 import shutil
 import subprocess
-import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -9,10 +8,9 @@ import cv2
 import imageio_ffmpeg
 import mediapipe as mp
 from fastapi import APIRouter, Depends
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
 from pydantic import BaseModel
 
+from app.core import model_registry
 from app.core.security import verify_internal_api_key
 
 logger = logging.getLogger("analysis-engine")
@@ -61,18 +59,6 @@ GAZE_CAMERA_CENTER_TOLERANCE = 0.15
 WHISPER_MODEL_SIZE = "base"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
-
-POSE_TASK_MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/"
-    "pose_landmarker/pose_landmarker_lite/float16/latest/"
-    "pose_landmarker_lite.task"
-)
-
-FACE_TASK_MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/"
-    "face_landmarker/face_landmarker/float16/latest/"
-    "face_landmarker.task"
-)
 
 KOREAN_FILLER_WORDS = [
     "음",
@@ -267,36 +253,6 @@ def resolve_project_root() -> Path:
         return current_path.parent
 
     return current_path.parent
-
-
-def resolve_model_directory() -> Path:
-    project_root = resolve_project_root()
-    model_directory = project_root / "storage" / "models" / "mediapipe"
-    model_directory.mkdir(parents=True, exist_ok=True)
-    return model_directory
-
-
-def download_file_if_missing(
-        url: str,
-        file_path: Path,
-) -> None:
-    if file_path.exists() and file_path.stat().st_size > 0:
-        return
-
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-    urllib.request.urlretrieve(url, file_path)
-
-
-def get_pose_model_path() -> Path:
-    model_path = resolve_model_directory() / "pose_landmarker_lite.task"
-    download_file_if_missing(POSE_TASK_MODEL_URL, model_path)
-    return model_path
-
-
-def get_face_model_path() -> Path:
-    model_path = resolve_model_directory() / "face_landmarker.task"
-    download_file_if_missing(FACE_TASK_MODEL_URL, model_path)
-    return model_path
 
 
 def create_mediapipe_image_from_frame_path(frame_path: str) -> mp.Image | None:
@@ -528,40 +484,33 @@ def transcribe_audio(audio_extraction_result: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     try:
-        from faster_whisper import WhisperModel
-
-        model = WhisperModel(
-            WHISPER_MODEL_SIZE,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
-        )
-
-        segments_generator, info = model.transcribe(
-            audio_path,
-            language="ko",
-            beam_size=5,
-            vad_filter=True,
-        )
-
-        segments: List[Dict[str, Any]] = []
-        full_text_parts: List[str] = []
-
-        for segment in segments_generator:
-            text = segment.text.strip()
-
-            if text:
-                full_text_parts.append(text)
-
-            segments.append(
-                {
-                    "start": round(segment.start, 2),
-                    "end": round(segment.end, 2),
-                    "duration": round(segment.end - segment.start, 2),
-                    "text": text,
-                }
+        with model_registry.whisper_model_context() as model:
+            segments_generator, info = model.transcribe(
+                audio_path,
+                language="ko",
+                beam_size=5,
+                vad_filter=True,
             )
 
-        transcript = " ".join(full_text_parts).strip()
+            segments: List[Dict[str, Any]] = []
+            full_text_parts: List[str] = []
+
+            for segment in segments_generator:
+                text = segment.text.strip()
+
+                if text:
+                    full_text_parts.append(text)
+
+                segments.append(
+                    {
+                        "start": round(segment.start, 2),
+                        "end": round(segment.end, 2),
+                        "duration": round(segment.end - segment.start, 2),
+                        "text": text,
+                    }
+                )
+
+            transcript = " ".join(full_text_parts).strip()
 
         return {
             "success": True,
@@ -612,27 +561,12 @@ def analyze_pose_from_frames(
     if not sampled_frames:
         return create_empty_pose_result()
 
-    pose_model_path = get_pose_model_path()
-
-    base_options = python.BaseOptions(
-        model_asset_path=str(pose_model_path),
-    )
-
-    options = vision.PoseLandmarkerOptions(
-        base_options=base_options,
-        running_mode=vision.RunningMode.IMAGE,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_pose_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-
     analyzed_frames: List[Dict[str, Any]] = []
     detected_count = 0
     shoulder_balance_scores: List[int] = []
     shoulder_diffs: List[float] = []
 
-    with vision.PoseLandmarker.create_from_options(options) as landmarker:
+    with model_registry.pose_landmarker_context() as landmarker:
         for frame_info in sampled_frames:
             frame_path = frame_info.get("framePath")
 
@@ -956,29 +890,12 @@ def analyze_face_from_frames(
     if not sampled_frames:
         return create_empty_face_result()
 
-    face_model_path = get_face_model_path()
-
-    base_options = python.BaseOptions(
-        model_asset_path=str(face_model_path),
-    )
-
-    options = vision.FaceLandmarkerOptions(
-        base_options=base_options,
-        running_mode=vision.RunningMode.IMAGE,
-        num_faces=1,
-        min_face_detection_confidence=0.5,
-        min_face_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
-        output_face_blendshapes=False,
-        output_facial_transformation_matrixes=False,
-    )
-
     analyzed_frames: List[Dict[str, Any]] = []
     detected_count = 0
     gaze_scores: List[int] = []
     camera_gaze_frame_count = 0
 
-    with vision.FaceLandmarker.create_from_options(options) as landmarker:
+    with model_registry.face_landmarker_context() as landmarker:
         for frame_info in sampled_frames:
             frame_path = frame_info.get("framePath")
 

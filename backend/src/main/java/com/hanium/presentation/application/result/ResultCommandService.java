@@ -12,14 +12,20 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class ResultCommandService {
+
+    private static final Logger log = LoggerFactory.getLogger(ResultCommandService.class);
 
     private final ResultMergeService resultMergeService;
     private final AnalysisCompactor analysisCompactor;
@@ -89,6 +95,34 @@ public class ResultCommandService {
     ) {
         Path openAiFeedbackPath = filePathGenerator.generateOpenAiFeedbackPath(jobId);
         jsonFileStorage.saveJson(openAiFeedbackPath, openAiFeedbackResponse);
+    }
+
+    public Optional<OpenAiFeedbackResponse> loadExistingRealOpenAiFeedback(String jobId) {
+        Path openAiFeedbackPath = filePathGenerator.generateOpenAiFeedbackPath(jobId);
+
+        if (!Files.exists(openAiFeedbackPath)) {
+            return Optional.empty();
+        }
+
+        try {
+            OpenAiFeedbackResponse openAiFeedbackResponse = jsonFileStorage.readJson(
+                    openAiFeedbackPath,
+                    OpenAiFeedbackResponse.class
+            );
+
+            if ("REAL".equals(openAiFeedbackResponse.generationMode())) {
+                return Optional.of(openAiFeedbackResponse);
+            }
+        } catch (BusinessException exception) {
+            log.warn(
+                    "[{}] 기존 OpenAI 피드백 파일을 읽지 못해 재사용하지 않습니다. path={}, reason={}",
+                    jobId,
+                    openAiFeedbackPath,
+                    exception.getMessage()
+            );
+        }
+
+        return Optional.empty();
     }
 
     public void saveFinalResult(

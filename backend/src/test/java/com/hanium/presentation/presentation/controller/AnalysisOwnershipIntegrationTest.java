@@ -7,6 +7,8 @@ import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
+import com.hanium.presentation.support.AsyncAnalysisTestSupport;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,8 +53,14 @@ class AnalysisOwnershipIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        AsyncAnalysisTestSupport.awaitAllAnalysisJobsNotRunning(analysisJobRepository);
         analysisJobRepository.deleteAll();
         userRepository.deleteAll();
+    }
+
+    @AfterEach
+    void tearDown() {
+        AsyncAnalysisTestSupport.awaitAllAnalysisJobsNotRunning(analysisJobRepository);
     }
 
     @Test
@@ -117,6 +125,11 @@ class AnalysisOwnershipIntegrationTest {
         );
 
         assertThat(ownerRetryResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        AsyncAnalysisTestSupport.awaitJobsNotRunning(
+                analysisJobRepository,
+                RUN_JOB_ID,
+                RETRY_JOB_ID
+        );
     }
 
     private void assertForbidden(

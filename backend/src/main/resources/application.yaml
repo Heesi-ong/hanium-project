@@ -1,5 +1,6 @@
 server:
   port: ${SERVER_PORT:8080}
+  shutdown: graceful
 
 spring:
   application:
@@ -7,6 +8,9 @@ spring:
 
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:local}
+
+  lifecycle:
+    timeout-per-shutdown-phase: ${SERVER_SHUTDOWN_TIMEOUT_SECONDS:30}s
 
   servlet:
     multipart:
@@ -53,6 +57,8 @@ openai:
 analysis:
   retry:
     max-count: ${ANALYSIS_RETRY_MAX_COUNT:3}
+  executor:
+    await-termination-seconds: ${ANALYSIS_EXECUTOR_AWAIT_TERMINATION_SECONDS:25}
   stuck-job:
     cron: "${ANALYSIS_STUCK_JOB_CRON:0 */10 * * * *}"
     max-running-minutes: ${ANALYSIS_STUCK_JOB_MAX_RUNNING_MINUTES:30}

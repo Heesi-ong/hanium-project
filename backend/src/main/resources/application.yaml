@@ -78,6 +78,9 @@ rate-limit:
   analysis:
     capacity: ${ANALYSIS_RATE_LIMIT_CAPACITY:5}
     refill-minutes: ${ANALYSIS_RATE_LIMIT_REFILL_MINUTES:1}
+  login:
+    capacity: ${LOGIN_RATE_LIMIT_CAPACITY:5}
+    refill-minutes: ${LOGIN_RATE_LIMIT_REFILL_MINUTES:10}
 
 scheduler:
   lock:

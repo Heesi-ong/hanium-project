@@ -3,9 +3,12 @@ package com.hanium.presentation.presentation.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.user.repository.UserRepository;
+import com.hanium.presentation.global.config.JwtBlacklist;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
@@ -17,6 +20,10 @@ import org.springframework.http.ResponseEntity;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AuthControllerIntegrationTest {
@@ -30,8 +37,13 @@ class AuthControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @MockBean
+    private JwtBlacklist jwtBlacklist;
+
     @BeforeEach
     void setUp() {
+        Mockito.reset(jwtBlacklist);
+        when(jwtBlacklist.isBlacklisted(anyString())).thenReturn(false);
         userRepository.deleteAll();
     }
 
@@ -96,5 +108,57 @@ class AuthControllerIntegrationTest {
         );
 
         assertThat(authorizedResultsResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void logoutRequiresAuthenticationAndInvalidatesCurrentToken() throws Exception {
+        Map<String, String> request = Map.of(
+                "email", "logout@example.com",
+                "password", "password123"
+        );
+
+        restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        ResponseEntity<String> loginResponse = restTemplate.postForEntity(
+                "/api/auth/login",
+                request,
+                String.class
+        );
+        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
+        String accessToken = loginBody.path("data").path("accessToken").asText();
+
+        ResponseEntity<String> logoutWithoutTokenResponse = restTemplate.postForEntity(
+                "/api/auth/logout",
+                null,
+                String.class
+        );
+
+        assertThat(logoutWithoutTokenResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+        ResponseEntity<String> logoutResponse = restTemplate.exchange(
+                "/api/auth/logout",
+                HttpMethod.POST,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(logoutResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(jwtBlacklist).blacklist(eq(accessToken), org.mockito.ArgumentMatchers.any());
+
+        when(jwtBlacklist.isBlacklisted(accessToken)).thenReturn(true);
+        ResponseEntity<String> blacklistedTokenResponse = restTemplate.exchange(
+                "/api/results",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(blacklistedTokenResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 }

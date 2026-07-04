@@ -10,6 +10,8 @@ public enum ErrorCode {
     FILE_NOT_FOUND(HttpStatus.NOT_FOUND, "파일을 찾을 수 없습니다."),
     FILE_DELETE_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "파일 삭제에 실패했습니다."),
     UNSUPPORTED_FILE_CONTENT(HttpStatus.BAD_REQUEST, "영상 파일 내용이 확장자와 일치하지 않습니다."),
+    FILE_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "업로드 가능한 파일 최대 크기를 초과했습니다."),
+    INSUFFICIENT_STORAGE_SPACE(HttpStatus.INSUFFICIENT_STORAGE, "서버 저장 공간이 부족하여 업로드할 수 없습니다. 잠시 후 다시 시도해주세요."),
     INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "비밀번호가 올바르지 않습니다."),
 
     ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다."),

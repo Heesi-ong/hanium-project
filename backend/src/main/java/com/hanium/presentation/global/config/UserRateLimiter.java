@@ -30,22 +30,26 @@ public class UserRateLimiter {
     }
 
     public boolean tryConsume(String bucketName, Long userId) {
+        return tryConsume(bucketName, "user:" + userId);
+    }
+
+    public boolean tryConsume(String bucketName, String key) {
         RateLimitProperties.Limit limit = resolveLimit(bucketName);
         validateLimit(bucketName, limit);
 
-        String key = buildKey(bucketName, userId);
+        String rateLimitKey = buildKey(bucketName, key);
 
         try {
-            Long count = redisTemplate.opsForValue().increment(key);
+            Long count = redisTemplate.opsForValue().increment(rateLimitKey);
             if (count != null && count == 1L) {
-                redisTemplate.expire(key, Duration.ofMinutes(limit.refillMinutes()));
+                redisTemplate.expire(rateLimitKey, Duration.ofMinutes(limit.refillMinutes()));
             }
 
             onRedisSuccess();
             return count != null && count <= limit.capacity();
         } catch (RuntimeException exception) {
             onRedisFailure(exception);
-            return tryConsumeLocalFallback(key, limit);
+            return tryConsumeLocalFallback(rateLimitKey, limit);
         }
     }
 
@@ -63,6 +67,7 @@ public class UserRateLimiter {
         return switch (bucketName) {
             case "upload" -> rateLimitProperties.upload();
             case "analysis" -> rateLimitProperties.analysis();
+            case "login" -> rateLimitProperties.login();
             default -> throw new IllegalArgumentException("Unknown rate limit bucket: " + bucketName);
         };
     }
@@ -103,8 +108,8 @@ public class UserRateLimiter {
         }
     }
 
-    private String buildKey(String bucketName, Long userId) {
-        return KEY_PREFIX + bucketName + ":user:" + userId;
+    private String buildKey(String bucketName, String key) {
+        return KEY_PREFIX + bucketName + ":" + key;
     }
 
     private record LocalWindow(

@@ -61,7 +61,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
                         .requestMatchers("/api/health", "/api/health/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
@@ -88,9 +88,10 @@ public class SecurityConfig {
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter(
             JwtTokenProvider jwtTokenProvider,
-            UserRepository userRepository
+            UserRepository userRepository,
+            JwtBlacklist jwtBlacklist
     ) {
-        return new JwtAuthenticationFilter(jwtTokenProvider, userRepository);
+        return new JwtAuthenticationFilter(jwtTokenProvider, userRepository, jwtBlacklist);
     }
 
     public static class JwtTokenProvider {
@@ -129,6 +130,25 @@ public class SecurityConfig {
                 return Optional.empty();
             }
         }
+
+        public Optional<Instant> extractExpiration(String token) {
+            try {
+                Claims claims = Jwts.parser()
+                        .verifyWith(signingKey)
+                        .build()
+                        .parseSignedClaims(token)
+                        .getPayload();
+
+                Date expiration = claims.getExpiration();
+                if (expiration == null) {
+                    return Optional.empty();
+                }
+
+                return Optional.of(expiration.toInstant());
+            } catch (JwtException | IllegalArgumentException exception) {
+                return Optional.empty();
+            }
+        }
     }
 
     public static class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -141,13 +161,16 @@ public class SecurityConfig {
 
         private final JwtTokenProvider jwtTokenProvider;
         private final UserRepository userRepository;
+        private final JwtBlacklist jwtBlacklist;
 
         public JwtAuthenticationFilter(
                 JwtTokenProvider jwtTokenProvider,
-                UserRepository userRepository
+                UserRepository userRepository,
+                JwtBlacklist jwtBlacklist
         ) {
             this.jwtTokenProvider = jwtTokenProvider;
             this.userRepository = userRepository;
+            this.jwtBlacklist = jwtBlacklist;
         }
 
         @Override
@@ -156,8 +179,13 @@ public class SecurityConfig {
                 HttpServletResponse response,
                 FilterChain filterChain
         ) throws ServletException, IOException {
-            resolveBearerToken(request)
-                    .flatMap(jwtTokenProvider::extractEmail)
+            Optional<String> bearerToken = resolveBearerToken(request);
+            if (bearerToken.isPresent() && jwtBlacklist.isBlacklisted(bearerToken.get())) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            bearerToken.flatMap(jwtTokenProvider::extractEmail)
                     .flatMap(userRepository::findByEmail)
                     .ifPresent(this::authenticate);
 

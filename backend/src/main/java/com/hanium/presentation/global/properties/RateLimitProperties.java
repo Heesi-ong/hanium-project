@@ -5,7 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "rate-limit")
 public record RateLimitProperties(
         Limit upload,
-        Limit analysis
+        Limit analysis,
+        Limit login
 ) {
 
     public record Limit(

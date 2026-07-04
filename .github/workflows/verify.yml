@@ -39,6 +39,7 @@ jobs:
       - run: npm run lint
       - run: npm run test
       - run: npm run build
+      - run: npm audit --audit-level=high
 
   python-engines:
     runs-on: ubuntu-latest
@@ -60,9 +61,28 @@ jobs:
       - if: matrix.engine == 'video-llm-engine'
         run: pip install pytest==8.4.2 fastapi==0.138.2 httpx==0.28.1 pydantic==2.13.4
         working-directory: ${{ matrix.engine }}
+      - run: pip install pip-audit
+        working-directory: ${{ matrix.engine }}
+      - run: pip-audit --no-deps --disable-pip -r requirements.txt
+        continue-on-error: true
+        working-directory: ${{ matrix.engine }}
       - if: matrix.engine == 'analysis-engine'
         run: pytest
         working-directory: ${{ matrix.engine }}
       - if: matrix.engine == 'video-llm-engine'
         run: pytest
         working-directory: ${{ matrix.engine }}
+
+  docker-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - backend
+          - frontend
+          - analysis-engine
+          - video-llm-engine
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build .
+        working-directory: ${{ matrix.image }}

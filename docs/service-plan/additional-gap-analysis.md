@@ -213,3 +213,57 @@
 4. **파일 저장소가 로컬입니다.** MySQL 전환은 됐지만 업로드/결과 파일은 여전히 로컬 디스크에 묶여 있습니다.
 5. **analysis-engine 모델 프리로딩이 없습니다.** MediaPipe/Whisper 모델 생성이 요청 경로에 남아 있어 성능/지연시간 리스크가 큽니다.
 6. **백업은 스크립트만 있고 운영 검증이 부족합니다.** 실제 MySQL 대상 백업/복구 리허설, 원격 보관, 암호화, 알림은 아직 없습니다.
+
+---
+
+## 업데이트: 2026-07-04 현재 상태
+
+2026-07-03 업데이트 이후 완료된 S/O/Q 계열 작업과 analysis-engine 프리로딩 작업까지 반영해 A/B 항목을 다시 확인했습니다. 기존 2026-07-02/07-03 본문은 당시 스냅샷으로 남깁니다.
+
+### A1-A7 최신 판정
+
+| 항목 | 2026-07-04 판정 | 근거 |
+| --- | --- | --- |
+| A1. analysis-engine/video-llm-engine 인증 없는 파일 접근 | 해결 | 두 엔진 라우터는 내부 키 의존성을 사용합니다(`analysis-engine/app/api/basic_analysis.py:18-22`, `video-llm-engine/app/api/video_llm_analysis.py:11-15`). backend는 엔진 키를 환경변수로 읽습니다(`application.yaml:40-47`). |
+| A2. 업로드 파일 매직바이트 검증 없음 | 부분해결 | 확장자/시그니처 검증은 `VideoFileCommandService.java:77-88`, `VideoFileCommandService.java:108-117`에 있고, 저장 전 파일 내용 불일치를 거부합니다. 영상 재생 시간 제한은 아직 없습니다. |
+| A3. inter-service timeout 없음 | 해결 | `RestClientConfig.java:17-21`에 connect/read timeout이 있고, `RestClientConfig.java:31-39`에서 공통 `RestClient.Builder`에 적용됩니다. OpenAI timeout 설정은 `application.yaml:51-55`에 있습니다. |
+| A4. 입력 검증 미흡 | 부분해결 | auth 요청은 `AuthController.java:141-149`, 회원탈퇴 요청은 `UserController.java:49-52`에서 Bean Validation을 사용합니다. 다만 영상 길이/사용자별 용량/개수 정책은 아직 부분적입니다. |
+| A5. rate limiting 없음 | 해결 | 업로드/분석 실행 제한에 더해 로그인도 `AuthController.java:89-95`, `UserRateLimiter.java:36-72`, `application.yaml:85-94`에서 제한합니다. |
+| A6. CORS origin 하드코딩 | 해결 | `application.yaml:81-83`에서 `CORS_ALLOWED_ORIGINS` 환경변수를 사용합니다. |
+| A7. 비밀값 커밋 위험 | 부분해결 | 내부 엔진 키/OpenAI/Redis는 환경변수 기반입니다(`application.yaml:20-24`, `application.yaml:40-55`). 단 `SecurityConfig.java:81-86`에는 로컬 개발용 JWT secret 기본값이 남아 운영 배포 체크가 필요합니다. |
+
+### B1-B7 최신 판정
+
+| 항목 | 2026-07-04 판정 | 근거 |
+| --- | --- | --- |
+| B1. 모델을 매 요청마다 다시 로딩 | 해결 | `model_registry.py:43-47`에서 프리로딩을 제공하고, `model_registry.py:50-143`에서 Whisper/Pose/Face singleton과 inference lock을 제공합니다. FastAPI lifespan은 `analysis-engine/app/main.py:16-27`에서 `preload_all()`을 호출합니다. 분석 함수는 `basic_analysis.py:487`, `basic_analysis.py:569`, `basic_analysis.py:898`에서 registry context를 사용합니다. |
+| B2. 동시 처리량 제한 없음 | 부분해결 | backend 내부 executor는 `AsyncConfig.java:21-35`에서 core/max/queue와 shutdown wait를 설정합니다. 단 `AnalysisCommandService.java:196-210`처럼 여전히 프로세스 내부 스레드풀 실행이며 분산 큐가 아닙니다. |
+| B3. 백엔드↔분석엔진 호출 타임아웃 없음 | 해결 | 외부 호출 timeout 설정이 유지되며 OpenAI timeout은 `application.yaml:51-55`에서 환경변수화됐습니다. |
+| B4. 로컬 파일 저장 + 인메모리 DB로 수평 확장 불가 | 부분해결 | DB/Flyway는 운영형으로 이동했지만 파일 경로는 `FilePathGenerator.java:17-39`처럼 로컬 `storage` 기반입니다. 공유 스토리지/S3/MinIO는 없습니다. |
+| B5. 결과 목록 페이지네이션 없음 + UploadedVideo N+1 | 해결 | 이전 07-03 판정과 동일하게 페이지네이션/배치 조회가 적용된 상태입니다. |
+| B6. 같은 jobId 동시 재실행 락 없음 | 해결 | 낙관적 락과 실행 상태 전환 보호가 유지됩니다. |
+| B7. 프론트엔드 ErrorBoundary 없음 | 해결 | 이전 07-03 판정과 동일하게 ErrorBoundary가 존재하고 App에 적용된 상태입니다. |
+
+### 2026-07-04까지 추가 완료된 주요 항목
+
+- **로그아웃/토큰 무효화(S2)**: `AuthController.java:110-120`, `JwtBlacklist.java:27-52`, `SecurityConfig.java:183-187`에서 Redis 기반 JWT 블랙리스트와 로그아웃 API를 제공합니다.
+- **회원탈퇴/데이터 삭제(S3)**: `UserController.java:23-33`, `UserWithdrawalService.java:40-57`, `UserWithdrawalService.java:60-80`에서 비밀번호 재확인 후 소유 job/파일/계정을 삭제합니다.
+- **로그인 rate limit(S4)**: `AuthController.java:89-95`, `UserRateLimiter.java:36-72`, `application.yaml:92-94`에서 이메일 기준 로그인 시도를 제한합니다.
+- **docker-compose 포트/Redis 보안(S5)**: `docker-compose.yml:30-50`, `docker-compose.yml:64-83`, `docker-compose.yml:114-116`에서 내부 서비스 포트를 loopback으로 제한하고 Redis 비밀번호를 적용합니다.
+- **nginx/TLS 스캐폴딩(S6)**: `infra/nginx/nginx.conf:1-31`, `docker-compose.prod.yml:5-34`에서 nginx TLS 종단, certbot renew, backend/frontend 직접 포트 제거 오버레이를 제공합니다. 실제 인증서 발급은 별도 서버 검증 필요.
+- **graceful shutdown(O1)**: `application.yaml:1-13`, `AsyncConfig.java:21-30`, `docker-compose.yml:87-92`에서 Spring graceful shutdown, executor 종료 대기, Compose stop grace period를 설정합니다.
+- **컨테이너 리소스 제한(O2)**: `docker-compose.yml:20-24`, `docker-compose.yml:43-47`, `docker-compose.yml:56-60`, `docker-compose.yml:73-78`, `docker-compose.yml:93-97`, `docker-compose.yml:147-151`에서 6개 서비스의 CPU/메모리 상한을 설정합니다. 실제 컨테이너 inspect 검증은 아직 없습니다.
+- **원본 영상 보존 기간(O4)**: `OriginalVideoRetentionService.java:52-63`, `OriginalVideoRetentionService.java:85-99`, `OriginalVideoRetentionServiceTest.java:69-99`에서 오래된 COMPLETED job의 원본 업로드만 정리합니다.
+- **CI 보안감사(Q1)**: `.github/workflows/verify.yml:38-89`, `.github/dependabot.yml:1-26`에서 npm audit, pip-audit, Docker build matrix, dependabot을 추가했습니다. Python audit는 현재 취약점 때문에 실패 허용입니다.
+- **API 계약 자동검증(Q2)**: `build.gradle:21-31`, `SecurityConfig.java:62-68`, `ApiContractTest.java:47-73`에서 springdoc/OpenAPI와 프론트 API 호출-백엔드 라우트 계약 검증을 추가했습니다.
+- **Python 3.13 Dockerfile 정렬**: `analysis-engine/Dockerfile:1`, `video-llm-engine/Dockerfile:1`, `.github/workflows/verify.yml:76-89`에서 Python 엔진 Docker 이미지와 CI Python 버전을 맞추고 docker-build fail-fast를 껐습니다.
+- **O3 업로드 용량/저장 공간 대응**: `ErrorCode.java:13-14`, `GlobalExceptionHandler.java:63-70`, `StorageProperties.java:5-13`, `VideoFileCommandService.java:91-106`, `VideoFileCommandServiceTest.java:70-92`에 구현됐습니다. 단 전체 Gradle 테스트 통과는 아직 환경 제약으로 확인되지 않았고, 영상 길이 제한은 미구현입니다.
+
+### 2026-07-04 기준 가장 큰 잔여 리스크
+
+1. **Video LLM은 여전히 mock입니다.** `video-llm-engine/app/api/video_llm_analysis.py:25-79`는 입력 영상과 무관한 `mock-video-llm` 응답을 반환합니다.
+2. **JWT가 localStorage에 저장됩니다.** `AuthContext.jsx:8-39`, `apiClient.js:12-36`은 access token을 localStorage에서 읽고 씁니다. XSS 방어와 저장 전략 재검토가 필요합니다.
+3. **분산 작업 큐와 공유 파일 스토리지가 없습니다.** 분석은 `AnalysisCommandService.java:196-210`의 내부 executor 기반이고, 파일은 `FilePathGenerator.java:17-39`의 로컬 경로 기반입니다.
+4. **O3는 구현됐지만 테스트 통과 확인과 영상 길이 제한이 남았습니다.** 저장 공간/413 응답 코드는 있으나 전체 테스트 실행 확인이 아직 없고, `basic_analysis.py:272-308`은 duration을 계산만 합니다.
+5. **백업은 실제 복구 리허설이 부족합니다.** `scripts/backup-mysql.sh:60-86`은 백업/보존을 수행하지만 실제 MySQL 복구, 원격 보관, 암호화, 알림은 남아 있습니다.
+6. **운영 관측성은 health 중심입니다.** Actuator health, 파일 로그는 있으나 metrics/alerting/Prometheus/Grafana 연동은 아직 없습니다.

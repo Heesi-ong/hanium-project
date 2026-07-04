@@ -107,3 +107,52 @@ Phase 0~6(1차 보고서) + 추가 조사 A/B 항목(2차 보고서)을 전부 �
 6. analysis-engine은 모델을 요청 경로에서 생성하고 있어 성능/메모리 사용량 리스크가 큽니다.
 
 따라서 다음 단계 우선순위는 **실제 Video LLM 구현**, **analysis-engine 모델 프리로딩/싱글톤화**, **공유 파일 스토리지 도입**, **분산 큐/분산 락 검토**, **실제 백업·복구 리허설과 모니터링/알림 체계 도입**으로 보는 것이 타당합니다.
+
+---
+
+## 5. 업데이트: 2026-07-04 현재 상태
+
+2026-07-03 업데이트 이후 인증 운영, 데이터 삭제, 배포 보안, graceful shutdown, 컨테이너 리소스 제한, 보존 정책, CI 보안감사, API 계약 검증이 추가됐습니다. 아래 표는 새로 해결된 S/O/Q 항목까지 반영한 최신 평가입니다.
+
+### 5.1 갱신된 평가 표
+
+| 평가 영역 | 2026-07-04 현재 등급 | 근거 및 남은 한계 |
+| --- | --- | --- |
+| 기능 완성도 | 중상 | 회원가입/로그인에 더해 로그아웃과 회원탈퇴 API가 생겼습니다(`AuthController.java:110-120`, `UserController.java:23-33`). 분석 취소/재시도/워치도그/원본 영상 보존 정책도 존재합니다(`OriginalVideoRetentionService.java:52-63`). 단 `video-llm-engine/app/api/video_llm_analysis.py:25-79`는 여전히 mock 응답입니다. |
+| 보안 | 중상 | JWT 블랙리스트 로그아웃(`JwtBlacklist.java:27-52`), 로그인 rate limit(`AuthController.java:89-95`), 회원탈퇴(`UserWithdrawalService.java:40-57`), 내부 포트 loopback 제한과 Redis 비밀번호(`docker-compose.yml:30-50`, `docker-compose.yml:114-116`), nginx TLS 스캐폴딩(`infra/nginx/nginx.conf:14-31`)이 추가됐습니다. 단 JWT localStorage 저장(`AuthContext.jsx:8-39`)과 실제 TLS 발급 검증은 남아 있습니다. |
+| 안정성/신뢰성 | 중상 | `server.shutdown: graceful`과 executor shutdown wait가 추가됐고(`application.yaml:1-13`, `AsyncConfig.java:21-30`), backend Compose 종료 유예도 설정됐습니다(`docker-compose.yml:87-92`). 멈춘 작업 워치도그와 스케줄러 분산 락도 있습니다(`StuckAnalysisJobWatchdogService.java:60-87`, `SchedulerDistributedLock.java:25-36`). 단 분산 큐가 아니라 내부 스레드풀 구조입니다(`AnalysisCommandService.java:196-210`). |
+| 확장성 | 중 | 컨테이너별 CPU/메모리 제한이 추가됐습니다(`docker-compose.yml:20-24`, `docker-compose.yml:56-60`, `docker-compose.yml:73-78`, `docker-compose.yml:93-97`). analysis-engine 모델 프리로딩도 적용됐습니다(`analysis-engine/app/main.py:16-27`, `model_registry.py:43-47`). 그러나 파일은 여전히 로컬 경로 기반이고(`FilePathGenerator.java:17-39`), 공유 스토리지/분산 큐가 없습니다. |
+| 운영관리(로그/모니터링/백업) | 중상 | 원본 영상 보존 기간 정리(`OriginalVideoRetentionService.java:85-99`), MySQL 백업 스크립트(`scripts/backup-mysql.sh:60-86`), Actuator health, rolling log, 리소스 제한이 있습니다. 단 백업 복구 리허설, metrics/alerting, 원격 백업은 아직 없습니다. |
+| 코드 품질/유지보수성 | 중상 | OpenAPI와 API 계약 테스트가 추가됐습니다(`build.gradle:21-31`, `ApiContractTest.java:47-73`). CI는 npm audit, pip-audit, Docker build matrix, dependabot을 포함합니다(`.github/workflows/verify.yml:38-89`, `.github/dependabot.yml:1-26`). 단 Python audit는 현재 취약점 때문에 실패 허용이고, O3 전체 테스트 통과는 아직 확인되지 않았습니다. |
+| 비용 관리(OpenAI 등) | 중상 | 기존 OpenAI 토큰 로그/REAL 응답 재사용/재시도 제한 정책은 유지됩니다. 추가로 로그인/분석 rate limit과 컨테이너 리소스 제한으로 폭주 비용/자원 사용을 일부 통제합니다(`UserRateLimiter.java:36-72`, `docker-compose.yml:56-78`). 단 사용자별 월간 예산/관리자 비용 대시보드는 없습니다. |
+
+### 5.2 S/O/Q 항목 최신 반영
+
+| 항목 | 최신 판정 | 코드 근거 |
+| --- | --- | --- |
+| S2. 로그아웃/토큰 무효화 | 해결 | `AuthController.java:110-120`, `JwtBlacklist.java:27-52`, `SecurityConfig.java:183-187` |
+| S3. 회원탈퇴/데이터 일괄 삭제 | 해결 | `UserController.java:23-33`, `UserWithdrawalService.java:40-80` |
+| S4. 로그인 rate limit | 해결 | `AuthController.java:89-95`, `UserRateLimiter.java:36-72`, `application.yaml:92-94` |
+| S5. compose 포트 노출/Redis 비밀번호 | 해결 | `docker-compose.yml:30-50`, `docker-compose.yml:64-83`, `docker-compose.yml:114-116`, `application.yaml:20-24` |
+| S6. nginx/TLS 스캐폴딩 | 부분해결 | `infra/nginx/nginx.conf:1-31`, `docker-compose.prod.yml:5-34`; 실제 인증서 발급/HTTPS 접속 검증은 남음 |
+| O1. graceful shutdown | 해결 | `application.yaml:1-13`, `AsyncConfig.java:21-30`, `docker-compose.yml:87-92` |
+| O2. 컨테이너 리소스 제한 | 해결(실기동 검증 미완) | `docker-compose.yml:20-24`, `docker-compose.yml:43-47`, `docker-compose.yml:56-60`, `docker-compose.yml:73-78`, `docker-compose.yml:93-97`, `docker-compose.yml:147-151` |
+| O3. 업로드 용량/저장 공간 검증 | 구현됨(테스트 미검증) | `ErrorCode.java:13-14`, `GlobalExceptionHandler.java:63-70`, `VideoFileCommandService.java:91-106`, `VideoFileCommandServiceTest.java:70-92`; 영상 길이 제한은 미구현 |
+| O4. 완료 job 원본 영상 보존 기간 | 해결 | `OriginalVideoRetentionService.java:52-63`, `OriginalVideoRetentionService.java:85-99`, `OriginalVideoRetentionServiceTest.java:69-99` |
+| Q1. CI 보안/공급망 검사 | 해결(취약점 보고 단계 포함) | `.github/workflows/verify.yml:38-89`, `.github/dependabot.yml:1-26` |
+| Q2. API 계약 자동 검증 | 해결 | `build.gradle:21-31`, `SecurityConfig.java:62-68`, `ApiContractTest.java:47-73` |
+
+### 5.3 갱신된 결론
+
+2026-07-04 현재 상태는 **제한된 인원의 클로즈드 베타에 필요한 운영 안전장치가 상당 부분 들어간 상태**입니다. 2026-07-03 대비 가장 큰 변화는 인증 운영(S2/S4), 개인정보 삭제(S3), 배포 보안(S5/S6), 종료 안정성(O1), 리소스 제한(O2), 보존 정책(O4), CI/계약 자동화(Q1/Q2)가 코드와 설정으로 반영됐다는 점입니다.
+
+다만 **정식 공개 서비스 수준으로 보기에는 아직 핵심 잔여 리스크가 남아 있습니다.**
+
+1. `video-llm-engine`은 아직 mock 응답입니다(`video_llm_analysis.py:25-79`). 서비스 품질을 좌우하는 가장 큰 미해결 과제입니다.
+2. 토큰은 여전히 localStorage에 저장됩니다(`AuthContext.jsx:8-39`, `apiClient.js:12-36`). XSS 방어와 저장 전략 검토가 필요합니다.
+3. 분석 작업은 분산 큐가 아니라 backend 내부 스레드풀 기반입니다(`AnalysisCommandService.java:196-210`, `AsyncConfig.java:21-35`). 다중 인스턴스에서 작업 재분배를 보장하지 않습니다.
+4. 업로드/결과 파일은 로컬 디스크 기반입니다(`FilePathGenerator.java:17-39`). 공유 스토리지 없이는 수평 확장이 제한됩니다.
+5. O3 저장 공간 검증은 구현됐지만 전체 테스트 통과가 아직 확인되지 않았고, 영상 재생 시간 제한은 남아 있습니다(`basic_analysis.py:272-308`).
+6. MySQL 백업은 스크립트가 있지만 실제 복구 리허설, 원격 보관, 암호화, 알림은 아직 부족합니다(`scripts/backup-mysql.sh:60-86`).
+
+따라서 다음 단계는 **Video LLM 실제화**, **JWT 저장 전략 개선**, **O3 테스트 검증과 영상 길이 제한**, **공유 스토리지/분산 큐 검토**, **백업 복구 리허설 및 metrics/alerting 도입** 순서가 타당합니다.

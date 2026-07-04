@@ -1,0 +1,38 @@
+# 운영 배포용 오버레이입니다.
+# 사용 예: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be set}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - certbot-webroot:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt:ro
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;"
+    volumes:
+      - certbot-webroot:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+
+  backend:
+    ports: !reset []
+
+  frontend:
+    ports: !reset []
+
+volumes:
+  certbot-webroot:
+  letsencrypt:

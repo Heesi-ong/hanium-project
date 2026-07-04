@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 WORKDIR /app
 
 # 현재는 완전 Mock 응답만 반환하지만, requirements.txt에 torch/transformers 등

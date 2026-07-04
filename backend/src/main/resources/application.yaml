@@ -17,6 +17,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
   # local 프로필(H2)에서는 Flyway를 쓰지 않고 Hibernate가 스키마를 자동 생성합니다.
   # dev/prod 프로필에서 true로 켭니다.
@@ -66,6 +67,9 @@ storage:
     cron: "${STORAGE_CLEANUP_CRON:0 0 * * * *}"
     temp-max-age-hours: ${STORAGE_CLEANUP_TEMP_MAX_AGE_HOURS:6}
     orphan-max-age-hours: ${STORAGE_CLEANUP_ORPHAN_MAX_AGE_HOURS:24}
+  retention:
+    cron: "${STORAGE_RETENTION_CRON:0 0 3 * * *}"
+    original-video-days: ${STORAGE_RETENTION_ORIGINAL_VIDEO_DAYS:30}
 
 cors:
   # 쉼표로 구분된 허용 origin 목록. 배포 도메인이 생기면 코드 수정 없이 이 값만 바꾸면 됩니다.
@@ -86,3 +90,4 @@ scheduler:
   lock:
     storage-cleanup-ttl-minutes: ${SCHEDULER_LOCK_STORAGE_CLEANUP_TTL_MINUTES:10}
     stuck-job-watchdog-ttl-minutes: ${SCHEDULER_LOCK_STUCK_JOB_WATCHDOG_TTL_MINUTES:5}
+    original-video-retention-ttl-minutes: ${SCHEDULER_LOCK_ORIGINAL_VIDEO_RETENTION_TTL_MINUTES:10}

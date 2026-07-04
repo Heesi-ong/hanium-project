@@ -28,4 +28,9 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
             List<AnalysisStatus> statuses,
             LocalDateTime threshold
     );
+
+    List<AnalysisJob> findByStatusAndCompletedAtBefore(
+            AnalysisStatus status,
+            LocalDateTime threshold
+    );
 }

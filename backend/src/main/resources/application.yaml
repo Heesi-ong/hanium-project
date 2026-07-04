@@ -37,6 +37,11 @@ management:
     health:
       show-details: ${ACTUATOR_HEALTH_SHOW_DETAILS:when-authorized}
 
+security:
+  jwt:
+    secret: ${SECURITY_JWT_SECRET:presentation-coaching-local-jwt-secret-change-me-2026}
+    expiration-minutes: ${SECURITY_JWT_EXPIRATION_MINUTES:30}
+
 external:
   analysis-engine:
     base-url: ${ANALYSIS_ENGINE_BASE_URL:http://localhost:8001}

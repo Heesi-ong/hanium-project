@@ -80,8 +80,10 @@ public class SecurityConfig {
 
     @Bean
     public JwtTokenProvider jwtTokenProvider(
+            // 운영(prod) 환경에서는 반드시 SECURITY_JWT_SECRET 환경변수로 강력한 값을 주입해야 합니다.
+            // 아래 기본값은 로컬 개발용이며 운영에서 그대로 사용하면 안 됩니다.
             @Value("${security.jwt.secret:presentation-coaching-local-jwt-secret-change-me-2026}") String secret,
-            @Value("${security.jwt.expiration-minutes:120}") long expirationMinutes
+            @Value("${security.jwt.expiration-minutes:30}") long expirationMinutes
     ) {
         return new JwtTokenProvider(secret, Duration.ofMinutes(expirationMinutes));
     }

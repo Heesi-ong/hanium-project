@@ -29,17 +29,23 @@ class VideoFileCommandServiceTest {
 
     @BeforeEach
     void setUp() {
+        videoFileCommandService = createService(0L);
+    }
+
+    private VideoFileCommandService createService(Long minFreeSpaceMb) {
         StorageProperties storageProperties = new StorageProperties(
                 tempDir.toString(),
                 tempDir.resolve("uploads").toString(),
                 tempDir.resolve("results").toString(),
                 tempDir.resolve("temp").toString(),
-                tempDir.resolve("logs").toString()
+                tempDir.resolve("logs").toString(),
+                minFreeSpaceMb
         );
 
-        videoFileCommandService = new VideoFileCommandService(
+        return new VideoFileCommandService(
                 new LocalFileStorage(),
-                new FilePathGenerator(storageProperties)
+                new FilePathGenerator(storageProperties),
+                storageProperties
         );
     }
 
@@ -58,6 +64,32 @@ class VideoFileCommandServiceTest {
                 "fake.mp4",
                 "plain text, not a video".getBytes(StandardCharsets.UTF_8)
         );
+    }
+
+    @Test
+    void storeSucceedsWhenAvailableStorageSpaceIsSufficient() {
+        videoFileCommandService = createService(0L);
+
+        assertValidUpload("job-space-ok", "video.mp4", VideoFileType.MP4, mp4Header());
+    }
+
+    @Test
+    void storeRejectsUploadWhenAvailableStorageSpaceIsInsufficient() {
+        // 1 PB(페타바이트) 여유 공간을 요구해 어떤 디스크에서도 '공간 부족' 상황을 재현합니다.
+        videoFileCommandService = createService(1024L * 1024L * 1024L);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                "video/mp4",
+                mp4Header()
+        );
+
+        assertThatThrownBy(() -> videoFileCommandService.store(new VideoUploadCommand("job-no-space", file)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INSUFFICIENT_STORAGE_SPACE);
+        assertThat(Files.exists(tempDir.resolve("uploads").resolve("job-no-space"))).isFalse();
     }
 
     @Test

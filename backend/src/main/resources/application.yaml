@@ -69,6 +69,7 @@ storage:
   result-path: ${STORAGE_RESULT_PATH:../storage/results}
   temp-path: ${STORAGE_TEMP_PATH:../storage/temp}
   log-path: ${STORAGE_LOG_PATH:../storage/logs}
+  min-free-space-mb: ${STORAGE_MIN_FREE_SPACE_MB:2048}
   cleanup:
     cron: "${STORAGE_CLEANUP_CRON:0 0 * * * *}"
     temp-max-age-hours: ${STORAGE_CLEANUP_TEMP_MAX_AGE_HOURS:6}

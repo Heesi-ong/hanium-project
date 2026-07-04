@@ -5,6 +5,7 @@ import com.hanium.presentation.application.video.dto.VideoUploadCommand;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.properties.StorageProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Service
@@ -19,13 +21,16 @@ public class VideoFileCommandService {
 
     private final LocalFileStorage localFileStorage;
     private final FilePathGenerator filePathGenerator;
+    private final StorageProperties storageProperties;
 
     public VideoFileCommandService(
             LocalFileStorage localFileStorage,
-            FilePathGenerator filePathGenerator
+            FilePathGenerator filePathGenerator,
+            StorageProperties storageProperties
     ) {
         this.localFileStorage = localFileStorage;
         this.filePathGenerator = filePathGenerator;
+        this.storageProperties = storageProperties;
     }
 
     public StoredVideoInfo store(VideoUploadCommand command) {
@@ -80,6 +85,24 @@ public class VideoFileCommandService {
 
         VideoFileType fileType = VideoFileType.fromExtension(extension);
         validateFileSignature(file, fileType);
+        validateAvailableStorageSpace(file);
+    }
+
+    private void validateAvailableStorageSpace(MultipartFile file) {
+        try {
+            Path rootPath = Path.of(storageProperties.rootPath());
+            long usableBytes = Files.getFileStore(rootPath).getUsableSpace();
+            long minFreeBytes = storageProperties.minFreeSpaceMb() * 1024L * 1024L;
+
+            if (usableBytes - file.getSize() < minFreeBytes) {
+                throw new BusinessException(ErrorCode.INSUFFICIENT_STORAGE_SPACE);
+            }
+        } catch (IOException e) {
+            throw new BusinessException(
+                    ErrorCode.FILE_UPLOAD_FAILED,
+                    "저장 공간 확인에 실패했습니다."
+            );
+        }
     }
 
     private void validateFileSignature(MultipartFile file, VideoFileType fileType) {

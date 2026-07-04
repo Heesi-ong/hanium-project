@@ -66,7 +66,8 @@ class StorageCleanupServiceTest {
                         uploadRoot.toString(),
                         resultRoot.toString(),
                         tempRoot.toString(),
-                        tempDir.resolve("logs").toString()
+                        tempDir.resolve("logs").toString(),
+                        0L
                 )),
                 schedulerDistributedLock,
                 6,
@@ -110,7 +111,8 @@ class StorageCleanupServiceTest {
                         uploadRoot.toString(),
                         resultRoot.toString(),
                         tempRoot.toString(),
-                        tempDir.resolve("logs").toString()
+                        tempDir.resolve("logs").toString(),
+                        0L
                 )),
                 schedulerDistributedLock,
                 6,

@@ -8,6 +8,7 @@ public record StorageProperties(
         String uploadPath,
         String resultPath,
         String tempPath,
-        String logPath
+        String logPath,
+        Long minFreeSpaceMb
 ) {
 }

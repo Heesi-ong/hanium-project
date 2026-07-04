@@ -64,6 +64,8 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    # Spring graceful shutdown(기본 30초)과 JVM/컨테이너 종료 오버헤드를 고려한 유예 시간입니다.
+    stop_grace_period: 40s
     depends_on:
       mysql:
         condition: service_healthy

@@ -9,11 +9,19 @@
 # mysql/redis/analysis-engine/video-llm-engine 포트는 127.0.0.1에만 바인딩되어
 # 외부 네트워크에서 접근할 수 없습니다. 완전한 운영 배포에서는 로드밸런서/방화벽에서도
 # 해당 내부 포트를 외부로 전달하지 않아야 합니다.
+#
+# 아래 리소스 제한값은 로컬/소규모 배포 기준 기본값입니다.
+# 실제 운영 서버의 CPU/메모리 용량과 모델 크기에 맞춰 조정해야 합니다.
 
 services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
     environment:
       MYSQL_DATABASE: ${DB_NAME:-hanium_dev}
       MYSQL_USER: ${DB_USERNAME:-hanium}
@@ -32,6 +40,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
     command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
@@ -40,6 +53,11 @@ services:
     build:
       context: ./analysis-engine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4g
     environment:
       INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
       LOG_DIR: /storage/logs
@@ -52,6 +70,12 @@ services:
     build:
       context: ./video-llm-engine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          # 현재는 mock이지만 torch/transformers 의존성을 포함해 실제 모델 로딩 여유를 둡니다.
+          memory: 6g
     environment:
       INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
       LOG_DIR: /storage/logs
@@ -66,6 +90,11 @@ services:
     restart: unless-stopped
     # Spring graceful shutdown(기본 30초)과 JVM/컨테이너 종료 오버헤드를 고려한 유예 시간입니다.
     stop_grace_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
     depends_on:
       mysql:
         condition: service_healthy
@@ -115,6 +144,11 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
     depends_on:
       - backend
     ports:

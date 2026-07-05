@@ -218,6 +218,19 @@ JVM/HTTP 기본 메트릭 외에 분석 작업 커스텀 메트릭 5개가 노�
 | `analysis.job.cancelled` | Counter | 없음 | 사용자 취소 요청으로 중단된 횟수 |
 | `analysis.job.duration` | Timer | `outcome` = `completed` \| `failed` \| `cancelled` | 분석 파이프라인 소요 시간(종료 결과별) |
 
+메트릭 수집이 필요할 때는 모니터링 오버레이로 Prometheus 컨테이너를 함께 띄웁니다. (기본 `docker compose up`에는 포함되지 않습니다.)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus
+```
+
+Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합니다. 기본 알림 규칙 2개가 정의되어 있습니다.
+
+- `BackendDown` (critical): backend 스크레이핑이 2분 이상 실패하면 발동
+- `AnalysisJobFailureRateHigh` (warning): 최근 15분간 분석 작업 실패 비율이 시작 대비 30%를 초과한 상태가 5분 이상 지속되면 발동
+
+Alertmanager는 아직 연동하지 않았으므로 실제 알림(이메일/Slack 등)은 발송되지 않으며, Prometheus UI의 Alerts 탭에서 firing 상태만 확인할 수 있습니다.
+
 ### 6.2 로그
 
 로그 형식은 Spring 프로필에 따라 달라집니다.

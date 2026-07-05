@@ -1,0 +1,26 @@
+# Prometheus 알림 규칙입니다.
+# Alertmanager는 아직 연동하지 않았으므로 실제 알림(이메일/Slack)은 발송되지 않고,
+# Prometheus UI(http://127.0.0.1:9090)의 Alerts 탭에서 firing 상태만 확인할 수 있습니다.
+
+groups:
+  - name: backend-alerts
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "backend가 응답하지 않습니다"
+          description: "Prometheus가 backend(/actuator/prometheus)를 2분 이상 스크레이핑하지 못했습니다. 컨테이너 상태와 로그를 확인하세요."
+
+      - alert: AnalysisJobFailureRateHigh
+        # 최근 15분간 실패 증가량이 시작 증가량의 30%를 초과하면 발동합니다.
+        # clamp_min으로 분모가 0일 때(시작된 작업이 없을 때) 나눗셈 오류를 막습니다.
+        expr: increase(analysis_job_failed_total[15m]) / clamp_min(increase(analysis_job_started_total[15m]), 1) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "분석 작업 실패율이 높습니다"
+          description: "최근 15분간 분석 작업 실패 비율이 30%를 초과한 상태가 5분 이상 지속되고 있습니다. analysis-engine/video-llm-engine/OpenAI 연동 상태를 확인하세요."

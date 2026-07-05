@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.properties.OpenAiProperties;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
@@ -16,6 +17,10 @@ import org.springframework.web.client.RestClient;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -89,11 +94,14 @@ class OpenAiClientTest {
         ObjectMapper objectMapper = new ObjectMapper();
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        UserRateLimiter userRateLimiter = mock(UserRateLimiter.class);
+        when(userRateLimiter.tryConsume(eq("openai-monthly"), anyString())).thenReturn(true);
         OpenAiClient client = new OpenAiClient(
                 properties,
                 new OpenAiPromptBuilder(objectMapper),
                 builder.build(),
-                objectMapper
+                objectMapper,
+                userRateLimiter
         );
 
         return new OpenAiClientFixture(client, server);

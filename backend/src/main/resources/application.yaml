@@ -115,6 +115,9 @@ rate-limit:
   signup:
     capacity: ${SIGNUP_RATE_LIMIT_CAPACITY:5}
     refill-minutes: ${SIGNUP_RATE_LIMIT_REFILL_MINUTES:10}
+  openai-monthly:
+    capacity: ${OPENAI_MONTHLY_RATE_LIMIT_CAPACITY:1000}
+    refill-minutes: ${OPENAI_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}
 
 scheduler:
   lock:

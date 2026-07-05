@@ -91,6 +91,9 @@ backend/.env.local
 analysis-engine/.env
 video-llm-engine/.env
 
+# Alertmanager SMTP 비밀번호(실제 값)는 커밋하지 않습니다.
+infra/alertmanager/secrets/smtp_password
+
 # Runtime generated files
 .runtime/
 logs/

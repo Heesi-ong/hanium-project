@@ -8,6 +8,12 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
+# firing된 알림을 Alertmanager로 전달합니다. (docker-compose.monitoring.yml의 alertmanager 서비스)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 scrape_configs:
   - job_name: backend
     metrics_path: /actuator/prometheus

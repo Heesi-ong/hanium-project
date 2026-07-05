@@ -1,6 +1,6 @@
 # 모니터링용 오버레이입니다. 기본 docker compose up에는 포함되지 않으며,
-# 필요할 때만 아래 명령으로 Prometheus를 함께 띄웁니다.
-# 사용 예: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus
+# 필요할 때만 아래 명령으로 Prometheus/Alertmanager를 함께 띄웁니다.
+# 사용 예: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus alertmanager
 #
 # Prometheus는 같은 Docker 네트워크 안에서 backend:8081/actuator/prometheus를
 # 15초 간격으로 스크레이핑합니다. UI는 호스트의 http://127.0.0.1:9090 에서만 접근 가능합니다.
@@ -13,6 +13,7 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+      - alertmanager
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -23,3 +24,19 @@ services:
           memory: 512m
     ports:
       - "127.0.0.1:9090:9090"
+
+  alertmanager:
+    # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.
+    image: prom/alertmanager:v0.33.0
+    restart: unless-stopped
+    volumes:
+      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # SMTP 비밀번호 파일(secrets/smtp_password)을 컨테이너에서 읽습니다.
+      - ./infra/alertmanager/secrets:/etc/alertmanager/secrets:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+    ports:
+      - "127.0.0.1:9093:9093"

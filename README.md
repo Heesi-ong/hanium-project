@@ -229,7 +229,23 @@ Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합
 - `BackendDown` (critical): backend 스크레이핑이 2분 이상 실패하면 발동
 - `AnalysisJobFailureRateHigh` (warning): 최근 15분간 분석 작업 실패 비율이 시작 대비 30%를 초과한 상태가 5분 이상 지속되면 발동
 
-Alertmanager는 아직 연동하지 않았으므로 실제 알림(이메일/Slack 등)은 발송되지 않으며, Prometheus UI의 Alerts 탭에서 firing 상태만 확인할 수 있습니다.
+알림은 Alertmanager를 통해 이메일로 발송됩니다. 실제 발송을 위해 배포 전 두 가지를 준비해야 합니다.
+
+1. `infra/alertmanager/alertmanager.yml`의 플레이스홀더(`smtp_smarthost`, `smtp_from`, `smtp_auth_username`, 수신자 `to`)를 실제 SMTP 서버/이메일 주소로 교체합니다.
+2. SMTP 비밀번호 파일을 만듭니다 (git에 커밋되지 않습니다).
+
+```bash
+cp infra/alertmanager/secrets/smtp_password.example infra/alertmanager/secrets/smtp_password
+# smtp_password 파일을 열어 실제 비밀번호 한 줄로 교체 (주석 제거)
+```
+
+Prometheus와 Alertmanager를 함께 실행합니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus alertmanager
+```
+
+Alertmanager UI는 `http://127.0.0.1:9093`(로컬호스트 전용)에서 확인합니다. 이 구성은 실제 SMTP 서버 연결 없이는 검증되지 않았으므로, 배포 후 테스트 알림으로 실제 이메일 발송을 직접 확인해야 합니다.
 
 ### 6.2 로그
 

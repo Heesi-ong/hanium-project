@@ -1,5 +1,5 @@
 # 1단계: Gradle로 실행 가능한 jar 빌드
-FROM eclipse-temurin:17-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 
 COPY gradlew ./
@@ -11,7 +11,7 @@ COPY src ./src
 RUN ./gradlew clean bootJar --no-daemon -x test
 
 # 2단계: 빌드된 jar만 담은 실행용 이미지 (JDK가 아닌 JRE만 사용해 이미지 크기를 줄임)
-FROM eclipse-temurin:17-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
 
 RUN apt-get update \

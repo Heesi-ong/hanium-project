@@ -6,7 +6,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record RateLimitProperties(
         Limit upload,
         Limit analysis,
-        Limit login
+        Limit login,
+        Limit loginIp,
+        Limit signup
 ) {
 
     public record Limit(

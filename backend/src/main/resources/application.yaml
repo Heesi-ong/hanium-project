@@ -109,6 +109,12 @@ rate-limit:
   login:
     capacity: ${LOGIN_RATE_LIMIT_CAPACITY:5}
     refill-minutes: ${LOGIN_RATE_LIMIT_REFILL_MINUTES:10}
+  login-ip:
+    capacity: ${LOGIN_IP_RATE_LIMIT_CAPACITY:20}
+    refill-minutes: ${LOGIN_IP_RATE_LIMIT_REFILL_MINUTES:10}
+  signup:
+    capacity: ${SIGNUP_RATE_LIMIT_CAPACITY:5}
+    refill-minutes: ${SIGNUP_RATE_LIMIT_REFILL_MINUTES:10}
 
 scheduler:
   lock:

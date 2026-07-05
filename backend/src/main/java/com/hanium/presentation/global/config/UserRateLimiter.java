@@ -68,6 +68,8 @@ public class UserRateLimiter {
             case "upload" -> rateLimitProperties.upload();
             case "analysis" -> rateLimitProperties.analysis();
             case "login" -> rateLimitProperties.login();
+            case "login-ip" -> rateLimitProperties.loginIp();
+            case "signup" -> rateLimitProperties.signup();
             default -> throw new IllegalArgumentException("Unknown rate limit bucket: " + bucketName);
         };
     }

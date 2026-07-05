@@ -310,3 +310,89 @@ CLAUDE.md의 서비스 가능 수준 10개 기준별 평가입니다. 산정 방
 4. **Alertmanager SMTP 실값 설정 + 테스트 알림 발송 확인**: 설정은 완료됐으나 실제 발송은 미검증(`infra/alertmanager/alertmanager.yml`은 전부 플레이스홀더).
 5. **S1 JWT localStorage → HttpOnly 쿠키 전환 검토**: 만료 단축(30분)으로 완화됐지만 근본 구조는 유지.
 6. **분산 큐/공유 스토리지**: 다중 인스턴스 확장 시점에 착수(현재 단일 호스트 운영 전제로는 후순위).
+
+---
+
+## 6. 업데이트: 2026-07-06 현재 상태
+
+2026-07-05 업데이트 이후 인증 계층, JWT secret 운영 안전장치, 프론트 테스트 정리, OpenAI 비용 거버넌스가 추가로 반영됐습니다. 아래 내용은 현재 코드 기준으로 다시 파일을 열어 확인한 결과이며, 기존 1~5번 섹션은 당시 스냅샷으로 그대로 보존합니다.
+
+### 6.1 신규 반영 항목 판정
+
+**회원가입 API rate limiting 추가 — 신규 발견 항목 해결**
+- **판정: 해결**
+- `AuthController.java:56-67`은 `/api/auth/signup` 진입 직후 `resolveClientIp()` 결과를 기준으로 `userRateLimiter.tryConsume("signup", clientIp)`를 먼저 수행합니다. 즉 중복 이메일 확인이나 비밀번호 해시 전에 IP 기준 제한이 적용됩니다.
+- `AuthController.java:146-153`은 `X-Forwarded-For`의 첫 번째 값을 우선 사용하고, 없으면 `request.getRemoteAddr()`를 사용합니다.
+- `UserRateLimiter.java:80-88`에는 `"signup"` bucket case가 존재하고, `application.yaml:115-117`, `.env.example:68-69`에 기본값(capacity 5, refill 10분)이 배선되어 있습니다.
+- `SignupRateLimitIntegrationTest.java:40-49`는 서로 다른 이메일 3회 회원가입 중 3번째가 429로 차단되는지 검증합니다.
+
+**로그인 IP 기준 보조 rate limiting — S4 한계 부분 해소**
+- **판정: 부분해결**
+- `AuthController.java:95-114`는 로그인 시 IP 기준 `"login-ip"` 제한을 먼저 확인하고, 그 다음 기존 이메일 기준 `"login"` 제한을 적용합니다.
+- `UserRateLimiter.java:84-86`은 `"login"`과 `"login-ip"`를 별도 bucket으로 처리합니다. 설정은 `application.yaml:109-114`, `.env.example:64-67`에 분리되어 있습니다.
+- `LoginIpRateLimitIntegrationTest.java:40-52`는 서로 다른 이메일 3개로 로그인해도 같은 IP에서 3번째 요청이 429가 되는지 검증합니다.
+- 의미: 2026-07-04/05 섹션에서 남은 한계로 적었던 "이메일 기준 제한이라 IP 기준 분산 공격은 별도 과제"는 **부분적으로 해소**됐습니다. 다만 IP 공유 환경의 오탐과 프록시 신뢰 경계는 운영 네트워크 구성에 계속 의존합니다.
+
+**회원가입 비밀번호 복잡도 정책 + DTO 분리**
+- **판정: 해결**
+- `AuthController.java:169-177`의 `AuthRequest`는 로그인용으로 남아 있고 비밀번호는 길이(8~72자)만 검증합니다.
+- `AuthController.java:180-193`의 `SignupRequest`는 회원가입용으로 분리되어 `@Pattern`으로 영문자와 숫자를 각각 1자 이상 요구합니다.
+- 이 분리는 기존 가입자나 향후 정책 변경 시 "로그인 요청까지 새 복잡도 규칙으로 막히는" 문제를 피하기 위한 설계입니다.
+- `PasswordComplexityIntegrationTest.java:35-56`은 숫자 없는 비밀번호/문자 없는 비밀번호는 400, `password123`은 201로 검증합니다.
+
+**JWT 기본 secret fail-fast 검증 + docker-compose 배선**
+- **판정: 해결**
+- `JwtSecretStartupValidator.java:10-12`는 `dev`, `prod` 프로파일에서만 동작합니다.
+- `JwtSecretStartupValidator.java:14-17`은 코드 기본값과 `.env.example` placeholder 값을 모두 차단 목록에 넣고, `:27-35`에서 해당 값이면 기동을 실패시킵니다.
+- `application.yaml:49-52`는 `SECURITY_JWT_SECRET`, `SECURITY_JWT_EXPIRATION_MINUTES`를 설정으로 노출하고, `docker-compose.yml:142-145`는 이 값을 backend 컨테이너 환경변수로 전달합니다.
+- 의미: 기준 3에서 반복 감점 사유였던 "JWT secret 로컬 기본값 잔존"은 dev/prod 기동 fail-fast로 해소됐습니다. local 프로파일은 개발 편의를 위해 제외됩니다.
+
+**회원가입 비밀번호 안내 문구 + 프론트 테스트 cleanup**
+- **판정: 해결**
+- `SignupPage.jsx:18-23`은 안내 문구 스타일을 정의하고, `SignupPage.jsx:94-109`는 비밀번호 입력란 바로 아래에 "영문자와 숫자..." 안내 문구를 표시합니다.
+- `SignupPage.test.jsx:42-63`은 안내 문구가 비밀번호 필드 쪽에 있고 이메일 필드 쪽에는 없음을 검증합니다.
+- `frontend/src/test/setup.js:1-7`은 `@testing-library/react`의 `cleanup()`을 전역 `afterEach`에 등록해 렌더링 테스트의 DOM 누적 위험을 줄였습니다.
+
+**OpenAI 월간 호출 상한 — 기준 9 감점 사유 해결**
+- **판정: 해결**
+- `RateLimitProperties.java:5-13`은 `openaiMonthly` 설정 필드를 포함합니다.
+- `application.yaml:118-120`, `.env.example:43-44`는 `OPENAI_MONTHLY_RATE_LIMIT_CAPACITY` 기본 1000, refill 44640분(31일)을 제공합니다.
+- `OpenAiClient.java:51-59`는 실제 API 사용 가능 조건일 때 `"openai-monthly"` bucket을 먼저 소비하고, 한도 초과 시 OpenAI 호출 없이 `MOCK` + `"monthly OpenAI budget exceeded"`로 폴백합니다.
+- `OpenAiClientBudgetTest.java:23-45`는 한도 초과 시 `RestClient`와 상호작용이 없음을 검증하고, `:48-69`는 OpenAI 비활성화 상태에서는 budget bucket도 소비하지 않음을 검증합니다.
+- 의미: 기준 9에서 반복 감점 사유였던 "사용자/월별 예산 한도 없음" 중 **월별 상한**은 해결됐습니다. 사용자별 상한은 아직 별도 정책으로 남아 있습니다.
+
+**OpenAI 월간 사용량/한도 관측성**
+- **판정: 해결**
+- `UserRateLimiter.java:56-68`은 카운트를 증가시키지 않고 현재 bucket count를 조회하는 `getCurrentCount()`를 제공합니다.
+- `OpenAiUsageMetrics.java:21-35`는 `openai.monthly.usage`와 `openai.monthly.budget.capacity` gauge를 등록합니다.
+- `infra/prometheus/alerts.yml:1-4`는 Alertmanager 연동 상태에 맞게 stale 주석을 수정했고, `:29-36`은 사용률 90% 초과가 5분 지속되면 `OpenAiMonthlyBudgetNearExhaustion` 경고를 firing합니다.
+- `analysis-overview.json:142-173`은 `openai_monthly_usage / clamp_min(openai_monthly_budget_capacity, 1) * 100`을 표시하는 Grafana stat 패널을 추가합니다.
+
+### 6.2 서비스화 진행률 수치화 갱신
+
+| # | 기준 | 07-05 | 07-06 | 변경 근거 |
+|---|---|---:|---:|---|
+| 1 | 빌드/CI 정상 동작 | 93% | 93% | 이번 변경과 직접 관련 없음. 07-05 값 유지 |
+| 2 | 4개 실행/배포 단위 분리 | 95% | 95% | 이번 변경과 직접 관련 없음. 07-05 값 유지 |
+| 3 | local/dev/prod 분리 + 환경변수 | 92% | **95%** | `JwtSecretStartupValidator.java:10-35`와 `docker-compose.yml:142-145`로 dev/prod에서 공개 placeholder JWT secret 사용이 기동 실패로 전환됨 |
+| 4 | 운영 DB + 마이그레이션 | 88% | 88% | 이번 변경과 직접 관련 없음. 07-05 값 유지 |
+| 5 | 비동기 job 구조 | 80% | 80% | 이번 변경과 직접 관련 없음. 07-05 값 유지 |
+| 6 | 프론트-백 API 계약 일치 | 90% | 90% | 이번 변경과 직접 관련 없음. 07-05 값 유지 |
+| 7 | 인증/권한/소유권/파일 보호 | 87% | **90%** | signup IP rate limit(`AuthController.java:56-67`), login-ip 보조 제한(`AuthController.java:95-114`), SignupRequest 복잡도 검증(`AuthController.java:180-193`), 프론트 안내 문구(`SignupPage.jsx:94-109`) 반영 |
+| 8 | Video LLM mock 대체 | 20% | 20% | 이번 변경과 직접 관련 없음. 실제 모델 연동은 여전히 미완 |
+| 9 | OpenAI 정책 | 80% | **92%** | `openai-monthly` bucket(`UserRateLimiter.java:80-88`), 월간 한도 설정(`application.yaml:118-120`), 한도 초과 mock 폴백(`OpenAiClient.java:51-59`), usage/capacity gauge 및 알림/대시보드 추가 |
+| 10 | 테스트/로그/모니터링/백업/정리 | 88% | **90%** | OpenAI 월간 gauge(`OpenAiUsageMetrics.java:21-35`), Prometheus 알림(`alerts.yml:29-36`), Grafana 패널(`analysis-overview.json:142-173`), RTL 전역 cleanup(`setup.js:1-7`) 추가 |
+
+**종합: 약 83% (07-05 약 81% → +2%p, 10개 기준 단순 평균)**
+
+해석: 이번 상승분은 기준 3(JWT secret 운영 안전장치), 기준 7(인증 API 방어), 기준 9(OpenAI 비용 정책), 기준 10(관측성/테스트 위생)에 집중됩니다. 특히 이전 섹션에서 반복 감점되던 JWT secret 기본값과 OpenAI 월간 예산 부재는 실제 코드/설정/테스트로 해결됐습니다.
+
+### 6.3 권장 처리 순서 갱신 (2026-07-06)
+
+1. **E2E 실행 검증**: compose 전체 기동 후 회원가입→로그인→업로드→분석→결과 조회→소유권 검증 흐름을 실제로 다시 확인해야 합니다.
+2. **백업 복구 리허설**: 백업 생성/무결성 검사는 있지만, 실제 MySQL 복원 절차와 실패 시 운영 대응은 아직 검증되지 않았습니다.
+3. **Video LLM 실제 모델 연동**: `generationMode` 골격은 있지만 실제 모델/외부 벤더 호출은 여전히 남은 최대 기능 갭입니다.
+4. **Alertmanager SMTP 실값 설정 + 테스트 알림 발송 확인**: Alertmanager 연동과 규칙은 있으나 실제 SMTP credential/수신 테스트는 별도입니다.
+5. **S1 JWT localStorage → HttpOnly 쿠키 전환 검토**: 만료 시간 단축과 로그아웃 블랙리스트는 완화책이며, 토큰 저장 위치 자체는 아직 localStorage입니다.
+6. **README OpenAI 비용 정책 갱신**: `README.md:1004-1010`의 "OpenAI 호출 및 비용 제어 정책"은 timeout/fallback/usage 로그만 설명하고, 새 월간 예산 상한과 Prometheus/Grafana 관측 항목을 아직 언급하지 않습니다.
+7. **분산 큐/공유 스토리지**: 단일 호스트/단일 backend 전제에서는 유지 가능하지만, 다중 인스턴스 확장 시 job 분배와 파일 공유 구조가 여전히 병목입니다.

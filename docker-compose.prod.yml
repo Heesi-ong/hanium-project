@@ -31,6 +31,9 @@ services:
     ports: !reset []
 
   frontend:
+    build:
+      args:
+        VITE_API_BASE_URL: ""
     ports: !reset []
 
 volumes:

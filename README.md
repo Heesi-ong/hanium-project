@@ -218,6 +218,28 @@ JVM/HTTP 기본 메트릭 외에 분석 작업 커스텀 메트릭 5개가 노�
 | `analysis.job.cancelled` | Counter | 없음 | 사용자 취소 요청으로 중단된 횟수 |
 | `analysis.job.duration` | Timer | `outcome` = `completed` \| `failed` \| `cancelled` | 분석 파이프라인 소요 시간(종료 결과별) |
 
+### 6.2 로그
+
+로그 형식은 Spring 프로필에 따라 달라집니다.
+
+- **local**: 사람이 읽기 쉬운 평문 로그를 콘솔에만 출력합니다.
+- **dev/prod**: JSON 구조화 로그를 콘솔과 파일(`storage/logs/backend.log`, `STORAGE_LOG_PATH`로 변경 가능)에 함께 남깁니다. 파일은 일자별로 롤링되며 파일당 최대 100MB, 보관 기간 30일, 전체 보관 용량 1GB로 제한됩니다. docker-compose에서는 `./storage:/storage` 볼륨이 이미 마운트되어 있어 호스트의 `storage/logs/`에서 바로 확인할 수 있습니다.
+
+JSON 로그에는 두 가지 추적용 필드가 자동으로 포함됩니다.
+
+- `requestId`: HTTP 요청 단위 상관관계 ID. 클라이언트가 `X-Request-Id` 헤더를 보내면 그 값을 쓰고, 없으면 서버가 생성해 응답 헤더로 돌려줍니다.
+- `jobId`: 분석 작업 단위 ID. 백그라운드 분석 파이프라인의 모든 로그에 붙습니다.
+
+특정 요청이나 분석 작업의 로그만 골라 보려면:
+
+```bash
+# 특정 분석 작업의 로그만 추적
+grep '"jobId":"<jobId>"' storage/logs/backend.log | jq .
+
+# 특정 요청의 로그만 추적
+grep '"requestId":"<requestId>"' storage/logs/backend.log | jq .
+```
+
 ## 7. frontend 실행
 
 ```bash

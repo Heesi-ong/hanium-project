@@ -29,6 +29,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
@@ -231,7 +232,25 @@ public class AnalysisCommandService {
             boolean useOpenAi
     ) {
         Timer.Sample sample = Timer.start(meterRegistry);
+        MDC.put("jobId", jobId);
 
+        try {
+            runAnalysisPipeline(jobId, useVideoLlm, useOpenAi, sample);
+        } finally {
+            // 조기 return/예외/취소 등 어떤 경로로 끝나든, 워커 스레드 재사용 시
+            // 이전 작업의 jobId가 다음 작업 로그에 남지 않도록 반드시 정리합니다.
+            MDC.remove("jobId");
+        }
+    }
+
+    // 실제 분석 파이프라인 본문입니다. 기존 로직/메트릭 타이머 호출 위치는 그대로이며,
+    // MDC(jobId) 정리는 executeAnalysisAsync의 finally가 모든 종료 경로를 보장합니다.
+    private void runAnalysisPipeline(
+            String jobId,
+            boolean useVideoLlm,
+            boolean useOpenAi,
+            Timer.Sample sample
+    ) {
         UploadedVideo uploadedVideo;
 
         try {

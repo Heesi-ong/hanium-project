@@ -15,6 +15,13 @@ const inputStyle = {
     color: "#0f172a",
 };
 
+const hintStyle = {
+    display: "block",
+    marginTop: 6,
+    fontSize: 13,
+    color: "#64748b",
+};
+
 function SignupPage() {
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
@@ -96,6 +103,9 @@ function SignupPage() {
                                     style={inputStyle}
                                     required
                                 />
+                                <small style={hintStyle}>
+                                    영문자와 숫자를 각각 1자 이상 포함해 8자 이상 입력해주세요.
+                                </small>
                             </span>
                         </label>
 

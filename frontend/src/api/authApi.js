@@ -25,3 +25,9 @@ export async function withdrawAccount(password) {
 
     return unwrapApiResponse(response);
 }
+
+export async function logout() {
+    const response = await apiClient.post("/api/auth/logout");
+
+    return unwrapApiResponse(response);
+}

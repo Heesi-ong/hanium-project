@@ -40,7 +40,7 @@ function AccountPage() {
             setError("");
 
             await withdrawAccount(password);
-            logout();
+            await logout();
             navigate("/login", { replace: true });
         } catch (requestError) {
             setError(getErrorMessage(

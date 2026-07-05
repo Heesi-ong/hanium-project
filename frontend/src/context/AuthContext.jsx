@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState } from "react";
-import { login as loginRequest } from "../api/authApi";
+import { login as loginRequest, logout as logoutRequest } from "../api/authApi";
 
 const AUTH_STORAGE_KEY = "presentationCoachAuth";
 
@@ -64,12 +64,18 @@ export function AuthProvider({ children }) {
         return responseData;
     }
 
-    function logout() {
-        clearStoredAuth();
-        setAuthState({
-            token: "",
-            user: null,
-        });
+    async function logout() {
+        try {
+            await logoutRequest();
+        } catch {
+            // 서버 무효화 호출이 실패해도(네트워크 오류 등) 로컬 로그아웃은 항상 진행합니다.
+        } finally {
+            clearStoredAuth();
+            setAuthState({
+                token: "",
+                user: null,
+            });
+        }
     }
 
     const value = useMemo(

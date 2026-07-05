@@ -25,6 +25,27 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
 
+  grafana:
+    # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.
+    image: grafana/grafana:13.0.3
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+    volumes:
+      # 데이터소스/대시보드가 기동 시 자동 구성됩니다 (수동 설정 불필요).
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      # 사용자 설정(계정, 수동 편집 등) 보존용 데이터 볼륨입니다.
+      - grafana-data:/var/lib/grafana
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+    ports:
+      - "127.0.0.1:3000:3000"
+
   alertmanager:
     # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.
     image: prom/alertmanager:v0.33.0
@@ -40,3 +61,6 @@ services:
           memory: 256m
     ports:
       - "127.0.0.1:9093:9093"
+
+volumes:
+  grafana-data:

@@ -247,6 +247,14 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prom
 
 Alertmanager UI는 `http://127.0.0.1:9093`(로컬호스트 전용)에서 확인합니다. 이 구성은 실제 SMTP 서버 연결 없이는 검증되지 않았으므로, 배포 후 테스트 알림으로 실제 이메일 발송을 직접 확인해야 합니다.
 
+메트릭 시각화가 필요하면 Grafana를 함께 띄웁니다.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus grafana
+```
+
+`http://127.0.0.1:3000`(로컬호스트 전용)에 접속해 `admin` / `.env`의 `GRAFANA_ADMIN_PASSWORD` 값으로 로그인합니다. Prometheus 데이터소스와 "분석 서비스 개요" 대시보드(Backend Up, 작업 시작/완료/실패/취소 비율, 실패 사유별 비율, 평균 소요 시간)가 프로비저닝으로 자동 구성되어 있어 별도 설정 없이 바로 확인할 수 있습니다.
+
 ### 6.2 로그
 
 로그 형식은 Spring 프로필에 따라 달라집니다.

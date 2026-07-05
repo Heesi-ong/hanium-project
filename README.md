@@ -179,7 +179,7 @@ analysis-engine/video-llm-engine 터미널과 같은 값을 설정해야 분석 
 
 ```bash
 curl http://localhost:8080/api/health
-curl http://localhost:8080/actuator/health
+curl http://localhost:8081/actuator/health
 ```
 
 예상 응답:
@@ -201,6 +201,12 @@ curl http://localhost:8080/actuator/health
 ```bash
 curl http://localhost:8080/api/health/engines
 ```
+
+### 6.1 모니터링 엔드포인트
+
+Actuator와 Prometheus 메트릭은 메인 API 포트(기본 8080)가 아니라 관리 포트(기본 8081)에서만 노출됩니다. 로컬에서 `./gradlew bootRun`으로 실행하면 `http://localhost:8081/actuator/health`, `http://localhost:8081/actuator/prometheus`로 확인할 수 있습니다.
+
+`docker-compose.yml`에서는 관리 포트 8081을 호스트 `ports`에 등록하지 않습니다. 같은 Docker 네트워크 내부의 nginx 또는 향후 Prometheus 컨테이너에서만 `http://backend:8081/actuator/prometheus`로 스크레이핑하도록 구성합니다.
 
 ## 7. frontend 실행
 

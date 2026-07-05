@@ -1,32 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  프로필별 로그 구성:
+  - local: 사람이 읽기 쉬운 평문 콘솔 로그만 사용 (로컬 개발용)
+  - dev/prod: JSON 구조화 로그(콘솔 + ${LOG_PATH}/backend.log 파일 롤링)
+  JSON 로그에는 MDC의 requestId(HTTP 요청 단위), jobId(분석 작업 단위)가
+  자동으로 필드로 포함되어 grep/jq로 특정 요청/작업의 로그만 추적할 수 있습니다.
+-->
 <configuration>
-    <springProperty name="LOG_PATH" source="storage.log-path" defaultValue="../storage/logs"/>
+    <springProperty scope="context" name="LOG_PATH" source="storage.log-path" defaultValue="../storage/logs"/>
 
     <property name="CONSOLE_LOG_PATTERN"
               value="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg%n"/>
-    <property name="FILE_LOG_PATTERN"
-              value="ts=%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} level=%level thread=%thread logger=%logger{36} msg=%replace(%msg){'[\r\n]+',' '}%n"/>
-
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
-            <charset>UTF-8</charset>
-        </encoder>
-    </appender>
-
-    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH}/backend.log</file>
-        <encoder>
-            <pattern>${FILE_LOG_PATTERN}</pattern>
-            <charset>UTF-8</charset>
-        </encoder>
-        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_PATH}/backend.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
-            <maxFileSize>100MB</maxFileSize>
-            <maxHistory>30</maxHistory>
-            <totalSizeCap>1GB</totalSizeCap>
-        </rollingPolicy>
-    </appender>
 
     <logger name="com.hanium.presentation" level="INFO"/>
     <logger name="org.springframework" level="WARN"/>
@@ -35,8 +19,44 @@
     <logger name="org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration" level="ERROR"/>
     <logger name="org.hibernate" level="WARN"/>
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="FILE"/>
-    </root>
+    <springProfile name="local">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="dev,prod">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+        </appender>
+
+        <!--
+          일자별 + 크기 기준 롤링:
+          - 파일 하나가 100MB를 넘으면 같은 날짜 안에서 %i 인덱스로 분할
+          - 30일 지난 파일 삭제, 전체 보관 용량 1GB 제한
+          (백업/원본 영상 30일 보존 정책과 같은 감각으로 맞췄습니다.)
+        -->
+        <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_PATH}/backend.log</file>
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_PATH}/backend.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>30</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+            </rollingPolicy>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+            <appender-ref ref="JSON_FILE"/>
+        </root>
+    </springProfile>
 </configuration>

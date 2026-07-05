@@ -1,10 +1,12 @@
 package com.hanium.presentation.global.config;
 
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
 
 @Configuration
@@ -33,6 +35,22 @@ public class AsyncConfig {
         // 서서히 느려지는 방식으로 대응합니다. 더 정교한 "대기열 가득 참" 안내는
         // 다음 단계 개선 과제로 남겨둡니다.
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // MDC(requestId 등)는 스레드 로컬이라 워커 스레드로 자동 전파되지 않습니다.
+        // 작업을 제출한 스레드의 MDC 컨텍스트를 캡처해 워커 스레드에서 복원하고,
+        // 작업이 끝나면 반드시 정리해 스레드 재사용 시 값이 섞이지 않게 합니다.
+        executor.setTaskDecorator(runnable -> {
+            Map<String, String> contextMap = MDC.getCopyOfContextMap();
+            return () -> {
+                if (contextMap != null) {
+                    MDC.setContextMap(contextMap);
+                }
+                try {
+                    runnable.run();
+                } finally {
+                    MDC.clear();
+                }
+            };
+        });
         executor.initialize();
         return executor;
     }

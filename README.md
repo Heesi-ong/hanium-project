@@ -725,7 +725,11 @@ gunzip -c storage/backups/hanium_dev_YYYYMMDD_HHMMSS.sql.gz \
   | MYSQL_PWD=실제비밀번호 mysql -h 127.0.0.1 -P 3306 -u hanium hanium_dev
 ```
 
-## 15. 현재 구현 범위
+## 15. 의존성 업데이트 자동화
+
+Dependabot은 매주 backend(Gradle), frontend(npm), analysis-engine/video-llm-engine(pip), 4개 Dockerfile, GitHub Actions 의존성을 확인해 업데이트 PR을 자동으로 생성합니다. 이는 CI를 즉시 실패시키는 게이트가 아니라 PR 생성 방식이므로, 실제 병합 여부는 변경 내용과 CI 결과를 사람이 검토해 결정해야 합니다.
+
+## 16. 현재 구현 범위
 
 현재 구현된 범위:
 

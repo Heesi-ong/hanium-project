@@ -25,6 +25,8 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -55,6 +57,7 @@ public class AnalysisCommandService {
     private final AnalysisJobStatusService analysisJobStatusService;
     private final ThreadPoolTaskExecutor analysisTaskExecutor;
     private final AnalysisRetryProperties analysisRetryProperties;
+    private final MeterRegistry meterRegistry;
 
     public AnalysisCommandService(
             AnalysisJobRepository analysisJobRepository,
@@ -68,7 +71,8 @@ public class AnalysisCommandService {
             AnalysisProgressService analysisProgressService,
             AnalysisJobStatusService analysisJobStatusService,
             ThreadPoolTaskExecutor analysisTaskExecutor,
-            AnalysisRetryProperties analysisRetryProperties
+            AnalysisRetryProperties analysisRetryProperties,
+            MeterRegistry meterRegistry
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
@@ -82,6 +86,7 @@ public class AnalysisCommandService {
         this.analysisJobStatusService = analysisJobStatusService;
         this.analysisTaskExecutor = analysisTaskExecutor;
         this.analysisRetryProperties = analysisRetryProperties;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional
@@ -132,7 +137,7 @@ public class AnalysisCommandService {
         validateOwnership(analysisJob, ownerId);
         validateRunnable(analysisJob);
 
-        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi);
+        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi, "run");
     }
 
     @Transactional
@@ -149,7 +154,7 @@ public class AnalysisCommandService {
         validateRetryable(analysisJob);
         analysisJob.resetForRetry();
 
-        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi);
+        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi, "retry");
     }
 
     @Transactional
@@ -176,8 +181,11 @@ public class AnalysisCommandService {
     private AnalysisStatusResponse acceptAndDispatch(
             AnalysisJob analysisJob,
             boolean useVideoLlm,
-            boolean useOpenAi
+            boolean useOpenAi,
+            String trigger
     ) {
+        meterRegistry.counter("analysis.job.started", "trigger", trigger).increment();
+
         String jobId = analysisJob.getJobId();
 
         analysisJob.startBasicAnalysis();
@@ -222,6 +230,8 @@ public class AnalysisCommandService {
             boolean useVideoLlm,
             boolean useOpenAi
     ) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+
         UploadedVideo uploadedVideo;
 
         try {
@@ -236,6 +246,8 @@ public class AnalysisCommandService {
             analysisJobStatusService.failStatus(jobId, failReason);
             analysisProgressService.fail(jobId, 0, failReason);
             saveFailureResultSafely(jobId, failReason);
+            meterRegistry.counter("analysis.job.failed", "reason", "upload-not-found").increment();
+            stopDurationTimer(sample, "failed");
             return;
         }
 
@@ -245,7 +257,7 @@ public class AnalysisCommandService {
         int lastPercent = 10;
 
         try {
-            if (stopIfCancellationRequested(jobId, lastPercent)) {
+            if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
                 return;
             }
 
@@ -266,7 +278,7 @@ public class AnalysisCommandService {
             VideoLlmEngineResponse videoLlmEngineResponse;
 
             if (useVideoLlm) {
-                if (stopIfCancellationRequested(jobId, lastPercent)) {
+                if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
                     return;
                 }
 
@@ -307,7 +319,7 @@ public class AnalysisCommandService {
             OpenAiFeedbackResponse openAiFeedbackResponse;
 
             if (useOpenAi) {
-                if (stopIfCancellationRequested(jobId, lastPercent)) {
+                if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
                     return;
                 }
 
@@ -341,7 +353,7 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
-            if (stopIfCancellationRequested(jobId, lastPercent)) {
+            if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
                 return;
             }
 
@@ -360,11 +372,13 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
-            if (stopIfCancellationRequested(jobId, lastPercent)) {
+            if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
                 return;
             }
 
             analysisJobStatusService.completeStatus(jobId);
+            meterRegistry.counter("analysis.job.completed").increment();
+            stopDurationTimer(sample, "completed");
             analysisProgressService.complete(jobId);
             log.info("[{}] (100%) 분석 파이프라인이 완료되었습니다.", jobId);
         } catch (BusinessException e) {
@@ -372,6 +386,8 @@ public class AnalysisCommandService {
             analysisJobStatusService.failStatus(jobId, e.getMessage());
             analysisProgressService.fail(jobId, lastPercent, e.getMessage());
             saveFailureResultSafely(jobId, e.getMessage());
+            meterRegistry.counter("analysis.job.failed", "reason", "business").increment();
+            stopDurationTimer(sample, "failed");
         } catch (Exception e) {
             String failReason = e.getMessage() == null
                     ? "분석 실행 중 알 수 없는 오류가 발생했습니다."
@@ -381,10 +397,12 @@ public class AnalysisCommandService {
             analysisJobStatusService.failStatus(jobId, failReason);
             analysisProgressService.fail(jobId, lastPercent, failReason);
             saveFailureResultSafely(jobId, failReason);
+            meterRegistry.counter("analysis.job.failed", "reason", "unexpected").increment();
+            stopDurationTimer(sample, "failed");
         }
     }
 
-    private boolean stopIfCancellationRequested(String jobId, int lastPercent) {
+    private boolean stopIfCancellationRequested(String jobId, int lastPercent, Timer.Sample sample) {
         boolean cancelRequested = analysisJobRepository.findByJobId(jobId)
                 .map(AnalysisJob::isCancelRequested)
                 .orElse(false);
@@ -397,7 +415,17 @@ public class AnalysisCommandService {
         analysisJobStatusService.cancelStatus(jobId);
         analysisProgressService.cancel(jobId, lastPercent);
         saveCancelledResultSafely(jobId);
+        meterRegistry.counter("analysis.job.cancelled").increment();
+        stopDurationTimer(sample, "cancelled");
         return true;
+    }
+
+    private void stopDurationTimer(Timer.Sample sample, String outcome) {
+        sample.stop(
+                Timer.builder("analysis.job.duration")
+                        .tag("outcome", outcome)
+                        .register(meterRegistry)
+        );
     }
 
     private void validateRunnable(AnalysisJob analysisJob) {

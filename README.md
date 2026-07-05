@@ -208,6 +208,16 @@ Actuator와 Prometheus 메트릭은 메인 API 포트(기본 8080)가 아니라 
 
 `docker-compose.yml`에서는 관리 포트 8081을 호스트 `ports`에 등록하지 않습니다. 같은 Docker 네트워크 내부의 nginx 또는 향후 Prometheus 컨테이너에서만 `http://backend:8081/actuator/prometheus`로 스크레이핑하도록 구성합니다.
 
+JVM/HTTP 기본 메트릭 외에 분석 작업 커스텀 메트릭 5개가 노출됩니다.
+
+| 메트릭 | 종류 | 태그 | 의미 |
+|---|---|---|---|
+| `analysis.job.started` | Counter | `trigger` = `run` \| `retry` | 분석 실행/재시도가 접수된 횟수 |
+| `analysis.job.completed` | Counter | 없음 | 분석 파이프라인이 성공적으로 완료된 횟수 |
+| `analysis.job.failed` | Counter | `reason` = `upload-not-found` \| `business` \| `unexpected` | 분석이 실패로 끝난 횟수(사유별) |
+| `analysis.job.cancelled` | Counter | 없음 | 사용자 취소 요청으로 중단된 횟수 |
+| `analysis.job.duration` | Timer | `outcome` = `completed` \| `failed` \| `cancelled` | 분석 파이프라인 소요 시간(종료 결과별) |
+
 ## 7. frontend 실행
 
 ```bash

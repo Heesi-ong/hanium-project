@@ -6,6 +6,7 @@ import ResultListPage from "../pages/ResultListPage";
 import ResultDetailPage from "../pages/ResultDetailPage";
 import LoginPage from "../pages/LoginPage";
 import SignupPage from "../pages/SignupPage";
+import AccountPage from "../pages/AccountPage";
 import ProtectedRoute from "./ProtectedRoute";
 
 function AppRoutes() {
@@ -20,6 +21,7 @@ function AppRoutes() {
                     <Route path="/upload" element={<UploadPage />} />
                     <Route path="/results" element={<ResultListPage />} />
                     <Route path="/results/:jobId" element={<ResultDetailPage />} />
+                    <Route path="/account" element={<AccountPage />} />
                 </Route>
             </Route>
         </Routes>

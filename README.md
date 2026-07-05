@@ -431,6 +431,9 @@ Request Body:
 
 로그인 성공 시 `data.accessToken`이 반환됩니다.
 
+- 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일 기준과 IP 기준을 모두 적용해 rate limit이 걸립니다. 한도를 초과하면 429 응답을 반환합니다.
+- 회원가입 비밀번호는 8~72자이면서 영문자와 숫자를 각각 1자 이상 포함해야 합니다(400 응답으로 거부됩니다). 이 복잡도 규칙은 회원가입에만 적용되며, 로그인 요청의 비밀번호 필드에는 적용되지 않습니다.
+
 ### 9.3 영상 업로드
 
 ```http
@@ -1008,6 +1011,7 @@ OpenAI 피드백 결과에 생성 방식을 구분하는 상태 필드를 추가
 - timeout, HTTP 에러, 빈 응답, completed가 아닌 응답, 응답 텍스트 누락, JSON 파싱 실패가 발생하면 별도 재시도 없이 즉시 fallback Mock 피드백으로 전환합니다.
 - 실제 OpenAI API 응답에 usage 정보가 있으면 backend 로그 파일에 `OPENAI_USAGE` 접두어로 `jobId`, `model`, `inputTokens`, `outputTokens`, `totalTokens`가 남습니다. usage가 없을 때도 `usage=none` 로그가 남습니다.
 - 실패한 분석 작업 재시도는 `analysis.retry.max-count`(`ANALYSIS_RETRY_MAX_COUNT`, 기본 3회)까지만 허용됩니다. 초과 시 `/api/analysis/{jobId}/retry`는 `ANALYSIS_RETRY_LIMIT_EXCEEDED` 409 응답을 반환합니다.
+- 이번 달 실제 API 호출 횟수가 `rate-limit.openai-monthly.capacity`(`OPENAI_MONTHLY_RATE_LIMIT_CAPACITY`, 기본 1000회)를 초과하면 API를 호출하지 않고 즉시 Mock 피드백으로 전환됩니다(호출 자체가 발생하지 않으므로 실패가 아닙니다). 현재 사용량은 `openai.monthly.usage`, 설정된 한도는 `openai.monthly.budget.capacity` Prometheus 메트릭으로 확인할 수 있고, 사용률이 90%를 5분 이상 초과하면 `OpenAiMonthlyBudgetNearExhaustion` 알림이 발동합니다.
 
 ## 결과 목록 AI 피드백 생성 상태 표시 및 필터
 

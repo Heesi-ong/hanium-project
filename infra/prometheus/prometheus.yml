@@ -1,0 +1,15 @@
+# Prometheus 설정입니다.
+# backend 관리 포트(8081)의 /actuator/prometheus를 15초 간격으로 스크레이핑합니다.
+# 알림 규칙은 alerts.yml에 정의되어 있습니다.
+
+global:
+  scrape_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['backend:8081']

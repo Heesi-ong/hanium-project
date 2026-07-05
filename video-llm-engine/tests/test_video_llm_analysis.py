@@ -61,6 +61,7 @@ def test_analyze_returns_mock_video_llm_result_with_valid_internal_api_key(monke
     assert body["model"] == {
         "name": "mock-video-llm",
         "version": "local-mock",
+        "generationMode": "MOCK",
     }
     assert set(body["observations"].keys()) == {
         "eyeContact",
@@ -71,3 +72,37 @@ def test_analyze_returns_mock_video_llm_result_with_valid_internal_api_key(monke
     assert "visualDelivery" in body["globalSummary"]
     assert "mainStrength" in body["globalSummary"]
     assert "mainWeakness" in body["globalSummary"]
+
+
+def test_analyze_uses_mock_generation_mode_when_video_llm_disabled(monkeypatch, tmp_path):
+    monkeypatch.delenv("VIDEO_LLM_ENABLED", raising=False)
+    client = create_client(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=analysis_payload("mock-mode-job"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"]["generationMode"] == "MOCK"
+
+
+def test_analyze_falls_back_to_mock_when_real_video_llm_is_enabled_but_unimplemented(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    client = create_client(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=analysis_payload("fallback-mode-job"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["jobId"] == "fallback-mode-job"
+    assert body["status"] == "success"
+    assert body["model"]["generationMode"] == "FALLBACK"

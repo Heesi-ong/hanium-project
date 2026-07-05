@@ -53,6 +53,20 @@ public class UserRateLimiter {
         }
     }
 
+    public long getCurrentCount(String bucketName, String key) {
+        String rateLimitKey = buildKey(bucketName, key);
+
+        try {
+            String value = redisTemplate.opsForValue().get(rateLimitKey);
+            onRedisSuccess();
+            return value != null ? Long.parseLong(value) : 0L;
+        } catch (RuntimeException exception) {
+            onRedisFailure(exception);
+            LocalWindow window = localFallbackWindows.get(rateLimitKey);
+            return window != null ? window.count() : 0L;
+        }
+    }
+
     public void resetForTest() {
         localFallbackWindows.clear();
 
@@ -70,6 +84,7 @@ public class UserRateLimiter {
             case "login" -> rateLimitProperties.login();
             case "login-ip" -> rateLimitProperties.loginIp();
             case "signup" -> rateLimitProperties.signup();
+            case "openai-monthly" -> rateLimitProperties.openaiMonthly();
             default -> throw new IllegalArgumentException("Unknown rate limit bucket: " + bucketName);
         };
     }

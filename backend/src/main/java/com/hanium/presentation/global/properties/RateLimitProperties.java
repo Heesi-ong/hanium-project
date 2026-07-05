@@ -8,7 +8,8 @@ public record RateLimitProperties(
         Limit analysis,
         Limit login,
         Limit loginIp,
-        Limit signup
+        Limit signup,
+        Limit openaiMonthly
 ) {
 
     public record Limit(

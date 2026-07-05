@@ -3,6 +3,7 @@ package com.hanium.presentation.infrastructure.client.openai;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.properties.OpenAiProperties;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,21 +32,32 @@ public class OpenAiClient {
     private final OpenAiPromptBuilder openAiPromptBuilder;
     private final RestClient openAiRestClient;
     private final ObjectMapper objectMapper;
+    private final UserRateLimiter userRateLimiter;
 
     public OpenAiClient(
             OpenAiProperties openAiProperties,
             OpenAiPromptBuilder openAiPromptBuilder,
             RestClient openAiRestClient,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            UserRateLimiter userRateLimiter
     ) {
         this.openAiProperties = openAiProperties;
         this.openAiPromptBuilder = openAiPromptBuilder;
         this.openAiRestClient = openAiRestClient;
         this.objectMapper = objectMapper;
+        this.userRateLimiter = userRateLimiter;
     }
 
     public OpenAiFeedbackResponse generateFeedback(OpenAiFeedbackRequest request) {
         if (openAiProperties.canUseRealApi()) {
+            if (!userRateLimiter.tryConsume("openai-monthly", currentMonthKey())) {
+                return generateMockFeedback(
+                        request,
+                        "MOCK",
+                        "monthly OpenAI budget exceeded"
+                );
+            }
+
             try {
                 return generateRealOpenAiFeedback(request);
             } catch (RuntimeException exception) {
@@ -61,6 +74,10 @@ public class OpenAiClient {
                 "MOCK",
                 resolveMockReason()
         );
+    }
+
+    private String currentMonthKey() {
+        return YearMonth.now().toString();
     }
 
     private OpenAiFeedbackResponse generateRealOpenAiFeedback(OpenAiFeedbackRequest request) {

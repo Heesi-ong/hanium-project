@@ -230,3 +230,83 @@ CLAUDE.md의 서비스 가능 수준 10개 기준별 평가입니다. 산정 방
 4. **O3 검증 마무리 + 영상 길이 제한**: `VideoFileCommandService.java:91-106` 저장 공간 검증은 구현됐지만 전체 테스트 통과 확인이 필요하고, `basic_analysis.py:272-308`은 duration을 계산만 할 뿐 업로드 단계에서 길이 제한을 적용하지 않습니다.
 5. **백업 리허설/원격 보관/암호화**: `scripts/backup-mysql.sh:60-86`의 백업과 보존 로직은 있으나 실제 MySQL 복구 리허설, 원격 저장, 암호화, 알림은 남아 있습니다.
 6. **CI audit 후속 패치**: `.github/workflows/verify.yml:64-68`의 `pip-audit`는 현재 실패 허용이므로, Pillow/pytest 취약점 업그레이드 후 실패 허용을 제거하는 것이 다음 단계입니다.
+
+---
+
+## 5. 업데이트: 2026-07-05 현재 상태
+
+2026-07-04 이후 운영/관측성 계열 Unit이 대거 반영됐습니다. 아래 판정은 2026-07-05 현재 작업 트리의 실제 파일과 `git log`를 다시 열어 확인한 결과이며, 기존 섹션(2026-07-03 원본, 2026-07-04 업데이트)은 당시 스냅샷으로 보존합니다.
+
+### 5.1 신규 반영 항목 판정
+
+**치명 버그 수정: 운영 배포 시 VITE_API_BASE_URL 미설정으로 API 전체 실패 (커밋 59be339)**
+- `frontend/src/api/apiClient.js:3`이 `import.meta.env.VITE_API_BASE_URL ?? ""`로 기본값을 상대경로로 바꿨고, `frontend/Dockerfile:12-13`이 빌드 ARG 기본값을 `""`로 둡니다.
+- `docker-compose.prod.yml:33-36`은 prod 오버레이에서 `VITE_API_BASE_URL: ""`를 명시해 nginx 뒤에서 `/api/` 상대경로 호출이 되게 합니다(로컬 개발은 `docker-compose.yml:181`의 `http://localhost:8080` 기본값 유지).
+- 의미: 이전에는 운영 배포 시 프론트가 localhost:8080을 호출해 **실제 서비스가 불가능한 버그**였습니다. 문서화만 되고 방치되어 있다가 이번에 수정됐습니다.
+
+**O3 마무리: ffprobe 영상 재생 시간 제한 (커밋 af2f3b0)**
+- `FfprobeVideoDurationProbe.java:15-39`가 ffprobe 서브프로세스로 재생 시간을 확인하고, 확인 실패/타임아웃 시 fail-open으로 통과시킵니다.
+- `VideoFileCommandService.java:59,100`에서 저장 직후 길이 검증을 호출하며, 상한은 `application.yaml:96`(`VIDEO_MAX_DURATION_MINUTES`, 기본 30분)로 주입됩니다.
+- 2026-07-04 시점 "영상 길이 제한 여전히 미구현" 감점 요소가 해소됐습니다.
+
+**S1 완화 + 만료 UX (커밋 84c4983, 0f6660a)**
+- `application.yaml:52`에서 access token 만료가 30분으로 단축됐습니다(`SECURITY_JWT_EXPIRATION_MINUTES`).
+- `frontend/src/api/apiClient.js:43-50`은 401 수신 시 토큰을 지우고 원래 경로를 `sessionStorage`에 보관한 뒤 로그인으로 보내며, 만료 안내 플래그를 남깁니다.
+- 한계: 토큰이 여전히 localStorage에 저장되는 구조(S1) 자체는 유지 — HttpOnly 쿠키 전환은 남은 과제입니다.
+
+**S3 마무리: 회원탈퇴 프론트 UI (커밋 d20860b)**
+- `frontend/src/pages/AccountPage.jsx:31-95`가 비밀번호 재확인 + 이중 확인 문구와 함께 `withdrawAccount`를 호출합니다. 테스트(`AccountPage.test.jsx`)도 존재합니다. 2026-07-04의 "탈퇴 UI 없음" 한계가 해소됐습니다.
+
+**Video LLM 벤더중립 골격 (커밋 b1f5674) — 과대평가 금지**
+- `video-llm-engine/app/api/video_llm_analysis.py:26,95-106`은 `VIDEO_LLM_ENABLED`가 켜지면 실제 모델 호출 경로로 진입하되 미구현이면 `"FALLBACK"`, 꺼져 있으면 `"MOCK"`으로 `generationMode`를 명시합니다. `docker-compose.yml:115`에 플래그 배선.
+- **실제 모델 연동은 여전히 없습니다.** 응답은 여전히 mock이며, 달라진 것은 "mock임을 스스로 표시하고 실제 호출 자리를 마련한 것"까지입니다.
+
+**Q1 마무리: pip-audit 취약점 실제 패치 + 감사 강제화 (커밋 8d93fd6)**
+- `analysis-engine/requirements.txt:35,47`, `video-llm-engine/requirements.txt:27,32`에서 pillow==12.2.0, pytest==9.0.3으로 패치됐고, `verify.yml`의 pip-audit 단계(`verify.yml:64-66`)에서 `continue-on-error`가 제거되어 감사 실패가 CI 실패가 됩니다.
+
+**백업 자동화 + 무결성 검사 (커밋 d24e4b9)**
+- `docker-compose.yml:40-73`의 `backup` 서비스가 `BACKUP_INTERVAL_HOURS`(기본 24h) 주기로 스크립트를 반복 실행합니다.
+- `scripts/backup-mysql.sh:62-70`은 `gzip -t` 무결성 검사와 최소 크기 검사를 수행하고, 실패 파일은 삭제 후 ERROR 로그를 남깁니다.
+
+**관측성 스택 신설 (커밋 b5dfa72, ca016f3, 13f6a34, 2425452, 7ca6b16, a5ed86e)**
+- 관리 포트 분리: `application.yaml:31-37` — `management.server.port: 8081`, `health,prometheus` 노출. nginx `/actuator/health` 프록시도 8081(`infra/nginx/nginx.conf:40-41`).
+- 도메인 메트릭 5종: `AnalysisCommandService.java:188`(started), `:399`(completed), `:268,408,419`(failed reason별), `:437`(cancelled), `:442-448`(duration 타이머, outcome별 stop 5곳).
+- 구조화 로깅: `logback-spring.xml:22-33`(local 평문), `:35-61`(dev/prod LogstashEncoder JSON 콘솔+파일 롤링). `RequestIdFilter.java:33-52`(X-Request-Id 수용/생성, finally 정리), `AsyncConfig.java:41-53`(TaskDecorator로 MDC 워커 전파), `AnalysisCommandService.java:235,242`(jobId MDC put/finally remove).
+- Prometheus: `infra/prometheus/prometheus.yml:18-22`(backend:8081 스크레이핑), `infra/prometheus/alerts.yml:8,17`(BackendDown, AnalysisJobFailureRateHigh).
+- Alertmanager: `docker-compose.monitoring.yml:49-63`(v0.33.0, 127.0.0.1:9093), `prometheus.yml:12-15`(alerting 연결), SMTP 비밀번호는 `.gitignore:95`로 커밋 차단(`.example`만 커밋).
+- Grafana: `docker-compose.monitoring.yml:28-47`(13.0.3, 127.0.0.1:3000), `infra/grafana/provisioning/dashboards/json/analysis-overview.json:2-3`(uid 고정, "분석 서비스 개요", 패널 4개) 자동 프로비저닝.
+
+**CI/공급망 보강 (커밋 8c161df, 11c1ad2)**
+- `verify.yml:90-101`의 `compose-validate` job이 base/prod/monitoring/전체 오버레이 4개 조합의 `docker compose config`를 검증합니다.
+- `.github/dependabot.yml`에 gradle/npm/pip×2/docker×4/github-actions **9개 생태계**가 등록됐습니다.
+
+**nginx 보안 헤더 (커밋 fc5dae0, 59be339)**
+- `infra/nginx/nginx.conf:25-29` — HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP(`connect-src 'self'` 정정 포함).
+
+### 5.2 서비스화 진행률 수치화 갱신
+
+| # | 기준 | 07-04 | **07-05** | 변경 근거 |
+|---|---|---:|---:|---|
+| 1 | 빌드/CI 정상 동작 | 90% | **93%** | compose-validate job 4조합(`verify.yml:90-101`), pip-audit 강제화(continue-on-error 제거), dependabot 9개 생태계. 감점: 이번 세션에서 CI 실제 실행 결과 미확인, 커밋별 빌드 검증 없음 |
+| 2 | 4개 실행/배포 단위 분리 | 95% | **95%** | 변화 없음 (모니터링 오버레이는 선택 실행 단위로 추가) |
+| 3 | local/dev/prod 분리 + 환경변수 | 90% | **92%** | VITE_API_BASE_URL prod 버그 수정(`docker-compose.prod.yml:36`), GRAFANA_ADMIN_PASSWORD/SMTP 비밀번호 파일 분리. 감점: TLS 실발급·HTTPS 접속 검증 여전히 미완 |
+| 4 | 운영 DB + 마이그레이션 | 82% | **88%** | 백업 자동 스케줄링(`docker-compose.yml:40-73`) + gzip -t 무결성 검사(`backup-mysql.sh:62-70`). 감점: **복구 리허설 미완**, 원격 보관/암호화 없음 |
+| 5 | 비동기 job 구조 | 78% | **80%** | 메트릭/MDC로 파이프라인 관측 가능해짐. 구조 자체는 그대로(프로세스 내부 스레드풀, 분산 큐 아님) |
+| 6 | 프론트-백 API 계약 일치 | 90% | **90%** | 변화 없음 (ApiContractTest 유지) |
+| 7 | 인증/권한/소유권/파일 보호 | 83% | **87%** | JWT 30분 단축, 세션 만료 UX, 탈퇴 UI, ffprobe 길이 제한, nginx 보안 헤더+CSP. 감점: JWT localStorage 유지(S1), `./gradlew test` 전체 통과는 환경 제약으로 미확인 |
+| 8 | Video LLM mock 대체 | 15% | **20%** | generationMode(MOCK/FALLBACK) 벤더중립 골격과 플래그 배선만 추가. **실제 모델 연동은 여전히 0건** — 응답은 계속 mock |
+| 9 | OpenAI 정책 | 80% | **80%** | 변화 없음. 사용자/월별 예산 한도 여전히 없음 |
+| 10 | 테스트/로그/모니터링/백업/정리 | 72% | **88%** | 07-04의 최대 감점("metrics/alerting 전무")이 정반대로: 도메인 메트릭 5종 + JSON 구조화 로그/MDC + Prometheus 알림 2개 + Alertmanager + Grafana 대시보드 + 백업 자동화/무결성까지 전부 존재. 감점: 백업 **복구 리허설 미완**, **E2E 검증 미완**(이번 세션 환경에 Docker 데몬이 없어 compose 기동 기반 검증 불가), SMTP 실제 발송 미검증, gradle 테스트 실행 미확인 |
+
+**종합: 약 81% (10개 기준 단순 평균, 07-04 약 78% → +3%p)**
+
+해석: 이번 상승분은 대부분 기준 10(관측성)에서 나왔고, 치명적이었던 VITE_API_BASE_URL 버그가 잡히며 "배포하면 바로 죽는" 유형의 결함이 하나 줄었습니다. 남은 19%는 여전히 Video LLM 실연동(최대 단일 갭), 실행 검증(E2E/테스트/복구 리허설), 분산 큐/공유 스토리지에 몰려 있습니다.
+
+### 5.3 권장 처리 순서 갱신 (2026-07-05)
+
+1. **E2E 실행 검증**: Docker 데몬이 있는 환경에서 compose 기동 → 업로드→분석→결과 조회 전체 흐름 + `./gradlew test` 전체 통과 확인. 지금까지의 여러 Unit이 정적 검토만 거친 상태라 가장 시급합니다. (VITE_API_BASE_URL 버그처럼 "정적으로는 안 보이는" 결함을 잡는 유일한 수단)
+2. **백업 복구 리허설**: 백업 생성·무결성 검사는 자동화됐으나, 실제 복원(restore) 절차는 한 번도 실행된 적이 없습니다.
+3. **Video LLM 실제 모델 연동**: 골격(`generationMode`, `VIDEO_LLM_ENABLED`)은 준비됨. 벤더 선택이 제품 의사결정으로 남아 있습니다.
+4. **Alertmanager SMTP 실값 설정 + 테스트 알림 발송 확인**: 설정은 완료됐으나 실제 발송은 미검증(`infra/alertmanager/alertmanager.yml`은 전부 플레이스홀더).
+5. **S1 JWT localStorage → HttpOnly 쿠키 전환 검토**: 만료 단축(30분)으로 완화됐지만 근본 구조는 유지.
+6. **분산 큐/공유 스토리지**: 다중 인스턴스 확장 시점에 착수(현재 단일 호스트 운영 전제로는 후순위).

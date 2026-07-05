@@ -29,13 +29,22 @@ spring:
     enabled: false
 
 management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
   endpoint:
     health:
       show-details: ${ACTUATOR_HEALTH_SHOW_DETAILS:when-authorized}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
 security:
   jwt:

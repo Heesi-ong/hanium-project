@@ -157,6 +157,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      MANAGEMENT_SERVER_PORT: ${MANAGEMENT_SERVER_PORT:-8081}
       STORAGE_ROOT_PATH: /storage
       STORAGE_UPLOAD_PATH: /storage/uploads
       STORAGE_RESULT_PATH: /storage/results
@@ -167,7 +168,7 @@ services:
     volumes:
       - ./storage:/storage
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12

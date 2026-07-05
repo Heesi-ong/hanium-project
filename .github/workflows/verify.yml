@@ -59,12 +59,11 @@ jobs:
         run: pip install -r requirements.txt
         working-directory: ${{ matrix.engine }}
       - if: matrix.engine == 'video-llm-engine'
-        run: pip install pytest==8.4.2 fastapi==0.138.2 httpx==0.28.1 pydantic==2.13.4
+        run: pip install pytest==9.0.3 fastapi==0.138.2 httpx==0.28.1 pydantic==2.13.4
         working-directory: ${{ matrix.engine }}
       - run: pip install pip-audit
         working-directory: ${{ matrix.engine }}
       - run: pip-audit --no-deps --disable-pip -r requirements.txt
-        continue-on-error: true
         working-directory: ${{ matrix.engine }}
       - if: matrix.engine == 'analysis-engine'
         run: pytest

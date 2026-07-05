@@ -1,5 +1,5 @@
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import StateMessage from "../components/StateMessage";
 import { useAuth } from "../context/AuthContext";
 
@@ -23,8 +23,20 @@ function LoginPage() {
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [sessionExpired, setSessionExpired] = useState(
+        sessionStorage.getItem("sessionExpired") === "true"
+    );
 
-    const redirectPath = location.state?.from?.pathname || "/";
+    const redirectPath =
+        location.state?.from?.pathname ||
+        sessionStorage.getItem("redirectAfterLogin") ||
+        "/";
+
+    useEffect(() => {
+        if (sessionExpired) {
+            sessionStorage.removeItem("sessionExpired");
+        }
+    }, [sessionExpired]);
 
     if (isAuthenticated) {
         return <Navigate to={redirectPath} replace />;
@@ -42,6 +54,9 @@ function LoginPage() {
                 password,
             });
 
+            sessionStorage.removeItem("redirectAfterLogin");
+            sessionStorage.removeItem("sessionExpired");
+            setSessionExpired(false);
             navigate(redirectPath, { replace: true });
         } catch (requestError) {
             setError(
@@ -93,6 +108,9 @@ function LoginPage() {
                             </span>
                         </label>
 
+                        <StateMessage type="info">
+                            {sessionExpired ? "세션이 만료되어 다시 로그인해주세요." : ""}
+                        </StateMessage>
                         <StateMessage type="error">{error}</StateMessage>
 
                         <div className="button-row">

@@ -45,6 +45,8 @@ apiClient.interceptors.response.use(
             clearStoredAccessToken();
 
             if (!["/login", "/signup"].includes(window.location.pathname)) {
+                sessionStorage.setItem("redirectAfterLogin", window.location.pathname);
+                sessionStorage.setItem("sessionExpired", "true");
                 window.location.assign("/login");
             }
         }

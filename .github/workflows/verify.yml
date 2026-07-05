@@ -86,3 +86,35 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build .
         working-directory: ${{ matrix.image }}
+
+  compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate base compose
+        run: docker compose -f docker-compose.yml config
+      - name: Validate prod overlay
+        run: DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+      - name: Validate monitoring overlay
+        run: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config
+      - name: Validate prod + monitoring together
+        run: DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml config
+      - name: Validate monitoring config file syntax
+        run: |
+          python3 -m pip install pyyaml
+          python3 -c "
+          import yaml, json, glob
+          yaml_files = [
+              'infra/prometheus/prometheus.yml',
+              'infra/prometheus/alerts.yml',
+              'infra/alertmanager/alertmanager.yml',
+              'infra/grafana/provisioning/datasources/prometheus.yml',
+              'infra/grafana/provisioning/dashboards/dashboards.yml',
+          ]
+          for f in yaml_files:
+              yaml.safe_load(open(f))
+              print(f, 'OK')
+          for f in glob.glob('infra/grafana/provisioning/dashboards/json/*.json'):
+              json.load(open(f))
+              print(f, 'OK')
+          "

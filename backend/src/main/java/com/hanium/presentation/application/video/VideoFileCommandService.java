@@ -6,8 +6,10 @@ import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.StorageProperties;
+import com.hanium.presentation.global.properties.VideoProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -22,15 +24,21 @@ public class VideoFileCommandService {
     private final LocalFileStorage localFileStorage;
     private final FilePathGenerator filePathGenerator;
     private final StorageProperties storageProperties;
+    private final VideoDurationProbe videoDurationProbe;
+    private final VideoProperties videoProperties;
 
     public VideoFileCommandService(
             LocalFileStorage localFileStorage,
             FilePathGenerator filePathGenerator,
-            StorageProperties storageProperties
+            StorageProperties storageProperties,
+            VideoDurationProbe videoDurationProbe,
+            VideoProperties videoProperties
     ) {
         this.localFileStorage = localFileStorage;
         this.filePathGenerator = filePathGenerator;
         this.storageProperties = storageProperties;
+        this.videoDurationProbe = videoDurationProbe;
+        this.videoProperties = videoProperties;
     }
 
     public StoredVideoInfo store(VideoUploadCommand command) {
@@ -48,6 +56,7 @@ public class VideoFileCommandService {
         );
 
         localFileStorage.saveFile(file, storedPath);
+        validateVideoDuration(storedPath);
 
         return new StoredVideoInfo(
                 originalFileName,
@@ -86,6 +95,20 @@ public class VideoFileCommandService {
         VideoFileType fileType = VideoFileType.fromExtension(extension);
         validateFileSignature(file, fileType);
         validateAvailableStorageSpace(file);
+    }
+
+    private void validateVideoDuration(Path storedPath) {
+        videoDurationProbe.probe(storedPath).ifPresent(duration -> {
+            long maxDurationSeconds = videoProperties.maxDurationMinutes() * 60L;
+
+            if (duration.toSeconds() > maxDurationSeconds) {
+                localFileStorage.deleteFileIfExists(storedPath);
+                throw new BusinessException(
+                        ErrorCode.VIDEO_DURATION_EXCEEDED,
+                        "허용된 최대 재생 시간(" + videoProperties.maxDurationMinutes() + "분)을 초과했습니다."
+                );
+            }
+        });
     }
 
     private void validateAvailableStorageSpace(MultipartFile file) {

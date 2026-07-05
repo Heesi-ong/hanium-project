@@ -63,6 +63,14 @@ public class LocalFileStorage {
         }
     }
 
+    public void deleteFileIfExists(Path path) {
+        if (path == null || !Files.exists(path)) {
+            return;
+        }
+
+        deletePath(path);
+    }
+
     private void deletePath(Path path) {
         try {
             Files.deleteIfExists(path);

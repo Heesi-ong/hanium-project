@@ -6,8 +6,10 @@ import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.StorageProperties;
+import com.hanium.presentation.global.properties.VideoProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -16,6 +18,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +37,10 @@ class VideoFileCommandServiceTest {
     }
 
     private VideoFileCommandService createService(Long minFreeSpaceMb) {
+        return createService(minFreeSpaceMb, videoPath -> Optional.of(Duration.ofMinutes(1)));
+    }
+
+    private VideoFileCommandService createService(Long minFreeSpaceMb, VideoDurationProbe videoDurationProbe) {
         StorageProperties storageProperties = new StorageProperties(
                 tempDir.toString(),
                 tempDir.resolve("uploads").toString(),
@@ -41,11 +49,14 @@ class VideoFileCommandServiceTest {
                 tempDir.resolve("logs").toString(),
                 minFreeSpaceMb
         );
+        VideoProperties videoProperties = new VideoProperties(30L);
 
         return new VideoFileCommandService(
                 new LocalFileStorage(),
                 new FilePathGenerator(storageProperties),
-                storageProperties
+                storageProperties,
+                videoDurationProbe,
+                videoProperties
         );
     }
 
@@ -96,6 +107,32 @@ class VideoFileCommandServiceTest {
     void storeRejectsInvalidAviAndMkvSignaturesBeforeSaving() {
         assertInvalidUpload("job-fake-avi", "fake.avi", mp4Header());
         assertInvalidUpload("job-fake-mkv", "fake.mkv", aviHeader());
+    }
+
+    @Test
+    void storeRejectsVideoWhenDurationExceedsLimitAndDeletesSavedFile() {
+        videoFileCommandService = createService(0L, videoPath -> Optional.of(Duration.ofHours(2)));
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                "video/mp4",
+                mp4Header()
+        );
+
+        assertThatThrownBy(() -> videoFileCommandService.store(new VideoUploadCommand("job-too-long", file)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.VIDEO_DURATION_EXCEEDED);
+
+        Path storedPath = tempDir.resolve("uploads").resolve("job-too-long").resolve("original.mp4");
+        assertThat(Files.exists(storedPath)).isFalse();
+    }
+
+    @Test
+    void storeAllowsUploadWhenDurationProbeFailsOpen() {
+        videoFileCommandService = createService(0L, videoPath -> Optional.empty());
+
+        assertValidUpload("job-probe-failed", "video.mp4", VideoFileType.MP4, mp4Header());
     }
 
     private void assertValidUpload(

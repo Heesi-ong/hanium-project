@@ -55,6 +55,24 @@ cleanup_tmp() {
 }
 trap cleanup_tmp EXIT
 
+validate_backup_file() {
+    local file="$1"
+    local size
+
+    if ! gzip -t "$file"; then
+        log "ERROR: backup integrity check failed (corrupt gzip): $file"
+        rm -f "$file"
+        exit 1
+    fi
+
+    size="$(wc -c < "$file" | tr -d '[:space:]')"
+    if [[ "$size" -lt 200 ]]; then
+        log "ERROR: backup file suspiciously small (possibly empty dump): $file ($size bytes)"
+        rm -f "$file"
+        exit 1
+    fi
+}
+
 log "backup started: db=$DB_NAME host=$DB_HOST port=$DB_PORT backup=$backup_file"
 
 if MYSQL_PWD="$DB_PASSWORD" "$MYSQLDUMP_BIN" \
@@ -69,6 +87,7 @@ if MYSQL_PWD="$DB_PASSWORD" "$MYSQLDUMP_BIN" \
     --databases "$DB_NAME" \
     | gzip -c > "$tmp_file"; then
     mv "$tmp_file" "$backup_file"
+    validate_backup_file "$backup_file"
     log "backup completed: $backup_file ($(du -h "$backup_file" | awk '{print $1}'))"
 else
     rm -f "$tmp_file"

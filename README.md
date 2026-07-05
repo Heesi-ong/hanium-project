@@ -618,6 +618,8 @@ storage/logs/.gitkeep
 
 MySQL 데이터는 `mysql-data` Docker 볼륨에 저장되지만, 볼륨 손상이나 실수 삭제에 대비해 `mysqldump` 백업을 별도로 남길 수 있습니다.
 
+`docker compose up`으로 실행하면 `backup` 서비스가 함께 떠서 `BACKUP_INTERVAL_HOURS`(기본 24시간)마다 `scripts/backup-mysql.sh`를 실행합니다. 백업 파일은 `storage/backups/{DB_NAME}_YYYYMMDD_HHMMSS.sql.gz`에 저장되며, `gzip -t` 검사와 최소 크기 검사를 통과한 파일만 남깁니다. 무결성 검사에 실패한 백업 파일은 삭제되고 `storage/logs/backup.log`에 `ERROR` 로그가 남으며, 다음 실행 주기에 다시 시도합니다.
+
 수동 실행 예시:
 
 ```bash
@@ -633,7 +635,7 @@ BACKUP_RETENTION_DAYS=14 \
 ./scripts/backup-mysql.sh
 ```
 
-`docker-compose.yml`은 `${DB_PORT:-3306}:3306`으로 MySQL 포트를 호스트에 노출하므로, compose로 MySQL을 띄운 뒤 호스트에서 위 스크립트를 실행할 수 있습니다. 백업 파일은 기본적으로 `storage/backups/{DB_NAME}_YYYYMMDD_HHMMSS.sql.gz`에 저장되고, `BACKUP_RETENTION_DAYS`보다 오래된 같은 DB의 백업 파일은 자동 삭제됩니다. 실행 로그는 stdout과 `storage/logs/backup.log`에 함께 남습니다.
+`docker-compose.yml`은 `127.0.0.1:${DB_PORT:-3306}:3306`으로 MySQL 포트를 로컬 호스트에만 노출하므로, compose로 MySQL을 띄운 뒤 같은 호스트에서 위 스크립트를 실행할 수 있습니다. `BACKUP_RETENTION_DAYS`보다 오래된 같은 DB의 백업 파일은 자동 삭제됩니다. 실행 로그는 stdout과 `storage/logs/backup.log`에 함께 남습니다.
 
 crontab 자동화 예시(매일 새벽 3시):
 

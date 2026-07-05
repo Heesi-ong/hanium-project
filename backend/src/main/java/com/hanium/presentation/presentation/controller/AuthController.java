@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -54,8 +55,17 @@ public class AuthController {
 
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<?>> signup(
-            @Valid @RequestBody AuthRequest request
+            @Valid @RequestBody SignupRequest request,
+            HttpServletRequest servletRequest
     ) {
+        String clientIp = resolveClientIp(servletRequest);
+        if (!userRateLimiter.tryConsume("signup", clientIp)) {
+            ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
+            return ResponseEntity
+                    .status(errorCode.getStatus())
+                    .body(ApiResponse.fail(errorCode.getMessage()));
+        }
+
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmail(email)) {
             return ResponseEntity
@@ -84,8 +94,17 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<?>> login(
-            @Valid @RequestBody AuthRequest request
+            @Valid @RequestBody AuthRequest request,
+            HttpServletRequest servletRequest
     ) {
+        String clientIp = resolveClientIp(servletRequest);
+        if (!userRateLimiter.tryConsume("login-ip", clientIp)) {
+            ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
+            return ResponseEntity
+                    .status(errorCode.getStatus())
+                    .body(ApiResponse.fail(errorCode.getMessage()));
+        }
+
         String email = normalizeEmail(request.email());
         if (!userRateLimiter.tryConsume("login", email)) {
             ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
@@ -124,6 +143,15 @@ public class AuthController {
         return email.trim().toLowerCase();
     }
 
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+
+        return request.getRemoteAddr();
+    }
+
     private Optional<String> resolveBearerToken(HttpServletRequest request) {
         String authorization = request.getHeader(AUTHORIZATION_HEADER);
         if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
@@ -145,6 +173,21 @@ public class AuthController {
 
             @NotBlank(message = "비밀번호는 필수입니다.")
             @Size(min = 8, max = 72, message = "비밀번호는 8자 이상 72자 이하로 입력해야 합니다.")
+            String password
+    ) {
+    }
+
+    public record SignupRequest(
+            @NotBlank(message = "이메일은 필수입니다.")
+            @Email(message = "이메일 형식이 올바르지 않습니다.")
+            String email,
+
+            @NotBlank(message = "비밀번호는 필수입니다.")
+            @Size(min = 8, max = 72, message = "비밀번호는 8자 이상 72자 이하로 입력해야 합니다.")
+            @Pattern(
+                    regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$",
+                    message = "비밀번호는 영문자와 숫자를 각각 1자 이상 포함해야 합니다."
+            )
             String password
     ) {
     }

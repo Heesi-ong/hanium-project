@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -22,16 +23,26 @@ class VideoLlmAnalysisRequest(BaseModel):
     maxFrames: int = 90
 
 
-@router.post("/analyze")
-def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
-    logger.info("(%s) Mock 영상 관찰 결과를 생성하는 중...", request.jobId)
+def resolve_video_llm_enabled() -> bool:
+    return os.getenv("VIDEO_LLM_ENABLED", "false").strip().lower() == "true"
 
+
+def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
+    # 실제 Video LLM 벤더(OpenAI GPT-4o vision / Gemini / 오픈소스 등)가
+    # 아직 결정되지 않았습니다. 벤더가 정해지면 이 함수 내부에 실제 API 호출을
+    # 구현하고, 반환값은 build_mock_response와 동일한 스키마
+    # (jobId/status/model/observations/globalSummary)를 따라야 합니다.
+    raise NotImplementedError("실제 Video LLM 모델 호출이 아직 구현되지 않았습니다.")
+
+
+def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) -> Dict[str, Any]:
     return {
         "jobId": request.jobId,
         "status": "success",
         "model": {
             "name": "mock-video-llm",
-            "version": "local-mock"
+            "version": "local-mock",
+            "generationMode": generation_mode,
         },
         "observations": {
             "eyeContact": [
@@ -77,3 +88,19 @@ def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
             "mainWeakness": "시선이 아래로 이동하는 구간과 제스처 부족이 관찰됩니다."
         }
     }
+
+
+@router.post("/analyze")
+def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
+    if resolve_video_llm_enabled():
+        try:
+            return call_real_video_llm_model(request)
+        except Exception:
+            logger.exception(
+                "(%s) 실제 Video LLM 호출 실패, mock 응답으로 폴백합니다.",
+                request.jobId,
+            )
+            return build_mock_response(request, "FALLBACK")
+
+    logger.info("(%s) Mock 영상 관찰 결과를 생성하는 중...", request.jobId)
+    return build_mock_response(request, "MOCK")

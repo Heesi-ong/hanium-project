@@ -78,6 +78,7 @@ services:
           memory: 6g
     environment:
       INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      VIDEO_LLM_ENABLED: ${VIDEO_LLM_ENABLED:-false}
       LOG_DIR: /storage/logs
     ports:
       - "127.0.0.1:8002:8002"

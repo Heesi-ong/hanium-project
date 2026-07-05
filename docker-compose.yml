@@ -37,6 +37,40 @@ services:
       timeout: 5s
       retries: 20
 
+  backup:
+    image: mysql:8.4
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-hanium_dev}
+      DB_USERNAME: ${DB_USERNAME:-hanium}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      BACKUP_DIR: /backups
+      BACKUP_LOG_PATH: /logs/backup.log
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+    volumes:
+      - ./scripts/backup-mysql.sh:/scripts/backup-mysql.sh:ro
+      - ./storage/backups:/backups
+      - ./storage/logs:/logs
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        while true; do
+          /bin/bash /scripts/backup-mysql.sh || echo "$(date -Iseconds) backup run failed" >> /logs/backup.log
+          sleep "$((BACKUP_INTERVAL_HOURS * 3600))"
+        done
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped

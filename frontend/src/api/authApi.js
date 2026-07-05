@@ -17,3 +17,11 @@ export async function login({ email, password }) {
 
     return unwrapApiResponse(response);
 }
+
+export async function withdrawAccount(password) {
+    const response = await apiClient.delete("/api/users/me", {
+        data: { password },
+    });
+
+    return unwrapApiResponse(response);
+}

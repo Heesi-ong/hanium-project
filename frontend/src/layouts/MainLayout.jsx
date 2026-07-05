@@ -41,6 +41,15 @@ function MainLayout() {
                             분석 결과
                         </NavLink>
 
+                        <NavLink
+                            to="/account"
+                            className={({ isActive }) =>
+                                isActive ? "nav-link active" : "nav-link"
+                            }
+                        >
+                            계정
+                        </NavLink>
+
                         <span className="nav-link">
                             {user?.email || "사용자"}
                         </span>

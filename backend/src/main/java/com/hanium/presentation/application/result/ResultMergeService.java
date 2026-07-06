@@ -6,6 +6,7 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,7 @@ public class ResultMergeService {
         finalResult.put("feedback", createFeedback(openAiFeedbackResponse));
         finalResult.put("practicePlan", nullSafeList(openAiFeedbackResponse.practicePlan()));
         finalResult.put("timelineFeedback", nullSafeList(openAiFeedbackResponse.timelineFeedback()));
+        finalResult.put("notableMoments", createNotableMoments(analysisEngineResponse));
         finalResult.put("pipeline", createCompletedPipeline(openAiFeedbackResponse));
 
         return finalResult;
@@ -53,6 +55,7 @@ public class ResultMergeService {
         failureResult.put("feedback", createFailedFeedback());
         failureResult.put("practicePlan", List.of());
         failureResult.put("timelineFeedback", List.of());
+        failureResult.put("notableMoments", List.of());
         failureResult.put("pipeline", createFailedPipeline(failedStep));
 
         return failureResult;
@@ -119,6 +122,148 @@ public class ResultMergeService {
         feedback.put("improvements", nullSafeStringList(openAiFeedbackResponse.improvements()));
 
         return feedback;
+    }
+
+    private List<Map<String, Object>> createNotableMoments(
+            AnalysisEngineResponse analysisEngineResponse
+    ) {
+        List<Map<String, Object>> notableMoments = new ArrayList<>();
+
+        Map<String, Object> postureMoment = createLowestScoreMoment(
+                nullSafeMap(analysisEngineResponse.pose()),
+                "posture",
+                "자세 균형이 가장 흔들린 순간",
+                "poseDetected",
+                "shoulderBalanceScore"
+        );
+        if (postureMoment != null) {
+            notableMoments.add(postureMoment);
+        }
+
+        Map<String, Object> gazeMoment = createLowestScoreMoment(
+                nullSafeMap(analysisEngineResponse.face()),
+                "gaze",
+                "카메라 응시가 가장 흔들린 순간",
+                "faceDetected",
+                "gazeScore"
+        );
+        if (gazeMoment != null) {
+            notableMoments.add(gazeMoment);
+        }
+
+        Map<String, Object> expressionMoment = createLowestScoreMoment(
+                nullSafeMap(analysisEngineResponse.emotion()),
+                "expression",
+                "표정 표현이 가장 약했던 순간",
+                "faceDetected",
+                "expressionScore"
+        );
+        if (expressionMoment != null) {
+            notableMoments.add(expressionMoment);
+        }
+
+        Map<String, Object> gestureMoment = createHighestGestureMovementMoment(
+                nullSafeMap(analysisEngineResponse.gesture())
+        );
+        if (gestureMoment != null) {
+            notableMoments.add(gestureMoment);
+        }
+
+        return notableMoments;
+    }
+
+    private Map<String, Object> createLowestScoreMoment(
+            Map<String, Object> analysisSection,
+            String category,
+            String label,
+            String detectedKey,
+            String scoreKey
+    ) {
+        Map<String, Object> selectedFrame = null;
+        double selectedValue = Double.MAX_VALUE;
+
+        for (Map<String, Object> frameResult : getFrameResults(analysisSection)) {
+            if (!isTrue(frameResult, detectedKey)) {
+                continue;
+            }
+
+            Double timestampSec = getDoubleValue(frameResult, "timestampSec");
+            Double score = getDoubleValue(frameResult, scoreKey);
+
+            if (timestampSec == null || score == null) {
+                continue;
+            }
+
+            if (score < selectedValue) {
+                selectedFrame = frameResult;
+                selectedValue = score;
+            }
+        }
+
+        if (selectedFrame == null) {
+            return null;
+        }
+
+        return createNotableMoment(
+                category,
+                label,
+                getDoubleValue(selectedFrame, "timestampSec"),
+                selectedValue
+        );
+    }
+
+    private Map<String, Object> createHighestGestureMovementMoment(
+            Map<String, Object> gesture
+    ) {
+        Map<String, Object> selectedFrame = null;
+        double selectedValue = Double.NEGATIVE_INFINITY;
+
+        for (Map<String, Object> frameResult : getFrameResults(gesture)) {
+            if (!isTrue(frameResult, "gestureDetected")) {
+                continue;
+            }
+
+            Double timestampSec = getDoubleValue(frameResult, "timestampSec");
+
+            if (timestampSec == null) {
+                continue;
+            }
+
+            double movement = getDoubleValueOrZero(frameResult, "leftWristMovement")
+                    + getDoubleValueOrZero(frameResult, "rightWristMovement");
+
+            if (movement > selectedValue) {
+                selectedFrame = frameResult;
+                selectedValue = movement;
+            }
+        }
+
+        if (selectedFrame == null) {
+            return null;
+        }
+
+        return createNotableMoment(
+                "gesture",
+                "제스처가 가장 활발했던 순간",
+                getDoubleValue(selectedFrame, "timestampSec"),
+                selectedValue
+        );
+    }
+
+    private Map<String, Object> createNotableMoment(
+            String category,
+            String label,
+            Double timestampSec,
+            double value
+    ) {
+        Map<String, Object> notableMoment = new LinkedHashMap<>();
+
+        notableMoment.put("category", category);
+        notableMoment.put("label", label);
+        notableMoment.put("timestampSec", timestampSec);
+        notableMoment.put("value", value);
+
+        return notableMoment;
     }
 
     private Map<String, Object> createCompletedPipeline(
@@ -257,6 +402,62 @@ public class ResultMergeService {
 
     private List<String> nullSafeStringList(List<String> value) {
         return value == null ? List.of() : value;
+    }
+
+    private List<Map<String, Object>> getFrameResults(Map<String, Object> analysisSection) {
+        Object value = analysisSection.get("frameResults");
+
+        if (!(value instanceof List<?> frameResults)) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> normalizedFrameResults = new ArrayList<>();
+
+        for (Object frameResult : frameResults) {
+            if (!(frameResult instanceof Map<?, ?> rawFrameResult)) {
+                continue;
+            }
+
+            Map<String, Object> normalizedFrameResult = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawFrameResult.entrySet()) {
+                if (entry.getKey() instanceof String key) {
+                    normalizedFrameResult.put(key, entry.getValue());
+                }
+            }
+
+            normalizedFrameResults.add(normalizedFrameResult);
+        }
+
+        return normalizedFrameResults;
+    }
+
+    private boolean isTrue(
+            Map<String, Object> map,
+            String key
+    ) {
+        return Boolean.TRUE.equals(map.get(key));
+    }
+
+    private Double getDoubleValue(
+            Map<String, Object> map,
+            String key
+    ) {
+        Object value = map.get(key);
+
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+
+        return null;
+    }
+
+    private double getDoubleValueOrZero(
+            Map<String, Object> map,
+            String key
+    ) {
+        Double value = getDoubleValue(map, key);
+
+        return value == null ? 0.0 : value;
     }
 
     private String nullSafeString(String value, String defaultValue) {

@@ -24,14 +24,15 @@ describe("StatusBadge", () => {
     it("uses label when provided", () => {
         render(<StatusBadge status="COMPLETED" label="완료" />);
 
-        const badge = screen.getByText("완료");
+        const badge = screen.getByRole("status", { name: "완료" });
         expect(badge).toHaveClass("status-badge", "completed");
     });
 
     it("renders fallback text and uploaded class for missing status", () => {
         render(<StatusBadge />);
 
-        const badge = screen.getByText("-");
+        const badge = screen.getByRole("status", { name: "상태 없음" });
+        expect(badge).toHaveTextContent("-");
         expect(badge).toHaveClass("status-badge", "uploaded");
     });
 
@@ -40,5 +41,11 @@ describe("StatusBadge", () => {
 
         const badge = screen.getByText("UNKNOWN");
         expect(badge).toHaveClass("status-badge", "uploaded");
+    });
+
+    it("exposes the visible status text as a status label", () => {
+        render(<StatusBadge status="COMPLETED" />);
+
+        expect(screen.getByRole("status", { name: "COMPLETED" })).toBeInTheDocument();
     });
 });

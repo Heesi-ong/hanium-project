@@ -11,7 +11,15 @@ function StateMessage({ type = "info", children }) {
         info: "polling-text",
     }[type] || "polling-text";
 
-    return <div className={className}>{children}</div>;
+    const liveRegionProps = ["error", "failure"].includes(type)
+        ? { role: "alert" }
+        : { role: "status", "aria-live": "polite" };
+
+    return (
+        <div className={className} {...liveRegionProps}>
+            {children}
+        </div>
+    );
 }
 
 export default StateMessage;

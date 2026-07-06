@@ -484,7 +484,14 @@ function UploadPage() {
 
                                 {(running || polling) && (
                                     <div className="progress-bar-wrap">
-                                        <div className="progress-bar-track">
+                                        <div
+                                            className="progress-bar-track"
+                                            role="progressbar"
+                                            aria-valuenow={progress?.percent ?? 0}
+                                            aria-valuemin={0}
+                                            aria-valuemax={100}
+                                            aria-label="분석 진행률"
+                                        >
                                             <div
                                                 className="progress-bar-fill"
                                                 style={{ width: `${progress?.percent ?? 0}%` }}

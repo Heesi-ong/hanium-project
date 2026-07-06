@@ -315,6 +315,13 @@ pre {
   line-height: 1.7;
 }
 
+.notable-moment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .page-header {
   padding: 12px 0 4px;
 }

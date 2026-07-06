@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getVideoAccessToken } from "../../api/analysisApi";
 import { API_BASE_URL } from "../../api/apiClient";
 import {
@@ -8,8 +8,10 @@ import {
 } from "../../api/errorUtils";
 import EmptyState from "../EmptyState";
 import StateMessage from "../StateMessage";
+import { formatTimestamp } from "./resultDetailFormatters";
 
-function VideoPlayerSection({ jobId }) {
+function VideoPlayerSection({ jobId, notableMoments = [] }) {
+    const videoRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [videoUrl, setVideoUrl] = useState("");
     const [error, setError] = useState("");
@@ -73,6 +75,19 @@ function VideoPlayerSection({ jobId }) {
         };
     }, [jobId]);
 
+    function handleSeekToMoment(timestampSec) {
+        if (!videoRef.current) {
+            return;
+        }
+
+        videoRef.current.currentTime = timestampSec;
+
+        const playResult = videoRef.current.play();
+        if (playResult?.catch) {
+            playResult.catch(() => {});
+        }
+    }
+
     if (loading) {
         return <EmptyState title="영상을 불러오는 중입니다." />;
     }
@@ -95,11 +110,26 @@ function VideoPlayerSection({ jobId }) {
         <article className="detail-card wide">
             <h2>업로드 영상</h2>
             <video
+                ref={videoRef}
                 controls
                 preload="metadata"
                 src={videoUrl}
                 style={{ width: "100%", borderRadius: 16 }}
             />
+            {notableMoments.length > 0 && (
+                <div className="notable-moment-list">
+                    {notableMoments.map((moment) => (
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            key={`${moment.category}-${moment.timestampSec}`}
+                            onClick={() => handleSeekToMoment(moment.timestampSec)}
+                        >
+                            {formatTimestamp(moment.timestampSec)} · {moment.label}
+                        </button>
+                    ))}
+                </div>
+            )}
         </article>
     );
 }

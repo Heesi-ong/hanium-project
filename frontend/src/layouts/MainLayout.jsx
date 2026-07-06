@@ -50,6 +50,15 @@ function MainLayout() {
                             계정
                         </NavLink>
 
+                        <NavLink
+                            to="/status"
+                            className={({ isActive }) =>
+                                isActive ? "nav-link active" : "nav-link"
+                            }
+                        >
+                            시스템 상태
+                        </NavLink>
+
                         <span className="nav-link">
                             {user?.email || "사용자"}
                         </span>

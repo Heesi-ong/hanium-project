@@ -1,114 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
-import StateMessage from "../components/StateMessage";
-import { engineHealthCheck, healthCheck } from "../api/analysisApi";
 
 function HomePage() {
-    const [backendHealth, setBackendHealth] = useState(null);
-    const [engineHealth, setEngineHealth] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
-
-    useEffect(() => {
-        loadHealthStatus();
-    }, []);
-
-    async function loadHealthStatus() {
-        try {
-            setLoading(true);
-            setError("");
-
-            const [backendResponse, engineResponse] = await Promise.all([
-                healthCheck(),
-                engineHealthCheck(),
-            ]);
-
-            setBackendHealth(backendResponse.data);
-            setEngineHealth(engineResponse.data);
-        } catch (requestError) {
-            setError(
-                requestError.message ||
-                "서버 상태를 확인하는 중 오류가 발생했습니다."
-            );
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    function getBackendStatus() {
-        if (!backendHealth) {
-            return "unknown";
-        }
-
-        return backendHealth.status || "unknown";
-    }
-
-    function getEngineStatus(engineName) {
-        const health = engineHealth?.[engineName]?.health;
-
-        if (!health) {
-            return "unknown";
-        }
-
-        return health.status || "unknown";
-    }
-
-    function getEngineReachable(engineName) {
-        const health = engineHealth?.[engineName]?.health;
-
-        if (!health) {
-            return false;
-        }
-
-        return health.reachable === true || health.status === "up";
-    }
-
-    function getStatusClassName(status) {
-        if (status === "ok" || status === "up") {
-            return "engine-status-badge up";
-        }
-
-        if (status === "down") {
-            return "engine-status-badge down";
-        }
-
-        return "engine-status-badge unknown";
-    }
-
-    function renderEngineCard({
-                                  title,
-                                  description,
-                                  status,
-                                  baseUrl,
-                                  reachable,
-                              }) {
-        return (
-            <article className="engine-card">
-                <div className="engine-card-header">
-                    <div>
-                        <h3>{title}</h3>
-                        <p>{description}</p>
-                    </div>
-
-                    <span className={getStatusClassName(status)}>{status}</span>
-                </div>
-
-                <div className="engine-meta">
-                    <div>
-                        <span>Base URL</span>
-                        <strong>{baseUrl || "-"}</strong>
-                    </div>
-
-                    <div>
-                        <span>Reachable</span>
-                        <strong>{reachable ? "true" : "false"}</strong>
-                    </div>
-                </div>
-            </article>
-        );
-    }
-
     return (
         <section className="page-section">
             <div className="hero-card">
@@ -136,6 +29,70 @@ function HomePage() {
                 </div>
             </div>
 
+            <section>
+                <PageHeader
+                    eyebrow="How it works"
+                    title="이용 방법"
+                    description="발표 영상을 업로드하고 분석을 실행하면, 상태와 진행률을 확인한 뒤 결과 상세 화면에서 지표와 피드백을 확인합니다."
+                />
+
+                <div className="how-it-works-grid">
+                    <article className="step-card">
+                        <span className="step-number">1</span>
+                        <h3>영상 업로드</h3>
+                        <p>mp4, mov, avi, mkv 형식의 발표 영상을 선택해 분석 작업을 생성합니다.</p>
+                    </article>
+
+                    <article className="step-card">
+                        <span className="step-number">2</span>
+                        <h3>자동 분석 진행</h3>
+                        <p>기본 분석 엔진이 정량 지표를 추출하고, 선택한 옵션에 따라 Video LLM과 OpenAI 피드백 단계가 이어집니다.</p>
+                    </article>
+
+                    <article className="step-card">
+                        <span className="step-number">3</span>
+                        <h3>결과 확인</h3>
+                        <p>상태와 진행률을 폴링한 뒤 완료되면 자세, 시선, 음성, 제스처, 표정 점수를 결과 화면에서 확인합니다.</p>
+                    </article>
+
+                    <article className="step-card">
+                        <span className="step-number">4</span>
+                        <h3>AI 피드백 확인</h3>
+                        <p>분석 결과를 바탕으로 생성된 코칭 문장과 연습 계획, 타임라인 피드백을 함께 검토합니다.</p>
+                    </article>
+                </div>
+            </section>
+
+            <section>
+                <PageHeader
+                    eyebrow="Analysis Coverage"
+                    title="분석 항목 상세 소개"
+                    description="결과 상세 화면에서 확인할 수 있는 실제 분석 지표를 기준으로 구성했습니다."
+                />
+
+                <div className="analysis-detail-grid">
+                    <article className="analysis-detail-card">
+                        <h3>자세·제스처</h3>
+                        <p>자세 점수, 어깨 균형, 자세 검출률과 함께 제스처 비율, 손 검출률, 손목 움직임을 확인합니다.</p>
+                    </article>
+
+                    <article className="analysis-detail-card">
+                        <h3>시선·얼굴</h3>
+                        <p>얼굴 검출률, 카메라 응시 비율, 아이컨택 수준과 프레임별 시선 분석 결과를 제공합니다.</p>
+                    </article>
+
+                    <article className="analysis-detail-card">
+                        <h3>표정·감정</h3>
+                        <p>표정 점수, 표현력 원점수, 표정 다양성 점수와 주요 표정 상태 집계를 함께 보여줍니다.</p>
+                    </article>
+
+                    <article className="analysis-detail-card">
+                        <h3>음성·발화</h3>
+                        <p>WPM, 단어 수, 발화·침묵 시간, 침묵 비율, 필러 표현과 STT transcript를 확인합니다.</p>
+                    </article>
+                </div>
+            </section>
+
             <div className="feature-grid">
                 <article className="feature-card">
                     <h3>기본 분석 엔진</h3>
@@ -152,53 +109,6 @@ function HomePage() {
                     <p>분석 결과를 축약해 사용자가 이해하기 쉬운 코칭 문장으로 변환합니다.</p>
                 </article>
             </div>
-
-            <section className="engine-dashboard">
-                <div className="section-title-row">
-                    <PageHeader
-                        eyebrow="System Status"
-                        title="서버 및 엔진 상태"
-                        description="백엔드, 기본 분석 엔진, Video LLM 엔진의 연결 상태를 확인합니다."
-                    />
-
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={loadHealthStatus}
-                        disabled={loading}
-                    >
-                        {loading ? "확인 중..." : "상태 새로고침"}
-                    </button>
-                </div>
-
-                <StateMessage type="error">{error}</StateMessage>
-
-                <div className="engine-grid">
-                    {renderEngineCard({
-                        title: "Spring Boot Backend",
-                        description: "업로드, 분석 상태 관리, 결과 저장/조회 API를 담당합니다.",
-                        status: getBackendStatus(),
-                        baseUrl: "http://localhost:8080",
-                        reachable: getBackendStatus() === "ok",
-                    })}
-
-                    {renderEngineCard({
-                        title: "Analysis Engine",
-                        description: "음성, 자세, 시선, 필러 표현 등 기본 분석을 담당합니다.",
-                        status: getEngineStatus("analysisEngine"),
-                        baseUrl: engineHealth?.analysisEngine?.baseUrl,
-                        reachable: getEngineReachable("analysisEngine"),
-                    })}
-
-                    {renderEngineCard({
-                        title: "Video LLM Engine",
-                        description: "영상 흐름 기반의 시각적 발표 태도 분석을 담당합니다.",
-                        status: getEngineStatus("videoLlmEngine"),
-                        baseUrl: engineHealth?.videoLlmEngine?.baseUrl,
-                        reachable: getEngineReachable("videoLlmEngine"),
-                    })}
-                </div>
-            </section>
         </section>
     );
 }

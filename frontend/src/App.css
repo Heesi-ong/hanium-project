@@ -247,7 +247,9 @@ pre {
 .detail-card,
 .engine-dashboard,
 .engine-card,
-.metric-card {
+.metric-card,
+.step-card,
+.analysis-detail-card {
   border: 1px solid #dbe4f0;
   border-radius: 22px;
   background: #ffffff;
@@ -258,7 +260,35 @@ pre {
   padding: 28px;
 }
 
+.how-it-works-grid,
+.analysis-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.step-card,
+.analysis-detail-card {
+  padding: 24px;
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 18px;
+  border-radius: 999px;
+  background: #1e3a8a;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+}
+
 .feature-card h3,
+.step-card h3,
+.analysis-detail-card h3,
 .placeholder-card h2,
 .upload-card h2,
 .result-list-card h2,
@@ -271,6 +301,8 @@ pre {
 }
 
 .feature-card p,
+.step-card p,
+.analysis-detail-card p,
 .placeholder-card p,
 .page-header p,
 .detail-header-card p,
@@ -1336,6 +1368,8 @@ pre {
   }
 
   .feature-grid,
+  .how-it-works-grid,
+  .analysis-detail-grid,
   .upload-grid {
     grid-template-columns: 1fr;
   }

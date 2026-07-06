@@ -396,3 +396,77 @@ CLAUDE.md의 서비스 가능 수준 10개 기준별 평가입니다. 산정 방
 5. **S1 JWT localStorage → HttpOnly 쿠키 전환 검토**: 만료 시간 단축과 로그아웃 블랙리스트는 완화책이며, 토큰 저장 위치 자체는 아직 localStorage입니다.
 6. **README OpenAI 비용 정책 갱신**: `README.md:1004-1010`의 "OpenAI 호출 및 비용 제어 정책"은 timeout/fallback/usage 로그만 설명하고, 새 월간 예산 상한과 Prometheus/Grafana 관측 항목을 아직 언급하지 않습니다.
 7. **분산 큐/공유 스토리지**: 단일 호스트/단일 backend 전제에서는 유지 가능하지만, 다중 인스턴스 확장 시 job 분배와 파일 공유 구조가 여전히 병목입니다.
+
+---
+
+## 7. 업데이트: 2026-07-06 저녁 현재 상태
+
+2026-07-06 오전 업데이트 이후 프론트 랜딩 페이지 개편, Docker 포트 충돌 회피, Apple Silicon(aarch64) Docker 호환성 수정, 그리고 최초의 실제 compose 기반 E2E 실행 검증이 추가로 완료됐습니다. 아래 내용은 현재 파일을 다시 열어 확인한 코드 근거와 2026-07-06 저녁 실제 실행 결과를 기준으로 합니다. 기존 1~6번 섹션은 당시 스냅샷으로 보존합니다.
+
+### 7.1 신규 반영 항목 판정
+
+재확인: 6.3에 있던 "README OpenAI 비용 정책 갱신" 항목은 `README.md:1014`에서 이미 커밋 `b337860`으로 해결되어 있었음을 재확인했습니다(7.3에서 제거).
+
+**랜딩 페이지 개편 + 시스템 상태 페이지 분리 (커밋 862075f)**
+- **판정: 해결(UX 개선, 10개 기준 진행률에는 직접 반영하지 않음)**
+- `HomePage.jsx:32-63`은 "이용 방법" 섹션을 추가해 영상 업로드 → 자동 분석 진행 → 결과 확인 → AI 피드백 확인 흐름을 설명합니다.
+- `HomePage.jsx:66-94`는 실제 결과 상세 화면에서 제공하는 자세·제스처, 시선·얼굴, 표정·감정, 음성·발화 지표만 묶어 "분석 항목 상세 소개"를 제공합니다.
+- 기존 상태 대시보드는 `StatusPage.jsx:16-35`의 `healthCheck()`/`engineHealthCheck()` 호출 로직과 `StatusPage.jsx:111-158`의 엔진 카드 UI로 분리됐습니다.
+- `/status`는 `AppRoutes.jsx:19-27`의 ProtectedRoute + MainLayout 하위에 등록되어 로그인 사용자만 접근할 수 있고, `MainLayout.jsx:53-60`에 "시스템 상태" 네비게이션 링크가 추가됐습니다.
+- 의미: 서비스화 10개 기준을 직접 올리는 기능은 아니지만, 로그인 후 홈 화면이 상태 대시보드 중심에서 실제 사용 흐름/분석 항목 소개 중심으로 바뀌어 프론트 콘텐츠 품질이 개선됐습니다.
+
+**analysis-engine/video-llm-engine 호스트 포트 env var화 (커밋 94a3cc8)**
+- **판정: 해결**
+- `docker-compose.yml:99`는 analysis-engine 호스트 포트를 `ANALYSIS_ENGINE_PORT`로, `docker-compose.yml:118`은 video-llm-engine 호스트 포트를 `VIDEO_LLM_ENGINE_PORT`로 설정 가능하게 바꿨습니다.
+- `.env.example:20-22`는 두 포트 변수를 문서화하고, 로컬 포트 충돌 시 값을 바꿔 우회할 수 있음을 명시합니다.
+- 컨테이너 내부 포트와 backend의 서비스 간 통신 URL은 바꾸지 않았습니다. 즉 Docker 네트워크 내부 통신은 `analysis-engine:8001`, `video-llm-engine:8002` 구조를 유지하면서, 호스트 노출 포트만 환경변수로 조정할 수 있게 됐습니다.
+- 의미: 로컬에서 8001/8002를 다른 프로세스나 기존 Docker 프록시가 점유해도 무관한 프로세스를 종료하지 않고 `.env`로 우회할 수 있습니다.
+
+**analysis-engine aarch64 Docker 호환성 수정 (커밋 91535b3)**
+- **판정: 해결**
+- `analysis-engine/Dockerfile:1`은 base image를 `python:3.12-slim`으로 사용합니다.
+- `analysis-engine/requirements.txt:5`는 `audioop-lts`를 Python 3.13 이상에서만 설치하도록 제한합니다.
+- `analysis-engine/requirements.txt:27-37`은 Python 3.12 경로에서 aarch64 wheel이 있는 `mediapipe==0.10.18`, `numpy==1.26.4`, `opencv-*==4.10.0.84`를 사용하고, Python 3.13 이상 경로는 기존 최신 계열을 유지합니다.
+- `analysis-engine/requirements.txt:54-62`도 Python 3.12/3.13 경로에 맞춰 `scipy`, `standard-*` 패키지를 분리합니다.
+- 의미: CI의 amd64/Python 3.13 경로를 보존하면서, Apple Silicon Docker Desktop(aarch64)에서 analysis-engine 이미지가 실제로 빌드되는 경로가 생겼습니다.
+
+**E2E 실행 검증**
+- **판정: 해결**
+- 2026-07-06 저녁 `docker compose up --build -d`로 mysql, redis, analysis-engine, video-llm-engine, backend, frontend, backup 스택을 실제 기동했습니다.
+- `docker compose ps` 기준 backend와 mysql은 healthy였고, analysis-engine/video-llm-engine/frontend/redis/backup도 Up 상태였습니다. 최종 포트는 mysql `127.0.0.1:3308->3306`, analysis-engine `127.0.0.1:8001->8001`, video-llm-engine `127.0.0.1:8002->8002`로 확인됐습니다.
+- 실제 HTTP 흐름은 signup `201` → login `200`(accessToken 발급) → upload `200`(`jobId=20260706121849-866b653b`) → run `200` → status polling `COMPLETED` → progress `100%` → result `200`까지 완료됐습니다.
+- 결과 요약은 `totalScore=51`, `postureScore=100`, `speechScore=72`, `gestureScore=69`, `visualAnalysis.generationMode=MOCK`, `feedback.generationMode=MOCK`였습니다.
+- 두 번째 계정으로 첫 번째 계정의 result/status/delete를 시도했을 때 모두 `403 ANALYSIS_JOB_ACCESS_DENIED`가 반환되어 소유권 검증도 실제 HTTP로 확인됐습니다.
+- backend 컨테이너 내부 `/actuator/prometheus`에서 `analysis_job_completed_total{application="presentation-coaching-backend"} 1.0`과 `analysis_job_duration_seconds_count{...,outcome="completed"} 1`이 확인되어, 실제 완료 job이 메트릭에 반영됐습니다.
+- analysis-engine 로그에는 모델 프리로딩 완료(`whisper=base, pose=loaded, face=loaded`)와 9단계 기본 분석 완료, 총점 51점이 기록됐습니다.
+- 한계: 이번 E2E는 `OPENAI_ENABLED=false`, `useOpenAi=false`, `VIDEO_LLM_ENABLED=false` 조건에서 실행됐습니다. 따라서 OpenAI 실제 API 호출 경로와 Video LLM 실제 모델 경로는 여전히 검증되지 않았습니다.
+
+### 7.2 서비스화 진행률 수치화 갱신
+
+| # | 기준 | 07-06(오전) | 07-06(저녁) | 변경 근거 |
+|---|---|---:|---:|---|
+| 1 | 빌드/CI 정상 동작 | 93% | 93% | 이번 변경과 직접 관련 없음. CI 자체 추가 변경은 없음 |
+| 2 | 4개 실행/배포 단위 분리 | 95% | **97%** | analysis-engine Docker가 aarch64 환경에서도 실제 빌드되고, 전체 compose 스택 기동까지 확인됨. 근거: `analysis-engine/Dockerfile:1`, `requirements.txt:27-37`, 실제 `docker compose up --build -d` 성공 |
+| 3 | local/dev/prod 분리 + 환경변수 | 95% | 95% | 이번 변경과 직접 관련 없음. 다만 엔진 호스트 포트 env var화는 로컬 운용성 개선으로 기록 |
+| 4 | 운영 DB + 마이그레이션 | 88% | 88% | 이번 변경과 직접 관련 없음. 백업 복구 리허설은 여전히 미완 |
+| 5 | 비동기 job 구조 | 80% | **84%** | 업로드→run→status/progress polling→COMPLETED까지 실제 비동기 job 흐름이 처음으로 compose 환경에서 검증됨. 구조는 여전히 프로세스 내부 스레드풀 기반이라 분산 큐 감점은 유지 |
+| 6 | 프론트-백 API 계약 일치 | 90% | 90% | 이번 변경과 직접 관련 없음. 정적 계약 테스트 외 변경 없음 |
+| 7 | 인증/권한/소유권/파일 보호 | 90% | **92%** | 두 번째 사용자로 첫 번째 사용자의 result/status/delete 접근 시 모두 `403 ANALYSIS_JOB_ACCESS_DENIED`가 실제 HTTP로 확인됨 |
+| 8 | Video LLM mock 대체 | 20% | 20% | 이번 E2E에서도 `generationMode=MOCK`으로 확인됨. 실제 모델 연동은 여전히 미완 |
+| 9 | OpenAI 정책 | 92% | 92% | 이번 E2E는 `useOpenAi=false`라 실제 OpenAI 경로 검증과 직접 관련 없음 |
+| 10 | 테스트/로그/모니터링/백업/정리 | 90% | **94%** | 실제 E2E 완료, backend 구조화 JSON 로그의 `jobId`/`requestId` 확인, `/actuator/prometheus`의 `analysis_job_completed_total=1.0` 확인으로 정적 관측성 구성이 실제 런타임에서 동작함을 검증 |
+
+**종합: 약 85% (07-06 오전 약 83% → +2%p, 10개 기준 단순 평균)**
+
+해석: 이번 상승분은 "기능 추가"보다 "실제 실행 검증"에서 나왔습니다. 2026-07-05/06 오전까지 가장 큰 확인 한계였던 compose 기반 E2E가 처음으로 완료되면서, 기준 2/5/7/10의 신뢰도가 올라갔습니다. 반면 Video LLM 실제 모델, OpenAI 실제 API, 백업 복구 리허설, 분산 큐/공유 스토리지는 여전히 남아 있어 점수를 크게 부풀리지는 않았습니다.
+
+### 7.3 권장 처리 순서 갱신 (2026-07-06 저녁)
+
+1. **백업 복구 리허설**: 백업 생성/무결성 검사는 있지만, 실제 MySQL 복원 절차와 실패 시 운영 대응은 아직 검증되지 않았습니다.
+2. **Video LLM 실제 모델 연동**: 이번 E2E에서도 `generationMode=MOCK`으로 확인됐습니다. 실제 모델/외부 벤더 호출은 여전히 최대 기능 갭입니다.
+3. **Alertmanager SMTP 실값 설정 + 테스트 알림 발송 확인**: Alertmanager 연동과 규칙은 있으나 실제 SMTP credential/수신 테스트는 별도입니다.
+4. **S1 JWT localStorage → HttpOnly 쿠키 전환 검토**: 만료 시간 단축과 로그아웃 블랙리스트는 완화책이며, 토큰 저장 위치 자체는 아직 localStorage입니다.
+5. **분산 큐/공유 스토리지**: 단일 호스트/단일 backend 전제에서는 유지 가능하지만, 다중 인스턴스 확장 시 job 분배와 파일 공유 구조가 여전히 병목입니다.
+6. **프론트 폴더/컴포넌트 구조 재편**: 이번 Unit은 HomePage 콘텐츠와 StatusPage 분리까지만 수행했습니다. pages/components 구조 정리와 공통 섹션 컴포넌트 추출은 별도 과제로 남아 있습니다.
+
+완료 처리: 6.3의 1번이었던 **E2E 실행 검증**은 2026-07-06 저녁 실제 compose 기반 실행으로 해결됐습니다.

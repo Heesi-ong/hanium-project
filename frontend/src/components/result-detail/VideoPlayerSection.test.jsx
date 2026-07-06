@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getVideoAccessToken } from "../../api/analysisApi";
 import VideoPlayerSection from "./VideoPlayerSection";
@@ -7,9 +7,17 @@ vi.mock("../../api/analysisApi", () => ({
     getVideoAccessToken: vi.fn(),
 }));
 
+const playMock = vi.fn().mockResolvedValue(undefined);
+
+Object.defineProperty(window.HTMLMediaElement.prototype, "play", {
+    configurable: true,
+    value: playMock,
+});
+
 describe("VideoPlayerSection", () => {
     beforeEach(() => {
         getVideoAccessToken.mockReset();
+        playMock.mockClear();
     });
 
     it("renders video with an access token URL", async () => {
@@ -62,5 +70,45 @@ describe("VideoPlayerSection", () => {
         expect(
             await screen.findByText("서버와 통신할 수 없습니다.")
         ).toBeInTheDocument();
+    });
+
+    it("seeks to a notable moment and starts playback", async () => {
+        const jobId = "20260707090000-moment-job";
+        getVideoAccessToken.mockResolvedValue({
+            data: {
+                token: "video-token",
+                expiresInSeconds: 300,
+            },
+        });
+
+        const { container } = render(
+            <VideoPlayerSection
+                jobId={jobId}
+                notableMoments={[
+                    {
+                        category: "posture",
+                        label: "자세 균형이 가장 흔들린 순간",
+                        timestampSec: 83,
+                        value: 37,
+                    },
+                    {
+                        category: "gesture",
+                        label: "제스처가 가장 활발했던 순간",
+                        timestampSec: 125,
+                        value: 7,
+                    },
+                ]}
+            />
+        );
+
+        const postureMomentButton = await screen.findByRole("button", {
+            name: "01:23 · 자세 균형이 가장 흔들린 순간",
+        });
+        const video = container.querySelector("video");
+
+        fireEvent.click(postureMomentButton);
+
+        expect(video.currentTime).toBe(83);
+        expect(playMock).toHaveBeenCalledTimes(1);
     });
 });

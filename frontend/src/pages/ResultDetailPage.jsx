@@ -70,6 +70,7 @@ function ResultDetailPage() {
     const feedback = result.feedback || {};
     const practicePlan = result.practicePlan || [];
     const timelineFeedback = result.timelineFeedback || [];
+    const notableMoments = result.notableMoments || [];
     const pipeline = result.pipeline || {};
 
     const videoInfo = basicAnalysis.videoInfo || {};
@@ -679,7 +680,10 @@ function ResultDetailPage() {
                 <EmotionDoughnutChart emotionCounts={emotionCounts} />
             </div>
 
-            <VideoPlayerSection jobId={jobId} />
+            <VideoPlayerSection
+                jobId={jobId}
+                notableMoments={notableMoments}
+            />
 
             <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
 

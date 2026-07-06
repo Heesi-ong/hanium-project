@@ -26,6 +26,24 @@ export function formatFileSize(fileSize) {
     return `${(fileSize / 1024 / 1024).toFixed(2)}MB`;
 }
 
+export function formatTimestamp(seconds) {
+    if (
+        seconds === null ||
+        seconds === undefined ||
+        typeof seconds !== "number" ||
+        Number.isNaN(seconds) ||
+        seconds < 0
+    ) {
+        return "-";
+    }
+
+    const normalizedSeconds = Math.floor(seconds);
+    const minutes = Math.floor(normalizedSeconds / 60);
+    const remainingSeconds = normalizedSeconds % 60;
+
+    return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
 export function formatBoolean(value) {
     if (value === true) {
         return "예";

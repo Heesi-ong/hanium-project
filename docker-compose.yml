@@ -96,7 +96,7 @@ services:
       INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
       LOG_DIR: /storage/logs
     ports:
-      - "127.0.0.1:8001:8001"
+      - "127.0.0.1:${ANALYSIS_ENGINE_PORT:-8001}:8001"
     volumes:
       - ./storage:/storage
 
@@ -115,7 +115,7 @@ services:
       VIDEO_LLM_ENABLED: ${VIDEO_LLM_ENABLED:-false}
       LOG_DIR: /storage/logs
     ports:
-      - "127.0.0.1:8002:8002"
+      - "127.0.0.1:${VIDEO_LLM_ENGINE_PORT:-8002}:8002"
     volumes:
       - ./storage:/storage
 

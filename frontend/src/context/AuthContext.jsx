@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { login as loginRequest, logout as logoutRequest } from "../api/authApi";
+import { useToast } from "./ToastContext";
 
 const AUTH_STORAGE_KEY = "presentationCoachAuth";
 
@@ -45,8 +46,9 @@ function clearStoredAuth() {
 
 export function AuthProvider({ children }) {
     const [authState, setAuthState] = useState(readStoredAuth);
+    const { showToast } = useToast();
 
-    async function login(credentials) {
+    const login = useCallback(async (credentials) => {
         const response = await loginRequest(credentials);
         const responseData = response.data;
 
@@ -62,9 +64,9 @@ export function AuthProvider({ children }) {
         setAuthState(nextAuthState);
 
         return responseData;
-    }
+    }, []);
 
-    async function logout() {
+    const logout = useCallback(async ({ silent = false } = {}) => {
         try {
             await logoutRequest();
         } catch {
@@ -75,8 +77,12 @@ export function AuthProvider({ children }) {
                 token: "",
                 user: null,
             });
+
+            if (!silent) {
+                showToast("로그아웃되었습니다.", "success");
+            }
         }
-    }
+    }, [showToast]);
 
     const value = useMemo(
         () => ({
@@ -86,7 +92,7 @@ export function AuthProvider({ children }) {
             login,
             logout,
         }),
-        [authState]
+        [authState, login, logout]
     );
 
     return (

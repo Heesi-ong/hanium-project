@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider, useAuth } from "./AuthContext";
+import { ToastProvider } from "./ToastContext";
+import ToastContainer from "../components/ToastContainer";
 
 const apiMock = vi.hoisted(() => ({
     login: vi.fn(),
@@ -24,15 +26,21 @@ function AuthStatusProbe() {
             <button type="button" onClick={logout}>
                 로그아웃
             </button>
+            <button type="button" onClick={() => logout({ silent: true })}>
+                조용히 로그아웃
+            </button>
         </div>
     );
 }
 
 function renderAuthProvider() {
     return render(
-        <AuthProvider>
-            <AuthStatusProbe />
-        </AuthProvider>
+        <ToastProvider>
+            <AuthProvider>
+                <AuthStatusProbe />
+            </AuthProvider>
+            <ToastContainer />
+        </ToastProvider>
     );
 }
 
@@ -65,6 +73,7 @@ describe("AuthContext logout", () => {
         await waitFor(() => {
             expect(apiMock.logout).toHaveBeenCalled();
             expect(screen.getByText("로그아웃됨")).toBeInTheDocument();
+            expect(screen.getByText("로그아웃되었습니다.")).toBeInTheDocument();
         });
         expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
     });
@@ -81,6 +90,21 @@ describe("AuthContext logout", () => {
             expect(apiMock.logout).toHaveBeenCalled();
             expect(screen.getByText("로그아웃됨")).toBeInTheDocument();
         });
+        expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
+    });
+
+    it("does not show logout toast when silent option is enabled", async () => {
+        apiMock.logout.mockResolvedValue({ success: true });
+
+        renderAuthProvider();
+
+        fireEvent.click(screen.getByRole("button", { name: "조용히 로그아웃" }));
+
+        await waitFor(() => {
+            expect(apiMock.logout).toHaveBeenCalled();
+            expect(screen.getByText("로그아웃됨")).toBeInTheDocument();
+        });
+        expect(screen.queryByText("로그아웃되었습니다.")).not.toBeInTheDocument();
         expect(localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
     });
 });

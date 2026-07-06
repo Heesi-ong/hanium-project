@@ -4,6 +4,7 @@ import { withdrawAccount } from "../api/authApi";
 import { getErrorMessage } from "../api/errorUtils";
 import StateMessage from "../components/StateMessage";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 
 const inputStyle = {
     width: "100%",
@@ -19,6 +20,7 @@ const inputStyle = {
 function AccountPage() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
+    const { showToast } = useToast();
 
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
@@ -40,7 +42,8 @@ function AccountPage() {
             setError("");
 
             await withdrawAccount(password);
-            await logout();
+            await logout({ silent: true });
+            showToast("회원탈퇴가 완료되었습니다.", "success");
             navigate("/login", { replace: true });
         } catch (requestError) {
             setError(getErrorMessage(

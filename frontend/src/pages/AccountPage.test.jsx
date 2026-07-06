@@ -13,6 +13,10 @@ const apiMock = vi.hoisted(() => ({
     withdrawAccount: vi.fn(),
 }));
 
+const toastMock = vi.hoisted(() => ({
+    showToast: vi.fn(),
+}));
+
 vi.mock("../context/AuthContext", () => ({
     useAuth: () => ({
         user: authMock.user,
@@ -22,6 +26,12 @@ vi.mock("../context/AuthContext", () => ({
 
 vi.mock("../api/authApi", () => ({
     withdrawAccount: apiMock.withdrawAccount,
+}));
+
+vi.mock("../context/ToastContext", () => ({
+    useToast: () => ({
+        showToast: toastMock.showToast,
+    }),
 }));
 
 function renderAccountPage() {
@@ -39,6 +49,7 @@ describe("AccountPage", () => {
     beforeEach(() => {
         authMock.logout.mockReset();
         apiMock.withdrawAccount.mockReset();
+        toastMock.showToast.mockReset();
         vi.spyOn(window, "confirm").mockReturnValue(true);
     });
 
@@ -74,7 +85,11 @@ describe("AccountPage", () => {
 
         await waitFor(() => {
             expect(apiMock.withdrawAccount).toHaveBeenCalledWith("password123");
-            expect(authMock.logout).toHaveBeenCalled();
+            expect(authMock.logout).toHaveBeenCalledWith({ silent: true });
+            expect(toastMock.showToast).toHaveBeenCalledWith(
+                "회원탈퇴가 완료되었습니다.",
+                "success"
+            );
             expect(screen.getByText("로그인 화면")).toBeInTheDocument();
         });
     });

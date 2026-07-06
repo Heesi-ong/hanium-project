@@ -4,6 +4,7 @@ import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
+import { useToast } from "../context/ToastContext";
 import {
     getAnalysisProgress,
     getAnalysisStatus,
@@ -40,6 +41,7 @@ const STATUS_STEP_LABELS = {
 
 function UploadPage() {
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
     const progressTimerRef = useRef(null);
@@ -278,6 +280,7 @@ function UploadPage() {
 
                 if (statusData.status === "COMPLETED") {
                     stopPolling();
+                    showToast("분석이 완료되었습니다.", "success");
                     navigate(`/results/${jobId}`);
                     return;
                 }

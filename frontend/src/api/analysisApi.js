@@ -87,6 +87,13 @@ export async function getResult(jobId) {
     return unwrapApiResponse(response);
 }
 
+export async function getVideoAccessToken(jobId) {
+    const response = await apiClient.post(
+        `/api/results/${jobId}/video-access-token`
+    );
+    return unwrapApiResponse(response);
+}
+
 export async function deleteResult(jobId) {
     const response = await apiClient.delete(`/api/results/${jobId}`);
     return unwrapApiResponse(response);

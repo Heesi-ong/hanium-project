@@ -19,6 +19,7 @@ import ResultSummaryOverview from "../components/result-detail/ResultSummaryOver
 import SttSection from "../components/result-detail/SttSection";
 import TimelineFeedbackSection from "../components/result-detail/TimelineFeedbackSection";
 import VideoInfoSection from "../components/result-detail/VideoInfoSection";
+import VideoPlayerSection from "../components/result-detail/VideoPlayerSection";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import {
@@ -677,6 +678,8 @@ function ResultDetailPage() {
 
                 <EmotionDoughnutChart emotionCounts={emotionCounts} />
             </div>
+
+            <VideoPlayerSection jobId={jobId} />
 
             <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
 

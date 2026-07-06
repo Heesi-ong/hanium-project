@@ -8,11 +8,12 @@ const RUNNING_STATUSES = [
 
 function StatusBadge({ status, label }) {
     const className = getStatusClassName(status);
+    const accessibleLabel = label || status || "상태 없음";
 
     return (
-        <span className={className}>
-      {label || status || "-"}
-    </span>
+        <span className={className} role="status" aria-label={accessibleLabel}>
+            {label || status || "-"}
+        </span>
     );
 }
 

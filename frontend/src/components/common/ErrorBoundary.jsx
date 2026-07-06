@@ -29,7 +29,7 @@ class ErrorBoundary extends Component {
     render() {
         if (this.state.hasError) {
             return (
-                <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                <div role="alert" style={{ padding: "40px 20px", textAlign: "center" }}>
                     <p className="error-message">
                         화면을 표시하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.
                     </p>

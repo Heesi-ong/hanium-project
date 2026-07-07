@@ -28,16 +28,18 @@ function AppRoutes() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
 
-                <Route element={<ProtectedRoute />}>
-                    <Route element={<MainLayout />}>
-                        <Route path="/" element={<HomePage />} />
+                <Route element={<MainLayout />}>
+                    <Route path="/" element={<HomePage />} />
+
+                    <Route element={<ProtectedRoute />}>
                         <Route path="/upload" element={<UploadPage />} />
                         <Route path="/results" element={<ResultListPage />} />
                         <Route path="/results/:jobId" element={<ResultDetailPage />} />
                         <Route path="/account" element={<AccountPage />} />
                         <Route path="/status" element={<StatusPage />} />
-                        <Route path="*" element={<NotFoundPage />} />
                     </Route>
+
+                    <Route path="*" element={<NotFoundPage />} />
                 </Route>
             </Routes>
         </Suspense>

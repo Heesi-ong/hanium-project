@@ -237,19 +237,97 @@ pre {
   gap: 18px;
 }
 
-.feature-card,
-.placeholder-card,
-.upload-card,
-.result-list-card,
-.summary-card,
-.detail-header-card,
-.score-panel,
-.score-card,
-.detail-card,
-.engine-dashboard,
-.engine-card,
-.metric-card,
-.step-card,
+.feature-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.placeholder-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.upload-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.result-list-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.summary-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.detail-header-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.score-panel {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.score-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.detail-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.engine-dashboard {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.engine-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.metric-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
+.step-card {
+  border: 1px solid #dbe4f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+}
+
 .analysis-detail-card {
   border: 1px solid #dbe4f0;
   border-radius: 22px;
@@ -281,7 +359,7 @@ pre {
   height: 34px;
   margin-bottom: 18px;
   border-radius: 999px;
-  background: #1e3a8a;
+  background: #E2704A;
   color: #ffffff;
   font-size: 14px;
   font-weight: 900;
@@ -787,8 +865,8 @@ pre {
 }
 
 .filter-button.active {
-  border-color: #1e3a8a;
-  background: #1e3a8a;
+  border-color: #E2704A;
+  background: #E2704A;
   color: #ffffff;
 }
 
@@ -1247,7 +1325,7 @@ pre {
   width: 38px;
   height: 38px;
   border-radius: 14px;
-  background: #1e3a8a;
+  background: #E2704A;
   color: #ffffff;
   font-weight: 900;
 }
@@ -1264,7 +1342,7 @@ pre {
 
 .timeline-item {
   padding: 18px;
-  border-left: 4px solid #1e3a8a;
+  border-left: 4px solid #E2704A;
   border-radius: 16px;
   background: #f8fafc;
 }

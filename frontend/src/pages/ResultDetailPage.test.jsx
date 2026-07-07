@@ -1,0 +1,119 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+
+import ResultDetailPage from "./ResultDetailPage";
+
+const analysisApiMock = vi.hoisted(() => ({
+    cancelAnalysis: vi.fn(),
+    deleteResult: vi.fn(),
+    getAnalysisStatus: vi.fn(),
+    getResult: vi.fn(),
+    retryAnalysis: vi.fn(),
+}));
+
+vi.mock("../api/analysisApi", () => ({
+    cancelAnalysis: analysisApiMock.cancelAnalysis,
+    deleteResult: analysisApiMock.deleteResult,
+    getAnalysisStatus: analysisApiMock.getAnalysisStatus,
+    getResult: analysisApiMock.getResult,
+    retryAnalysis: analysisApiMock.retryAnalysis,
+}));
+
+vi.mock("../components/chart/AnalysisMetricBarChart", () => ({
+    default: () => <div data-testid="analysis-metric-chart" />,
+}));
+
+vi.mock("../components/chart/EmotionDoughnutChart", () => ({
+    default: () => <div data-testid="emotion-doughnut-chart" />,
+}));
+
+vi.mock("../components/chart/ResultScoreChart", () => ({
+    default: () => <div data-testid="result-score-chart" />,
+}));
+
+vi.mock("../components/result-detail/VideoPlayerSection", () => ({
+    default: () => <div data-testid="video-player-section" />,
+}));
+
+function renderResultDetailPage() {
+    return render(
+        <MemoryRouter initialEntries={["/results/job-print-test"]}>
+            <Routes>
+                <Route path="/results/:jobId" element={<ResultDetailPage />} />
+                <Route path="/results" element={<div>결과 목록</div>} />
+            </Routes>
+        </MemoryRouter>
+    );
+}
+
+function createCompletedResult() {
+    return {
+        data: {
+            result: {
+                status: "COMPLETED",
+                scoreSummary: {
+                    level: "B",
+                    totalScore: 82,
+                    postureScore: 80,
+                    gazeScore: 78,
+                    speechScore: 84,
+                    gestureScore: 79,
+                    expressionScore: 81,
+                },
+                basicAnalysis: {
+                    videoInfo: {},
+                    frame: {},
+                    pose: {},
+                    gesture: {},
+                    audio: {},
+                    filler: {},
+                    face: {},
+                    emotion: {},
+                },
+                visualAnalysis: {},
+                feedback: {},
+                practicePlan: [],
+                timelineFeedback: [],
+                notableMoments: [],
+                pipeline: {},
+            },
+        },
+    };
+}
+
+describe("ResultDetailPage", () => {
+    beforeEach(() => {
+        analysisApiMock.cancelAnalysis.mockReset();
+        analysisApiMock.deleteResult.mockReset();
+        analysisApiMock.getAnalysisStatus.mockReset();
+        analysisApiMock.getResult.mockReset();
+        analysisApiMock.retryAnalysis.mockReset();
+        analysisApiMock.getResult.mockResolvedValue(createCompletedResult());
+
+        Object.defineProperty(window, "print", {
+            configurable: true,
+            value: vi.fn(),
+        });
+    });
+
+    it("calls window.print when the print button is clicked", async () => {
+        renderResultDetailPage();
+
+        const printButton = await screen.findByRole("button", {
+            name: "인쇄 / PDF로 저장",
+        });
+
+        fireEvent.click(printButton);
+
+        expect(window.print).toHaveBeenCalledTimes(1);
+        expect(
+            screen.getByText("AI Presentation Coach — 분석 결과 리포트")
+        ).toBeInTheDocument();
+        expect(screen.getByText(/jobId: job-print-test/)).toBeInTheDocument();
+
+        await waitFor(() => {
+            expect(analysisApiMock.getResult).toHaveBeenCalledWith("job-print-test");
+        });
+    });
+});

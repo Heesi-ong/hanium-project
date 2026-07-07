@@ -560,6 +560,11 @@ function ResultDetailPage() {
 
     return (
         <section className="page-section">
+            <div className="print-only">
+                <p>AI Presentation Coach — 분석 결과 리포트</p>
+                <p>생성일: {new Date().toLocaleString("ko-KR")} · jobId: {jobId}</p>
+            </div>
+
             <div className="detail-header-card">
                 <div>
                     <p className="eyebrow">Result Detail</p>
@@ -569,7 +574,15 @@ function ResultDetailPage() {
                     </p>
                 </div>
 
-                <div className="detail-actions">
+                <div className="detail-actions no-print">
+                    <button
+                        type="button"
+                        className="secondary-button no-print"
+                        onClick={() => window.print()}
+                    >
+                        인쇄 / PDF로 저장
+                    </button>
+
                     <Link to="/results" className="secondary-button">
                         목록으로
                     </Link>
@@ -680,10 +693,12 @@ function ResultDetailPage() {
                 <EmotionDoughnutChart emotionCounts={emotionCounts} />
             </div>
 
-            <VideoPlayerSection
-                jobId={jobId}
-                notableMoments={notableMoments}
-            />
+            <div className="no-print">
+                <VideoPlayerSection
+                    jobId={jobId}
+                    notableMoments={notableMoments}
+                />
+            </div>
 
             <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
 

@@ -1816,3 +1816,28 @@ pre {
   font-size: 12px;
   word-break: break-word;
 }
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .no-print,
+  .app-header,
+  .toast-container {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  .detail-card,
+  .chart-card {
+    break-inside: avoid;
+  }
+}

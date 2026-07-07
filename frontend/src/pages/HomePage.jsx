@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
+import { useAuth } from "../context/AuthContext";
 
 function HomePage() {
+    const { isAuthenticated } = useAuth();
+
     return (
         <section className="page-section">
             <div className="hero-card">
@@ -19,13 +22,27 @@ function HomePage() {
                 </p>
 
                 <div className="hero-actions">
-                    <Link to="/upload" className="primary-button">
-                        영상 업로드 시작
-                    </Link>
+                    {isAuthenticated ? (
+                        <>
+                            <Link to="/upload" className="primary-button">
+                                영상 업로드 시작
+                            </Link>
 
-                    <Link to="/results" className="secondary-button">
-                        분석 결과 보기
-                    </Link>
+                            <Link to="/results" className="secondary-button">
+                                분석 결과 보기
+                            </Link>
+                        </>
+                    ) : (
+                        <>
+                            <Link to="/signup" className="primary-button">
+                                무료로 시작하기
+                            </Link>
+
+                            <Link to="/login" className="secondary-button">
+                                로그인
+                            </Link>
+                        </>
+                    )}
                 </div>
             </div>
 

@@ -5,6 +5,8 @@ import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -50,6 +52,7 @@ public class AnalysisEngineClient {
         }
     }
 
+    @CircuitBreaker(name = "analysis-engine", fallbackMethod = "analyzeFallback")
     public AnalysisEngineResponse analyze(AnalysisEngineRequest request) {
         try {
             return restClient.post()
@@ -64,6 +67,27 @@ public class AnalysisEngineClient {
                     "기본 분석 엔진 호출에 실패했습니다: " + e.getMessage()
             );
         }
+    }
+
+    private AnalysisEngineResponse analyzeFallback(
+            AnalysisEngineRequest request,
+            Throwable throwable
+    ) {
+        if (throwable instanceof CallNotPermittedException) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ENGINE_ERROR,
+                    "기본 분석 엔진이 반복적으로 실패해 일시적으로 호출을 차단했습니다. 잠시 후 다시 시도해주세요."
+            );
+        }
+
+        if (throwable instanceof RuntimeException runtimeException) {
+            throw runtimeException;
+        }
+
+        throw new BusinessException(
+                ErrorCode.ANALYSIS_ENGINE_ERROR,
+                "기본 분석 엔진 호출에 실패했습니다: " + throwable.getMessage()
+        );
     }
 
     public String getBaseUrl() {

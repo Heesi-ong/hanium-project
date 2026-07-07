@@ -28,6 +28,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.3.0'
+    implementation 'io.github.resilience4j:resilience4j-micrometer:2.3.0'
     // 분석 진행률(%) 캐시와 사용자별 비싼 분석 API rate limit 카운터에 사용합니다.
     // Redis INCR/EXPIRE로 여러 backend 인스턴스에서도 동일한 제한을 공유합니다.
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'

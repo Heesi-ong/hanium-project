@@ -162,7 +162,7 @@ pre {
 .page-header h1,
 .detail-header-card h1 {
   margin: 0;
-  color: #0f172a;
+  color: #2B2420;
   font-size: clamp(36px, 6vw, 64px);
   line-height: 1.05;
   letter-spacing: -0.055em;
@@ -266,59 +266,59 @@ pre {
 }
 
 .summary-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .detail-header-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .score-panel {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .score-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .detail-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .engine-dashboard {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .engine-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .metric-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .step-card {
@@ -374,7 +374,7 @@ pre {
 .detail-card h2,
 .section-title-row h2 {
   margin: 0 0 10px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 20px;
   letter-spacing: -0.03em;
 }
@@ -389,7 +389,7 @@ pre {
 .section-title-row p,
 .engine-card p {
   margin: 0;
-  color: #64748b;
+  color: #5C534B;
   font-size: 15px;
   line-height: 1.7;
 }
@@ -457,7 +457,7 @@ pre {
 }
 
 .file-drop-title {
-  color: #0f172a;
+  color: #2B2420;
   font-size: 18px;
   font-weight: 800;
   line-height: 1.5;
@@ -466,7 +466,7 @@ pre {
 
 .file-drop-subtitle {
   margin-top: 8px;
-  color: #64748b;
+  color: #5C534B;
   font-size: 14px;
 }
 
@@ -518,7 +518,7 @@ pre {
 
 .option-row small {
   display: block;
-  color: #64748b;
+  color: #5C534B;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -618,7 +618,7 @@ pre {
   padding: 24px;
   border-radius: 18px;
   background: #f8fafc;
-  color: #64748b;
+  color: #5C534B;
 }
 
 .empty-state p {
@@ -647,13 +647,13 @@ pre {
 
 .result-row span,
 .stored-path span {
-  color: #64748b;
+  color: #5C534B;
   font-size: 14px;
   font-weight: 700;
 }
 
 .result-row strong {
-  color: #0f172a;
+  color: #2B2420;
   font-size: 14px;
   text-align: right;
   word-break: break-all;
@@ -721,7 +721,7 @@ pre {
 
 .pipeline-box h3 {
   margin: 0 0 16px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 16px;
 }
 
@@ -820,7 +820,7 @@ pre {
 
 .summary-card span {
   display: block;
-  color: #64748b;
+  color: #5C534B;
   font-size: 14px;
   font-weight: 800;
 }
@@ -828,7 +828,7 @@ pre {
 .summary-card strong {
   display: block;
   margin-top: 8px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 34px;
   line-height: 1;
   letter-spacing: -0.05em;
@@ -877,7 +877,7 @@ pre {
   border: 1px solid #cbd5e1;
   border-radius: 12px;
   background: #ffffff;
-  color: #0f172a;
+  color: #2B2420;
   outline: none;
 }
 
@@ -931,7 +931,7 @@ pre {
 
 .result-item-title-row h3 {
   margin: 0;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 18px;
   letter-spacing: -0.03em;
   word-break: break-all;
@@ -988,7 +988,7 @@ pre {
 .result-meta-grid span {
   display: block;
   margin-bottom: 4px;
-  color: #64748b;
+  color: #5C534B;
   font-size: 12px;
   font-weight: 800;
 }
@@ -996,7 +996,7 @@ pre {
 .result-meta-grid strong {
   display: block;
   overflow: hidden;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1047,14 +1047,14 @@ pre {
 
 .score-panel-main strong {
   display: block;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 36px;
   letter-spacing: -0.05em;
 }
 
 .score-panel-main p {
   margin: 12px 0 0;
-  color: #64748b;
+  color: #5C534B;
 }
 
 .score-grid {
@@ -1069,7 +1069,7 @@ pre {
 
 .score-card span {
   display: block;
-  color: #64748b;
+  color: #5C534B;
   font-size: 13px;
   font-weight: 900;
 }
@@ -1115,7 +1115,7 @@ pre {
 
 .metric-card span {
   display: block;
-  color: #64748b;
+  color: #5C534B;
   font-size: 13px;
   font-weight: 900;
 }
@@ -1123,7 +1123,7 @@ pre {
 .metric-card strong {
   display: block;
   margin-top: 10px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 24px;
   line-height: 1.1;
   letter-spacing: -0.04em;
@@ -1132,7 +1132,7 @@ pre {
 
 .metric-card p {
   margin: 10px 0 0;
-  color: #64748b;
+  color: #5C534B;
   font-size: 13px;
   line-height: 1.6;
 }
@@ -1163,7 +1163,7 @@ pre {
 
 .pose-frame-table-wrap h3 {
   margin: 0 0 12px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 17px;
 }
 
@@ -1180,14 +1180,14 @@ pre {
 .pose-frame-table td {
   padding: 12px 14px;
   border-bottom: 1px solid #e2e8f0;
-  color: #334155;
+  color: #2B2420;
   font-size: 13px;
   text-align: left;
 }
 
 .pose-frame-table th {
   background: #f8fafc;
-  color: #64748b;
+  color: #5C534B;
   font-weight: 900;
 }
 
@@ -1213,7 +1213,7 @@ pre {
 
 .mini-badge.muted {
   background: #f1f5f9;
-  color: #64748b;
+  color: #5C534B;
 }
 
 .detail-grid {
@@ -1241,7 +1241,7 @@ pre {
 .practice-item h3,
 .timeline-item h3 {
   margin: 0 0 8px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 16px;
 }
 
@@ -1250,7 +1250,7 @@ pre {
 .timeline-item p,
 .muted-text {
   margin: 0;
-  color: #64748b;
+  color: #5C534B;
   font-size: 14px;
   line-height: 1.7;
 }
@@ -1271,7 +1271,7 @@ pre {
 .feedback-columns ul {
   margin: 0;
   padding-left: 18px;
-  color: #334155;
+  color: #2B2420;
   line-height: 1.7;
 }
 
@@ -1291,13 +1291,13 @@ pre {
 }
 
 .key-value-item span {
-  color: #64748b;
+  color: #5C534B;
   font-size: 13px;
   font-weight: 900;
 }
 
 .key-value-item strong {
-  color: #0f172a;
+  color: #2B2420;
   font-size: 14px;
   word-break: break-all;
 }
@@ -1389,7 +1389,7 @@ pre {
 
 .engine-card h3 {
   margin: 0 0 8px;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 18px;
   letter-spacing: -0.03em;
 }
@@ -1437,7 +1437,7 @@ pre {
 .engine-meta span {
   display: block;
   margin-bottom: 4px;
-  color: #64748b;
+  color: #5C534B;
   font-size: 12px;
   font-weight: 900;
 }
@@ -1445,7 +1445,7 @@ pre {
 .engine-meta strong {
   display: block;
   overflow: hidden;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;

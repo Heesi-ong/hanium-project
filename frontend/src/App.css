@@ -4,8 +4,8 @@
 
 body {
   margin: 0;
-  background: #f4f7fb;
-  color: #172033;
+  background: #FAF6F1;
+  color: #2B2420;
   font-family:
           Inter,
           system-ui,
@@ -63,8 +63,8 @@ pre {
   position: sticky;
   top: 0;
   z-index: 20;
-  border-bottom: 1px solid #e2e8f0;
-  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid rgba(43, 36, 32, 0.08);
+  background: rgba(250, 246, 241, 0.9);
   backdrop-filter: blur(12px);
 }
 
@@ -92,14 +92,15 @@ pre {
   width: 34px;
   height: 34px;
   border-radius: 12px;
-  background: #1e3a8a;
-  color: #ffffff;
+  background: #E2704A;
+  color: #FAF6F1;
   font-size: 14px;
 }
 
 .brand-text {
   font-size: 18px;
   letter-spacing: -0.02em;
+  color: #2B2420;
 }
 
 .nav-menu {
@@ -111,19 +112,19 @@ pre {
 .nav-link {
   padding: 10px 14px;
   border-radius: 10px;
-  color: #64748b;
+  color: #5C534B;
   font-size: 14px;
   font-weight: 700;
 }
 
 .nav-link:hover {
-  background: #f1f5f9;
-  color: #1e293b;
+  background: rgba(226, 112, 74, 0.12);
+  color: #2B2420;
 }
 
 .nav-link.active {
-  background: #1e3a8a;
-  color: #ffffff;
+  background: #E2704A;
+  color: #FAF6F1;
 }
 
 .app-main {
@@ -203,22 +204,22 @@ pre {
 }
 
 .primary-button {
-  background: #1e3a8a;
-  color: #ffffff;
+  background: #2B2420;
+  color: #FAF6F1;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: #3F342D;
 }
 
 .secondary-button {
-  border: 1px solid #cbd5e1;
+  border: 1px solid rgba(43, 36, 32, 0.18);
   background: #ffffff;
-  color: #1e293b;
+  color: #2B2420;
 }
 
 .secondary-button:hover:not(:disabled) {
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .danger-button {

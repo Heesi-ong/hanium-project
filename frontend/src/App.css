@@ -37,8 +37,8 @@ button:disabled {
 code {
   padding: 2px 6px;
   border-radius: 6px;
-  background: #eef2ff;
-  color: #3442a8;
+  background: #F1EBE3;
+  color: #2B2420;
   font-size: 0.92em;
 }
 
@@ -47,8 +47,8 @@ pre {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: #2B2420;
+  color: #FAF6F1;
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -617,7 +617,7 @@ pre {
   margin-top: 18px;
   padding: 24px;
   border-radius: 18px;
-  background: #f8fafc;
+  background: #F1EBE3;
   color: #5C534B;
 }
 
@@ -642,7 +642,7 @@ pre {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid rgba(43, 36, 32, 0.1);
 }
 
 .result-row span,
@@ -714,9 +714,9 @@ pre {
 .pipeline-box {
   margin-top: 22px;
   padding: 18px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 18px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .pipeline-box h3 {
@@ -733,7 +733,7 @@ pre {
   width: 100%;
   height: 10px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: #F1EBE3;
   overflow: hidden;
 }
 
@@ -854,14 +854,14 @@ pre {
 
 .filter-button {
   min-height: 40px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid rgba(43, 36, 32, 0.18);
   background: #ffffff;
   color: #475569;
   font-size: 14px;
 }
 
 .filter-button:hover {
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .filter-button.active {
@@ -874,7 +874,7 @@ pre {
   width: min(320px, 100%);
   min-height: 42px;
   padding: 0 14px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid rgba(43, 36, 32, 0.18);
   border-radius: 12px;
   background: #ffffff;
   color: #2B2420;
@@ -913,9 +913,9 @@ pre {
   grid-template-columns: 1fr auto;
   gap: 18px;
   padding: 20px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 18px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .result-item-main {
@@ -1171,7 +1171,7 @@ pre {
   width: 100%;
   border-collapse: collapse;
   overflow: hidden;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 16px;
   background: #ffffff;
 }
@@ -1179,14 +1179,14 @@ pre {
 .pose-frame-table th,
 .pose-frame-table td {
   padding: 12px 14px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid rgba(43, 36, 32, 0.1);
   color: #2B2420;
   font-size: 13px;
   text-align: left;
 }
 
 .pose-frame-table th {
-  background: #f8fafc;
+  background: #F1EBE3;
   color: #5C534B;
   font-weight: 900;
 }
@@ -1233,7 +1233,7 @@ pre {
 .feedback-block {
   padding: 20px;
   border-radius: 18px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .feedback-block h3,
@@ -1264,7 +1264,7 @@ pre {
 
 .feedback-columns div {
   padding: 20px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 18px;
 }
 
@@ -1287,7 +1287,7 @@ pre {
   gap: 8px;
   padding: 14px;
   border-radius: 14px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .key-value-item span {
@@ -1315,7 +1315,7 @@ pre {
   gap: 14px;
   padding: 18px;
   border-radius: 18px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .practice-item > span {
@@ -1344,7 +1344,7 @@ pre {
   padding: 18px;
   border-left: 4px solid #E2704A;
   border-radius: 16px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .timeline-item > span {
@@ -1431,7 +1431,7 @@ pre {
 .engine-meta div {
   min-width: 0;
   padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid rgba(43, 36, 32, 0.1);
 }
 
 .engine-meta span {

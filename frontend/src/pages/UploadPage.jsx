@@ -56,6 +56,8 @@ function UploadPage() {
     const [loading, setLoading] = useState(false);
     const [running, setRunning] = useState(false);
     const [polling, setPolling] = useState(false);
+    const [isDragActive, setIsDragActive] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState("");
     const [error, setError] = useState("");
     const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
 
@@ -75,6 +77,7 @@ function UploadPage() {
     const isFailed = currentStatus === "FAILED";
     const isCancelled = currentStatus === "CANCELLED";
     const isRateLimited = rateLimitedUntil > Date.now();
+    const isFileSelectionDisabled = loading || running || polling;
 
     useEffect(() => {
         return () => {
@@ -83,6 +86,21 @@ function UploadPage() {
             stopRateLimitCooldown();
         };
     }, []);
+
+    useEffect(() => {
+        if (!file) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- objectURL 생성/해제는 effect의 부수효과이며 setPreviewUrl은 그 결과를 반영할 뿐이므로 렌더링 중 계산으로 대체할 수 없음
+            setPreviewUrl("");
+            return undefined;
+        }
+
+        const objectUrl = URL.createObjectURL(file);
+        setPreviewUrl(objectUrl);
+
+        return () => {
+            URL.revokeObjectURL(objectUrl);
+        };
+    }, [file]);
 
     function stopPolling() {
         if (pollingTimerRef.current) {
@@ -145,17 +163,19 @@ function UploadPage() {
         }, PROGRESS_POLLING_INTERVAL_MS);
     }
 
-    function handleFileChange(event) {
-        const selectedFile = event.target.files?.[0];
-
+    function resetSelectedFileState() {
         stopPolling();
         setError("");
         setUploadedResult(null);
         setAnalysisStatus(null);
+    }
+
+    function validateAndSetFile(selectedFile) {
+        resetSelectedFileState();
 
         if (!selectedFile) {
             setFile(null);
-            return;
+            return false;
         }
 
         const extension = selectedFile.name
@@ -167,7 +187,7 @@ function UploadPage() {
         if (!allowedExtensions.includes(extension)) {
             setFile(null);
             setError("mp4, mov, avi, mkv 형식의 영상 파일만 업로드할 수 있습니다.");
-            return;
+            return false;
         }
 
         const fileSizeMb = selectedFile.size / 1024 / 1024;
@@ -175,10 +195,54 @@ function UploadPage() {
         if (fileSizeMb > MAX_FILE_SIZE_MB) {
             setFile(null);
             setError(`파일 크기는 최대 ${MAX_FILE_SIZE_MB}MB까지 업로드할 수 있습니다.`);
-            return;
+            return false;
         }
 
         setFile(selectedFile);
+        return true;
+    }
+
+    function handleFileChange(event) {
+        validateAndSetFile(event.target.files?.[0]);
+    }
+
+    function preventFileDropDefault(event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    function handleDragEnter(event) {
+        preventFileDropDefault(event);
+
+        if (isFileSelectionDisabled) {
+            return;
+        }
+
+        setIsDragActive(true);
+    }
+
+    function handleDragOver(event) {
+        preventFileDropDefault(event);
+
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = isFileSelectionDisabled ? "none" : "copy";
+        }
+    }
+
+    function handleDragLeave(event) {
+        preventFileDropDefault(event);
+        setIsDragActive(false);
+    }
+
+    function handleDrop(event) {
+        preventFileDropDefault(event);
+        setIsDragActive(false);
+
+        if (isFileSelectionDisabled) {
+            return;
+        }
+
+        validateAndSetFile(event.dataTransfer.files?.[0]);
     }
 
     async function handleUpload() {
@@ -310,6 +374,7 @@ function UploadPage() {
         setFile(null);
         setUploadedResult(null);
         setAnalysisStatus(null);
+        setProgress(null);
         setError("");
         setUseVideoLlm(true);
         setUseOpenAi(true);
@@ -367,11 +432,22 @@ function UploadPage() {
                         지원 형식: mp4, mov, avi, mkv · 최대 {MAX_FILE_SIZE_MB}MB
                     </p>
 
-                    <label className="file-drop-zone">
+                    <label
+                        className={
+                            isDragActive
+                                ? "file-drop-zone drag-active"
+                                : "file-drop-zone"
+                        }
+                        onDragEnter={handleDragEnter}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                    >
                         <input
                             type="file"
                             accept=".mp4,.mov,.avi,.mkv,video/mp4,video/quicktime"
                             onChange={handleFileChange}
+                            disabled={isFileSelectionDisabled}
                         />
 
                         <span className="file-drop-title">
@@ -381,9 +457,20 @@ function UploadPage() {
                         <span className="file-drop-subtitle">
               {file
                   ? `${selectedFileSizeMb}MB`
-                  : "파일을 선택하면 업로드 준비 상태가 됩니다."}
+                  : "파일을 선택하거나 이 영역에 끌어다 놓으면 업로드 준비 상태가 됩니다."}
             </span>
                     </label>
+
+                    {previewUrl && (
+                        <div className="upload-video-preview">
+                            <video
+                                controls
+                                preload="metadata"
+                                src={previewUrl}
+                                style={{ width: "100%", borderRadius: 16 }}
+                            />
+                        </div>
+                    )}
 
                     <div className="option-panel">
                         <h3>분석 옵션</h3>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { deleteResult, getResults } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
+import ScoreTrendChart from "../components/chart/ScoreTrendChart";
 import PageHeader from "../components/PageHeader";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
 import StateMessage from "../components/StateMessage";
@@ -370,6 +371,8 @@ function ResultListPage() {
                     <p>OpenAI 호출 실패 후 Mock으로 대체된 결과입니다.</p>
                 </article>
             </div>
+
+            <ScoreTrendChart results={results} />
 
             <div className="result-control-grid">
                 <div className="filter-button-group">

@@ -34,3 +34,14 @@ groups:
         annotations:
           summary: "OpenAI 월간 호출 한도 소진 임박"
           description: "이번 달 OpenAI 실제 API 호출량이 설정된 한도의 90%를 초과한 상태가 5분 이상 지속되고 있습니다. 한도 상향 또는 비용을 확인하세요."
+
+  - name: host-alerts
+    rules:
+      - alert: HostDiskSpaceLow
+        expr: node_filesystem_avail_bytes{job="node-exporter", mountpoint=~"/|/rootfs"} / clamp_min(node_filesystem_size_bytes{job="node-exporter", mountpoint=~"/|/rootfs"}, 1) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "호스트 디스크 여유 공간 부족"
+          description: "호스트 루트 파일시스템의 여유 공간이 15% 미만인 상태가 10분 이상 지속되고 있습니다. storage 디렉터리와 백업/업로드 파일 사용량을 확인하세요."

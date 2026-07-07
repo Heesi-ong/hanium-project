@@ -25,6 +25,28 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
 
+  node-exporter:
+    # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.
+    image: prom/node-exporter:v1.11.1
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/)
+      - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|erofs|sysfs|tracefs)$
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+    ports:
+      - "127.0.0.1:9100:9100"
+
   grafana:
     # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.
     image: grafana/grafana:13.0.3

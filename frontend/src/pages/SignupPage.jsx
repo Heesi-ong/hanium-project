@@ -9,17 +9,17 @@ const inputStyle = {
     minHeight: 46,
     marginTop: 8,
     padding: "0 14px",
-    border: "1px solid #cbd5e1",
+    border: "1px solid rgba(43, 36, 32, 0.18)",
     borderRadius: 12,
     background: "#ffffff",
-    color: "#0f172a",
+    color: "#2B2420",
 };
 
 const hintStyle = {
     display: "block",
     marginTop: 6,
     fontSize: 13,
-    color: "#64748b",
+    color: "#5C534B",
 };
 
 function SignupPage() {

@@ -151,7 +151,7 @@ pre {
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #2563eb;
+  color: #B85530;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -252,10 +252,10 @@ pre {
 }
 
 .upload-card {
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
 .result-list-card {
@@ -485,14 +485,14 @@ pre {
   gap: 14px;
   margin-top: 22px;
   padding: 18px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 18px;
-  background: #f8fafc;
+  background: #F1EBE3;
 }
 
 .option-panel h3 {
   margin: 0;
-  color: #0f172a;
+  color: #2B2420;
   font-size: 16px;
 }
 

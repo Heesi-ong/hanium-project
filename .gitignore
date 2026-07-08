@@ -82,6 +82,7 @@ frontend/test-results/
 *.env
 !*.env.example
 frontend/.env
+frontend/.env.development
 frontend/.env.local
 frontend/.env.development.local
 frontend/.env.test.local

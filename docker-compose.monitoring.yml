@@ -47,6 +47,26 @@ services:
     ports:
       - "127.0.0.1:9100:9100"
 
+  cadvisor:
+    # v0.53.0부터 ghcr.io/google/cadvisor로 이전된 레지스트리의 최신 안정 릴리스입니다.
+    # privileged 권한이 필요하며, 컨테이너가 침해되면 호스트에 영향을 줄 수 있음을 인지하고 사용자와 상의 후 채택했습니다.
+    image: ghcr.io/google/cadvisor:v0.60.3
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    ports:
+      - "127.0.0.1:8085:8080"
+
   grafana:
     # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.
     image: grafana/grafana:13.0.3

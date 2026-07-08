@@ -165,8 +165,74 @@ services:
       STORAGE_RESULT_PATH: /storage/results
       STORAGE_TEMP_PATH: /storage/temp
       STORAGE_LOG_PATH: /storage/logs
+      # backend는 API 전용으로 둡니다. 실행 요청을 접수(QUEUED)만 하고, 실제 분석은
+      # 아래 analysis-worker가 큐를 폴링해 처리합니다. (분리 배포)
+      # 단일 프로세스(monolith)로 되돌리려면 두 값을 모두 true로 주면 됩니다.
+      ANALYSIS_WORKER_ENABLED: ${BACKEND_ANALYSIS_WORKER_ENABLED:-false}
+      ANALYSIS_DISPATCH_LOCAL_ON_RUN: ${BACKEND_ANALYSIS_DISPATCH_LOCAL_ON_RUN:-false}
     ports:
       - "8080:8080"
+    volumes:
+      - ./storage:/storage
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # 분석 실행 전용 워커. backend와 같은 이미지를 역할만 다르게 띄웁니다.
+  # HTTP 요청은 받지 않고(포트 미공개) QUEUED 작업을 폴링해 실행합니다.
+  # 부하가 커지면 `docker compose up -d --scale analysis-worker=N`으로 늘릴 수 있습니다.
+  # (중복 실행은 DB 낙관적 락 기반 claim으로 방지되어 안전합니다.)
+  analysis-worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    stop_grace_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      analysis-engine:
+        condition: service_started
+      video-llm-engine:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SECURITY_JWT_SECRET: ${SECURITY_JWT_SECRET:-presentation-coaching-local-jwt-secret-change-me-2026}
+      SECURITY_JWT_EXPIRATION_MINUTES: ${SECURITY_JWT_EXPIRATION_MINUTES:-30}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-hanium_dev}
+      DB_USERNAME: ${DB_USERNAME:-hanium}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
+      ANALYSIS_ENGINE_BASE_URL: http://analysis-engine:8001
+      VIDEO_LLM_ENGINE_BASE_URL: http://video-llm-engine:8002
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
+      MANAGEMENT_SERVER_PORT: ${MANAGEMENT_SERVER_PORT:-8081}
+      STORAGE_ROOT_PATH: /storage
+      STORAGE_UPLOAD_PATH: /storage/uploads
+      STORAGE_RESULT_PATH: /storage/results
+      STORAGE_TEMP_PATH: /storage/temp
+      STORAGE_LOG_PATH: /storage/logs
+      # 워커 역할: 실행 스케줄러 참여 + QUEUED 폴러 켜기. /run으로 즉시 투입은 하지 않음.
+      ANALYSIS_WORKER_ENABLED: "true"
+      ANALYSIS_WORKER_POLLER_ENABLED: "true"
+      ANALYSIS_DISPATCH_LOCAL_ON_RUN: "false"
     volumes:
       - ./storage:/storage
     healthcheck:

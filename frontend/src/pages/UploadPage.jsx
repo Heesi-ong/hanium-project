@@ -15,11 +15,12 @@ import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 
 const MAX_FILE_SIZE_MB = 500;
 const POLLING_INTERVAL_MS = 1500;
-const POLLING_TIMEOUT_MS = 120000;
+const POLLING_TIMEOUT_MS = 35 * 60 * 1000;
 const PROGRESS_POLLING_INTERVAL_MS = 1000;
 const RATE_LIMIT_COOLDOWN_MS = 12000;
 
 const RUNNING_STATUSES = [
+    "QUEUED",
     "BASIC_ANALYZING",
     "VIDEO_LLM_ANALYZING",
     "COMPACTING",
@@ -29,6 +30,7 @@ const RUNNING_STATUSES = [
 
 const STATUS_STEP_LABELS = {
     UPLOADED: "업로드 완료",
+    QUEUED: "분석 대기 중",
     BASIC_ANALYZING: "기본 분석 중",
     VIDEO_LLM_ANALYZING: "Video LLM 분석 중",
     COMPACTING: "분석 결과 축약 중",
@@ -146,10 +148,8 @@ function UploadPage() {
         return true;
     }
 
-    // 분석 파이프라인이 실행되는 동안(POST /run 응답을 기다리는 동안) 별도로
-    // 진행률 API를 계속 조회해서 지금 몇 %인지 화면에 보여줍니다.
-    // /run 요청 자체는 분석이 다 끝나야 응답이 오기 때문에, 이 폴링이 없으면
-    // 사용자는 분석이 끝날 때까지 아무 진행 상황도 볼 수 없습니다.
+    // /run은 분석 작업을 접수한 뒤 백그라운드 파이프라인으로 넘깁니다.
+    // 접수 직후부터 진행률 API를 같이 조회해 QUEUED/분석 중 상태를 화면에 보여줍니다.
     function startProgressPolling(jobId) {
         stopProgressPolling();
 
@@ -406,6 +406,7 @@ function UploadPage() {
     function getStepIndex(status) {
         const order = [
             "UPLOADED",
+            "QUEUED",
             "BASIC_ANALYZING",
             "VIDEO_LLM_ANALYZING",
             "COMPACTING",

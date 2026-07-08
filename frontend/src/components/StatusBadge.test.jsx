@@ -8,6 +8,7 @@ describe("StatusBadge", () => {
         ["COMPLETED", "status-badge completed", "COMPLETED"],
         ["FAILED", "status-badge failed", "FAILED"],
         ["CANCELLED", "status-badge cancelled", "CANCELLED"],
+        ["QUEUED", "status-badge running", "QUEUED"],
         ["BASIC_ANALYZING", "status-badge running", "BASIC_ANALYZING"],
         ["VIDEO_LLM_ANALYZING", "status-badge running", "VIDEO_LLM_ANALYZING"],
         ["COMPACTING", "status-badge running", "COMPACTING"],

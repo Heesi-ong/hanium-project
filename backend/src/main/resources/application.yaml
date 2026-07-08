@@ -96,6 +96,24 @@ analysis:
   stuck-job:
     cron: "${ANALYSIS_STUCK_JOB_CRON:0 */10 * * * *}"
     max-running-minutes: ${ANALYSIS_STUCK_JOB_MAX_RUNNING_MINUTES:30}
+  queued-job:
+    resume-cron: "${ANALYSIS_QUEUED_JOB_RESUME_CRON:15 */1 * * * *}"
+    stale-seconds: ${ANALYSIS_QUEUED_JOB_STALE_SECONDS:60}
+  # 실행 역할(role) 분리 플래그. 기본값은 단일 프로세스(monolith)로, 지금까지의 동작과 동일합니다.
+  #  - monolith(기본): worker.enabled=true, dispatch.local-on-run=true, worker.poller.enabled=false
+  #  - api 전용     : worker.enabled=false, dispatch.local-on-run=false  (접수만, 실행 안 함)
+  #  - worker 전용  : worker.enabled=true,  dispatch.local-on-run=false, worker.poller.enabled=true
+  worker:
+    # 이 인스턴스가 분석 실행/정리 스케줄러에 참여하는지. api 전용 인스턴스에서는 false.
+    enabled: ${ANALYSIS_WORKER_ENABLED:true}
+    poller:
+      # QUEUED 작업을 DB에서 폴링해 실행하는 워커 폴러. worker 전용 인스턴스에서 true.
+      enabled: ${ANALYSIS_WORKER_POLLER_ENABLED:false}
+      interval-ms: ${ANALYSIS_WORKER_POLLER_INTERVAL_MS:1000}
+      max-batch: ${ANALYSIS_WORKER_POLLER_MAX_BATCH:10}
+  dispatch:
+    # /run이 로컬 executor로 즉시 투입할지. worker/api 분리 배포에서는 false로 두고, 워커 폴러가 소비.
+    local-on-run: ${ANALYSIS_DISPATCH_LOCAL_ON_RUN:true}
 
 storage:
   root-path: ${STORAGE_ROOT_PATH:../storage}
@@ -144,3 +162,4 @@ scheduler:
     storage-cleanup-ttl-minutes: ${SCHEDULER_LOCK_STORAGE_CLEANUP_TTL_MINUTES:10}
     stuck-job-watchdog-ttl-minutes: ${SCHEDULER_LOCK_STUCK_JOB_WATCHDOG_TTL_MINUTES:5}
     original-video-retention-ttl-minutes: ${SCHEDULER_LOCK_ORIGINAL_VIDEO_RETENTION_TTL_MINUTES:10}
+    queued-job-resume-ttl-minutes: ${SCHEDULER_LOCK_QUEUED_JOB_RESUME_TTL_MINUTES:2}

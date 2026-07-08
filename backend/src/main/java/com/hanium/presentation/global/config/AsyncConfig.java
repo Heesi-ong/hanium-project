@@ -30,11 +30,13 @@ public class AsyncConfig {
         executor.setThreadNamePrefix("analysis-worker-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(analysisExecutorAwaitTerminationSeconds);
-        // 풀과 대기열이 모두 가득 차면, 새 작업을 버리거나 실패시키는 대신 요청을 보낸
-        // 스레드가 직접 실행하도록 해서(CallerRunsPolicy) 시스템이 완전히 죽지 않고
-        // 서서히 느려지는 방식으로 대응합니다. 더 정교한 "대기열 가득 참" 안내는
-        // 다음 단계 개선 과제로 남겨둡니다.
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 풀과 대기열이 모두 가득 차면 새 작업을 받지 않고 RejectedExecutionException을
+        // 던집니다(AbortPolicy). 예전에는 CallerRunsPolicy로 "요청을 보낸 스레드가 직접
+        // 실행"했는데, 그러면 사람이 몰리는 바로 그 순간에 HTTP 요청 스레드가 무거운
+        // 영상 분석을 끝까지 처리하게 되어(=우리가 피하려던 동기 처리) 다른 API 응답까지
+        // 함께 느려졌습니다. 이제는 대기열이 가득 차면 AnalysisCommandService가 이를
+        // 감지해 사용자에게 429(잠시 후 재시도)로 명확히 안내합니다.
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         // MDC(requestId 등)는 스레드 로컬이라 워커 스레드로 자동 전파되지 않습니다.
         // 작업을 제출한 스레드의 MDC 컨텍스트를 캡처해 워커 스레드에서 복원하고,
         // 작업이 끝나면 반드시 정리해 스레드 재사용 시 값이 섞이지 않게 합니다.

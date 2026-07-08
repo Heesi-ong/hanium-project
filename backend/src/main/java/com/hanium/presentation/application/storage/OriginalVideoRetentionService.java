@@ -10,6 +10,7 @@ import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,8 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
+// 원본 영상 보존 정리도 실행/백그라운드 담당 인스턴스(monolith/worker)에서만 돌립니다.
+@ConditionalOnProperty(name = "analysis.worker.enabled", havingValue = "true", matchIfMissing = true)
 @Service
 public class OriginalVideoRetentionService {
 

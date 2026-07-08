@@ -5,6 +5,7 @@ import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,35 @@ public class AnalysisJobStatusService {
 
     public AnalysisJobStatusService(AnalysisJobRepository analysisJobRepository) {
         this.analysisJobRepository = analysisJobRepository;
+    }
+
+    /**
+     * QUEUED 상태인 작업을 "이 워커가 실행하겠다"고 선점(claim)합니다.
+     *
+     * <p>QUEUED일 때만 BASIC_ANALYZING으로 전이하고 true를 반환합니다. 이미 다른 워커가
+     * 가져갔거나(=QUEUED가 아님) 작업이 없으면 false를 반환합니다. 재시작 복구로 같은 작업이
+     * 두 번 투입되어도 한 워커만 실행하도록 보장합니다. 동시에 두 워커가 저장을 시도하면
+     * {@code @Version} 낙관적 락으로 한쪽만 성공하고, 다른 쪽은 예외를 받아 false로 처리됩니다.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean claimForExecution(String jobId) {
+        return analysisJobRepository.findByJobId(jobId).map(analysisJob -> {
+            if (!analysisJob.startExecutionIfQueued()) {
+                return false;
+            }
+            try {
+                analysisJobRepository.saveAndFlush(analysisJob);
+            } catch (OptimisticLockingFailureException e) {
+                // 다른 워커가 거의 동시에 먼저 선점했습니다. 이 워커는 실행하지 않습니다.
+                log.info("[{}] 이미 다른 워커가 실행을 선점해 이 워커는 건너뜁니다.", jobId);
+                return false;
+            }
+            log.info("[{}] 실행 선점 성공: QUEUED -> BASIC_ANALYZING", jobId);
+            return true;
+        }).orElseGet(() -> {
+            log.warn("[{}] 실행 선점을 시도했지만 AnalysisJob을 찾지 못했습니다.", jobId);
+            return false;
+        });
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

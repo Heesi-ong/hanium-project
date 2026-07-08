@@ -30,6 +30,7 @@ import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @Service
 public class AnalysisCommandService {
@@ -57,6 +60,12 @@ public class AnalysisCommandService {
     private final AnalysisProgressService analysisProgressService;
     private final AnalysisJobStatusService analysisJobStatusService;
     private final ThreadPoolTaskExecutor analysisTaskExecutor;
+
+    // /run이 이 인스턴스의 로컬 executor로 즉시 투입할지 여부. 기본값 true(=monolith, 현행 동작).
+    // api/worker 분리 배포에서는 false로 두고, 워커 폴러(QueuedAnalysisJobPoller)가 QUEUED를 소비합니다.
+    // 필드 초기값을 true로 둬서, 스프링 컨텍스트 없이 new로 생성하는 단위 테스트에서도 기존처럼 즉시 투입됩니다.
+    @Value("${analysis.dispatch.local-on-run:true}")
+    private boolean localDispatchOnRun = true;
     private final AnalysisRetryProperties analysisRetryProperties;
     private final MeterRegistry meterRegistry;
 
@@ -185,11 +194,22 @@ public class AnalysisCommandService {
             boolean useOpenAi,
             String trigger
     ) {
+        // 로컬 즉시 투입 모드(monolith)에서만, 상태를 "시작됨"으로 바꾸기 전에 워커 대기열이
+        // 이미 가득 찼는지 확인합니다. 여기서 막으면 job은 원래 상태로 남고 사용자에게는
+        // 429(잠시 후 재시도)를 돌려줍니다. api/worker 분리 모드에서는 접수만 하고 워커 폴러가
+        // 소비하므로 이 사전 점검은 하지 않습니다(대기 작업은 QUEUED로 안전하게 쌓입니다).
+        if (localDispatchOnRun) {
+            rejectIfExecutorSaturated();
+        }
+
         meterRegistry.counter("analysis.job.started", "trigger", trigger).increment();
 
         String jobId = analysisJob.getJobId();
 
-        analysisJob.startBasicAnalysis();
+        // 실행을 "접수"만 하고 상태를 QUEUED로 둡니다. 실제 실행(BASIC_ANALYZING 전이)은
+        // 백그라운드 워커가 claimForExecution()으로 선점할 때 일어납니다. 이렇게 하면 실행
+        // 옵션이 DB에 남아, 재시작으로 워커 투입이 유실돼도 대기 작업을 이어서 실행할 수 있습니다.
+        analysisJob.enqueue(useVideoLlm, useOpenAi);
 
         AnalysisJob savedJob;
         try {
@@ -205,21 +225,85 @@ public class AnalysisCommandService {
         // 지금 트랜잭션이 실제로 커밋된 뒤에만 백그라운드 작업을 시작합니다.
         // 커밋 전에 시작하면, 백그라운드 스레드가 아직 DB에 반영되지 않은
         // (다른 트랜잭션 기준으로는 보이지 않는) 상태를 참조할 수 있습니다.
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    analysisTaskExecutor.execute(
-                            () -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi)
-                    );
-                }
-            });
+        if (localDispatchOnRun) {
+            // monolith 모드: 커밋 직후 이 인스턴스의 executor로 즉시 투입해 지연 없이 실행합니다.
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        dispatch(jobId, useVideoLlm, useOpenAi);
+                    }
+                });
+            } else {
+                // 트랜잭션 없이 호출되는 경우(예: 테스트 코드)를 대비한 안전장치입니다.
+                dispatch(jobId, useVideoLlm, useOpenAi);
+            }
         } else {
-            // 트랜잭션 없이 호출되는 경우(예: 테스트 코드)를 대비한 안전장치입니다.
-            analysisTaskExecutor.execute(() -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi));
+            // api/worker 분리 모드: 접수(QUEUED)만 하고 즉시 투입하지 않습니다.
+            // 별도의 worker 인스턴스에 있는 QueuedAnalysisJobPoller가 이 작업을 폴링해 실행합니다.
+            log.info("[{}] 실행을 접수(QUEUED)했습니다. 워커 폴러가 곧 가져가 실행합니다.", jobId);
         }
 
         return AnalysisStatusResponse.from(savedJob);
+    }
+
+    // 사전 점검(rejectIfExecutorSaturated) 이후에도, 점검과 실제 제출 사이의 아주 짧은
+    // 순간에 다른 요청이 대기열을 마저 채우면 여기서 RejectedExecutionException이 날 수
+    // 있습니다. 이 경우 커밋은 이미 끝나 job이 "시작됨"으로 남아 있으므로, 곧바로 실패
+    // 처리해 멈춘 것처럼 보이지 않게 하고 사용자가 바로 재시도할 수 있도록 합니다.
+    private void dispatch(String jobId, boolean useVideoLlm, boolean useOpenAi) {
+        try {
+            analysisTaskExecutor.execute(
+                    () -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi)
+            );
+        } catch (RejectedExecutionException e) {
+            handleDispatchRejected(jobId, e);
+        }
+    }
+
+    // 재시작 등으로 워커 투입이 유실된 QUEUED 작업을 다시 워커 풀에 투입합니다.
+    // 실제 실행 여부는 워커가 claimForExecution()으로 판단하므로 중복 투입돼도 안전하고,
+    // 풀이 가득 차 제출이 거부되면 dispatch()가 그 작업을 실패 처리합니다.
+    public void redispatchQueuedJob(String jobId, boolean useVideoLlm, boolean useOpenAi) {
+        dispatch(jobId, useVideoLlm, useOpenAi);
+    }
+
+    private void handleDispatchRejected(String jobId, RejectedExecutionException e) {
+        String failReason =
+                "분석 워커 대기열이 가득 차 작업을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.";
+        log.warn("[{}] 백그라운드 분석 작업 제출이 거부되어 실패 처리합니다.", jobId, e);
+        analysisJobStatusService.failStatus(jobId, failReason);
+        analysisProgressService.fail(jobId, 0, failReason);
+        saveFailureResultSafely(jobId, failReason);
+        meterRegistry.counter("analysis.job.failed", "reason", "queue-full").increment();
+    }
+
+    // 워커 스레드 풀과 대기열이 모두 가득 찬 상태인지 확인합니다. 가득 찼다면 새 작업을
+    // 받지 않고 429로 안내합니다. 이 점검은 "최선 노력(best-effort)"이라 아주 짧은 경합
+    // 구간은 남지만, 그 경합은 dispatch()의 RejectedExecutionException 처리로 보완됩니다.
+    private void rejectIfExecutorSaturated() {
+        ThreadPoolExecutor executor;
+        try {
+            executor = analysisTaskExecutor.getThreadPoolExecutor();
+        } catch (IllegalStateException notInitialized) {
+            // 아직 풀이 초기화되지 않았거나 사용할 수 없는 상태면 사전 점검을 건너뜁니다.
+            return;
+        }
+
+        if (executor == null) {
+            return;
+        }
+
+        boolean saturated = executor.getQueue().remainingCapacity() == 0
+                && executor.getActiveCount() >= executor.getMaximumPoolSize();
+
+        if (saturated) {
+            meterRegistry.counter("analysis.job.rejected", "reason", "queue-full").increment();
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_QUEUE_FULL,
+                    "현재 분석 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요."
+            );
+        }
     }
 
     // 백그라운드 스레드에서 실행되는 실제 분석 파이프라인입니다.
@@ -251,6 +335,15 @@ public class AnalysisCommandService {
             boolean useOpenAi,
             Timer.Sample sample
     ) {
+        // 실행을 선점합니다. QUEUED 상태일 때만 BASIC_ANALYZING으로 전이하고 true를 받습니다.
+        // 재시작 복구로 같은 작업이 두 번 투입되면, 먼저 선점한 워커만 진행하고 나머지는 조용히
+        // 종료해 중복 실행을 막습니다.
+        if (!analysisJobStatusService.claimForExecution(jobId)) {
+            log.info("[{}] 실행 선점에 실패해(이미 다른 워커가 처리 중이거나 대기 상태가 아님) 이 워커는 종료합니다.", jobId);
+            stopDurationTimer(sample, "skipped");
+            return;
+        }
+
         UploadedVideo uploadedVideo;
 
         try {
@@ -448,10 +541,10 @@ public class AnalysisCommandService {
     }
 
     private void validateRunnable(AnalysisJob analysisJob) {
-        if (analysisJob.isRunning()) {
+        if (analysisJob.isRunning() || analysisJob.isQueued()) {
             throw new BusinessException(
                     ErrorCode.ANALYSIS_ALREADY_RUNNING,
-                    "현재 분석이 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
+                    "이미 실행이 접수되었거나 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
             );
         }
 
@@ -471,10 +564,10 @@ public class AnalysisCommandService {
     }
 
     private void validateRetryable(AnalysisJob analysisJob) {
-        if (analysisJob.isRunning()) {
+        if (analysisJob.isRunning() || analysisJob.isQueued()) {
             throw new BusinessException(
                     ErrorCode.ANALYSIS_ALREADY_RUNNING,
-                    "현재 분석이 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
+                    "이미 실행이 접수되었거나 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
             );
         }
 

@@ -21,6 +21,7 @@ public enum ErrorCode {
     ANALYSIS_ALREADY_COMPLETED(HttpStatus.CONFLICT, "이미 완료된 분석 작업입니다."),
     ANALYSIS_RETRY_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "재시도 가능 횟수를 초과했습니다."),
     ANALYSIS_CANCEL_NOT_ALLOWED(HttpStatus.CONFLICT, "취소할 수 없는 상태의 분석 작업입니다."),
+    ANALYSIS_QUEUE_FULL(HttpStatus.TOO_MANY_REQUESTS, "현재 분석 요청이 많아 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요."),
 
     ANALYSIS_ENGINE_ERROR(HttpStatus.BAD_GATEWAY, "기본 분석 엔진 호출 중 오류가 발생했습니다."),
     VIDEO_LLM_ENGINE_ERROR(HttpStatus.BAD_GATEWAY, "Video LLM 엔진 호출 중 오류가 발생했습니다."),

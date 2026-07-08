@@ -3,6 +3,7 @@ package com.hanium.presentation.domain.analysis.type;
 public enum AnalysisStatus {
 
     UPLOADED("업로드 완료"),
+    QUEUED("분석 대기 중"),
     BASIC_ANALYZING("기본 분석 중"),
     VIDEO_LLM_ANALYZING("Video LLM 분석 중"),
     COMPACTING("분석 결과 축약 중"),

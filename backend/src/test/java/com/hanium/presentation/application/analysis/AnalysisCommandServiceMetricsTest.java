@@ -84,6 +84,11 @@ class AnalysisCommandServiceMetricsTest {
         when(resultCommandService.saveEngineResultsAndCompact(anyString(), any(), any()))
                 .thenReturn(Map.of());
 
+        // 워커는 이제 실행 전 claimForExecution()으로 QUEUED 작업을 선점해야 진행합니다.
+        // 메트릭 검증을 위해 항상 선점 성공(true)으로 스텁합니다.
+        AnalysisJobStatusService analysisJobStatusService = mock(AnalysisJobStatusService.class);
+        when(analysisJobStatusService.claimForExecution(JOB_ID)).thenReturn(true);
+
         analysisCommandService = new AnalysisCommandService(
                 analysisJobRepository,
                 uploadedVideoRepository,
@@ -94,7 +99,7 @@ class AnalysisCommandServiceMetricsTest {
                 mock(OpenAiClient.class),
                 mock(JobIdGenerator.class),
                 mock(AnalysisProgressService.class),
-                mock(AnalysisJobStatusService.class),
+                analysisJobStatusService,
                 analysisTaskExecutor,
                 new AnalysisRetryProperties(3),
                 meterRegistry

@@ -33,4 +33,16 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
             AnalysisStatus status,
             LocalDateTime threshold
     );
+
+    // 재시작 등으로 워커에 투입되지 못한 채 오래 QUEUED로 남아 있는 작업을 찾습니다.
+    List<AnalysisJob> findByStatusAndStartedAtBefore(
+            AnalysisStatus status,
+            LocalDateTime threshold
+    );
+
+    // 워커 폴러가 접수 순서(FIFO)대로 QUEUED 작업을 가져갈 때 사용합니다. Pageable로 개수를 제한합니다.
+    List<AnalysisJob> findByStatusOrderByCreatedAtAsc(
+            AnalysisStatus status,
+            Pageable pageable
+    );
 }

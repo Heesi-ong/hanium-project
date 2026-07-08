@@ -119,6 +119,7 @@ public class AnalysisController {
                 "percent",
                 switch (statusResponse.status()) {
                     case UPLOADED -> 0;
+                    case QUEUED -> 5;
                     case BASIC_ANALYZING -> 10;
                     case VIDEO_LLM_ANALYZING -> 40;
                     case COMPACTING -> 60;

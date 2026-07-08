@@ -38,6 +38,14 @@ public class AnalysisJob {
     @Column(name = "cancel_requested", nullable = false)
     private boolean cancelRequested;
 
+    // 분석 실행 옵션을 job에 저장합니다. 서버 재시작으로 대기 작업을 이어서 실행할 때,
+    // "어떤 옵션으로 실행해야 하는지"를 DB만 보고 복원할 수 있게 하기 위함입니다.
+    @Column(name = "use_video_llm", nullable = false)
+    private boolean useVideoLlm = true;
+
+    @Column(name = "use_openai", nullable = false)
+    private boolean useOpenAi = true;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -93,6 +101,14 @@ public class AnalysisJob {
         return cancelRequested;
     }
 
+    public boolean isUseVideoLlm() {
+        return useVideoLlm;
+    }
+
+    public boolean isUseOpenAi() {
+        return useOpenAi;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -103,6 +119,31 @@ public class AnalysisJob {
 
     public LocalDateTime getCompletedAt() {
         return completedAt;
+    }
+
+    // 실행 요청을 "접수"만 하고 실제 실행은 나중에(백그라운드 워커에서) 시작합니다.
+    // 상태를 QUEUED로 두고 실행 옵션을 함께 저장해, 재시작 후에도 이어서 실행할 수 있게 합니다.
+    // startedAt은 "접수 시각"으로 기록합니다. 대기 작업 재투입 스케줄러가 "너무 오래
+    // 대기 중(=재시작으로 유실됨)"인 작업을 이 시각 기준으로 찾아냅니다.
+    public void enqueue(boolean useVideoLlm, boolean useOpenAi) {
+        this.status = AnalysisStatus.QUEUED;
+        this.useVideoLlm = useVideoLlm;
+        this.useOpenAi = useOpenAi;
+        this.startedAt = LocalDateTime.now();
+        this.completedAt = null;
+        this.failReason = null;
+        this.cancelRequested = false;
+    }
+
+    // QUEUED 상태일 때만 실행(BASIC_ANALYZING)으로 전이합니다. 재시작 복구로 같은 작업이
+    // 두 번 투입되어도, 먼저 claim한 워커만 true를 받고 나머지는 false를 받아 중복 실행을
+    // 막습니다. (동시 저장은 @Version 낙관적 락으로 한쪽만 성공)
+    public boolean startExecutionIfQueued() {
+        if (this.status != AnalysisStatus.QUEUED) {
+            return false;
+        }
+        startBasicAnalysis();
+        return true;
     }
 
     public void startBasicAnalysis() {
@@ -161,6 +202,10 @@ public class AnalysisJob {
         this.startedAt = null;
         this.completedAt = null;
         this.cancelRequested = false;
+    }
+
+    public boolean isQueued() {
+        return this.status == AnalysisStatus.QUEUED;
     }
 
     public boolean isRunning() {

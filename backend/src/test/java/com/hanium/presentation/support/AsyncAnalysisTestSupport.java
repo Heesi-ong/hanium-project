@@ -45,9 +45,11 @@ public final class AsyncAnalysisTestSupport {
         long deadline = System.nanoTime() + TIMEOUT.toNanos();
 
         while (System.nanoTime() < deadline) {
+            // QUEUED(접수됐지만 아직 워커가 선점 전)도 "아직 안 끝남"으로 봐야 합니다.
+            // 그렇지 않으면 워커가 곧 실행할 작업을 테스트가 종료된 것으로 오판할 수 있습니다.
             boolean hasRunningJob = jobIds.stream()
                     .anyMatch(jobId -> analysisJobRepository.findByJobId(jobId)
-                            .map(AnalysisJob::isRunning)
+                            .map(job -> job.isRunning() || job.isQueued())
                             .orElse(false));
 
             if (!hasRunningJob) {

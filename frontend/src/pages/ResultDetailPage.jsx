@@ -32,10 +32,11 @@ import {
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 
 const POLLING_INTERVAL_MS = 1500;
-const POLLING_TIMEOUT_MS = 120000;
+const POLLING_TIMEOUT_MS = 35 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 12000;
 
 const RUNNING_STATUSES = [
+    "QUEUED",
     "BASIC_ANALYZING",
     "VIDEO_LLM_ANALYZING",
     "COMPACTING",

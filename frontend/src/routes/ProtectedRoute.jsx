@@ -3,7 +3,11 @@ import { useAuth } from "../context/AuthContext";
 
 function ProtectedRoute() {
     const location = useLocation();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, isInitializing } = useAuth();
+
+    if (isInitializing) {
+        return null;
+    }
 
     if (!isAuthenticated) {
         return <Navigate to="/login" replace state={{ from: location }} />;

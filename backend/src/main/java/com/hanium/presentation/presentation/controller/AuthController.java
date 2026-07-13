@@ -1,12 +1,15 @@
 package com.hanium.presentation.presentation.controller;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.config.JwtBlacklist;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.config.SecurityConfig.JwtTokenProvider;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.response.ApiResponse;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -14,9 +17,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,19 +44,22 @@ public class AuthController {
     private final JwtTokenProvider jwtTokenProvider;
     private final JwtBlacklist jwtBlacklist;
     private final UserRateLimiter userRateLimiter;
+    private final JwtCookieSupport jwtCookieSupport;
 
     public AuthController(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
             JwtBlacklist jwtBlacklist,
-            UserRateLimiter userRateLimiter
+            UserRateLimiter userRateLimiter,
+            JwtCookieSupport jwtCookieSupport
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
         this.jwtBlacklist = jwtBlacklist;
         this.userRateLimiter = userRateLimiter;
+        this.jwtCookieSupport = jwtCookieSupport;
     }
 
     @PostMapping("/signup")
@@ -120,15 +129,21 @@ public class AuthController {
                     .body(ApiResponse.fail("이메일 또는 비밀번호가 올바르지 않습니다."));
         }
 
-        return ResponseEntity.ok(ApiResponse.success(
-                "로그인이 완료되었습니다.",
-                LoginResponse.from(user, jwtTokenProvider.createToken(user))
-        ));
+        String accessToken = jwtTokenProvider.createToken(user);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, jwtCookieSupport
+                        .createAccessTokenCookie(accessToken, jwtTokenProvider.getExpiration())
+                        .toString())
+                .body(ApiResponse.success(
+                        "로그인이 완료되었습니다.",
+                        LoginResponse.from(user, accessToken)
+                ));
     }
 
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<?>> logout(HttpServletRequest request) {
-        resolveBearerToken(request)
+        resolveAccessToken(request)
                 .flatMap(token -> jwtTokenProvider.extractExpiration(token)
                         .map(expiration -> new TokenExpiration(token, expiration)))
                 .ifPresent(tokenExpiration -> {
@@ -136,7 +151,20 @@ public class AuthController {
                     jwtBlacklist.blacklist(tokenExpiration.token(), ttl);
                 });
 
-        return ResponseEntity.ok(ApiResponse.success("로그아웃이 완료되었습니다."));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, jwtCookieSupport.expireAccessTokenCookie().toString())
+                .body(ApiResponse.success("로그아웃이 완료되었습니다."));
+    }
+
+    @GetMapping("/me")
+    public ApiResponse<AuthUserResponse> me(Authentication authentication) {
+        User user = userRepository.findById(getCurrentUserId(authentication))
+                .orElseThrow(() -> new IllegalStateException("인증된 사용자를 찾을 수 없습니다."));
+
+        return ApiResponse.success(
+                "인증된 사용자 조회가 완료되었습니다.",
+                AuthUserResponse.from(user)
+        );
     }
 
     private String normalizeEmail(String email) {
@@ -150,6 +178,27 @@ public class AuthController {
         }
 
         return request.getRemoteAddr();
+    }
+
+    private Long getCurrentUserId(Authentication authentication) {
+        Object details = authentication.getDetails();
+        if (details instanceof Long userId) {
+            return userId;
+        }
+
+        if (details instanceof Number number) {
+            return number.longValue();
+        }
+
+        throw new IllegalStateException("인증 정보에서 사용자 id를 찾을 수 없습니다.");
+    }
+
+    private Optional<String> resolveAccessToken(HttpServletRequest request) {
+        if (request.getHeader(AUTHORIZATION_HEADER) == null) {
+            return resolveCookieToken(request);
+        }
+
+        return resolveBearerToken(request);
     }
 
     private Optional<String> resolveBearerToken(HttpServletRequest request) {
@@ -166,6 +215,25 @@ public class AuthController {
         return Optional.of(token);
     }
 
+    private Optional<String> resolveCookieToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return Optional.empty();
+        }
+
+        for (Cookie cookie : cookies) {
+            if (JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME.equals(cookie.getName())) {
+                String token = cookie.getValue();
+                if (token != null && !token.isBlank()) {
+                    return Optional.of(token.trim());
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record AuthRequest(
             @NotBlank(message = "이메일은 필수입니다.")
             @Email(message = "이메일 형식이 올바르지 않습니다.")

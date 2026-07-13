@@ -7,6 +7,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -61,7 +62,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/health", "/api/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll()
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
@@ -153,6 +154,10 @@ public class SecurityConfig {
                 return Optional.empty();
             }
         }
+
+        public Duration getExpiration() {
+            return expiration;
+        }
     }
 
     public static class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -198,7 +203,11 @@ public class SecurityConfig {
 
         private Optional<String> resolveBearerToken(HttpServletRequest request) {
             String authorization = request.getHeader(AUTHORIZATION_HEADER);
-            if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
+            if (authorization == null) {
+                return resolveCookieToken(request);
+            }
+
+            if (!authorization.startsWith(BEARER_PREFIX)) {
                 return Optional.empty();
             }
 
@@ -208,6 +217,24 @@ public class SecurityConfig {
             }
 
             return Optional.of(token);
+        }
+
+        private Optional<String> resolveCookieToken(HttpServletRequest request) {
+            Cookie[] cookies = request.getCookies();
+            if (cookies == null) {
+                return Optional.empty();
+            }
+
+            for (Cookie cookie : cookies) {
+                if (JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME.equals(cookie.getName())) {
+                    String token = cookie.getValue();
+                    if (token != null && !token.isBlank()) {
+                        return Optional.of(token.trim());
+                    }
+                }
+            }
+
+            return Optional.empty();
         }
 
         private void authenticate(User user) {

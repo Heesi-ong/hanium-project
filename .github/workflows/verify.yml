@@ -46,30 +46,30 @@ jobs:
     strategy:
       matrix:
         engine: [analysis-engine, video-llm-engine]
+        include:
+          - engine: analysis-engine
+            requirements-file: requirements.txt
+          - engine: video-llm-engine
+            # video-llm-engine은 현재 mock 중심이라, 테스트에 torch/transformers 등
+            # 무거운 real-model 의존성(requirements-real-model.txt)이 필요 없습니다.
+            # requirements-test.txt(=requirements-base.txt + pytest)만 설치/감사합니다.
+            requirements-file: requirements-test.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: ${{ matrix.engine }}/requirements.txt
+          cache-dependency-path: ${{ matrix.engine }}/${{ matrix.requirements-file }}
       - run: python -m compileall -q app
         working-directory: ${{ matrix.engine }}
-      - if: matrix.engine == 'analysis-engine'
-        run: pip install -r requirements.txt
-        working-directory: ${{ matrix.engine }}
-      - if: matrix.engine == 'video-llm-engine'
-        run: pip install pytest==9.0.3 fastapi==0.138.2 httpx==0.28.1 pydantic==2.13.4
+      - run: pip install -r ${{ matrix.requirements-file }}
         working-directory: ${{ matrix.engine }}
       - run: pip install pip-audit
         working-directory: ${{ matrix.engine }}
-      - run: pip-audit --no-deps --disable-pip -r requirements.txt
+      - run: pip-audit --no-deps --disable-pip -r ${{ matrix.requirements-file }}
         working-directory: ${{ matrix.engine }}
-      - if: matrix.engine == 'analysis-engine'
-        run: pytest
-        working-directory: ${{ matrix.engine }}
-      - if: matrix.engine == 'video-llm-engine'
-        run: pytest
+      - run: pytest
         working-directory: ${{ matrix.engine }}
 
   docker-build:

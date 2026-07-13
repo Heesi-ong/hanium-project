@@ -41,7 +41,9 @@ hanium project/
 │   ├── app/
 │   │   ├── api/
 │   │   └── main.py
-│   └── requirements.txt
+│   ├── requirements-base.txt        (mock/external-api, 기본)
+│   ├── requirements-real-model.txt  (local-model 전용, torch/transformers 등)
+│   └── requirements-test.txt        (pytest 실행용, requirements-base.txt 포함)
 │
 ├── storage/
 │   ├── uploads/
@@ -136,7 +138,9 @@ cd ~/Desktop/hanium\ project/video-llm-engine
 python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -r requirements.txt
+# 현재는 mock 응답만 반환하므로 requirements-base.txt(가벼움)만으로 충분합니다.
+# 실제 로컬 모델(torch/transformers)을 구동하려면 requirements-real-model.txt를 대신 설치하세요.
+pip install -r requirements-base.txt
 
 export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 export LOG_DIR=../storage/logs
@@ -146,6 +150,9 @@ uvicorn app.main:app --reload --port 8002
 `INTERNAL_ENGINE_API_KEY`가 비어 있으면 video-llm-engine의 `/api/**` 분석 요청은 401로 거부됩니다.
 이 값은 backend 실행 터미널의 `INTERNAL_ENGINE_API_KEY`와 반드시 같아야 합니다.
 `LOG_DIR`을 지정하면 video-llm-engine 로그가 콘솔과 함께 `${LOG_DIR}/video-llm-engine.log`에도 기록됩니다.
+
+`docker compose build` 시에는 `VIDEO_LLM_BACKEND`(mock/external-api/local-model) 빌드 인자로
+같은 선택을 할 수 있습니다. 자세한 내용은 `.env.example`과 `video-llm-engine/Dockerfile`을 참고하세요.
 
 정상 확인:
 
@@ -291,6 +298,31 @@ npm run dev
 ```text
 http://localhost:5173
 ```
+
+### 7.1 frontend 컨테이너의 API 호출 경로
+
+frontend가 `/api`를 호출하는 경로는 배포 구성에 따라 다르며, 두 정상 경로가 있습니다.
+
+- **`docker-compose.yml`(기본)**: 빌드 시 `VITE_API_BASE_URL=http://localhost:8080`을 주입해,
+  브라우저가 backend를 **직접** 호출합니다. frontend 컨테이너 자신의 nginx는 API 요청을
+  받지 않습니다.
+- **`docker-compose.prod.yml`(운영 오버레이)**: `VITE_API_BASE_URL=""`로 비워, 브라우저가
+  같은 origin의 상대경로 `/api`를 호출합니다. 이 경로는 `infra/nginx/nginx.conf`(외부
+  reverse proxy)가 먼저 가로채 `backend:8080`으로 프록시하며, frontend 컨테이너에는
+  `/api` 요청이 도달하지 않습니다.
+
+즉 **정상 구성에서는 frontend 컨테이너 자신의 nginx가 `/api`를 처리할 일이 없습니다.**
+다만 frontend 컨테이너만 따로 떼어 실행하거나(예: 다른 오케스트레이션 도구, 수동
+`docker run`), 위 두 경로 중 하나가 아닌 조합으로 배포하면 `/api` 요청이 frontend
+컨테이너로 직접 올 수 있습니다. 이런 상황에 대비해 `frontend/nginx.conf.template`에
+`BACKEND_API_UPSTREAM` 환경변수로 켜는 선택적 `/api` 프록시가 있습니다.
+
+- 기본값(비어 있음): `/api/**` 요청은 (index.html을 대신 돌려주지 않고) 502/500으로
+  명확히 실패합니다. `docker-compose.yml`/`docker-compose.prod.yml`은 이 프록시가 필요
+  없으므로 기본 동작에 영향이 없습니다.
+- `BACKEND_API_UPSTREAM=backend:8080`처럼 backend와 같은 네트워크의 주소를 지정하면,
+  frontend 컨테이너가 자체적으로 `/api`를 그 주소로 프록시합니다(두 compose 파일 모두
+  기본으로 설정되어 있어, frontend 컨테이너를 단독으로 이 값과 함께 실행해도 안전합니다).
 
 ## 8. 주요 기능
 
@@ -598,11 +630,12 @@ pip install -r requirements.txt
 pytest
 ```
 
-video-llm-engine의 mock 엔드포인트 테스트는 무거운 모델 의존성 없이 필요한 최소 패키지만 설치해 실행할 수 있습니다.
+video-llm-engine의 mock 엔드포인트 테스트는 requirements-test.txt(=requirements-base.txt + pytest)만
+설치하면 되며, torch/transformers 등 무거운 real-model 의존성은 필요 없습니다.
 
 ```bash
 cd ~/Desktop/hanium\ project/video-llm-engine
-pip install pytest==8.4.2 fastapi==0.138.2 httpx==0.28.1 pydantic==2.13.4
+pip install -r requirements-test.txt
 pytest
 ```
 
@@ -724,9 +757,15 @@ crontab 자동화 예시(매일 새벽 3시):
 복구 예시:
 
 ```bash
-gunzip -c storage/backups/hanium_dev_YYYYMMDD_HHMMSS.sql.gz \
-  | MYSQL_PWD=실제비밀번호 mysql -h 127.0.0.1 -P 3306 -u hanium hanium_dev
+DB_HOST=127.0.0.1 \
+DB_PORT=3306 \
+DB_NAME=hanium_dev \
+DB_USERNAME=hanium \
+DB_PASSWORD=실제비밀번호 \
+./scripts/restore-mysql.sh storage/backups/hanium_dev_YYYYMMDD_HHMMSS.sql.gz
 ```
+
+`restore-mysql.sh`는 로컬 호스트에 `mysql` CLI가 설치되어 있고 compose MySQL 포트가 `127.0.0.1`로 열려 있는 방식을 전제로 합니다. 대상 DB에 기존 테이블이 있으면 실수로 덮어쓰지 않도록 기본적으로 중단하며, 테스트 DB처럼 덮어써도 되는 대상임을 확인한 경우에만 `--force`를 붙여 실행합니다. 실행 로그는 `RESTORE_LOG_PATH`가 있으면 그 경로에, 없으면 `BACKUP_LOG_PATH` 또는 `storage/logs/restore.log`에 남습니다.
 
 ## 15. 의존성 업데이트 자동화
 

@@ -140,3 +140,9 @@ Project/
 .ropeproject
 tempCodeRunnerFile.py
 .pypirc
+
+# 개인 작업 문서 / 로컬 산출물 (저장소에 커밋하지 않음)
+전체기능명세.docx
+전체기능명세.png
+outputs/
+.claude/

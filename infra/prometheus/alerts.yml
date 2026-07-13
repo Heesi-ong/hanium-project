@@ -45,3 +45,21 @@ groups:
         annotations:
           summary: "호스트 디스크 여유 공간 부족"
           description: "호스트 루트 파일시스템의 여유 공간이 15% 미만인 상태가 10분 이상 지속되고 있습니다. storage 디렉터리와 백업/업로드 파일 사용량을 확인하세요."
+
+      - alert: HostCpuLoadHigh
+        expr: node_load1{job="node-exporter"} > (count without (cpu, mode) (node_cpu_seconds_total{job="node-exporter", mode="idle"}) * 1.5)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "호스트 CPU 부하가 높습니다"
+          description: "호스트의 1분 평균 CPU 로드가 CPU 코어 수의 1.5배를 초과한 상태가 10분 이상 지속되고 있습니다. 어떤 컨테이너가 CPU를 많이 사용하는지 확인하세요."
+
+      - alert: HostMemoryLow
+        expr: node_memory_MemAvailable_bytes{job="node-exporter"} / clamp_min(node_memory_MemTotal_bytes{job="node-exporter"}, 1) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "호스트 여유 메모리 부족"
+          description: "호스트의 여유 메모리가 전체 메모리의 15% 미만인 상태가 10분 이상 지속되고 있습니다. 메모리 사용량이 높은 컨테이너와 프로세스를 확인하세요."

@@ -9,6 +9,7 @@ configure_logging()
 
 from app.core import model_registry
 from app.api.basic_analysis import router as basic_analysis_router
+from app.api.readiness import router as readiness_router
 
 logger = logging.getLogger("analysis-engine")
 
@@ -36,3 +37,4 @@ def health_check():
 
 
 app.include_router(basic_analysis_router)
+app.include_router(readiness_router)

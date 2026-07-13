@@ -8,6 +8,7 @@ import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngine
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
@@ -46,6 +47,44 @@ public class AnalysisEngineClient {
             return Map.of(
                     "status", "down",
                     "reachable", false,
+                    "error", e.getClass().getSimpleName(),
+                    "message", e.getMessage() == null ? "분석 엔진에 연결할 수 없습니다." : e.getMessage()
+            );
+        }
+    }
+
+    // /health와 달리 X-Internal-Api-Key로 실제 분석 API 인증 경로까지 검증합니다.
+    // reachable(연결 가능)과 authenticated(키 인증 통과)를 분리해 "떠 있지만 인증 실패"
+    // 상태를 구분할 수 있게 합니다.
+    public Map<String, Object> checkReadiness() {
+        try {
+            Map<String, Object> response = restClient.get()
+                    .uri("/api/internal/readiness")
+                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey())
+                    .retrieve()
+                    .body(Map.class);
+
+            boolean ready = response != null && Boolean.TRUE.equals(response.get("ready"));
+
+            return Map.of(
+                    "reachable", true,
+                    "authenticated", true,
+                    "ready", ready,
+                    "response", response == null ? Map.of() : response
+            );
+        } catch (HttpClientErrorException.Unauthorized e) {
+            return Map.of(
+                    "reachable", true,
+                    "authenticated", false,
+                    "ready", false,
+                    "error", e.getClass().getSimpleName(),
+                    "message", "분석 엔진 내부 API 키 인증에 실패했습니다."
+            );
+        } catch (Exception e) {
+            return Map.of(
+                    "reachable", false,
+                    "authenticated", false,
+                    "ready", false,
                     "error", e.getClass().getSimpleName(),
                     "message", e.getMessage() == null ? "분석 엔진에 연결할 수 없습니다." : e.getMessage()
             );

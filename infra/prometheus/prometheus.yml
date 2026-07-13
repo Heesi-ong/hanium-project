@@ -20,6 +20,19 @@ scrape_configs:
     static_configs:
       - targets: ['backend:8081']
 
+  # 분석 실행 워커. 워커를 분리 배포하면 완료/실패/타임아웃/소요시간/큐 게이지 등 "실행"
+  # 관련 지표는 backend가 아니라 이 워커가 방출하므로, 반드시 함께 스크레이프해야 대시보드와
+  # 알림이 정확해집니다.
+  # DNS 서비스 디스커버리를 사용해, `--scale analysis-worker=N`으로 워커를 늘리면 모든 복제본을
+  # 자동으로 찾아 스크레이프합니다. (docker 내장 DNS가 서비스명 A 레코드로 모든 컨테이너 IP를
+  # 반환) 워커를 띄우지 않는 단일 프로세스 모드라면 대상이 0개가 되어 조용히 무시됩니다.
+  - job_name: analysis-worker
+    metrics_path: /actuator/prometheus
+    dns_sd_configs:
+      - names: ['analysis-worker']
+        type: A
+        port: 8081
+
   - job_name: node-exporter
     static_configs:
       - targets: ['node-exporter:9100']

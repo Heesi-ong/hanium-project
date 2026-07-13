@@ -79,6 +79,43 @@ class ResultQueryServiceTest {
         verify(uploadedVideoRepository, never()).findByJobId(any());
     }
 
+    @Test
+    void getResultSummariesMarksJobsWithoutUploadedVideoAsBrokenInsteadOfFailingTheWholePage() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 2);
+        AnalysisJob healthyJob = AnalysisJob.create("20260703090002-cccccccc", ownerId);
+        AnalysisJob brokenJob = AnalysisJob.create("20260703090003-dddddddd", ownerId);
+        List<AnalysisJob> analysisJobs = List.of(healthyJob, brokenJob);
+        List<String> jobIds = analysisJobs.stream()
+                .map(AnalysisJob::getJobId)
+                .toList();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(analysisJobs, pageRequest, analysisJobs.size()));
+        // brokenJob의 UploadedVideo 레코드는 의도적으로 반환하지 않아 데이터 정합성이 깨진
+        // 상황(예: 업로드 실패 후 정리 누락)을 재현합니다.
+        when(uploadedVideoRepository.findAllByJobIdIn(jobIds))
+                .thenReturn(List.of(createUploadedVideo(healthyJob.getJobId(), "healthy.mp4")));
+        when(filePathGenerator.generateFinalResultPath(any()))
+                .thenReturn(Path.of("results", "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of());
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        assertThat(response.getContent())
+                .extracting(ResultSummaryResponse::jobId)
+                .containsExactly(healthyJob.getJobId(), brokenJob.getJobId());
+
+        ResultSummaryResponse healthySummary = response.getContent().get(0);
+        assertThat(healthySummary.dataIssue()).isNull();
+        assertThat(healthySummary.originalFileName()).isEqualTo("healthy.mp4");
+
+        ResultSummaryResponse brokenSummary = response.getContent().get(1);
+        assertThat(brokenSummary.dataIssue()).isEqualTo("MISSING_VIDEO");
+        assertThat(brokenSummary.dataIssueDescription()).isNotBlank();
+    }
+
     private UploadedVideo createUploadedVideo(String jobId, String originalFileName) {
         return UploadedVideo.create(
                 jobId,

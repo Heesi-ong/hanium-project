@@ -60,6 +60,12 @@ external:
     base-url: ${VIDEO_LLM_ENGINE_BASE_URL:http://localhost:8002}
     api-key: ${INTERNAL_ENGINE_API_KEY:}
 
+  # analysis-engine/video-llm-engine 호출의 connect/read 타임아웃. read 타임아웃이 한 번의
+  # 외부 호출이 매달릴 수 있는 최대 시간이며, 긴 호출 도중 취소/타임아웃이 반영되는 상한이 됩니다.
+  http:
+    connect-timeout-seconds: ${EXTERNAL_HTTP_CONNECT_TIMEOUT_SECONDS:5}
+    read-timeout-minutes: ${EXTERNAL_HTTP_READ_TIMEOUT_MINUTES:10}
+
 resilience4j:
   circuitbreaker:
     instances:
@@ -93,6 +99,10 @@ analysis:
     max-count: ${ANALYSIS_RETRY_MAX_COUNT:3}
   executor:
     await-termination-seconds: ${ANALYSIS_EXECUTOR_AWAIT_TERMINATION_SECONDS:25}
+  job:
+    # 작업 1건의 최대 실행 시간(분). 초과 시 단계 사이 체크포인트에서 자동 실패 처리합니다.
+    # 사후 복구용 stuck-job.max-running-minutes(30)보다 작게 두어, 먼저 능동적으로 종료되게 합니다.
+    timeout-minutes: ${ANALYSIS_JOB_TIMEOUT_MINUTES:20}
   stuck-job:
     cron: "${ANALYSIS_STUCK_JOB_CRON:0 */10 * * * *}"
     max-running-minutes: ${ANALYSIS_STUCK_JOB_MAX_RUNNING_MINUTES:30}
@@ -114,6 +124,12 @@ analysis:
   dispatch:
     # /run이 로컬 executor로 즉시 투입할지. worker/api 분리 배포에서는 false로 두고, 워커 폴러가 소비.
     local-on-run: ${ANALYSIS_DISPATCH_LOCAL_ON_RUN:true}
+  queue:
+    # QUEUED 백프레셔 한도. api/worker 분리 배포(dispatch.local-on-run=false)에서는 로컬 executor
+    # 포화 검사가 동작하지 않으므로, 워커가 느리거나 꺼져도 DB에 무제한 쌓이지 않게 하는 유일한
+    # 방어선입니다. 초과 시 /run, /retry는 429(ANALYSIS_QUEUE_FULL)로 거절합니다.
+    max-global-queued: ${ANALYSIS_QUEUE_MAX_GLOBAL_QUEUED:100}
+    max-queued-per-user: ${ANALYSIS_QUEUE_MAX_QUEUED_PER_USER:3}
 
 storage:
   root-path: ${STORAGE_ROOT_PATH:../storage}

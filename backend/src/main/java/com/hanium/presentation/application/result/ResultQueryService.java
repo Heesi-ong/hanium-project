@@ -10,6 +10,8 @@ import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class ResultQueryService {
+
+    private static final Logger log = LoggerFactory.getLogger(ResultQueryService.class);
 
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
@@ -85,19 +89,25 @@ public class ResultQueryService {
                 ));
     }
 
+    // 목록 조회는 한 작업의 데이터 정합성이 깨졌다고 전체를 실패시키지 않습니다. 업로드 영상
+    // 레코드가 없는 작업은 손상 항목(dataIssue=MISSING_VIDEO)으로 표시해 나머지와 함께
+    // 반환하고, 운영자가 원인을 조사할 수 있도록 jobId를 로그로 남깁니다. 명확한 오류가
+    // 필요한 경우는 개별 상세 조회(getFinalResult)에서만 던집니다.
     private ResultSummaryResponse toSummaryResponse(
             AnalysisJob analysisJob,
             Map<String, UploadedVideo> uploadedVideosByJobId
     ) {
         UploadedVideo uploadedVideo = uploadedVideosByJobId.get(analysisJob.getJobId());
-        if (uploadedVideo == null) {
-            throw new BusinessException(
-                    ErrorCode.FILE_NOT_FOUND,
-                    "업로드된 영상 정보를 찾을 수 없습니다."
-            );
-        }
-
         Map<String, Object> finalResult = readFinalResultSafely(analysisJob.getJobId());
+
+        if (uploadedVideo == null) {
+            log.warn(
+                    "[{}] 결과 목록 조회 중 업로드 영상 정보를 찾지 못해 손상 항목으로 표시합니다.",
+                    analysisJob.getJobId()
+            );
+
+            return ResultSummaryResponse.missingVideo(analysisJob, finalResult);
+        }
 
         return ResultSummaryResponse.of(
                 analysisJob,

@@ -6,9 +6,13 @@ import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 분석 파이프라인이 실행되는 "동안" AnalysisJob 상태를 즉시 DB에 커밋하기 위한 서비스입니다.
@@ -60,6 +64,44 @@ public class AnalysisJobStatusService {
             log.warn("[{}] 실행 선점을 시도했지만 AnalysisJob을 찾지 못했습니다.", jobId);
             return false;
         });
+    }
+
+    /**
+     * 워커 폴러가 "조회 후 실행 제출" 대신 "claim 후 실행 제출"할 수 있도록, QUEUED 후보를
+     * 조회와 동시에 원자적으로 선점(BASIC_ANALYZING 전이)합니다.
+     *
+     * <p>여러 워커 인스턴스가 동시에 폴링해도, 행 잠금(PESSIMISTIC_WRITE)을 쥔 트랜잭션이
+     * 커밋할 때까지 다른 인스턴스의 같은 조회는 대기하고, 커밋 후에는 이미 상태가 바뀐
+     * 행이라 자연스럽게 결과에서 빠집니다. 그 결과 이 메서드가 반환한 작업은 호출 시점에
+     * 이미 이 인스턴스가 실행 소유권을 확정한 상태이므로, 실행 제출 단계에서 별도로
+     * {@link #claimForExecution(String)}을 다시 호출할 필요가 없습니다.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public List<AnalysisJob> claimNextQueuedJobs(int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+
+        List<AnalysisJob> candidates = analysisJobRepository.findByStatusOrderByCreatedAtAscForClaim(
+                AnalysisStatus.QUEUED,
+                PageRequest.of(0, limit)
+        );
+
+        List<AnalysisJob> claimed = new ArrayList<>();
+
+        for (AnalysisJob candidate : candidates) {
+            if (candidate.startExecutionIfQueued()) {
+                claimed.add(candidate);
+            }
+        }
+
+        analysisJobRepository.saveAll(claimed);
+
+        if (!claimed.isEmpty()) {
+            log.info("워커 폴러가 QUEUED 작업 {}건을 원자적으로 선점(claim)했습니다.", claimed.size());
+        }
+
+        return claimed;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

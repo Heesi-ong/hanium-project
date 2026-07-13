@@ -190,6 +190,19 @@ public class AnalysisJob {
         return true;
     }
 
+    // QUEUED(대기) 상태는 아직 파이프라인이 시작되지 않았으므로, 실행 중 취소처럼 플래그만
+    // 세우고 다음 체크포인트를 기다릴 필요 없이 그 자리에서 바로 CANCELLED로 전이합니다.
+    // 이미 QUEUED가 아니면(워커가 먼저 선점해 BASIC_ANALYZING으로 넘어갔다면) false를
+    // 반환해, 호출자가 "실행 중 취소" 경로로 다시 시도하도록 알립니다.
+    public boolean cancelFromQueue() {
+        if (!isQueued()) {
+            return false;
+        }
+
+        markCancelled();
+        return true;
+    }
+
     public void markCancelled() {
         this.status = AnalysisStatus.CANCELLED;
         this.completedAt = LocalDateTime.now();

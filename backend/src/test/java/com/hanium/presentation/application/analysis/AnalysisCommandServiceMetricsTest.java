@@ -10,12 +10,14 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.OpenAiClient;
 import com.hanium.presentation.infrastructure.client.videollm.VideoLlmEngineClient;
+import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -97,11 +99,13 @@ class AnalysisCommandServiceMetricsTest {
                 analysisEngineClient,
                 mock(VideoLlmEngineClient.class),
                 mock(OpenAiClient.class),
+                mock(VideoDurationProbe.class),
                 mock(JobIdGenerator.class),
                 mock(AnalysisProgressService.class),
                 analysisJobStatusService,
                 analysisTaskExecutor,
                 new AnalysisRetryProperties(3),
+                new AnalysisQueueProperties(100, 3),
                 meterRegistry
         );
     }

@@ -15,7 +15,7 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 
 # 2단계: nginx로 정적 파일 서빙
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # nginx 공식 이미지는 컨테이너 시작 시 /etc/nginx/templates/*.template 파일을 envsubst로

@@ -193,7 +193,8 @@ public class AnalysisController {
         );
 
         return ApiResponse.success(
-                "분석 취소 요청이 접수되었습니다. 현재 진행 중인 단계가 끝나면 취소 상태로 반영됩니다.",
+                "분석 취소 요청이 처리되었습니다. 대기 중이었다면 즉시 취소되고, 진행 중이었다면 "
+                        + "현재 단계가 끝나면 취소 상태로 반영됩니다.",
                 response
         );
     }

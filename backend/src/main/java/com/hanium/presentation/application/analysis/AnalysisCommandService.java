@@ -13,6 +13,7 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
@@ -23,6 +24,7 @@ import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRe
 import com.hanium.presentation.infrastructure.client.videollm.VideoLlmEngineClient;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineRequest;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
+import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -39,8 +41,12 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
@@ -56,6 +62,7 @@ public class AnalysisCommandService {
     private final AnalysisEngineClient analysisEngineClient;
     private final VideoLlmEngineClient videoLlmEngineClient;
     private final OpenAiClient openAiClient;
+    private final VideoDurationProbe videoDurationProbe;
     private final JobIdGenerator jobIdGenerator;
     private final AnalysisProgressService analysisProgressService;
     private final AnalysisJobStatusService analysisJobStatusService;
@@ -66,7 +73,14 @@ public class AnalysisCommandService {
     // 필드 초기값을 true로 둬서, 스프링 컨텍스트 없이 new로 생성하는 단위 테스트에서도 기존처럼 즉시 투입됩니다.
     @Value("${analysis.dispatch.local-on-run:true}")
     private boolean localDispatchOnRun = true;
+
+    // 작업 1건이 시작부터 끝까지 쓸 수 있는 최대 시간(분). 이 시간을 넘기면 각 단계 사이의
+    // 체크포인트에서 감지해 자동으로 실패 처리합니다. 30분 워치도그(사후 복구)와 달리, 이건
+    // 실행 중에 능동적으로 예산을 강제합니다. (watchdog max-running-minutes보다 작게 두세요.)
+    @Value("${analysis.job.timeout-minutes:20}")
+    private long jobTimeoutMinutes = 20;
     private final AnalysisRetryProperties analysisRetryProperties;
+    private final AnalysisQueueProperties analysisQueueProperties;
     private final MeterRegistry meterRegistry;
 
     public AnalysisCommandService(
@@ -77,11 +91,13 @@ public class AnalysisCommandService {
             AnalysisEngineClient analysisEngineClient,
             VideoLlmEngineClient videoLlmEngineClient,
             OpenAiClient openAiClient,
+            VideoDurationProbe videoDurationProbe,
             JobIdGenerator jobIdGenerator,
             AnalysisProgressService analysisProgressService,
             AnalysisJobStatusService analysisJobStatusService,
             ThreadPoolTaskExecutor analysisTaskExecutor,
             AnalysisRetryProperties analysisRetryProperties,
+            AnalysisQueueProperties analysisQueueProperties,
             MeterRegistry meterRegistry
     ) {
         this.analysisJobRepository = analysisJobRepository;
@@ -91,11 +107,13 @@ public class AnalysisCommandService {
         this.analysisEngineClient = analysisEngineClient;
         this.videoLlmEngineClient = videoLlmEngineClient;
         this.openAiClient = openAiClient;
+        this.videoDurationProbe = videoDurationProbe;
         this.jobIdGenerator = jobIdGenerator;
         this.analysisProgressService = analysisProgressService;
         this.analysisJobStatusService = analysisJobStatusService;
         this.analysisTaskExecutor = analysisTaskExecutor;
         this.analysisRetryProperties = analysisRetryProperties;
+        this.analysisQueueProperties = analysisQueueProperties;
         this.meterRegistry = meterRegistry;
     }
 
@@ -174,10 +192,14 @@ public class AnalysisCommandService {
 
         validateOwnership(analysisJob, ownerId);
 
+        if (analysisJob.isQueued()) {
+            return cancelQueuedJob(analysisJob);
+        }
+
         if (!analysisJob.isRunning()) {
             throw new BusinessException(
                     ErrorCode.ANALYSIS_CANCEL_NOT_ALLOWED,
-                    "진행 중인 분석 작업만 취소할 수 있습니다. status=" + analysisJob.getStatus()
+                    "진행 중이거나 대기 중인 분석 작업만 취소할 수 있습니다. status=" + analysisJob.getStatus()
             );
         }
 
@@ -188,13 +210,54 @@ public class AnalysisCommandService {
                 .orElseGet(() -> AnalysisStatusResponse.from(analysisJob));
     }
 
+    // 대기(QUEUED) 중인 작업은 아직 파이프라인이 시작되지 않았으므로, 실행 중 취소처럼
+    // cancelRequested 플래그만 세우고 다음 체크포인트를 기다릴 필요가 없습니다. 그 자리에서
+    // 바로 CANCELLED로 전이하고, 실행 중 취소와 동일한 후처리(진행률 캐시/결과 파일/메트릭)를
+    // 맞춰 결과·진행률·목록 상태가 서로 어긋나지 않게 합니다.
+    //
+    // 이 찰나에 워커가 먼저 선점(claimForExecution)하면 @Version 낙관적 락 충돌로 감지되어,
+    // "이미 실행 중이니 실행 중 취소를 다시 요청하라"고 안내합니다. 반대로 이 메서드가 먼저
+    // CANCELLED로 커밋하면, 워커가 나중에 claimForExecution()을 호출해도 상태가 더 이상
+    // QUEUED가 아니므로 선점에 실패해 조용히 건너뜁니다(중복 실행 없음).
+    private AnalysisStatusResponse cancelQueuedJob(AnalysisJob analysisJob) {
+        String jobId = analysisJob.getJobId();
+
+        if (!analysisJob.cancelFromQueue()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_CANCEL_NOT_ALLOWED,
+                    "취소를 시도하는 사이 작업 상태가 바뀌었습니다. 다시 시도해주세요. jobId=" + jobId
+            );
+        }
+
+        try {
+            analysisJobRepository.saveAndFlush(analysisJob);
+        } catch (OptimisticLockingFailureException e) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_ALREADY_RUNNING,
+                    "취소를 시도하는 사이 워커가 먼저 실행을 시작했습니다. 실행 중 취소를 다시 요청해주세요. jobId=" + jobId
+            );
+        }
+
+        analysisProgressService.cancel(jobId, 0);
+        saveCancelledResultSafely(jobId);
+        meterRegistry.counter("analysis.job.cancelled").increment();
+        log.info("[{}] 대기(QUEUED) 상태에서 즉시 취소되었습니다.", jobId);
+
+        return AnalysisStatusResponse.from(analysisJob);
+    }
+
     private AnalysisStatusResponse acceptAndDispatch(
             AnalysisJob analysisJob,
             boolean useVideoLlm,
             boolean useOpenAi,
             String trigger
     ) {
-        // 로컬 즉시 투입 모드(monolith)에서만, 상태를 "시작됨"으로 바꾸기 전에 워커 대기열이
+        // 배포 모드와 무관하게 항상 검사합니다. api/worker 분리 모드(dispatch.local-on-run=false)에서는
+        // 아래 rejectIfExecutorSaturated()가 동작하지 않으므로, 워커가 느리거나 꺼져 있어도
+        // DB에 QUEUED 작업이 무제한 쌓이지 않게 막는 방어선은 이 검사가 유일합니다.
+        rejectIfQueueBackpressureExceeded(analysisJob.getOwnerId());
+
+        // 로컬 즉시 투입 모드(monolith)에서만, 상태를 "시작됨"으로 바꾸기 전에 워커 스레드풀이
         // 이미 가득 찼는지 확인합니다. 여기서 막으면 job은 원래 상태로 남고 사용자에게는
         // 429(잠시 후 재시도)를 돌려줍니다. api/worker 분리 모드에서는 접수만 하고 워커 폴러가
         // 소비하므로 이 사전 점검은 하지 않습니다(대기 작업은 QUEUED로 안전하게 쌓입니다).
@@ -227,16 +290,17 @@ public class AnalysisCommandService {
         // (다른 트랜잭션 기준으로는 보이지 않는) 상태를 참조할 수 있습니다.
         if (localDispatchOnRun) {
             // monolith 모드: 커밋 직후 이 인스턴스의 executor로 즉시 투입해 지연 없이 실행합니다.
+            // 아직 claim 전(QUEUED)이므로, 파이프라인 시작 시 claimForExecution()을 거칩니다.
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        dispatch(jobId, useVideoLlm, useOpenAi);
+                        dispatch(jobId, useVideoLlm, useOpenAi, false);
                     }
                 });
             } else {
                 // 트랜잭션 없이 호출되는 경우(예: 테스트 코드)를 대비한 안전장치입니다.
-                dispatch(jobId, useVideoLlm, useOpenAi);
+                dispatch(jobId, useVideoLlm, useOpenAi, false);
             }
         } else {
             // api/worker 분리 모드: 접수(QUEUED)만 하고 즉시 투입하지 않습니다.
@@ -251,10 +315,20 @@ public class AnalysisCommandService {
     // 순간에 다른 요청이 대기열을 마저 채우면 여기서 RejectedExecutionException이 날 수
     // 있습니다. 이 경우 커밋은 이미 끝나 job이 "시작됨"으로 남아 있으므로, 곧바로 실패
     // 처리해 멈춘 것처럼 보이지 않게 하고 사용자가 바로 재시도할 수 있도록 합니다.
-    private void dispatch(String jobId, boolean useVideoLlm, boolean useOpenAi) {
+    //
+    // alreadyClaimed=false: job이 아직 QUEUED라 파이프라인 시작 시 claimForExecution()으로
+    // 선점을 시도해야 합니다(/run 즉시 투입, 재투입 스케줄러 재투입 모두 이 경로).
+    // alreadyClaimed=true: 호출자가 claimNextQueuedJobs()로 이미 원자적으로 선점을 마쳐
+    // DB 상태가 이미 BASIC_ANALYZING이므로, 파이프라인은 claimForExecution()을 건너뜁니다.
+    // 만약 이 제출 자체가 거부되면(RejectedExecutionException), 이미 선점된 작업이 DB에
+    // BASIC_ANALYZING으로 남아 아무도 다시 집어가지 못하는 "유령 작업"이 되지 않도록
+    // handleDispatchRejected()가 즉시 실패 처리합니다. 이 처리마저 누락되는 극히 드문 경우는
+    // StuckAnalysisJobWatchdogService(멈춘 작업 워치도그)가 max-running-minutes 뒤에
+    // 자동으로 실패 처리하는 안전망 역할을 합니다.
+    private void dispatch(String jobId, boolean useVideoLlm, boolean useOpenAi, boolean alreadyClaimed) {
         try {
             analysisTaskExecutor.execute(
-                    () -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi)
+                    () -> executeAnalysisAsync(jobId, useVideoLlm, useOpenAi, alreadyClaimed)
             );
         } catch (RejectedExecutionException e) {
             handleDispatchRejected(jobId, e);
@@ -265,7 +339,15 @@ public class AnalysisCommandService {
     // 실제 실행 여부는 워커가 claimForExecution()으로 판단하므로 중복 투입돼도 안전하고,
     // 풀이 가득 차 제출이 거부되면 dispatch()가 그 작업을 실패 처리합니다.
     public void redispatchQueuedJob(String jobId, boolean useVideoLlm, boolean useOpenAi) {
-        dispatch(jobId, useVideoLlm, useOpenAi);
+        dispatch(jobId, useVideoLlm, useOpenAi, false);
+    }
+
+    // QueuedAnalysisJobPoller가 AnalysisJobStatusService.claimNextQueuedJobs()로 이미
+    // 원자적으로 선점(claim)한 작업을 실행 제출합니다. "조회 후 실행 제출" 방식과 달리, 이
+    // 메서드가 호출된 시점에 이미 이 인스턴스가 실행 소유권을 확정한 상태이므로, 여러 워커가
+    // 같은 후보를 반복 조회/제출했다가 뒤늦게 선점 실패를 발견하는 낭비가 없습니다.
+    public void dispatchClaimedJob(String jobId, boolean useVideoLlm, boolean useOpenAi) {
+        dispatch(jobId, useVideoLlm, useOpenAi, true);
     }
 
     private void handleDispatchRejected(String jobId, RejectedExecutionException e) {
@@ -276,6 +358,33 @@ public class AnalysisCommandService {
         analysisProgressService.fail(jobId, 0, failReason);
         saveFailureResultSafely(jobId, failReason);
         meterRegistry.counter("analysis.job.failed", "reason", "queue-full").increment();
+    }
+
+    // DB에 쌓인 QUEUED 작업 수가 설정된 한도를 넘었는지 확인합니다. 전역 한도를 먼저 검사해
+    // 시스템 전체가 과부하 상태인지 보고, 그다음 사용자별 한도로 한 사용자가 대기열을 독점하지
+    // 못하게 막습니다. 두 검사 모두 "최선 노력(best-effort)"이라 아주 짧은 경합 구간에서는
+    // 한도를 살짝 넘길 수 있지만, 워커가 죽어도 무한정 쌓이는 것을 막기에는 충분합니다.
+    private void rejectIfQueueBackpressureExceeded(Long ownerId) {
+        long globalQueuedCount = analysisJobRepository.countByStatus(AnalysisStatus.QUEUED);
+
+        if (globalQueuedCount >= analysisQueueProperties.maxGlobalQueued()) {
+            meterRegistry.counter("analysis.job.rejected", "reason", "queue-full-global").increment();
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_QUEUE_FULL,
+                    "현재 분석 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요."
+            );
+        }
+
+        long ownerQueuedCount = analysisJobRepository.countByStatusAndOwnerId(AnalysisStatus.QUEUED, ownerId);
+
+        if (ownerQueuedCount >= analysisQueueProperties.maxQueuedPerUser()) {
+            meterRegistry.counter("analysis.job.rejected", "reason", "queue-full-per-user").increment();
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_QUEUE_FULL,
+                    "대기 중인 분석 작업이 너무 많습니다. 이전 작업이 끝난 뒤 다시 시도해주세요. (최대 "
+                            + analysisQueueProperties.maxQueuedPerUser() + "건)"
+            );
+        }
     }
 
     // 워커 스레드 풀과 대기열이 모두 가득 찬 상태인지 확인합니다. 가득 찼다면 새 작업을
@@ -313,13 +422,14 @@ public class AnalysisCommandService {
     private void executeAnalysisAsync(
             String jobId,
             boolean useVideoLlm,
-            boolean useOpenAi
+            boolean useOpenAi,
+            boolean alreadyClaimed
     ) {
         Timer.Sample sample = Timer.start(meterRegistry);
         MDC.put("jobId", jobId);
 
         try {
-            runAnalysisPipeline(jobId, useVideoLlm, useOpenAi, sample);
+            runAnalysisPipeline(jobId, useVideoLlm, useOpenAi, sample, alreadyClaimed);
         } finally {
             // 조기 return/예외/취소 등 어떤 경로로 끝나든, 워커 스레드 재사용 시
             // 이전 작업의 jobId가 다음 작업 로그에 남지 않도록 반드시 정리합니다.
@@ -333,12 +443,15 @@ public class AnalysisCommandService {
             String jobId,
             boolean useVideoLlm,
             boolean useOpenAi,
-            Timer.Sample sample
+            Timer.Sample sample,
+            boolean alreadyClaimed
     ) {
-        // 실행을 선점합니다. QUEUED 상태일 때만 BASIC_ANALYZING으로 전이하고 true를 받습니다.
-        // 재시작 복구로 같은 작업이 두 번 투입되면, 먼저 선점한 워커만 진행하고 나머지는 조용히
-        // 종료해 중복 실행을 막습니다.
-        if (!analysisJobStatusService.claimForExecution(jobId)) {
+        // alreadyClaimed=true면 호출자(QueuedAnalysisJobPoller)가 claimNextQueuedJobs()로
+        // 조회와 동시에 이미 원자적으로 선점(QUEUED -> BASIC_ANALYZING)을 마친 상태입니다.
+        // 그렇지 않은 경로(/run 즉시 투입, 재투입 스케줄러)는 아직 QUEUED이므로 여기서
+        // claimForExecution()으로 선점을 시도합니다. 재시작 복구로 같은 작업이 두 번
+        // 투입되면, 먼저 선점한 워커만 진행하고 나머지는 조용히 종료해 중복 실행을 막습니다.
+        if (!alreadyClaimed && !analysisJobStatusService.claimForExecution(jobId)) {
             log.info("[{}] 실행 선점에 실패해(이미 다른 워커가 처리 중이거나 대기 상태가 아님) 이 워커는 종료합니다.", jobId);
             stopDurationTimer(sample, "skipped");
             return;
@@ -366,10 +479,14 @@ public class AnalysisCommandService {
         log.info("[{}] 분석 파이프라인 시작 (useVideoLlm={}, useOpenAi={})", jobId, useVideoLlm, useOpenAi);
         analysisProgressService.start(jobId);
 
+        // 이 작업의 마감 시각(deadline). 각 단계 사이 체크포인트에서 이 시각을 넘겼는지 확인해
+        // 초과 시 자동 실패시킵니다.
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(jobTimeoutMinutes));
+
         int lastPercent = 10;
 
         try {
-            if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
+            if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                 return;
             }
 
@@ -390,7 +507,7 @@ public class AnalysisCommandService {
             VideoLlmEngineResponse videoLlmEngineResponse;
 
             if (useVideoLlm) {
-                if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
+                if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                     return;
                 }
 
@@ -405,7 +522,8 @@ public class AnalysisCommandService {
                 videoLlmEngineResponse = videoLlmEngineClient.analyze(
                         VideoLlmEngineRequest.defaultOption(
                                 jobId,
-                                uploadedVideo.getStoredFilePath()
+                                uploadedVideo.getStoredFilePath(),
+                                resolveDurationSec(jobId, uploadedVideo.getStoredFilePath())
                         )
                 );
                 log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);
@@ -431,7 +549,7 @@ public class AnalysisCommandService {
             OpenAiFeedbackResponse openAiFeedbackResponse;
 
             if (useOpenAi) {
-                if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
+                if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                     return;
                 }
 
@@ -465,7 +583,7 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
-            if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
+            if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                 return;
             }
 
@@ -484,7 +602,7 @@ public class AnalysisCommandService {
                     openAiFeedbackResponse
             );
 
-            if (stopIfCancellationRequested(jobId, lastPercent, sample)) {
+            if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                 return;
             }
 
@@ -514,7 +632,38 @@ public class AnalysisCommandService {
         }
     }
 
-    private boolean stopIfCancellationRequested(String jobId, int lastPercent, Timer.Sample sample) {
+    private Double resolveDurationSec(String jobId, String storedFilePath) {
+        try {
+            Optional<Duration> duration = videoDurationProbe.probe(Path.of(storedFilePath));
+            return duration
+                    .map(value -> value.toMillis() / 1000.0)
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("[{}] Video LLM durationSec 계산에 실패해 null로 전송합니다. path={}", jobId, storedFilePath, e);
+            return null;
+        }
+    }
+
+    // 각 단계 사이에서 호출됩니다. (1) 마감 시각 초과면 timeout으로, (2) 취소 요청이 있으면
+    // cancelled로 남은 단계를 중단합니다. 둘 중 하나라도 해당하면 true를 반환합니다.
+    // 타임아웃을 먼저 확인합니다(예산을 넘긴 작업은 취소 여부와 무관하게 종료해야 하므로).
+    private boolean stopIfCancelledOrTimedOut(
+            String jobId,
+            int lastPercent,
+            Timer.Sample sample,
+            Instant deadline
+    ) {
+        if (Instant.now().isAfter(deadline)) {
+            String failReason = "분석이 제한 시간(" + jobTimeoutMinutes + "분)을 초과해 자동으로 종료되었습니다.";
+            log.warn("[{}] {}", jobId, failReason);
+            analysisJobStatusService.failStatus(jobId, failReason);
+            analysisProgressService.fail(jobId, lastPercent, failReason);
+            saveFailureResultSafely(jobId, failReason);
+            meterRegistry.counter("analysis.job.failed", "reason", "timeout").increment();
+            stopDurationTimer(sample, "timeout");
+            return true;
+        }
+
         boolean cancelRequested = analysisJobRepository.findByJobId(jobId)
                 .map(AnalysisJob::isCancelRequested)
                 .orElse(false);

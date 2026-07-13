@@ -1,0 +1,129 @@
+{
+  "uid": "analysis-queue",
+  "title": "분석 큐 / 타임아웃",
+  "tags": ["backend", "analysis", "queue"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "현재 대기(QUEUED) 작업 수",
+      "description": "실행되지 못하고 대기 중인 분석 작업 수. 워커가 여러 개면 같은 값이 중복 보고되므로 max()로 집계합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(analysis_queue_backlog)",
+          "legendFormat": "대기(QUEUED)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "큐 적체 / 실행 중 작업 수",
+      "description": "대기(QUEUED)가 계속 증가하면 워커 처리량이 부족하다는 신호입니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(analysis_queue_backlog)",
+          "legendFormat": "대기(QUEUED)"
+        },
+        {
+          "refId": "B",
+          "expr": "max(analysis_queue_running)",
+          "legendFormat": "실행 중"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 15 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "대기열 가득참 거절(429) 비율",
+      "description": "monolith 모드에서 /run 시 워커 대기열이 가득 차 429로 거절된 비율입니다. 지속되면 처리량 대비 요청이 많다는 뜻입니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(analysis_job_rejected_total[5m]))",
+          "legendFormat": "대기열 가득참 거절"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "타임아웃 실패 비율",
+      "description": "작업별 제한 시간(analysis.job.timeout-minutes)을 초과해 자동 종료된 작업 비율입니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(analysis_job_failed_total{reason=\"timeout\"}[5m]))",
+          "legendFormat": "타임아웃 실패"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    }
+  ]
+}

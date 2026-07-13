@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import UploadPage from "./UploadPage";
 
 const analysisApiMock = vi.hoisted(() => ({
+    cancelAnalysis: vi.fn(),
     getAnalysisProgress: vi.fn(),
     getAnalysisStatus: vi.fn(),
     runAnalysis: vi.fn(),
@@ -15,6 +16,7 @@ const toastMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/analysisApi", () => ({
+    cancelAnalysis: analysisApiMock.cancelAnalysis,
     getAnalysisProgress: analysisApiMock.getAnalysisProgress,
     getAnalysisStatus: analysisApiMock.getAnalysisStatus,
     runAnalysis: analysisApiMock.runAnalysis,
@@ -68,6 +70,7 @@ function dropFile(dropZone, file) {
 
 describe("UploadPage", () => {
     beforeEach(() => {
+        analysisApiMock.cancelAnalysis.mockReset();
         analysisApiMock.getAnalysisProgress.mockReset();
         analysisApiMock.getAnalysisStatus.mockReset();
         analysisApiMock.runAnalysis.mockReset();
@@ -123,5 +126,74 @@ describe("UploadPage", () => {
         await waitFor(() => {
             expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:first.mp4");
         });
+    });
+
+    it("shows a queued cancel button and cancels the job immediately", async () => {
+        const jobId = "job-cancel-test";
+
+        analysisApiMock.uploadAnalysisVideo.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                originalFileName: "presentation.mp4",
+                storedFilePath: "/storage/uploads/job-cancel-test/presentation.mp4",
+                fileSize: 1024,
+            },
+        });
+
+        analysisApiMock.runAnalysis.mockResolvedValue({ data: {} });
+
+        analysisApiMock.getAnalysisStatus
+            .mockResolvedValueOnce({
+                data: {
+                    jobId,
+                    status: "QUEUED",
+                    statusDescription: "분석 대기 중",
+                    failReason: null,
+                },
+            })
+            .mockResolvedValue({
+                data: {
+                    jobId,
+                    status: "CANCELLED",
+                    statusDescription: "취소됨",
+                    failReason: null,
+                },
+            });
+
+        analysisApiMock.getAnalysisProgress.mockResolvedValue({
+            data: { percent: 0, message: "대기 중" },
+        });
+
+        analysisApiMock.cancelAnalysis.mockResolvedValue({
+            data: {
+                jobId,
+                status: "CANCELLED",
+                statusDescription: "취소됨",
+            },
+        });
+
+        window.confirm = vi.fn().mockReturnValue(true);
+
+        renderUploadPage();
+
+        dropFile(getDropZone(), createVideoFile());
+        fireEvent.click(await screen.findByRole("button", { name: "영상 업로드" }));
+
+        await screen.findByText(jobId);
+
+        fireEvent.click(await screen.findByRole("button", { name: "분석 실행" }));
+
+        const cancelButton = await screen.findByRole("button", { name: "대기 중 취소" });
+        fireEvent.click(cancelButton);
+
+        expect(window.confirm).toHaveBeenCalled();
+
+        await waitFor(() => {
+            expect(analysisApiMock.cancelAnalysis).toHaveBeenCalledWith(jobId);
+        });
+
+        expect(await screen.findByText("취소됨")).toBeInTheDocument();
     });
 });

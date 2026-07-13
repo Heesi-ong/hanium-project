@@ -119,6 +119,7 @@ function ResultDetailPage() {
     const isFailed = currentStatus === "FAILED";
     const isCancelled = currentStatus === "CANCELLED";
     const isCompleted = currentStatus === "COMPLETED";
+    const isQueued = currentStatus === "QUEUED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
     const isRateLimited = rateLimitedUntil > Date.now();
 
@@ -338,9 +339,11 @@ function ResultDetailPage() {
             return;
         }
 
-        const confirmed = window.confirm(
-            "진행 중인 분석을 취소하시겠습니까? 현재 실행 중인 단계가 끝난 뒤 취소됩니다."
-        );
+        const confirmMessage = isQueued
+            ? "대기 중인 분석을 취소하시겠습니까? 즉시 취소됩니다."
+            : "진행 중인 분석을 취소하시겠습니까? 현재 실행 중인 단계가 끝난 뒤 취소됩니다.";
+
+        const confirmed = window.confirm(confirmMessage);
 
         if (!confirmed) {
             return;
@@ -606,7 +609,11 @@ function ResultDetailPage() {
                             onClick={handleCancel}
                             disabled={retrying || deleting || cancelling || isRateLimited}
                         >
-                            {cancelling ? "취소 요청 중..." : "분석 취소"}
+                            {cancelling
+                                ? "취소 요청 중..."
+                                : isQueued
+                                    ? "대기 중 취소"
+                                    : "분석 취소"}
                         </button>
                     )}
 

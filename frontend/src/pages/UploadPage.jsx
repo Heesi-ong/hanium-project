@@ -6,6 +6,7 @@ import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import { useToast } from "../context/ToastContext";
 import {
+    cancelAnalysis,
     getAnalysisProgress,
     getAnalysisStatus,
     runAnalysis,
@@ -58,6 +59,7 @@ function UploadPage() {
     const [loading, setLoading] = useState(false);
     const [running, setRunning] = useState(false);
     const [polling, setPolling] = useState(false);
+    const [cancelling, setCancelling] = useState(false);
     const [isDragActive, setIsDragActive] = useState(false);
     const [previewUrl, setPreviewUrl] = useState("");
     const [error, setError] = useState("");
@@ -75,11 +77,12 @@ function UploadPage() {
         "대기 중";
 
     const isRunningStatus = RUNNING_STATUSES.includes(currentStatus);
+    const isQueuedStatus = currentStatus === "QUEUED";
     const isCompleted = currentStatus === "COMPLETED";
     const isFailed = currentStatus === "FAILED";
     const isCancelled = currentStatus === "CANCELLED";
     const isRateLimited = rateLimitedUntil > Date.now();
-    const isFileSelectionDisabled = loading || running || polling;
+    const isFileSelectionDisabled = loading || running || polling || cancelling;
 
     useEffect(() => {
         return () => {
@@ -318,6 +321,43 @@ function UploadPage() {
         }
     }
 
+    async function handleCancel() {
+        if (!uploadedResult?.jobId) {
+            return;
+        }
+
+        const confirmMessage = isQueuedStatus
+            ? "대기 중인 분석을 취소하시겠습니까? 즉시 취소됩니다."
+            : "진행 중인 분석을 취소하시겠습니까? 현재 실행 중인 단계가 끝난 뒤 취소됩니다.";
+
+        const confirmed = window.confirm(confirmMessage);
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setCancelling(true);
+            setError("");
+
+            await cancelAnalysis(uploadedResult.jobId);
+            await fetchStatusOnce(uploadedResult.jobId);
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "분석 취소 요청 중 오류가 발생했습니다."
+            ));
+
+            try {
+                await fetchStatusOnce(uploadedResult.jobId);
+            } catch {
+                // 취소 요청 실패 후 상태 조회 실패는 기존 오류 메시지를 유지합니다.
+            }
+        } finally {
+            setCancelling(false);
+        }
+    }
+
     async function fetchStatusOnce(jobId) {
         const response = await getAnalysisStatus(jobId);
         setAnalysisStatus(response.data);
@@ -510,7 +550,7 @@ function UploadPage() {
                             type="button"
                             className="primary-button"
                             onClick={handleUpload}
-                            disabled={!file || loading || running || polling || isRateLimited}
+                            disabled={!file || loading || running || polling || cancelling || isRateLimited}
                         >
                             {loading ? "업로드 중..." : "영상 업로드"}
                         </button>
@@ -519,7 +559,7 @@ function UploadPage() {
                             type="button"
                             className="secondary-button"
                             onClick={handleReset}
-                            disabled={loading || running || polling}
+                            disabled={loading || running || polling || cancelling}
                         >
                             초기화
                         </button>
@@ -636,6 +676,21 @@ function UploadPage() {
                         >
                             {running || polling ? "분석 진행 중..." : "분석 실행"}
                         </button>
+
+                        {isRunningStatus && (
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={handleCancel}
+                                disabled={cancelling || isRateLimited}
+                            >
+                                {cancelling
+                                    ? "취소 요청 중..."
+                                    : isQueuedStatus
+                                        ? "대기 중 취소"
+                                        : "분석 취소"}
+                            </button>
+                        )}
 
                         <button
                             type="button"

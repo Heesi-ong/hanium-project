@@ -1,9 +1,14 @@
+import base64
+import json
 import logging
+import mimetypes
 import os
+import time
+from typing import Any, Dict
 
+import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import Dict, Any
 
 from app.core.security import verify_internal_api_key
 
@@ -21,6 +26,7 @@ class VideoLlmAnalysisRequest(BaseModel):
     videoPath: str
     sampleFps: int = 1
     maxFrames: int = 90
+    durationSec: float | None = None
 
 
 def resolve_video_llm_enabled() -> bool:
@@ -36,12 +42,575 @@ def resolve_video_llm_backend() -> str:
     return os.getenv("VIDEO_LLM_BACKEND", "mock").strip().lower()
 
 
+NVIDIA_DEFAULT_API_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_DEFAULT_ASSET_BASE_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
+NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES = 180 * 1024
+NVIDIA_STATUS_POLL_MAX_ATTEMPTS = 10
+NVIDIA_STATUS_POLL_INTERVAL_SECONDS = 1
+OBSERVATION_CATEGORIES = (
+    "eyeContact",
+    "facialExpression",
+    "gesture",
+    "posture",
+)
+SUMMARY_FIELDS = (
+    "visualDelivery",
+    "mainStrength",
+    "mainWeakness",
+)
+
+
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
-    # 실제 Video LLM 벤더(OpenAI GPT-4o vision / Gemini / 오픈소스 등)가
-    # 아직 결정되지 않았습니다. 벤더가 정해지면 이 함수 내부에 실제 API 호출을
-    # 구현하고, 반환값은 build_mock_response와 동일한 스키마
-    # (jobId/status/model/observations/globalSummary)를 따라야 합니다.
-    raise NotImplementedError("실제 Video LLM 모델 호출이 아직 구현되지 않았습니다.")
+    api_key = os.getenv("NVIDIA_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY is required when VIDEO_LLM_ENABLED=true.")
+
+    model = (
+        os.getenv("NVIDIA_VIDEO_LLM_MODEL", NVIDIA_DEFAULT_MODEL).strip()
+        or NVIDIA_DEFAULT_MODEL
+    )
+    base_url = (
+        os.getenv("NVIDIA_API_BASE_URL", NVIDIA_DEFAULT_API_BASE_URL).strip()
+        or NVIDIA_DEFAULT_API_BASE_URL
+    ).rstrip("/")
+    asset_base_url = (
+        os.getenv("NVIDIA_ASSET_API_BASE_URL", NVIDIA_DEFAULT_ASSET_BASE_URL).strip()
+        or NVIDIA_DEFAULT_ASSET_BASE_URL
+    ).rstrip("/")
+    timeout_seconds = float(os.getenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "120"))
+
+    url = f"{base_url}/chat/completions"
+    started_at = time.monotonic()
+    response_status = "not_sent"
+    asset_id = None
+
+    try:
+        with httpx.Client(timeout=timeout_seconds) as client:
+            video_input = prepare_nvidia_video_input(
+                client=client,
+                api_key=api_key,
+                asset_base_url=asset_base_url,
+                request=request,
+            )
+            asset_id = video_input.get("asset_id")
+            payload = build_nvidia_chat_completion_payload(request, model, video_input)
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if asset_id:
+                headers["NVCF-INPUT-ASSET-REFERENCES"] = asset_id
+
+            response = client.post(
+                url,
+                headers=headers,
+                json=payload,
+            )
+            response_status = str(response.status_code)
+            if response.status_code == 202:
+                response = poll_nvidia_chat_completion_result(
+                    client=client,
+                    base_url=base_url,
+                    api_key=api_key,
+                    initial_response=response,
+                )
+                response_status = f"202->{response.status_code}"
+            else:
+                response.raise_for_status()
+    finally:
+        if asset_id:
+            with httpx.Client(timeout=timeout_seconds) as cleanup_client:
+                delete_nvidia_asset(
+                    cleanup_client,
+                    api_key,
+                    asset_base_url,
+                    asset_id,
+                )
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        logger.info(
+            "NVIDIA_VIDEO_LLM_USAGE jobId=%s model=%s generationMode=REAL status=%s elapsedMs=%s",
+            request.jobId,
+            model,
+            response_status,
+            elapsed_ms,
+        )
+
+    content = extract_chat_completion_content(response.json())
+    model_json = parse_model_json(content)
+    return normalize_video_llm_response(
+        request.jobId,
+        model,
+        model_json,
+        request.durationSec,
+    )
+
+
+def build_nvidia_chat_completion_payload(
+    request: VideoLlmAnalysisRequest,
+    model: str,
+    video_input: Dict[str, str | None],
+) -> Dict[str, Any]:
+    system_prompt = (
+        "/no_think\n"
+        "You are a presentation-coaching video analyst. Return only strict JSON. "
+        "Do not wrap the JSON in Markdown. The JSON must match the requested schema exactly."
+    )
+    duration_prompt = build_duration_prompt(request.durationSec)
+    user_prompt = (
+        "Analyze the uploaded presentation video for visible delivery behavior. "
+        "Return JSON with this exact shape: "
+        "{"
+        "\"observations\":{"
+        "\"eyeContact\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
+        "\"description\":\"string\",\"confidence\":0.0}],"
+        "\"facialExpression\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
+        "\"description\":\"string\",\"confidence\":0.0}],"
+        "\"gesture\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
+        "\"description\":\"string\",\"confidence\":0.0}],"
+        "\"posture\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
+        "\"description\":\"string\",\"confidence\":0.0}]"
+        "},"
+        "\"globalSummary\":{"
+        "\"visualDelivery\":\"string\","
+        "\"mainStrength\":\"string\","
+        "\"mainWeakness\":\"string\""
+        "}"
+        "}. "
+        "Use seconds from the start of the video. Keep confidence between 0 and 1. "
+        f"{duration_prompt}"
+        f"Sampling hint from caller: sampleFps={request.sampleFps}, maxFrames={request.maxFrames}."
+    )
+
+    if video_input.get("asset_id"):
+        return {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        f"/no_think\n{user_prompt}\n"
+                        "Return only valid JSON. Do not include Markdown, comments, or trailing text.\n"
+                        f'<video src="{video_input["url"]}" />'
+                    ),
+                },
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1200,
+            "response_format": {
+                "type": "json_object",
+            },
+        }
+
+    return {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": user_prompt,
+                    },
+                    {
+                        "type": "video_url",
+                        "video_url": {
+                            "url": video_input["url"],
+                        },
+                    },
+                ],
+            },
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1200,
+        "response_format": {
+            "type": "json_object",
+        },
+    }
+
+
+def prepare_nvidia_video_input(
+    client: httpx.Client,
+    api_key: str,
+    asset_base_url: str,
+    request: VideoLlmAnalysisRequest,
+) -> Dict[str, str | None]:
+    video_bytes, content_type = read_video_bytes(request.videoPath)
+    if len(video_bytes) <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
+        encoded = base64.b64encode(video_bytes).decode("ascii")
+        return {
+            "url": f"data:{content_type};base64,{encoded}",
+            "asset_id": None,
+            "content_type": content_type,
+        }
+
+    description = f"video-llm-analysis jobId={request.jobId}"
+    asset_id, upload_url = create_nvidia_asset(
+        client,
+        api_key,
+        asset_base_url,
+        content_type,
+        description,
+    )
+    try:
+        upload_video_to_asset(client, upload_url, video_bytes, content_type, description)
+    except Exception:
+        delete_nvidia_asset(client, api_key, asset_base_url, asset_id)
+        raise
+
+    return {
+        "url": f"data:{content_type};asset_id,{asset_id}",
+        "asset_id": asset_id,
+        "content_type": content_type,
+    }
+
+
+def build_duration_prompt(duration_sec: float | None) -> str:
+    if duration_sec is None:
+        return ""
+
+    first_boundary = duration_sec / 3
+    second_boundary = duration_sec * 2 / 3
+    return (
+        f"The video is exactly {duration_sec:.3f} seconds long. "
+        f"All startSec and endSec values must be within [0, {duration_sec:.3f}] "
+        "and must not all be 0 unless the entire observation truly spans the whole video. "
+        f"Divide the video into three temporal segments: [0, {first_boundary:.3f}), "
+        f"[{first_boundary:.3f}, {second_boundary:.3f}), "
+        f"and [{second_boundary:.3f}, {duration_sec:.3f}]. "
+        "For each observation category (eyeContact, facialExpression, gesture, posture), "
+        "include at least one observation for each segment when the behavior is actually visible "
+        "in that segment. Unless the behavior truly does not change for the whole video, "
+        "do not collapse all observations into a single [0, duration] range. "
+    )
+
+
+def read_video_bytes(video_path: str) -> tuple[bytes, str]:
+    mime_type, _ = mimetypes.guess_type(video_path)
+    if not mime_type:
+        mime_type = "video/mp4"
+
+    with open(video_path, "rb") as video_file:
+        video_bytes = video_file.read()
+
+    return video_bytes, mime_type
+
+
+def encode_video_as_data_url(video_path: str) -> str:
+    video_bytes, mime_type = read_video_bytes(video_path)
+    if len(video_bytes) > NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
+        raise ValueError(
+            "Video file is too large for inline NVIDIA payload "
+            f"({len(video_bytes)} bytes > {NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES} bytes). "
+            "Use NVCF Asset API upload for larger files."
+        )
+
+    encoded = base64.b64encode(video_bytes).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def create_nvidia_asset(
+    client: httpx.Client,
+    api_key: str,
+    asset_base_url: str,
+    content_type: str,
+    description: str,
+) -> tuple[str, str]:
+    response = client.post(
+        f"{asset_base_url}/assets",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "contentType": content_type,
+            "description": description,
+        },
+    )
+    response.raise_for_status()
+    response_json = response.json()
+
+    asset_id = response_json.get("assetId")
+    upload_url = response_json.get("uploadUrl")
+    if not isinstance(asset_id, str) or not asset_id.strip():
+        raise ValueError("NVIDIA asset create response is missing assetId.")
+    if not isinstance(upload_url, str) or not upload_url.strip():
+        raise ValueError("NVIDIA asset create response is missing uploadUrl.")
+
+    return asset_id.strip(), upload_url.strip()
+
+
+def upload_video_to_asset(
+    client: httpx.Client,
+    upload_url: str,
+    video_bytes: bytes,
+    content_type: str,
+    description: str,
+) -> None:
+    response = client.put(
+        upload_url,
+        headers={
+            "Content-Type": content_type,
+            "x-amz-meta-nvcf-asset-description": description,
+        },
+        content=video_bytes,
+    )
+    response.raise_for_status()
+
+
+def delete_nvidia_asset(
+    client: httpx.Client,
+    api_key: str,
+    asset_base_url: str,
+    asset_id: str,
+) -> None:
+    try:
+        response = client.delete(
+            f"{asset_base_url}/assets/{asset_id}",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+            },
+        )
+        response.raise_for_status()
+    except Exception:
+        logger.warning(
+            "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_FAILED assetId=%s",
+            asset_id,
+            exc_info=True,
+        )
+
+
+def poll_nvidia_chat_completion_result(
+    client: httpx.Client,
+    base_url: str,
+    api_key: str,
+    initial_response: httpx.Response,
+) -> httpx.Response:
+    request_id = extract_nvidia_request_id(initial_response)
+    poll_url = f"{base_url}/status/{request_id}"
+
+    for _ in range(NVIDIA_STATUS_POLL_MAX_ATTEMPTS):
+        time.sleep(NVIDIA_STATUS_POLL_INTERVAL_SECONDS)
+        poll_response = client.get(
+            poll_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+            },
+        )
+        if poll_response.status_code == 200:
+            return poll_response
+        if poll_response.status_code == 202:
+            continue
+        poll_response.raise_for_status()
+
+    raise TimeoutError(
+        "NVIDIA chat completion result did not finish within "
+        f"{NVIDIA_STATUS_POLL_MAX_ATTEMPTS} polling attempts."
+    )
+
+
+def extract_nvidia_request_id(response: httpx.Response) -> str:
+    try:
+        response_json = response.json()
+    except json.JSONDecodeError as exc:
+        raise ValueError("NVIDIA 202 response body is not valid JSON.") from exc
+
+    if not isinstance(response_json, dict):
+        raise ValueError("NVIDIA 202 response body must be a JSON object.")
+
+    request_id = response_json.get("requestId")
+    if not isinstance(request_id, str) or not request_id.strip():
+        raise ValueError("NVIDIA 202 response is missing requestId.")
+
+    return request_id.strip()
+
+
+def extract_chat_completion_content(response_json: Dict[str, Any]) -> str:
+    try:
+        content = response_json["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise ValueError("NVIDIA response is missing choices[0].message.content.") from exc
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        text_parts = [
+            part.get("text", "")
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        ]
+        joined = "".join(text_parts).strip()
+        if joined:
+            return joined
+
+    raise ValueError("NVIDIA response content must be a JSON string.")
+
+
+def parse_model_json(content: str) -> Dict[str, Any]:
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
+
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError as exc:
+        raise ValueError("NVIDIA response content is not valid JSON.") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError("NVIDIA response JSON must be an object.")
+
+    return parsed
+
+
+def normalize_video_llm_response(
+    job_id: str,
+    model_name: str,
+    model_json: Dict[str, Any],
+    duration_sec: float | None = None,
+) -> Dict[str, Any]:
+    observations = model_json.get("observations")
+    if not isinstance(observations, dict):
+        raise ValueError("NVIDIA response is missing observations object.")
+
+    normalized_observations = {
+        category: normalize_observation_list(observations, category, duration_sec)
+        for category in OBSERVATION_CATEGORIES
+    }
+
+    global_summary = model_json.get("globalSummary")
+    if not isinstance(global_summary, dict):
+        raise ValueError("NVIDIA response is missing globalSummary object.")
+
+    normalized_summary = {}
+    for field in SUMMARY_FIELDS:
+        value = global_summary.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"NVIDIA response globalSummary.{field} must be a non-empty string."
+            )
+        normalized_summary[field] = value.strip()
+
+    return {
+        "jobId": job_id,
+        "status": "success",
+        "model": {
+            "name": model_name,
+            "version": "nvidia-nim",
+            "generationMode": "REAL",
+        },
+        "observations": normalized_observations,
+        "globalSummary": normalized_summary,
+    }
+
+
+def normalize_observation_list(
+    observations: Dict[str, Any],
+    category: str,
+    duration_sec: float | None,
+) -> list[Dict[str, Any]]:
+    items = observations.get(category)
+    if not isinstance(items, list):
+        raise ValueError(f"NVIDIA response observations.{category} must be a list.")
+
+    return [
+        normalize_observation_item(item, category, index, duration_sec)
+        for index, item in enumerate(items)
+    ]
+
+
+def normalize_observation_item(
+    item: Any,
+    category: str,
+    index: int,
+    duration_sec: float | None,
+) -> Dict[str, Any]:
+    if not isinstance(item, dict):
+        raise ValueError(f"NVIDIA response observations.{category}[{index}] must be an object.")
+
+    start_sec = clamp_observation_time(
+        require_number(item, "startSec", category, index),
+        duration_sec,
+        category,
+        index,
+        "startSec",
+    )
+    end_sec = clamp_observation_time(
+        require_number(item, "endSec", category, index),
+        duration_sec,
+        category,
+        index,
+        "endSec",
+    )
+    if end_sec < start_sec:
+        raise ValueError(
+            f"NVIDIA response observations.{category}[{index}] has endSec < startSec."
+        )
+
+    label = require_string(item, "label", category, index)
+    description = require_string(item, "description", category, index)
+    confidence = require_number(item, "confidence", category, index)
+    if confidence < 0 or confidence > 1:
+        raise ValueError(
+            f"NVIDIA response observations.{category}[{index}].confidence must be between 0 and 1."
+        )
+
+    return {
+        "startSec": start_sec,
+        "endSec": end_sec,
+        "label": label,
+        "description": description,
+        "confidence": confidence,
+    }
+
+
+def clamp_observation_time(
+    value: int | float,
+    duration_sec: float | None,
+    category: str,
+    index: int,
+    field: str,
+) -> int | float:
+    if duration_sec is None or value <= duration_sec:
+        return value
+
+    logger.warning(
+        "NVIDIA_VIDEO_LLM_TIME_CLAMP category=%s index=%s field=%s original=%s durationSec=%s",
+        category,
+        index,
+        field,
+        value,
+        duration_sec,
+    )
+    return duration_sec
+
+
+def require_number(item: Dict[str, Any], field: str, category: str, index: int) -> int | float:
+    value = item.get(field)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(
+            f"NVIDIA response observations.{category}[{index}].{field} must be a number."
+        )
+    return value
+
+
+def require_string(item: Dict[str, Any], field: str, category: str, index: int) -> str:
+    value = item.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"NVIDIA response observations.{category}[{index}].{field} must be a non-empty string."
+        )
+    return value.strip()
 
 
 def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) -> Dict[str, Any]:

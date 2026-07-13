@@ -1,38 +1,68 @@
-function formatObjectValue(value) {
-    if (value === null || value === undefined) {
-        return "-";
+function getVisualGenerationModeLabel(mode) {
+    if (mode === "REAL") {
+        return "실제 영상 AI";
     }
 
-    if (typeof value === "object") {
-        return JSON.stringify(value, null, 2);
+    if (mode === "FALLBACK") {
+        return "영상 AI 실패 후 Mock 대체";
     }
 
-    return String(value);
+    if (mode === "MOCK") {
+        return "Mock 영상 분석";
+    }
+
+    return "분석 방식 알 수 없음";
+}
+
+function getVisualGenerationModeClassName(mode) {
+    if (mode === "REAL") {
+        return "mini-badge success";
+    }
+
+    return "mini-badge muted";
+}
+
+function hasText(value) {
+    return typeof value === "string" && value.trim().length > 0;
 }
 
 function VisualAnalysisBox({ visualAnalysis }) {
-    const entries = Object.entries(visualAnalysis || {});
+    const globalSummary = visualAnalysis?.globalSummary || {};
+    const generationMode = visualAnalysis?.model?.generationMode || "UNKNOWN";
+    const summaryItems = [
+        ["전체 인상", globalSummary.visualDelivery],
+        ["강점", globalSummary.mainStrength],
+        ["개선점", globalSummary.mainWeakness],
+    ].filter(([, value]) => hasText(value));
 
     return (
         <article className="detail-card">
             <h2>시각 분석</h2>
 
-            {entries.length === 0 ? (
-                <p className="muted-text">표시할 데이터가 없습니다.</p>
+            {summaryItems.length === 0 ? (
+                <p className="muted-text">영상 분석 데이터가 아직 없습니다.</p>
             ) : (
-                <div className="key-value-list">
-                    {entries.map(([key, value]) => (
-                        <div className="key-value-item" key={key}>
-                            <span>{key}</span>
-
-                            {typeof value === "object" && value !== null ? (
-                                <pre>{formatObjectValue(value)}</pre>
-                            ) : (
-                                <strong>{formatObjectValue(value)}</strong>
-                            )}
+                <>
+                    <div className="key-value-list">
+                        <div className="key-value-item">
+                            <span>생성 방식</span>
+                            <strong>
+                                <span className={getVisualGenerationModeClassName(generationMode)}>
+                                    {getVisualGenerationModeLabel(generationMode)}
+                                </span>
+                            </strong>
                         </div>
-                    ))}
-                </div>
+
+                        {summaryItems.map(([label, value]) => (
+                            <div className="key-value-item" key={label}>
+                                <span>{label}</span>
+                                <strong>{value.trim()}</strong>
+                            </div>
+                        ))}
+                    </div>
+
+                    <p className="muted-text">세부 관찰 데이터는 준비 중입니다.</p>
+                </>
             )}
         </article>
     );

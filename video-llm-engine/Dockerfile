@@ -1,17 +1,26 @@
 FROM python:3.13-slim
 WORKDIR /app
 
-# 현재는 완전 Mock 응답만 반환하지만, requirements.txt에 torch/transformers 등
-# 실제 모델 연동을 염두에 둔 의존성이 이미 포함되어 있어 이미지가 큽니다.
-# (Phase 5: 실제 외부 API 연동 시 이 의존성 목록을 다시 정리할 필요가 있습니다.)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg \
-        libgl1 \
-        libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+# mock(기본) | external-api | local-model
+# mock/external-api는 requirements-base.txt(fastapi/uvicorn/httpx만)로 충분해 이미지가
+# 가볍습니다. 실제 로컬 모델을 구동하는 local-model만 torch/transformers 등 무거운
+# 스택(requirements-real-model.txt)과 ffmpeg/libgl1 같은 OS 패키지가 필요합니다.
+# 빌드 예: docker build --build-arg VIDEO_LLM_BACKEND=local-model .
+ARG VIDEO_LLM_BACKEND=mock
+ENV VIDEO_LLM_BACKEND=$VIDEO_LLM_BACKEND
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-base.txt requirements-real-model.txt ./
+
+RUN if [ "$VIDEO_LLM_BACKEND" = "local-model" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            ffmpeg \
+            libgl1 \
+            libglib2.0-0 \
+        && rm -rf /var/lib/apt/lists/* \
+        && pip install --no-cache-dir -r requirements-real-model.txt; \
+    else \
+        pip install --no-cache-dir -r requirements-base.txt; \
+    fi
 
 COPY . .
 

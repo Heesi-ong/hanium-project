@@ -27,6 +27,15 @@ def resolve_video_llm_enabled() -> bool:
     return os.getenv("VIDEO_LLM_ENABLED", "false").strip().lower() == "true"
 
 
+# 이 이미지가 어떤 의존성 세트로 빌드되었는지(Dockerfile의 VIDEO_LLM_BACKEND build arg와
+# 짝을 이룹니다). mock/external-api는 requirements-base.txt만으로 충분하고,
+# local-model만 무거운 torch/transformers 스택(requirements-real-model.txt)이 필요합니다.
+# 런타임 동작 자체는 여전히 VIDEO_LLM_ENABLED(위)로 켜고 끕니다 — 이 값은 "실제로 어떤
+# 방식의 구현을 기대할 수 있는 이미지인지"를 알려주는 관측용 정보입니다.
+def resolve_video_llm_backend() -> str:
+    return os.getenv("VIDEO_LLM_BACKEND", "mock").strip().lower()
+
+
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
     # 실제 Video LLM 벤더(OpenAI GPT-4o vision / Gemini / 오픈소스 등)가
     # 아직 결정되지 않았습니다. 벤더가 정해지면 이 함수 내부에 실제 API 호출을

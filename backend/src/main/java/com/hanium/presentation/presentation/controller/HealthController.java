@@ -36,18 +36,22 @@ public class HealthController {
     @GetMapping("/api/health/engines")
     public ApiResponse<Map<String, Object>> engineHealthCheck() {
         Map<String, Object> analysisEngineHealth = analysisEngineClient.checkHealth();
+        Map<String, Object> analysisEngineReadiness = analysisEngineClient.checkReadiness();
         Map<String, Object> videoLlmEngineHealth = videoLlmEngineClient.checkHealth();
+        Map<String, Object> videoLlmEngineReadiness = videoLlmEngineClient.checkReadiness();
 
         return ApiResponse.success(
                 "외부 엔진 상태 조회가 완료되었습니다.",
                 Map.of(
                         "analysisEngine", Map.of(
                                 "baseUrl", analysisEngineClient.getBaseUrl(),
-                                "health", analysisEngineHealth
+                                "health", analysisEngineHealth,
+                                "readiness", analysisEngineReadiness
                         ),
                         "videoLlmEngine", Map.of(
                                 "baseUrl", videoLlmEngineClient.getBaseUrl(),
-                                "health", videoLlmEngineHealth
+                                "health", videoLlmEngineHealth,
+                                "readiness", videoLlmEngineReadiness
                         )
                 )
         );

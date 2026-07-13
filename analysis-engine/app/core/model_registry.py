@@ -190,6 +190,18 @@ def get_face_model_path() -> Path:
     return model_path
 
 
+def model_status() -> dict[str, bool]:
+    return {
+        "whisper": _whisper_model is not None,
+        "pose": _pose_landmarker is not None,
+        "face": _face_landmarker is not None,
+    }
+
+
+def is_ready() -> bool:
+    return all(model_status().values())
+
+
 def close_all() -> None:
     for model_name, model in (
         ("pose", _pose_landmarker),

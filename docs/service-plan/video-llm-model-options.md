@@ -142,23 +142,123 @@ Gemini는 모델별로 가격 폭이 크다. 공식 가격표 기준 일부 모�
 - 장기적으로 대량 분석 요청을 처리할 계획이 있는 경우
 - 초기 구현 속도보다 독립성과 비용 구조 통제가 중요한 경우
 
-## 5. 비교 표
+## 5. 옵션 D: NVIDIA build.nvidia.com Nemotron omni-modal reasoning 무료 엔드포인트
 
-| 기준 | 옵션 A: OpenAI GPT-4o vision | 옵션 B: Google Gemini native video | 옵션 C: 오픈소스 로컬 모델 |
-| --- | --- | --- | --- |
-| 입력 방식 | 샘플 프레임 이미지 + 타임스탬프 | 영상 파일/영상 데이터 직접 입력 | 프레임 또는 영상 입력, 모델별 상이 |
-| 통합 난이도 | 낮음 | 중간~높음 | 높음 |
-| 비용 구조 | 이미지/텍스트 토큰 기반. 프레임 수 상한으로 예측 쉬움 | 영상 길이/토큰 기반. 긴 영상일수록 비용 증가 | API 비용 없음. 대신 GPU 서버/운영 비용 발생 |
-| 비용 예측 가능성 | 높음 | 중간~낮음 | 인프라 고정비 중심. 사용량이 적으면 비효율 가능 |
-| 응답 품질 특성 | 샘플 프레임 기반 관찰. 짧은 변화 누락 가능 | 시간 흐름을 포함한 네이티브 영상 이해 가능 | 모델/서빙 품질에 크게 의존 |
-| 기존 OpenAI 인프라 호환성 | 높음 | 낮음 | 낮음 |
-| 현재 프레임 샘플링 로직 재사용 | 쉬움 | 필수는 아님 | 모델 방식에 따라 가능 |
-| 인프라 요구사항 | 기존 OpenAI API 키/HTTP 호출 확장 | Gemini API 키, 파일 업로드/SDK/과금 관리 | GPU, 모델 서버, 큐/메모리/모니터링 |
-| 운영 리스크 | 이미지 토큰 비용, 프롬프트 품질 | 벤더 추가, 긴 영상 비용, timeout | GPU 장애, 메모리 부족, 추론 지연, 모델 관리 |
-| 초기 mock 제거 속도 | 가장 빠름 | 중간 | 가장 느림 |
-| 장기 확장성 | API 비용 증가에 주의 | API 비용 증가에 주의 | 인프라를 잘 갖추면 유리할 수 있음 |
+### 개요
 
-## 6. 권장 사항과 트레이드오프
+NVIDIA API Catalog(build.nvidia.com)의 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` hosted API를 호출하는 방식이다. 공식 API 문서에는 이 모델이 `POST https://integrate.api.nvidia.com/v1/chat/completions`를 사용한다고 명시되어 있고, content 배열에서 영상은 `{"type":"video_url","video_url":{"url":"..."}}` 형식으로 전달한다. 문서상 MP4, MOV, WEBM 영상 입력을 지원하며, video/audio 요청은 system prompt에 `/no_think`를 사용해야 한다.
+
+이번 구현에서는 `video-llm-engine` 내부의 `call_real_video_llm_model()`만 NVIDIA 호출로 교체하고, backend가 기대하는 `jobId/status/model/observations/globalSummary` 계약은 그대로 유지한다. `VIDEO_LLM_ENABLED=false` 기본값도 유지하므로, 실제 `nvapi-` 키를 넣고 검증하기 전까지 기존 mock 경로가 기본 동작이다.
+
+출처:
+
+- [NVIDIA API Reference - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning infer](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-nano-omni-30b-a3b-reasoning-infer)
+- [NVIDIA API Reference - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning status polling](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-nano-omni-30b-a3b-reasoning-statuspolling)
+- [NVIDIA NIM for VLMs - Overview](https://docs.nvidia.com/nim/vision-language-models/latest/introduction.html)
+- [NVIDIA Cloud Functions API Reference - Create Asset](https://docs.api.nvidia.com/cloud-functions/reference/createasset)
+- [USAGov - Learn about copyright and federal government materials](https://www.usa.gov/government-copyright)
+
+### 확인한 사실
+
+- hosted API 모델 ID: `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`
+- API endpoint: `POST https://integrate.api.nvidia.com/v1/chat/completions`
+- 202 polling endpoint: `GET https://integrate.api.nvidia.com/v1/status/{requestId}`
+- content 배열의 영상 필드: `{"type":"video_url","video_url":{"url":"..."}}`
+- 영상 확장자: MP4, MOV, WEBM 지원
+- video/audio 요청은 system prompt에 `/no_think` 사용 필요
+- 응답은 200 즉시 완료 또는 202 pending일 수 있고, 202는 `requestId`로 polling해야 한다.
+- 공식 문서의 asset 안내: 이미지/오디오가 180KB를 초과하면 NVCF Asset API로 업로드한 뒤 asset ID를 참조해야 한다.
+- 공식 infer 문서의 `NVCF-INPUT-ASSET-REFERENCES` header 설명에는 이미지/오디오가 180KB를 넘으면 presigned S3 URL로 업로드해야 한다고 되어 있고, header 길이는 370자 이하로 표시되어 있다.
+- NVIDIA Developer Program 가입 후 API Catalog 접근 가능
+- 이전 live smoke test에서 `GET /v1/models`는 200으로 성공했다.
+- 이전 live smoke test에서 `nvidia/cosmos-reason2-8b`는 404 `Function ... Not found for account ...`를 반환했다. 이 계정에서는 Cosmos 계열을 hosted API로 바로 호출할 수 없고, self-host 배포가 필요한 후보로 취급한다.
+- 2026-07-13 live smoke test에서 4초/44KB 샘플 MP4를 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`으로 전송했을 때 200으로 즉시 완료됐다.
+- 같은 live smoke test에서 응답은 `choices[0].message.content`에 JSON 문자열을 담았고, 현재 `observations/globalSummary` 정규화 로직으로 성공 처리됐다.
+- 같은 live smoke test의 응답에는 `usage.prompt_tokens=920`, `usage.completion_tokens=197`, `usage.total_tokens=1117`이 포함됐다.
+- 같은 live smoke test의 전체 호출 시간은 약 2.6초였고, 응답의 `nvext.request_throughput.e2e_latency_seconds`는 약 1.52초였다.
+- 2026-07-13 NVCF Asset API live probe에서 `POST https://api.nvcf.nvidia.com/v2/nvcf/assets`는 200으로 `assetId`, `uploadUrl`, `contentType`, `description`을 반환했다.
+- `uploadUrl` 업로드는 `PUT`이며, presigned URL의 signed header에 맞춰 `Content-Type`과 `x-amz-meta-nvcf-asset-description`을 함께 보내야 성공했다.
+- asset 조회는 `GET https://api.nvcf.nvidia.com/v2/nvcf/assets/{assetId}`이며, 200 응답은 `asset.assetId`, `asset.description`, `asset.contentType`, `asset.createdAt` 구조였다.
+- asset 삭제는 `DELETE https://api.nvcf.nvidia.com/v2/nvcf/assets/{assetId}`이며, 성공 시 204를 반환했다.
+- 영상 asset을 content 배열의 `video_url.url = "data:video/mp4;asset_id,{assetId}"`로 참조하면 500 `Only base64 data URLs are supported for now`가 반환됐다.
+- 영상 asset은 사용자 메시지 `content`를 문자열로 두고 `<video src="data:video/mp4;asset_id,{assetId}" />`를 포함하며, `NVCF-INPUT-ASSET-REFERENCES: {assetId}` header를 함께 보냈을 때 성공했다.
+- 최종 구현 경로에서 25초/212KB public domain MP4 샘플을 `call_real_video_llm_model()`로 전송한 live 검증은 200으로 완료됐고, 응답은 기존 `observations/globalSummary` 스키마로 정규화됐다. 이 호출은 약 3.4초가 걸렸고 `usage.prompt_tokens=280`, `usage.completion_tokens=229`, `usage.total_tokens=509`를 반환했다.
+- 2026-07-13 rate probe에서 4초/33KB synthetic MP4를 0.5초 간격으로 10회 연속 호출했지만 429는 발생하지 않았다. 10회 모두 200으로 즉시 완료됐고, `Retry-After` 또는 `X-RateLimit-*` header를 관찰할 기회는 없었다. 따라서 "10회 연속 호출은 허용됨"만 확인됐고, 실제 분당/일당 한도는 확인되지 않았다.
+- 같은 rate probe에서 60초/486KB synthetic MP4는 asset 경로로 200 완료됐다. 1차 호출은 모델이 strict JSON을 깨서 파싱 실패했지만 HTTP/API 제한 오류는 아니었고, 재시도는 200/정규화 성공했다.
+- 같은 날 Internet Archive의 공개 White House 영상 `youtube-OXo-XBvMAUQ`에서 60초 구간을 `/tmp`로 트림/다운스케일한 562KB MP4도 asset 경로로 200 완료됐다. 응답은 `usage.prompt_tokens=334`, `usage.completion_tokens=351`, `usage.total_tokens=685`, `nvext.request_throughput.e2e_latency_seconds=2.367778778076172`를 포함했고 기존 스키마로 정규화됐다.
+- 검증 영상 출처: `https://archive.org/details/youtube-OXo-XBvMAUQ` / 원본 `https://www.youtube.com/watch?v=OXo-XBvMAUQ` / creator `The White House`. USAGov는 "government work"는 공식 직무로 만든 미국 정부 저작물이라고 설명하지만, 연방 웹사이트의 모든 자료가 정부 저작물은 아니며 제한이 있을 수 있다고도 안내한다. 따라서 이 파일은 저장소에 커밋하지 않고 `/tmp` 검증용으로만 사용했다.
+- 2026-07-13 길이별 asset 경로 측정에서도 같은 공개 White House 발표 원본의 30초/60초/120초 구간을 `/tmp`에만 트림/다운스케일해 호출했다. 세 샘플 모두 NVCF Asset API 경로로 200 완료됐고, timeout 기본값 120초 대비 전체 소요 시간은 충분히 작았다.
+
+| 샘플 | 파일 크기 | durationSec | asset 생성 | asset 업로드 | asset 삭제 | 전체 elapsed | prompt/completion/total tokens | 관찰 개수 | 시간 구간 품질 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| White House 30초 | 298,141 bytes | 30.25s | 233ms | 985ms | 716ms | 5,877ms | 335 / 596 / 931 | eyeContact 2, facialExpression 2, gesture 2, posture 1 | 일부 세부 구간을 나눴지만, 썸네일상 연단 발표 장면인데 "slide glance/pointing at slides"처럼 근거가 약한 라벨이 섞였다. |
+| White House 60초 | 613,236 bytes | 60.25s | 156ms | 629ms | 793ms | 3,688ms | 335 / 368 / 703 | 각 category 1개 | 모든 관찰이 0~60.25s 전체 구간으로 반환됐다. 범위는 맞지만 시간 구간화 품질은 낮다. |
+| White House 120초 | 1,208,423 bytes | 120.25s | 154ms | 1,138ms | 694ms | 3,995ms | 336 / 255 / 591 | 각 category 1개 | 모든 관찰이 0~120.25s 전체 구간으로 반환됐다. 범위는 맞지만 세부 변화 감지는 부족하다. |
+
+이 측정에서는 파일 크기가 298KB에서 1.2MB로 늘어도 전체 지연이 선형으로 증가하지 않았다. 실제 병목은 asset 업로드보다 모델 응답 생성 변동에 더 가까워 보인다. 다만 샘플 수가 3개뿐이므로 운영 용량 추정에는 부족하다.
+
+2026-07-13에 durationSec가 있을 때 프롬프트에 "초반/중반/후반 3구간으로 나누고, 각 category마다 구간별 관찰을 포함하라"는 지시를 추가한 뒤 같은 60초/120초 샘플을 다시 호출했다. `max_tokens`는 기존 1200을 유지했고, 가장 큰 completion은 1002 tokens라 잘림은 관찰되지 않았다.
+
+| 샘플 | 프롬프트 | 전체 elapsed | prompt/completion/total tokens | 관찰 개수 | startSec/endSec 분포 | 품질 판단 |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| White House 60초 | 기존 | 3,688ms | 335 / 368 / 703 | 각 category 1개 | 모든 category가 0~60.25s 1개 | 범위는 맞지만 구간화 실패 |
+| White House 60초 | 3구간 지시 | 11,750ms | 450 / 1002 / 1452 | 각 category 3개 | 0~20.083, 20.083~40.167, 40.167~60.25 | 구간화는 개선됐다. 다만 "slide glance"처럼 근거가 약한 라벨이 남았다. |
+| White House 120초 | 기존 | 3,995ms | 336 / 255 / 591 | 각 category 1개 | 모든 category가 0~120.25s 1개 | 범위는 맞지만 구간화 실패 |
+| White House 120초 | 3구간 지시 | 7,559ms | 451 / 942 / 1393 | 각 category 3개 | 0~40.083, 40.083~80.167, 80.167~120.25 | 구간화는 개선됐다. 일부 라벨은 실제 시각 변화보다 프롬프트 구조를 따른 추정일 가능성이 있다. |
+
+토큰 증가폭은 60초 샘플에서 total 703 -> 1452, 120초 샘플에서 total 591 -> 1393이었다. completion token이 크게 늘었지만 현재 1200 output token 한도 안에는 들어왔다. 이 결과만 보면 3구간 프롬프트는 "전체 구간 하나로 뭉치는 문제"를 줄이는 데 효과가 있지만, 모델이 구간별로 실제로 다른 행동을 본 것인지, 요구된 형식을 채우기 위해 그럴듯한 라벨을 나눈 것인지는 추가 품질 검증이 필요하다.
+
+### 아직 확인하지 못한 사실
+
+- 무료 API의 정확한 rate limit. 공식 infer/status/createasset 문서에서 분당/일당 수치를 찾지 못했고, 실제 호출에서는 4초 영상 10회 연속 호출까지 429가 발생하지 않았다.
+- 무료 API의 최대 영상 길이/용량 제한. 실제 호출에서는 120초/1.2MB MP4까지 200 성공했지만, 그 이상의 최대 길이/용량은 공식 문서나 오류 응답으로 확인하지 못했다.
+- hosted API에서 `response_format: {"type":"json_object"}`를 실제 발표 영상과 다양한 입력에서도 안정적으로 따르는지 여부
+- 실제 사람이 등장하는 발표 영상에서 관찰 품질이 충분한지 여부
+- asset 경로 응답의 시간 구간 품질. 3구간 프롬프트 적용 후 60초/120초 샘플 모두 구간화는 개선됐지만, 일부 라벨은 실제 시각 변화보다 프롬프트 구조를 따른 추정일 가능성이 있다.
+
+위 항목은 추측하면 안 된다. 현재 구현은 180KB 이하 영상은 기존 `video_url` base64 data URL로 보내고, 180KB 초과 영상은 NVCF Asset API 업로드 후 HTML-style `<video>` asset reference 문자열로 자동 전환한다.
+
+### 장점
+
+- 개발 단계에서 Prototype/free hosted API endpoint로 PoC를 시작할 수 있다.
+- OpenAI-compatible `/v1/chat/completions` 형태라 기존 외부 LLM 호출 관례와 비슷하게 통합할 수 있다.
+- 네이티브 `.mp4` 입력을 받는 모델이므로 프레임 샘플링 방식보다 영상 흐름 이해에 유리할 가능성이 있다.
+- 자체 GPU 서버 없이 외부 API로 시작할 수 있다.
+- 실패 시 기존 `FALLBACK` mock 정책을 유지할 수 있다.
+
+### 단점
+
+- 정확한 무료 quota/rate limit을 아직 확인하지 못했다. 다만 4초 영상 10회 연속 호출에서는 429가 발생하지 않았다.
+- 영상 길이/용량 제한을 아직 확인하지 못했다. 다만 120초/1.2MB MP4 asset 경로 호출은 200으로 성공했다.
+- 180KB를 넘는 실제 발표 영상은 NVCF Asset API 업로드/삭제 경로를 사용한다.
+- 모델이 항상 요청한 JSON schema를 지키는지는 라이브 검증이 필요하다.
+- 새 벤더 키(`NVIDIA_API_KEY`)와 운영 설정이 추가된다.
+- 무료 엔드포인트는 운영 SLA나 장기 안정성 측면에서 유료/엔터프라이즈 계약과 다를 수 있다.
+
+### 적합한 경우
+
+- 사용자가 NVIDIA Developer Program/API Catalog를 통해 무료 PoC를 먼저 해보고 싶은 경우
+- 프레임 샘플링보다 네이티브 영상 이해 모델을 우선 검증하고 싶은 경우
+- 자체 GPU 서버 없이 외부 hosted endpoint로 시작하고 싶은 경우
+- 실제 API 키 발급 후 rate limit, 길이 제한, 응답 품질을 직접 확인할 수 있는 경우
+
+## 6. 비교 표
+
+| 기준 | 옵션 A: OpenAI GPT-4o vision | 옵션 B: Google Gemini native video | 옵션 C: 오픈소스 로컬 모델 | 옵션 D: NVIDIA Nemotron omni-modal reasoning |
+| --- | --- | --- | --- | --- |
+| 입력 방식 | 샘플 프레임 이미지 + 타임스탬프 | 영상 파일/영상 데이터 직접 입력 | 프레임 또는 영상 입력, 모델별 상이 | 180KB 이하는 `video_url` base64 data URL, 초과 영상은 NVCF Asset API + `<video src="data:video/mp4;asset_id,{assetId}" />` |
+| 통합 난이도 | 낮음 | 중간~높음 | 높음 | 중간 |
+| 비용 구조 | 이미지/텍스트 토큰 기반. 프레임 수 상한으로 예측 쉬움 | 영상 길이/토큰 기반. 긴 영상일수록 비용 증가 | API 비용 없음. 대신 GPU 서버/운영 비용 발생 | 무료 개발 엔드포인트 가능. 4초 영상 10회 연속 호출은 429 없이 성공했지만 정확한 quota/rate limit은 확인 필요 |
+| 비용 예측 가능성 | 높음 | 중간~낮음 | 인프라 고정비 중심. 사용량이 적으면 비효율 가능 | 현재는 낮음. 120초/1.2MB asset 호출 성공은 확인했지만 무료 제한과 유료 전환 조건 확인 필요 |
+| 응답 품질 특성 | 샘플 프레임 기반 관찰. 짧은 변화 누락 가능 | 시간 흐름을 포함한 네이티브 영상 이해 가능 | 모델/서빙 품질에 크게 의존 | 네이티브 영상 이해/structured reasoning을 표방. 실제 발표 영상 품질 검증 필요 |
+| 기존 OpenAI 인프라 호환성 | 높음 | 낮음 | 낮음 | `/v1/chat/completions` 형태는 유사하나 키/벤더/NVCF Asset API가 별도 필요 |
+| 현재 프레임 샘플링 로직 재사용 | 쉬움 | 필수는 아님 | 모델 방식에 따라 가능 | 필수는 아님. 영상 파일 직접 전달 방향 |
+| 인프라 요구사항 | 기존 OpenAI API 키/HTTP 호출 확장 | Gemini API 키, 파일 업로드/SDK/과금 관리 | GPU, 모델 서버, 큐/메모리/모니터링 | NVIDIA API key, hosted endpoint 설정 |
+| 운영 리스크 | 이미지 토큰 비용, 프롬프트 품질 | 벤더 추가, 긴 영상 비용, timeout | GPU 장애, 메모리 부족, 추론 지연, 모델 관리 | 무료 quota 불명확, asset cleanup 실패 가능성, timeout/202 polling |
+| 초기 mock 제거 속도 | 가장 빠름 | 중간 | 가장 느림 | 키만 확보되면 빠른 편. 단 첫 라이브 검증 필요 |
+| 장기 확장성 | API 비용 증가에 주의 | API 비용 증가에 주의 | 인프라를 잘 갖추면 유리할 수 있음 | 무료 개발 이후 운영 조건 확인 필요 |
+
+## 7. 권장 사항과 트레이드오프
 
 최종 결정은 사용자가 어떤 우선순위를 두는지에 따라 달라진다.
 
@@ -168,9 +268,11 @@ Gemini는 모델별로 가격 폭이 크다. 공식 가격표 기준 일부 모�
 
 **옵션 C: 오픈소스 로컬 모델**은 장기적으로 독립성과 데이터 통제 측면에서 매력적이지만, 현재 프로젝트 단계에서는 GPU/서빙/성능 검증 부담이 크다. 실제 GPU 인프라가 준비되어 있지 않다면 첫 번째 실제 모델 도입 옵션으로는 리스크가 크다.
 
-따라서 다음 Unit에서 빠르게 mock을 제거하고 실제 사용자 흐름을 검증하려면 옵션 A를 우선 PoC로 검토할 수 있고, 분석 품질이 충분하지 않으면 옵션 B를 비교 실험하는 순서가 현실적이다. 단, 이는 확정 추천이 아니라 통합 비용 기준의 판단이다.
+**옵션 D: NVIDIA Nemotron omni-modal reasoning**은 사용자가 무료 hosted API로 네이티브 영상 이해 PoC를 원한다는 조건에서 현재 가장 직접적인 후보다. 공식 API 문서에서 `video_url` content, `/v1/chat/completions`, 202 polling, `/no_think` 요구사항이 확인되어 `video-llm-engine`의 real-call 함수 안에 격리해 붙이기 좋다. 큰 영상은 NVCF Asset API를 통해 먼저 업로드한 뒤, 확인된 HTML-style `<video>` asset reference 방식으로 전송한다. 2026-07-13 기준 4초 영상 10회 연속 호출과 120초/1.2MB asset 호출은 모두 rate/length 제한에 걸리지 않았다. 다만 정확한 무료 rate limit과 최대 영상 길이/용량은 공식 수치 또는 429/제한 오류로 아직 확인되지 않았다.
 
-## 7. 어떤 옵션을 선택해도 필요한 공통 작업
+따라서 "무료 네이티브 영상 이해 PoC"가 목표라면 옵션 D를 먼저 구현/검증하고, 라이브 호출에서 payload/limit 문제가 크면 옵션 A 또는 B로 비교 실험하는 순서가 현실적이다.
+
+## 8. 어떤 옵션을 선택해도 필요한 공통 작업
 
 1. **응답 스키마 고정**
    - backend의 `VideoLlmEngineResponse` 계약을 유지한다.
@@ -198,7 +300,7 @@ Gemini는 모델별로 가격 폭이 크다. 공식 가격표 기준 일부 모�
 7. **테스트**
    - 정상 응답, 모델 실패 후 폴백, 깨진 JSON, schema 누락, 긴 영상/프레임 상한, 인증 헤더 누락을 pytest로 검증한다.
 
-## 8. 다음 결정 질문
+## 9. 다음 결정 질문
 
 다음 구현 Unit에 들어가기 전에 아래를 정해야 한다.
 
@@ -208,4 +310,12 @@ Gemini는 모델별로 가격 폭이 크다. 공식 가격표 기준 일부 모�
 4. 영상/프레임 데이터를 외부 벤더 API로 보내도 되는지.
 5. 실패 시 결과를 `FALLBACK`으로 계속 생성할지, 아니면 분석 실패로 처리할지.
 
-이 질문에 대한 답에 따라 옵션 A/B/C의 우선순위가 달라진다.
+옵션 D 관점의 현재 답은 다음과 같다.
+
+1. 첫 PoC 목표는 **무료 네이티브 영상 이해 모델로 mock 제거 가능성 검증**이다.
+2. 발표 영상 최대 길이는 현재 관찰된 120초 성공을 임시 기준으로 삼을 수 있지만, 실제 최대 길이는 NVIDIA 무료 엔드포인트 제한을 추가 확인한 뒤 정해야 한다.
+3. 1개 job당 비용은 무료 tier에서 시작하되, rate limit/quota는 아직 공식 수치가 없으므로 운영 전 추가 확인해야 한다.
+4. 영상 데이터를 NVIDIA API로 보내는 데 동의해야 한다.
+5. 실패 시에는 현재처럼 `FALLBACK` mock을 생성해 전체 분석 흐름은 유지한다.
+
+이 질문에 대한 답과 NVIDIA 라이브 검증 결과에 따라 옵션 A/B/C/D의 우선순위가 달라진다.

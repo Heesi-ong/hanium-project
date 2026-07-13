@@ -70,10 +70,11 @@ class LoginIpRateLimitIntegrationTest {
         );
     }
 
-    private Map<String, String> createAuthRequest(String email) {
+    private Map<String, Object> createAuthRequest(String email) {
         return Map.of(
                 "email", email,
-                "password", "password123"
+                "password", "password123",
+                "agreedToTerms", true
         );
     }
 }

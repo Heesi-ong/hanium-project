@@ -26,17 +26,39 @@ public class User {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "terms_agreed_at")
+    private LocalDateTime termsAgreedAt;
+
+    @Column(name = "terms_version", length = 20)
+    private String termsVersion;
+
     protected User() {
     }
 
-    private User(String email, String passwordHash) {
+    private User(
+            String email,
+            String passwordHash,
+            LocalDateTime termsAgreedAt,
+            String termsVersion
+    ) {
         this.email = email;
         this.passwordHash = passwordHash;
         this.createdAt = LocalDateTime.now();
+        this.termsAgreedAt = termsAgreedAt;
+        this.termsVersion = termsVersion;
     }
 
     public static User create(String email, String passwordHash) {
-        return new User(email, passwordHash);
+        return new User(email, passwordHash, null, null);
+    }
+
+    public static User create(
+            String email,
+            String passwordHash,
+            LocalDateTime termsAgreedAt,
+            String termsVersion
+    ) {
+        return new User(email, passwordHash, termsAgreedAt, termsVersion);
     }
 
     public Long getId() {
@@ -53,5 +75,13 @@ public class User {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public LocalDateTime getTermsAgreedAt() {
+        return termsAgreedAt;
+    }
+
+    public String getTermsVersion() {
+        return termsVersion;
     }
 }

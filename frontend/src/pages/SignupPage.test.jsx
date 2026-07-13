@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import SignupPage from "./SignupPage";
@@ -35,6 +35,10 @@ function renderSignupPage() {
 }
 
 describe("SignupPage", () => {
+    beforeEach(() => {
+        authApiMock.signup.mockReset();
+    });
+
     afterEach(() => {
         cleanup();
     });
@@ -60,5 +64,56 @@ describe("SignupPage", () => {
         );
 
         expect(emailInput.parentElement).not.toContainElement(hint);
+    });
+
+    it("blocks signup until the user agrees to privacy policy and terms", () => {
+        renderSignupPage();
+
+        expect(screen.getByRole("button", { name: "회원가입" })).toBeDisabled();
+        expect(screen.getByRole("link", { name: "개인정보처리방침" })).toHaveAttribute(
+            "href",
+            "/privacy"
+        );
+        expect(screen.getByRole("link", { name: "이용약관" })).toHaveAttribute(
+            "href",
+            "/terms"
+        );
+
+        fireEvent.change(screen.getByLabelText(/이메일/), {
+            target: { value: "new@example.com" },
+        });
+        fireEvent.change(screen.getByLabelText(/비밀번호/), {
+            target: { value: "password123" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "회원가입" }));
+
+        expect(authApiMock.signup).not.toHaveBeenCalled();
+    });
+
+    it("sends agreedToTerms when the user checks the agreement", async () => {
+        authApiMock.signup.mockResolvedValue({
+            success: true,
+        });
+
+        renderSignupPage();
+
+        fireEvent.change(screen.getByLabelText(/이메일/), {
+            target: { value: "new@example.com" },
+        });
+        fireEvent.change(screen.getByLabelText(/비밀번호/), {
+            target: { value: "password123" },
+        });
+        fireEvent.click(
+            screen.getByLabelText(/개인정보처리방침 및 이용약관에 동의합니다/)
+        );
+        fireEvent.click(screen.getByRole("button", { name: "회원가입" }));
+
+        await waitFor(() => {
+            expect(authApiMock.signup).toHaveBeenCalledWith({
+                email: "new@example.com",
+                password: "password123",
+                agreedToTerms: true,
+            });
+        });
     });
 });

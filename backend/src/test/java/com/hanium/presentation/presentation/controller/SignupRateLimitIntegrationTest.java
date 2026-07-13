@@ -49,9 +49,10 @@ class SignupRateLimitIntegrationTest {
     }
 
     private ResponseEntity<String> signup(String email) {
-        Map<String, String> request = Map.of(
+        Map<String, Object> request = Map.of(
                 "email", email,
-                "password", "password123"
+                "password", "password123",
+                "agreedToTerms", true
         );
 
         return restTemplate.postForEntity(

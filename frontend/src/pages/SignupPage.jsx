@@ -28,6 +28,7 @@ function SignupPage() {
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
@@ -44,9 +45,15 @@ function SignupPage() {
             setError("");
             setSuccess("");
 
+            if (!agreedToTerms) {
+                setError("개인정보처리방침 및 이용약관에 동의해야 회원가입할 수 있습니다.");
+                return;
+            }
+
             await signup({
                 email,
                 password,
+                agreedToTerms: true,
             });
 
             setSuccess("회원가입이 완료되었습니다. 로그인해 주세요.");
@@ -109,6 +116,24 @@ function SignupPage() {
                             </span>
                         </label>
 
+                        <label className="terms-agreement">
+                            <input
+                                type="checkbox"
+                                checked={agreedToTerms}
+                                onChange={(event) => setAgreedToTerms(event.target.checked)}
+                            />
+                            <span>
+                                <Link to="/privacy" target="_blank" rel="noreferrer">
+                                    개인정보처리방침
+                                </Link>
+                                {" 및 "}
+                                <Link to="/terms" target="_blank" rel="noreferrer">
+                                    이용약관
+                                </Link>
+                                에 동의합니다.
+                            </span>
+                        </label>
+
                         <StateMessage type="error">{error}</StateMessage>
                         <StateMessage type="success">{success}</StateMessage>
 
@@ -116,7 +141,7 @@ function SignupPage() {
                             <button
                                 type="submit"
                                 className="primary-button"
-                                disabled={loading}
+                                disabled={loading || !agreedToTerms}
                             >
                                 {loading ? "가입 중..." : "회원가입"}
                             </button>

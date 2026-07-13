@@ -39,9 +39,10 @@ class LoginRateLimitIntegrationTest {
 
     @Test
     void loginAttemptsAreRateLimitedByEmail() {
-        Map<String, String> signupRequest = Map.of(
+        Map<String, Object> signupRequest = Map.of(
                 "email", "login-limit@example.com",
-                "password", "password123"
+                "password", "password123",
+                "agreedToTerms", true
         );
 
         ResponseEntity<String> signupResponse = restTemplate.postForEntity(

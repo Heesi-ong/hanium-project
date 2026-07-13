@@ -36,22 +36,84 @@ def point(x: float, y: float) -> SimpleNamespace:
     ],
 )
 def test_calculate_score_uses_documented_weights(scores, expected_total):
+    # 검출률이 충분하고 STT가 성공한(=패널티 0) 상황을 가정합니다.
     result = basic.calculate_score(
-        pose_result={"postureScore": scores["posture"]},
-        face_result={"gazeScore": scores["gaze"]},
-        audio_result={"speechScore": scores["speech"]},
+        pose_result={"postureScore": scores["posture"], "detectionRate": 1.0},
+        face_result={"gazeScore": scores["gaze"], "detectionRate": 1.0},
+        audio_result={
+            "speechScore": scores["speech"],
+            "analysisMethod": "stt_based_analysis",
+            "durationSec": 60,
+        },
         gesture_result={"gestureScore": scores["gesture"]},
         emotion_result={"expressionScore": scores["expression"]},
     )
 
-    assert result == {
-        "totalScore": expected_total,
-        "postureScore": scores["posture"],
-        "gazeScore": scores["gaze"],
-        "speechScore": scores["speech"],
-        "gestureScore": scores["gesture"],
-        "expressionScore": scores["expression"],
+    assert result["totalScore"] == expected_total
+    assert result["rawScore"] == expected_total
+    assert result["penalty"] == 0
+    assert result["postureScore"] == scores["posture"]
+    assert result["gazeScore"] == scores["gaze"]
+    assert result["speechScore"] == scores["speech"]
+    assert result["gestureScore"] == scores["gesture"]
+    assert result["expressionScore"] == scores["expression"]
+    assert result["reliability"]["lowConfidence"] is False
+    assert result["reliability"]["penaltyReasons"] == []
+
+
+def test_calculate_score_applies_total_penalty_on_low_reliability():
+    result = basic.calculate_score(
+        pose_result={"postureScore": 80, "detectionRate": 0.3},
+        face_result={"gazeScore": 80, "detectionRate": 0.3},
+        audio_result={
+            "speechScore": 80,
+            "analysisMethod": "audio_extracted_duration_based_estimation",
+            "durationSec": 5,
+        },
+        gesture_result={"gestureScore": 80},
+        emotion_result={"expressionScore": 80},
+    )
+
+    # 가중합 80점, 감점 = 검출률(5+5) + STT 실패(3) + 짧은 영상(5) = 18 → 상한 15점.
+    assert result["rawScore"] == 80
+    assert result["penalty"] == basic.MAX_TOTAL_PENALTY
+    assert result["totalScore"] == 80 - basic.MAX_TOTAL_PENALTY
+    assert result["reliability"]["lowConfidence"] is True
+    assert len(result["reliability"]["penaltyReasons"]) == 4
+
+
+def test_calculate_total_penalty_weak_detection_is_mild():
+    penalty = basic.calculate_total_penalty(
+        pose_result={"detectionRate": 0.6},
+        face_result={"detectionRate": 0.6},
+        audio_result={"analysisMethod": "stt_based_analysis", "durationSec": 60},
+    )
+
+    assert penalty["penalty"] == 4
+    assert penalty["lowConfidence"] is False
+
+
+def test_finalize_speech_score_blends_documented_weights():
+    audio_result = {
+        "speechSpeedScore": 100,
+        "silenceScore": 80,
+        "volumeStabilityScore": basic.VOLUME_STABILITY_BASELINE_SCORE,
+        "speechScore": 0,
     }
+    filler_result = {"fillerScore": 60}
+
+    finalized = basic.finalize_speech_score(audio_result, filler_result)
+
+    # 100*0.35 + 80*0.25 + 60*0.25 + 80*0.15 = 35 + 20 + 15 + 12 = 82
+    assert finalized["speechScore"] == 82
+    assert finalized["fillerScore"] == 60
+    assert finalized["volumeStabilityScore"] == basic.VOLUME_STABILITY_BASELINE_SCORE
+    assert finalized["volumeStabilityImplemented"] is False
+
+
+def test_blend_speech_score_clamps_to_valid_range():
+    assert basic.blend_speech_score(100, 100, 100, 100) == 100
+    assert basic.blend_speech_score(0, 0, 0, 0) == 0
 
 
 @pytest.mark.parametrize(

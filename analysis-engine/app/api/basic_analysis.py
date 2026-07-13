@@ -60,6 +60,26 @@ WHISPER_MODEL_SIZE = "base"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 
+# 음성 점수 내부 가중치입니다. '발표_코칭_점수화_알고리즘_선정_자료'의 권장 기준을 따릅니다.
+# 말속도 35% + 침묵 25% + 필러 25% + 음량 안정성 15%.
+SPEECH_SPEED_WEIGHT = 0.35
+SILENCE_WEIGHT = 0.25
+FILLER_WEIGHT = 0.25
+VOLUME_STABILITY_WEIGHT = 0.15
+
+# 음량(RMS/dB) 분석은 아직 구현되지 않았습니다. 구현 전까지 15% 자리를 흔들지 않도록
+# 중립 기본값(80점)을 사용합니다. 실제 음량 분석이 들어오면 이 상수를 계산값으로 교체합니다.
+VOLUME_STABILITY_BASELINE_SCORE = 80
+VOLUME_STABILITY_IMPLEMENTED = False
+
+# 전체 패널티(신뢰도) 기준입니다. 탐지율이 낮거나 영상이 너무 짧으면 총점에서 감점합니다.
+POSE_LOW_DETECTION_THRESHOLD = 0.5
+POSE_WEAK_DETECTION_THRESHOLD = 0.7
+FACE_LOW_DETECTION_THRESHOLD = 0.5
+FACE_WEAK_DETECTION_THRESHOLD = 0.7
+SHORT_VIDEO_THRESHOLD_SEC = 10
+MAX_TOTAL_PENALTY = 15
+
 KOREAN_FILLER_WORDS = [
     "음",
     "어",
@@ -178,6 +198,10 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
             stt_result=stt_result,
             audio_result=audio_result,
         )
+
+        # 음성 점수는 필러 결과가 나온 뒤에야 확정할 수 있어 여기서 합칩니다.
+        # (말속도 + 침묵 + 필러 + 음량 가중합)
+        finalize_speech_score(audio_result, filler_result)
 
         log_step(job_id, 8, "항목별 점수와 최종 점수를 계산하는 중...")
         score_result = calculate_score(
@@ -1301,11 +1325,6 @@ def analyze_speech_from_stt(
     speech_speed_score = calculate_speech_speed_score(speech_speed_wpm)
     silence_score = calculate_silence_score(pause_analysis["silenceRatio"])
 
-    speech_score = int(
-        speech_speed_score * 0.7
-        + silence_score * 0.3
-    )
-
     return {
         "analysisMethod": "stt_based_analysis",
         "audioExtraction": audio_extraction_result,
@@ -1320,7 +1339,9 @@ def analyze_speech_from_stt(
         "totalSilenceTime": pause_analysis["totalSilenceTime"],
         "silenceRatio": pause_analysis["silenceRatio"],
         "silenceScore": silence_score,
-        "speechScore": speech_score,
+        "volumeStabilityScore": VOLUME_STABILITY_BASELINE_SCORE,
+        # speechScore는 finalize_speech_score()에서 말속도/침묵/필러/음량을 합쳐 확정합니다.
+        "speechScore": 0,
         "note": "faster-whisper STT 결과를 기반으로 말하기 속도와 침묵 구간을 계산했습니다.",
     }
 
@@ -1354,11 +1375,6 @@ def analyze_speech_from_video_duration(
     speech_speed_score = calculate_speech_speed_score(speech_speed_wpm)
     silence_score = calculate_silence_score(silence_ratio)
 
-    speech_score = int(
-        speech_speed_score * 0.7
-        + silence_score * 0.3
-    )
-
     return {
         "analysisMethod": "audio_extracted_duration_based_estimation",
         "audioExtraction": audio_extraction_result,
@@ -1373,9 +1389,69 @@ def analyze_speech_from_video_duration(
         "totalSilenceTime": estimated_pause_duration_sec,
         "silenceRatio": silence_ratio,
         "silenceScore": silence_score,
-        "speechScore": speech_score,
+        "volumeStabilityScore": VOLUME_STABILITY_BASELINE_SCORE,
+        # speechScore는 finalize_speech_score()에서 말속도/침묵/필러/음량을 합쳐 확정합니다.
+        "speechScore": 0,
         "note": "오디오는 추출했지만 STT에 실패하여 영상 길이 기반 추정값을 사용했습니다.",
     }
+
+
+def blend_speech_score(
+        speech_speed_score: int,
+        silence_score: int,
+        filler_score: int,
+        volume_stability_score: int,
+) -> int:
+    """말속도/침묵/필러/음량 안정성 점수를 문서 권장 가중치로 합칩니다.
+
+    가중치: 말속도 35% + 침묵 25% + 필러 25% + 음량 안정성 15%.
+    """
+    blended = int(
+        speech_speed_score * SPEECH_SPEED_WEIGHT
+        + silence_score * SILENCE_WEIGHT
+        + filler_score * FILLER_WEIGHT
+        + volume_stability_score * VOLUME_STABILITY_WEIGHT
+    )
+
+    return max(0, min(blended, 100))
+
+
+def finalize_speech_score(
+        audio_result: Dict[str, Any],
+        filler_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """필러 분석이 끝난 뒤 음성 점수를 최종 확정합니다.
+
+    필러 점수는 필러 분석 이후에야 알 수 있어, 자세/시선처럼 즉시 계산하지 않고
+    이 함수에서 마지막으로 합칩니다. 음량 안정성은 아직 미구현이라 중립 기본값을 씁니다.
+    audio_result 딕셔너리를 직접 수정하고 그대로 반환합니다.
+    """
+    speech_speed_score = int(audio_result.get("speechSpeedScore", 0))
+    silence_score = int(audio_result.get("silenceScore", 0))
+    filler_score = int(filler_result.get("fillerScore", 0))
+    volume_stability_score = int(
+        audio_result.get("volumeStabilityScore", VOLUME_STABILITY_BASELINE_SCORE)
+    )
+
+    speech_score = blend_speech_score(
+        speech_speed_score=speech_speed_score,
+        silence_score=silence_score,
+        filler_score=filler_score,
+        volume_stability_score=volume_stability_score,
+    )
+
+    audio_result["fillerScore"] = filler_score
+    audio_result["volumeStabilityScore"] = volume_stability_score
+    audio_result["volumeStabilityImplemented"] = VOLUME_STABILITY_IMPLEMENTED
+    audio_result["speechScore"] = speech_score
+    audio_result["speechScoreWeights"] = {
+        "speechSpeed": SPEECH_SPEED_WEIGHT,
+        "silence": SILENCE_WEIGHT,
+        "filler": FILLER_WEIGHT,
+        "volumeStability": VOLUME_STABILITY_WEIGHT,
+    }
+
+    return audio_result
 
 
 def calculate_segment_speech_duration(segments: List[Dict[str, Any]]) -> float:
@@ -1755,7 +1831,7 @@ def calculate_score(
     gesture_score = int(gesture_result.get("gestureScore", 0))
     expression_score = int(emotion_result.get("expressionScore", 0))
 
-    total_score = int(
+    weighted_score = int(
         posture_score * 0.25
         + expression_score * 0.20
         + gaze_score * 0.20
@@ -1763,13 +1839,89 @@ def calculate_score(
         + gesture_score * 0.10
     )
 
+    # '발표_코칭_점수화_알고리즘_선정_자료'의 "최종 점수 = 가중합 − 전체 패널티" 기준입니다.
+    penalty_result = calculate_total_penalty(
+        pose_result=pose_result,
+        face_result=face_result,
+        audio_result=audio_result,
+    )
+    penalty = penalty_result["penalty"]
+    total_score = max(0, min(weighted_score - penalty, 100))
+
     return {
         "totalScore": total_score,
+        "rawScore": weighted_score,
+        "penalty": penalty,
         "postureScore": posture_score,
         "gazeScore": gaze_score,
         "speechScore": speech_score,
         "gestureScore": gesture_score,
         "expressionScore": expression_score,
+        "reliability": {
+            "poseDetectionRate": penalty_result["poseDetectionRate"],
+            "faceDetectionRate": penalty_result["faceDetectionRate"],
+            "lowConfidence": penalty_result["lowConfidence"],
+            "penaltyReasons": penalty_result["reasons"],
+        },
+    }
+
+
+def calculate_total_penalty(
+        pose_result: Dict[str, Any],
+        face_result: Dict[str, Any],
+        audio_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """탐지 신뢰도와 영상 상태를 기준으로 총점에서 뺄 '전체 패널티'를 계산합니다.
+
+    - 자세/얼굴 검출률이 낮을수록 감점(50% 미만 5점, 70% 미만 2점)
+    - STT 실패로 추정값을 쓴 경우 3점
+    - 영상이 너무 짧은 경우(10초 미만) 5점
+    패널티는 최대 MAX_TOTAL_PENALTY점으로 제한합니다.
+    """
+    reasons: List[str] = []
+    penalty = 0
+
+    pose_detection_rate = float(pose_result.get("detectionRate", 0))
+    face_detection_rate = float(face_result.get("detectionRate", 0))
+    duration_sec = float(audio_result.get("durationSec", 0))
+    audio_method = str(audio_result.get("analysisMethod", ""))
+
+    if pose_detection_rate < POSE_LOW_DETECTION_THRESHOLD:
+        penalty += 5
+        reasons.append("자세 검출률이 50% 미만입니다.")
+    elif pose_detection_rate < POSE_WEAK_DETECTION_THRESHOLD:
+        penalty += 2
+        reasons.append("자세 검출률이 70% 미만입니다.")
+
+    if face_detection_rate < FACE_LOW_DETECTION_THRESHOLD:
+        penalty += 5
+        reasons.append("얼굴 검출률이 50% 미만입니다.")
+    elif face_detection_rate < FACE_WEAK_DETECTION_THRESHOLD:
+        penalty += 2
+        reasons.append("얼굴 검출률이 70% 미만입니다.")
+
+    if audio_method and audio_method != "stt_based_analysis":
+        penalty += 3
+        reasons.append("STT에 실패해 음성 추정값을 사용했습니다.")
+
+    if 0 < duration_sec < SHORT_VIDEO_THRESHOLD_SEC:
+        penalty += 5
+        reasons.append("영상이 너무 짧아 분석 신뢰도가 낮습니다.")
+
+    penalty = min(penalty, MAX_TOTAL_PENALTY)
+
+    low_confidence = (
+        pose_detection_rate < POSE_LOW_DETECTION_THRESHOLD
+        or face_detection_rate < FACE_LOW_DETECTION_THRESHOLD
+        or penalty >= 8
+    )
+
+    return {
+        "penalty": penalty,
+        "reasons": reasons,
+        "lowConfidence": low_confidence,
+        "poseDetectionRate": round(pose_detection_rate, 4),
+        "faceDetectionRate": round(face_detection_rate, 4),
     }
 
 
@@ -1883,6 +2035,8 @@ def create_empty_audio_result() -> Dict[str, Any]:
         "totalSilenceTime": 0,
         "silenceRatio": 0,
         "silenceScore": 0,
+        "volumeStabilityScore": 0,
+        "fillerScore": 0,
         "speechScore": 0,
         "note": "영상 정보를 읽지 못해 음성 분석을 수행하지 못했습니다.",
     }

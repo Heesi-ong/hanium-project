@@ -104,9 +104,10 @@ class AnalysisRetryLimitIntegrationTest {
     }
 
     private String signupAndLogin(String email) throws Exception {
-        Map<String, String> request = Map.of(
+        Map<String, Object> request = Map.of(
                 "email", email,
-                "password", "password123"
+                "password", "password123",
+                "agreedToTerms", true
         );
 
         restTemplate.postForEntity(

@@ -127,6 +127,12 @@ function LoginPage() {
                             </Link>
                         </div>
                     </form>
+
+                    <p className="auth-policy-links">
+                        <Link to="/privacy">개인정보처리방침</Link>
+                        <span aria-hidden="true"> · </span>
+                        <Link to="/terms">이용약관</Link>
+                    </p>
                 </article>
             </section>
         </main>

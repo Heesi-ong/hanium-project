@@ -145,9 +145,10 @@ class UserWithdrawalIntegrationTest {
     }
 
     private String signupAndLogin(String email, String password) throws Exception {
-        Map<String, String> request = Map.of(
+        Map<String, Object> request = Map.of(
                 "email", email,
-                "password", password
+                "password", password,
+                "agreedToTerms", true
         );
 
         restTemplate.postForEntity(

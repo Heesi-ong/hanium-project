@@ -9,6 +9,8 @@ const ResultListPage = lazy(() => import("../pages/ResultListPage"));
 const ResultDetailPage = lazy(() => import("../pages/ResultDetailPage"));
 const LoginPage = lazy(() => import("../pages/LoginPage"));
 const SignupPage = lazy(() => import("../pages/SignupPage"));
+const PrivacyPage = lazy(() => import("../pages/PrivacyPage"));
+const TermsPage = lazy(() => import("../pages/TermsPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
 const StatusPage = lazy(() => import("../pages/StatusPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
@@ -30,6 +32,8 @@ function AppRoutes() {
 
                 <Route element={<MainLayout />}>
                     <Route path="/" element={<HomePage />} />
+                    <Route path="/privacy" element={<PrivacyPage />} />
+                    <Route path="/terms" element={<TermsPage />} />
 
                     <Route element={<ProtectedRoute />}>
                         <Route path="/upload" element={<UploadPage />} />

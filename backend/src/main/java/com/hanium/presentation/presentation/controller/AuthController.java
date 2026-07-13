@@ -1,6 +1,7 @@
 package com.hanium.presentation.presentation.controller;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.hanium.presentation.domain.user.TermsVersion;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.config.JwtBlacklist;
@@ -12,8 +13,10 @@ import com.hanium.presentation.global.response.ApiResponse;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -30,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @RestController
@@ -85,7 +89,9 @@ public class AuthController {
         try {
             User user = userRepository.save(User.create(
                     email,
-                    passwordEncoder.encode(request.password())
+                    passwordEncoder.encode(request.password()),
+                    LocalDateTime.now(),
+                    TermsVersion.CURRENT
             ));
 
             return ResponseEntity
@@ -256,7 +262,11 @@ public class AuthController {
                     regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$",
                     message = "비밀번호는 영문자와 숫자를 각각 1자 이상 포함해야 합니다."
             )
-            String password
+            String password,
+
+            @NotNull(message = "개인정보처리방침 및 이용약관 동의는 필수입니다.")
+            @AssertTrue(message = "개인정보처리방침 및 이용약관에 동의해야 합니다.")
+            Boolean agreedToTerms
     ) {
     }
 

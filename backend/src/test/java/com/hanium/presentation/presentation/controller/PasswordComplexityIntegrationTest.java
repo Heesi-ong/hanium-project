@@ -56,9 +56,10 @@ class PasswordComplexityIntegrationTest {
     }
 
     private ResponseEntity<String> signup(String email, String password) {
-        Map<String, String> request = Map.of(
+        Map<String, Object> request = Map.of(
                 "email", email,
-                "password", password
+                "password", password,
+                "agreedToTerms", true
         );
 
         return restTemplate.postForEntity(

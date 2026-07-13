@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 function MainLayout() {
@@ -44,15 +44,6 @@ function MainLayout() {
                                 </NavLink>
 
                                 <NavLink
-                                    to="/account"
-                                    className={({ isActive }) =>
-                                        isActive ? "nav-link active" : "nav-link"
-                                    }
-                                >
-                                    계정
-                                </NavLink>
-
-                                <NavLink
                                     to="/status"
                                     className={({ isActive }) =>
                                         isActive ? "nav-link active" : "nav-link"
@@ -61,9 +52,34 @@ function MainLayout() {
                                     시스템 상태
                                 </NavLink>
 
-                                <span className="nav-link">
-                                    {user?.email || "사용자"}
-                                </span>
+                                {/* 로그인한 이메일 표시부를 계정 설정 진입점으로 합쳤습니다.
+                                    이메일을 누르면 /account(계정 설정)로 이동합니다. */}
+                                <NavLink
+                                    to="/account"
+                                    className={({ isActive }) =>
+                                        isActive
+                                            ? "nav-link account-link active"
+                                            : "nav-link account-link"
+                                    }
+                                    title="계정 설정"
+                                >
+                                    <svg
+                                        className="account-icon"
+                                        width="16"
+                                        height="16"
+                                        viewBox="0 0 24 24"
+                                        aria-hidden="true"
+                                        focusable="false"
+                                    >
+                                        <path
+                                            fill="currentColor"
+                                            d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"
+                                        />
+                                    </svg>
+                                    <span className="account-email">
+                                        {user?.email || "사용자"}
+                                    </span>
+                                </NavLink>
 
                                 <button
                                     type="button"
@@ -105,6 +121,12 @@ function MainLayout() {
             <main className="app-main">
                 <Outlet />
             </main>
+
+            <footer className="app-footer">
+                <Link to="/privacy">개인정보처리방침</Link>
+                <span aria-hidden="true"> · </span>
+                <Link to="/terms">이용약관</Link>
+            </footer>
         </div>
     );
 }

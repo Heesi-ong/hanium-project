@@ -2,6 +2,7 @@ package com.hanium.presentation.presentation.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.domain.user.TermsVersion;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.config.JwtBlacklist;
 import com.hanium.presentation.global.config.JwtCookieSupport;
@@ -68,6 +69,8 @@ class AuthControllerIntegrationTest {
         var savedUser = userRepository.findByEmail("user@example.com").orElseThrow();
         assertThat(savedUser.getPasswordHash())
                 .isNotEqualTo("password123");
+        assertThat(savedUser.getTermsAgreedAt()).isNotNull();
+        assertThat(savedUser.getTermsVersion()).isEqualTo(TermsVersion.CURRENT);
 
         ResponseEntity<String> duplicateSignupResponse = restTemplate.postForEntity(
                 "/api/auth/signup",
@@ -132,6 +135,41 @@ class AuthControllerIntegrationTest {
         );
 
         assertThat(cookieAuthorizedResultsResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void signupRejectsMissingTermsAgreement() {
+        Map<String, Object> request = Map.of(
+                "email", "terms-missing@example.com",
+                "password", "password123"
+        );
+
+        ResponseEntity<String> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(userRepository.findByEmail("terms-missing@example.com")).isEmpty();
+    }
+
+    @Test
+    void signupRejectsFalseTermsAgreement() {
+        Map<String, Object> request = Map.of(
+                "email", "terms-false@example.com",
+                "password", "password123",
+                "agreedToTerms", false
+        );
+
+        ResponseEntity<String> signupResponse = restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        assertThat(signupResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(userRepository.findByEmail("terms-false@example.com")).isEmpty();
     }
 
     @Test

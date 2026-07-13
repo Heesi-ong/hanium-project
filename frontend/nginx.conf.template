@@ -1,0 +1,53 @@
+# 컨테이너 시작 시 nginx 공식 이미지의 템플릿 처리(20-envsubst-on-templates.sh)가
+# 이 파일을 envsubst로 치환해 /etc/nginx/conf.d/default.conf로 만듭니다.
+# ${BACKEND_API_UPSTREAM}만 실제 환경변수로 치환되고, $host/$uri 등 nginx 런타임
+# 변수는 env에 없는 이름이라 그대로 남습니다(infra/nginx/nginx.conf와 같은 방식).
+
+# BACKEND_API_UPSTREAM이 비어 있어도(기본값) resolver+변수 조합 덕분에 nginx 자체는
+# 문제없이 기동됩니다. /api/**로 들어온 요청만 그 순간에 실패(502)하며, 나머지 정적
+# 파일 서빙에는 영향이 없습니다. 리터럴 호스트(proxy_pass http://backend:8080 같은
+# 고정값)를 쓰면 그 호스트가 기동 시점에 DNS로 해석되지 않을 때 nginx 자체가 기동에
+# 실패하므로, frontend 컨테이너만 단독으로 띄우는 상황(이 파일이 만들어진 이유)에서는
+# 반드시 변수 기반 proxy_pass를 써야 합니다.
+resolver 127.0.0.11 valid=30s ipv6=off;
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    set $backend_api_upstream "${BACKEND_API_UPSTREAM}";
+
+    # 선택적 API 프록시입니다. docker-compose.yml/docker-compose.prod.yml처럼 backend와
+    # 같은 네트워크에 있고 BACKEND_API_UPSTREAM(예: backend:8080)이 설정된 경우에만
+    # 실제로 프록시합니다. 설정하지 않으면(기본값) 이 위치로 오는 요청은 502로 실패합니다.
+    # index.html을 대신 돌려주는 대신 명확히 실패시켜, "API가 HTML을 반환하는" 것처럼
+    # 보이는 혼란스러운 상황을 막습니다.
+    #
+    # 운영 제약: frontend 컨테이너가 단독으로 이 프록시를 통해 API를 서빙하는 것은
+    # docker-compose.yml(백엔드에 직접 http://localhost:8080으로 접속) /
+    # docker-compose.prod.yml(외부 nginx가 /api를 먼저 가로챔)의 정상 경로가 아니라
+    # "구성이 깨졌거나 frontend를 단독 실행한" 상황에 대한 안전망입니다.
+    location /api/ {
+        proxy_pass http://$backend_api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # React Router가 클라이언트 사이드에서 라우팅을 처리하므로,
+    # 존재하지 않는 경로 요청은 전부 index.html로 돌려줍니다.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 정적 자산은 오래 캐싱해도 안전합니다 (빌드 시 파일명에 해시가 붙습니다).
+    location /assets/ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+}

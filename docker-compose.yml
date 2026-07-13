@@ -6,6 +6,10 @@
 #   1) 프로젝트 루트에 .env 파일을 만들고 .env.example을 참고해 값을 채웁니다.
 #   2) docker compose up --build
 #
+# INTERNAL_ENGINE_API_KEY 등 값을 채우지 않으면 안 되는 필수 환경변수는 ${VAR:?메시지} 문법으로
+# 표시되어 있습니다. .env에 값이 없거나 비어 있으면 컨테이너가 뜨기도 전에 docker compose
+# 자체가 어떤 값이 빠졌는지 알려주며 즉시 실패합니다("애매하게 나중에 실패"하는 대신).
+#
 # mysql/redis/analysis-engine/video-llm-engine 포트는 127.0.0.1에만 바인딩되어
 # 외부 네트워크에서 접근할 수 없습니다. 완전한 운영 배포에서는 로드밸런서/방화벽에서도
 # 해당 내부 포트를 외부로 전달하지 않아야 합니다.
@@ -93,7 +97,7 @@ services:
           cpus: "2.0"
           memory: 4g
     environment:
-      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:?.env에 INTERNAL_ENGINE_API_KEY를 설정하세요 (.env.example 참고). 비어 있으면 엔진이 모든 분석 요청을 401로 거절합니다.}
       LOG_DIR: /storage/logs
     ports:
       - "127.0.0.1:${ANALYSIS_ENGINE_PORT:-8001}:8001"
@@ -103,15 +107,22 @@ services:
   video-llm-engine:
     build:
       context: ./video-llm-engine
+      args:
+        # mock(기본) | external-api | local-model. local-model로 바꾸면 torch/transformers
+        # 등 무거운 실제 모델 스택을 설치합니다(video-llm-engine/Dockerfile 참고).
+        # 현재는 mock/external-api 둘 다 실제 구현이 없어 동작은 같고, 가벼운 이미지로
+        # 빌드됩니다.
+        VIDEO_LLM_BACKEND: ${VIDEO_LLM_BACKEND:-mock}
     restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "2.0"
-          # 현재는 mock이지만 torch/transformers 의존성을 포함해 실제 모델 로딩 여유를 둡니다.
+          # local-model 빌드 시 실제 모델 로딩 여유를 둔 값입니다. mock/external-api
+          # 빌드(기본값)는 이보다 훨씬 적은 메모리로도 충분합니다.
           memory: 6g
     environment:
-      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:?.env에 INTERNAL_ENGINE_API_KEY를 설정하세요 (.env.example 참고). 비어 있으면 엔진이 모든 분석 요청을 401로 거절합니다.}
       VIDEO_LLM_ENABLED: ${VIDEO_LLM_ENABLED:-false}
       LOG_DIR: /storage/logs
     ports:
@@ -153,7 +164,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
       ANALYSIS_ENGINE_BASE_URL: http://analysis-engine:8001
       VIDEO_LLM_ENGINE_BASE_URL: http://video-llm-engine:8002
-      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:?.env에 INTERNAL_ENGINE_API_KEY를 설정하세요 (.env.example 참고). 비어 있으면 엔진이 모든 분석 요청을 401로 거절합니다.}
       OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
@@ -218,7 +229,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
       ANALYSIS_ENGINE_BASE_URL: http://analysis-engine:8001
       VIDEO_LLM_ENGINE_BASE_URL: http://video-llm-engine:8002
-      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:-}
+      INTERNAL_ENGINE_API_KEY: ${INTERNAL_ENGINE_API_KEY:?.env에 INTERNAL_ENGINE_API_KEY를 설정하세요 (.env.example 참고). 비어 있으면 엔진이 모든 분석 요청을 401로 거절합니다.}
       OPENAI_ENABLED: ${OPENAI_ENABLED:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
@@ -253,6 +264,12 @@ services:
         limits:
           cpus: "0.5"
           memory: 256m
+    # 이 스택에서는 프론트가 VITE_API_BASE_URL(위)로 backend를 직접 호출하므로 평소엔
+    # 쓰이지 않습니다. frontend 컨테이너만 따로 떼어 실행하거나(예: 다른 오케스트레이션,
+    # 수동 docker run) 구성 조합이 바뀌어 /api가 frontend 컨테이너로 직접 오는 경우에도
+    # API 호출이 조용히 깨지지 않도록 하는 안전망입니다(frontend/nginx.conf.template 참고).
+    environment:
+      BACKEND_API_UPSTREAM: backend:8080
     depends_on:
       - backend
     ports:

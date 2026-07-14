@@ -22,6 +22,9 @@ public class UserRateLimitFilter extends OncePerRequestFilter {
     private static final String UPLOAD_PATH = "/api/analysis/upload";
     private static final String ANALYSIS_BUCKET = "analysis";
     private static final String UPLOAD_BUCKET = "upload";
+    private static final String VIDEO_ACCESS_TOKEN_BUCKET = "video-access-token";
+    private static final String RESULTS_QUERY_BUCKET = "results-query";
+    private static final String JOB_STATUS_POLL_BUCKET = "job-status-poll";
 
     private final UserRateLimiter userRateLimiter;
     private final ObjectMapper objectMapper;
@@ -62,18 +65,38 @@ public class UserRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String resolveBucketName(HttpServletRequest request) {
-        if (!HttpMethod.POST.matches(request.getMethod())) {
+        String path = request.getRequestURI();
+
+        if (HttpMethod.POST.matches(request.getMethod())) {
+            if (UPLOAD_PATH.equals(path)) {
+                return UPLOAD_BUCKET;
+            }
+
+            if (path.matches("^/api/analysis/\\d{14}-[0-9a-f]{8}/(run|retry)$")) {
+                return ANALYSIS_BUCKET;
+            }
+
+            if (path.matches("^/api/results/\\d{14}-[0-9a-f]{8}/video-access-token$")) {
+                return VIDEO_ACCESS_TOKEN_BUCKET;
+            }
+
             return null;
         }
 
-        String path = request.getRequestURI();
+        if (HttpMethod.GET.matches(request.getMethod())) {
+            if ("/api/results".equals(path)) {
+                return RESULTS_QUERY_BUCKET;
+            }
 
-        if (UPLOAD_PATH.equals(path)) {
-            return UPLOAD_BUCKET;
-        }
+            if (path.matches("^/api/results/\\d{14}-[0-9a-f]{8}$")) {
+                return RESULTS_QUERY_BUCKET;
+            }
 
-        if (path.matches("^/api/analysis/\\d{14}-[0-9a-f]{8}/(run|retry)$")) {
-            return ANALYSIS_BUCKET;
+            if (path.matches("^/api/analysis/\\d{14}-[0-9a-f]{8}/(status|progress)$")) {
+                return JOB_STATUS_POLL_BUCKET;
+            }
+
+            return null;
         }
 
         return null;

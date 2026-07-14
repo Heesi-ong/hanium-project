@@ -34,6 +34,7 @@ import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 const POLLING_INTERVAL_MS = 1500;
 const POLLING_TIMEOUT_MS = 35 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 12000;
+const MAX_CONSECUTIVE_POLL_FAILURES = 5;
 
 const RUNNING_STATUSES = [
     "QUEUED",
@@ -51,6 +52,7 @@ function ResultDetailPage() {
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
     const cooldownTimerRef = useRef(null);
+    const pollingFailureCountRef = useRef(0);
 
     const [resultData, setResultData] = useState(null);
     const [analysisStatus, setAnalysisStatus] = useState(null);
@@ -219,6 +221,7 @@ function ResultDetailPage() {
         stopPolling();
 
         pollingStartedAtRef.current = Date.now();
+        pollingFailureCountRef.current = 0;
         setPolling(true);
 
         pollingTimerRef.current = setInterval(async () => {
@@ -232,6 +235,7 @@ function ResultDetailPage() {
                 }
 
                 const statusData = await fetchStatusOnce(targetJobId);
+                pollingFailureCountRef.current = 0;
 
                 if (statusData.status === "COMPLETED") {
                     stopPolling();
@@ -252,11 +256,16 @@ function ResultDetailPage() {
                     setError("");
                 }
             } catch (requestError) {
-                stopPolling();
-                setError(getErrorMessage(
-                    requestError,
-                    "분석 상태 확인 중 오류가 발생했습니다."
-                ));
+                pollingFailureCountRef.current += 1;
+
+                if (pollingFailureCountRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
+                    stopPolling();
+                    setError(getErrorMessage(
+                        requestError,
+                        "분석 상태 확인 중 오류가 발생했습니다."
+                    ));
+                }
+                // MAX_CONSECUTIVE_POLL_FAILURES 미만이면 다음 폴링 주기에 자동 재시도합니다.
             }
         }, POLLING_INTERVAL_MS);
     }
@@ -268,6 +277,7 @@ function ResultDetailPage() {
         }
 
         pollingStartedAtRef.current = null;
+        pollingFailureCountRef.current = 0;
         setPolling(false);
     }
 

@@ -25,11 +25,15 @@ apiClient.interceptors.response.use(
             return Promise.reject(responseData);
         }
 
+        const isTimeout = error.code === "ECONNABORTED";
+
         return Promise.reject({
             success: false,
             status: 500,
-            error: "NETWORK_ERROR",
-            message: error.message || "서버와 통신할 수 없습니다.",
+            error: isTimeout ? "REQUEST_TIMEOUT" : "NETWORK_ERROR",
+            message: isTimeout
+                ? "요청 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요."
+                : "서버와 통신할 수 없습니다. 네트워크 연결을 확인해주세요.",
             timestamp: new Date().toISOString(),
         });
     }

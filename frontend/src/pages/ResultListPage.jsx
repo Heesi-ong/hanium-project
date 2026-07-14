@@ -79,6 +79,9 @@ function ResultListPage() {
     const [sortType, setSortType] = useState("LATEST");
     const [keyword, setKeyword] = useState("");
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [page, setPage] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
     const [deletingJobId, setDeletingJobId] = useState("");
     const [error, setError] = useState("");
 
@@ -167,12 +170,15 @@ function ResultListPage() {
         try {
             setLoading(true);
             setError("");
+            setPage(0);
+            setHasMore(false);
 
-            const response = await getResults();
+            const response = await getResults({ page: 0 });
             const responseData = response.data;
 
             if (Array.isArray(responseData?.content)) {
                 setResults(responseData.content);
+                setHasMore(responseData.last === false);
                 return;
             }
 
@@ -199,6 +205,32 @@ function ResultListPage() {
             ));
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function loadMoreResults() {
+        try {
+            setLoadingMore(true);
+            setError("");
+
+            const nextPage = page + 1;
+            const response = await getResults({ page: nextPage });
+            const responseData = response.data;
+
+            if (Array.isArray(responseData?.content)) {
+                setResults((prevResults) => [...prevResults, ...responseData.content]);
+                setPage(nextPage);
+                setHasMore(responseData.last === false);
+            } else {
+                setHasMore(false);
+            }
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "추가 분석 결과를 불러오는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setLoadingMore(false);
         }
     }
 
@@ -523,6 +555,19 @@ function ResultListPage() {
                             </article>
                         );
                     })}
+                </div>
+            )}
+
+            {hasMore && (
+                <div className="button-row">
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={loadMoreResults}
+                        disabled={loadingMore}
+                    >
+                        {loadingMore ? "불러오는 중..." : "더 보기"}
+                    </button>
                 </div>
             )}
         </section>

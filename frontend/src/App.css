@@ -254,38 +254,11 @@ pre {
   background: #fecaca;
 }
 
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.feature-card {
-  border: 1px solid #dbe4f0;
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
-}
-
-.placeholder-card {
-  border: 1px solid #dbe4f0;
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
-}
-
 .upload-card {
   border: 1px solid rgba(43, 36, 32, 0.1);
   border-radius: 22px;
   background: #ffffff;
   box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
-}
-
-.result-list-card {
-  border: 1px solid #dbe4f0;
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
 }
 
 .summary-card {
@@ -344,56 +317,7 @@ pre {
   box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
 }
 
-.step-card {
-  border: 1px solid #dbe4f0;
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
-}
-
-.analysis-detail-card {
-  border: 1px solid #dbe4f0;
-  border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.06);
-}
-
-.feature-card {
-  padding: 28px;
-}
-
-.how-it-works-grid,
-.analysis-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.step-card,
-.analysis-detail-card {
-  padding: 24px;
-}
-
-.step-number {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  margin-bottom: 18px;
-  border-radius: 999px;
-  background: #E2704A;
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.feature-card h3,
-.step-card h3,
-.analysis-detail-card h3,
-.placeholder-card h2,
 .upload-card h2,
-.result-list-card h2,
 .detail-card h2,
 .section-title-row h2 {
   margin: 0 0 10px;
@@ -402,10 +326,6 @@ pre {
   letter-spacing: -0.03em;
 }
 
-.feature-card p,
-.step-card p,
-.analysis-detail-card p,
-.placeholder-card p,
 .page-header p,
 .detail-header-card p,
 .card-description,
@@ -432,10 +352,6 @@ pre {
 .detail-header-card h1 {
   margin-bottom: 16px;
   font-size: clamp(32px, 5vw, 48px);
-}
-
-.placeholder-card {
-  padding: 32px;
 }
 
 .upload-grid {
@@ -907,10 +823,6 @@ pre {
 .search-input:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
-}
-
-.result-list-card {
-  padding: 24px;
 }
 
 .result-list-header {
@@ -1602,9 +1514,6 @@ pre {
     padding: 36px 28px;
   }
 
-  .feature-grid,
-  .how-it-works-grid,
-  .analysis-detail-grid,
   .upload-grid {
     grid-template-columns: 1fr;
   }

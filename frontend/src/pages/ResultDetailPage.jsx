@@ -537,6 +537,7 @@ function ResultDetailPage() {
                 />
 
                 <EmptyState
+                    loading
                     title="로딩 중"
                     description="잠시만 기다려 주세요."
                 />

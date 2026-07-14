@@ -84,8 +84,17 @@ jobs:
           - video-llm-engine
     steps:
       - uses: actions/checkout@v4
-      - run: docker build .
+      - name: Build image
+        run: docker build -t hanium-${{ matrix.image }}:ci .
         working-directory: ${{ matrix.image }}
+      - name: Trivy image vulnerability scan (report only)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hanium-${{ matrix.image }}:ci
+          format: table
+          exit-code: "0"
+          vuln-type: os
+          severity: CRITICAL,HIGH
 
   compose-validate:
     runs-on: ubuntu-latest

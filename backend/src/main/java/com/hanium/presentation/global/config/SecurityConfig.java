@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -62,7 +63,14 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/login", "/api/auth/logout").permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/api/auth/signup",
+                                "/api/auth/login",
+                                "/api/auth/logout",
+                                "/api/auth/password-reset/request",
+                                "/api/auth/password-reset/confirm"
+                        ).permitAll()
                         .requestMatchers("/api/health", "/api/health/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll()
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
@@ -155,6 +163,25 @@ public class SecurityConfig {
             }
         }
 
+        public Optional<Instant> extractIssuedAt(String token) {
+            try {
+                Claims claims = Jwts.parser()
+                        .verifyWith(signingKey)
+                        .build()
+                        .parseSignedClaims(token)
+                        .getPayload();
+
+                Date issuedAt = claims.getIssuedAt();
+                if (issuedAt == null) {
+                    return Optional.empty();
+                }
+
+                return Optional.of(issuedAt.toInstant());
+            } catch (JwtException | IllegalArgumentException exception) {
+                return Optional.empty();
+            }
+        }
+
         public Duration getExpiration() {
             return expiration;
         }
@@ -194,11 +221,28 @@ public class SecurityConfig {
                 return;
             }
 
-            bearerToken.flatMap(jwtTokenProvider::extractEmail)
+            bearerToken.ifPresent(token -> jwtTokenProvider.extractEmail(token)
                     .flatMap(userRepository::findByEmail)
-                    .ifPresent(this::authenticate);
+                    .filter(user -> isTokenIssuedAfterPasswordChange(token, user))
+                    .ifPresent(this::authenticate));
 
             filterChain.doFilter(request, response);
+        }
+
+        private boolean isTokenIssuedAfterPasswordChange(String token, User user) {
+            if (user.getPasswordChangedAt() == null) {
+                return true;
+            }
+
+            Optional<Instant> issuedAt = jwtTokenProvider.extractIssuedAt(token);
+            if (issuedAt.isEmpty()) {
+                return false;
+            }
+
+            Instant passwordChangedAt = user.getPasswordChangedAt()
+                    .atZone(ZoneId.systemDefault())
+                    .toInstant();
+            return !issuedAt.get().isBefore(passwordChangedAt);
         }
 
         private Optional<String> resolveBearerToken(HttpServletRequest request) {

@@ -35,6 +35,23 @@ export async function withdrawAccount(password) {
     return unwrapApiResponse(response);
 }
 
+export async function requestPasswordReset(email) {
+    const response = await apiClient.post("/api/auth/password-reset/request", {
+        email,
+    });
+
+    return unwrapApiResponse(response);
+}
+
+export async function confirmPasswordReset({ token, newPassword }) {
+    const response = await apiClient.post("/api/auth/password-reset/confirm", {
+        token,
+        newPassword,
+    });
+
+    return unwrapApiResponse(response);
+}
+
 export async function logout() {
     const response = await apiClient.post("/api/auth/logout");
 

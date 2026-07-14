@@ -43,4 +43,22 @@ describe("AppRoutes public policy pages", () => {
         expect(screen.getByText(/외부 AI API로 영상 또는 분석 데이터가 전송될 수 있다는 점/))
             .toBeInTheDocument();
     });
+
+    it("renders forgot password page without authentication", async () => {
+        renderAppRoutes("/forgot-password");
+
+        await waitFor(() => {
+            expect(screen.getByRole("heading", { name: "비밀번호 재설정" }))
+                .toBeInTheDocument();
+        });
+    });
+
+    it("renders reset password page without authentication", async () => {
+        renderAppRoutes("/reset-password?token=abc");
+
+        await waitFor(() => {
+            expect(screen.getByRole("heading", { name: "새 비밀번호 설정" }))
+                .toBeInTheDocument();
+        });
+    });
 });

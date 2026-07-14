@@ -115,6 +115,7 @@ pre {
   color: #5C534B;
   font-size: 14px;
   font-weight: 700;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .nav-link:hover {
@@ -213,6 +214,17 @@ pre {
 .secondary-button,
 .danger-button {
   border: 0;
+  transition:
+          background 0.15s ease,
+          border-color 0.15s ease,
+          color 0.15s ease,
+          transform 0.15s ease;
+}
+
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled),
+.danger-button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .primary-button {
@@ -366,7 +378,8 @@ pre {
   background: rgba(226, 112, 74, 0.05);
   transition:
           border-color 0.2s ease,
-          background 0.2s ease;
+          background 0.2s ease,
+          box-shadow 0.2s ease;
 }
 
 .file-drop-zone:hover {
@@ -502,6 +515,17 @@ pre {
   width: min(360px, calc(100vw - 40px));
 }
 
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .toast {
   display: flex;
   align-items: flex-start;
@@ -514,6 +538,7 @@ pre {
   font-size: 14px;
   font-weight: 800;
   line-height: 1.5;
+  animation: toast-slide-in 0.25s ease;
 }
 
 .toast button {
@@ -542,6 +567,26 @@ pre {
   color: #B85530;
 }
 
+@keyframes confirm-overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes confirm-dialog-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .confirm-dialog-overlay {
   position: fixed;
   inset: 0;
@@ -551,6 +596,7 @@ pre {
   justify-content: center;
   padding: 20px;
   background: rgba(43, 36, 32, 0.45);
+  animation: confirm-overlay-fade-in 0.15s ease;
 }
 
 .confirm-dialog {
@@ -559,6 +605,7 @@ pre {
   border-radius: 22px;
   background: #ffffff;
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.2);
+  animation: confirm-dialog-pop-in 0.2s ease;
 }
 
 .confirm-dialog p {
@@ -1788,5 +1835,16 @@ pre {
   .detail-card,
   .chart-card {
     break-inside: avoid;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

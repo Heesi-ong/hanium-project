@@ -9,6 +9,8 @@ const ResultListPage = lazy(() => import("../pages/ResultListPage"));
 const ResultDetailPage = lazy(() => import("../pages/ResultDetailPage"));
 const LoginPage = lazy(() => import("../pages/LoginPage"));
 const SignupPage = lazy(() => import("../pages/SignupPage"));
+const ForgotPasswordPage = lazy(() => import("../pages/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("../pages/ResetPasswordPage"));
 const PrivacyPage = lazy(() => import("../pages/PrivacyPage"));
 const TermsPage = lazy(() => import("../pages/TermsPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
@@ -29,6 +31,8 @@ function AppRoutes() {
             <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
 
                 <Route element={<MainLayout />}>
                     <Route path="/" element={<HomePage />} />

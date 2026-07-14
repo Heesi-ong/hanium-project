@@ -1,6 +1,7 @@
 package com.hanium.presentation.presentation.controller;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.hanium.presentation.application.auth.PasswordResetService;
 import com.hanium.presentation.domain.user.TermsVersion;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
@@ -42,6 +43,8 @@ public class AuthController {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String PASSWORD_RESET_REQUEST_MESSAGE =
+            "입력한 이메일로 비밀번호 재설정 안내를 보냈습니다. 등록되지 않은 이메일이어도 동일하게 처리됩니다.";
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -49,6 +52,7 @@ public class AuthController {
     private final JwtBlacklist jwtBlacklist;
     private final UserRateLimiter userRateLimiter;
     private final JwtCookieSupport jwtCookieSupport;
+    private final PasswordResetService passwordResetService;
 
     public AuthController(
             UserRepository userRepository,
@@ -56,7 +60,8 @@ public class AuthController {
             JwtTokenProvider jwtTokenProvider,
             JwtBlacklist jwtBlacklist,
             UserRateLimiter userRateLimiter,
-            JwtCookieSupport jwtCookieSupport
+            JwtCookieSupport jwtCookieSupport,
+            PasswordResetService passwordResetService
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -64,6 +69,7 @@ public class AuthController {
         this.jwtBlacklist = jwtBlacklist;
         this.userRateLimiter = userRateLimiter;
         this.jwtCookieSupport = jwtCookieSupport;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/signup")
@@ -160,6 +166,42 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, jwtCookieSupport.expireAccessTokenCookie().toString())
                 .body(ApiResponse.success("로그아웃이 완료되었습니다."));
+    }
+
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<ApiResponse<?>> requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        String email = normalizeEmail(request.email());
+        String rateLimitKey = resolveClientIp(servletRequest) + ":" + email;
+        if (!userRateLimiter.tryConsume("password-reset-request", rateLimitKey)) {
+            ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
+            return ResponseEntity
+                    .status(errorCode.getStatus())
+                    .body(ApiResponse.fail(errorCode.getMessage()));
+        }
+
+        passwordResetService.requestPasswordReset(email);
+        return ResponseEntity.ok(ApiResponse.success(PASSWORD_RESET_REQUEST_MESSAGE));
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<ApiResponse<?>> confirmPasswordReset(
+            @Valid @RequestBody PasswordResetConfirmRequest request
+    ) {
+        boolean confirmed = passwordResetService.confirmPasswordReset(
+                request.token().trim(),
+                request.newPassword()
+        );
+
+        if (!confirmed) {
+            return ResponseEntity
+                    .status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.fail("비밀번호 재설정 링크가 만료되었거나 이미 사용되었습니다."));
+        }
+
+        return ResponseEntity.ok(ApiResponse.success("비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해 주세요."));
     }
 
     @GetMapping("/me")
@@ -267,6 +309,27 @@ public class AuthController {
             @NotNull(message = "개인정보처리방침 및 이용약관 동의는 필수입니다.")
             @AssertTrue(message = "개인정보처리방침 및 이용약관에 동의해야 합니다.")
             Boolean agreedToTerms
+    ) {
+    }
+
+    public record PasswordResetRequest(
+            @NotBlank(message = "이메일은 필수입니다.")
+            @Email(message = "이메일 형식이 올바르지 않습니다.")
+            String email
+    ) {
+    }
+
+    public record PasswordResetConfirmRequest(
+            @NotBlank(message = "토큰은 필수입니다.")
+            String token,
+
+            @NotBlank(message = "새 비밀번호는 필수입니다.")
+            @Size(min = 8, max = 72, message = "비밀번호는 8자 이상 72자 이하로 입력해야 합니다.")
+            @Pattern(
+                    regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$",
+                    message = "비밀번호는 영문자와 숫자를 각각 1자 이상 포함해야 합니다."
+            )
+            String newPassword
     ) {
     }
 

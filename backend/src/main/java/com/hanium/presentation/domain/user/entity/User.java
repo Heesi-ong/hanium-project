@@ -32,6 +32,9 @@ public class User {
     @Column(name = "terms_version", length = 20)
     private String termsVersion;
 
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     protected User() {
     }
 
@@ -73,6 +76,11 @@ public class User {
         return passwordHash;
     }
 
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.passwordChangedAt = LocalDateTime.now();
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -83,5 +91,9 @@ public class User {
 
     public String getTermsVersion() {
         return termsVersion;
+    }
+
+    public LocalDateTime getPasswordChangedAt() {
+        return passwordChangedAt;
     }
 }

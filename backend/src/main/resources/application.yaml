@@ -23,12 +23,27 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
 
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS_ENABLE:true}
+
   # local 프로필(H2)에서는 Flyway를 쓰지 않고 Hibernate가 스키마를 자동 생성합니다.
   # dev/prod 프로필에서 true로 켭니다.
   flyway:
     enabled: false
 
 management:
+  health:
+    mail:
+      enabled: ${ACTUATOR_MAIL_HEALTH_ENABLED:false}
   server:
     port: ${MANAGEMENT_SERVER_PORT:8081}
   endpoints:
@@ -93,6 +108,12 @@ openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-4o-mini}
   timeout-ms: ${OPENAI_TIMEOUT_MS:15000}
+
+password-reset:
+  # 재설정 링크는 계정 탈취로 이어질 수 있는 일회용 권한이므로 JWT 만료와 같은 30분 기본값을 사용합니다.
+  token-expiration-minutes: ${PASSWORD_RESET_TOKEN_EXPIRATION_MINUTES:30}
+  reset-url-base: ${PASSWORD_RESET_URL_BASE:http://localhost:5173/reset-password}
+  mail-from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
 
 analysis:
   retry:

@@ -154,6 +154,97 @@ uvicorn app.main:app --reload --port 8002
 `docker compose build` 시에는 `VIDEO_LLM_BACKEND`(mock/external-api/local-model) 빌드 인자로
 같은 선택을 할 수 있습니다. 자세한 내용은 `.env.example`과 `video-llm-engine/Dockerfile`을 참고하세요.
 
+### 5.1 Video LLM 실제 모델 활성화
+
+기본 설정은 안전하게 mock 경로입니다. 루트 `.env.example:78-81`, `video-llm-engine/.env.example:12-15`,
+`docker-compose.yml:126` 모두 `VIDEO_LLM_ENABLED=false`를 기본값으로 둡니다. 실제 NVIDIA hosted
+Video LLM 호출을 운영에서 켜려면 아래 값을 운영 환경에 명시적으로 설정해야 합니다.
+
+| 환경변수 | 위치 | 의미 |
+| --- | --- | --- |
+| `VIDEO_LLM_ENABLED=true` | 루트 `.env` 또는 video-llm-engine 실행 환경 | 실제 NVIDIA hosted API 호출 경로를 켭니다. 실패하면 video-llm-engine 내부에서 mock으로 폴백합니다. |
+| `NVIDIA_API_KEY` | video-llm-engine 실행 환경 | NVIDIA API Catalog(build.nvidia.com)에서 발급받은 `nvapi-` 키입니다. 비어 있으면 실제 호출은 실패하고 `FALLBACK` mock으로 처리됩니다. |
+| `NVIDIA_VIDEO_LLM_MODEL` | video-llm-engine 실행 환경 | 기본값은 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`입니다. API Catalog의 모델 ID가 바뀐 경우에만 덮어씁니다. |
+| `NVIDIA_API_BASE_URL` | video-llm-engine 실행 환경 | 기본값은 `https://integrate.api.nvidia.com/v1`입니다. |
+| `NVIDIA_ASSET_API_BASE_URL` | video-llm-engine 실행 환경 | 180KB 초과 영상을 업로드하는 NVCF Asset API base URL입니다. 기본값은 `https://api.nvcf.nvidia.com/v2/nvcf`입니다. |
+| `NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS` | video-llm-engine 실행 환경 | 외부 영상 분석 호출 timeout입니다. 기본값은 `120`초입니다. |
+| `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY` | backend 실행 환경 또는 루트 `.env` | NVIDIA 실제 호출 월간 예산 가드입니다. 기본값은 `500`회입니다. 정확한 NVIDIA 무료 한도가 아직 확인되지 않아 OpenAI 기본값보다 보수적으로 둔 추정값입니다. |
+| `VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES` | backend 실행 환경 또는 루트 `.env` | 월간 카운터 refill 주기입니다. 기본값은 `44640`분입니다. |
+
+로컬에서 직접 실행할 때는 video-llm-engine 터미널에 다음처럼 지정합니다.
+
+```bash
+cd ~/Desktop/hanium\ project/video-llm-engine
+
+export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+export VIDEO_LLM_ENABLED=true
+export NVIDIA_API_KEY=nvapi-...
+export NVIDIA_VIDEO_LLM_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+export NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1
+export NVIDIA_ASSET_API_BASE_URL=https://api.nvcf.nvidia.com/v2/nvcf
+export NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS=120
+uvicorn app.main:app --reload --port 8002
+```
+
+backend의 월간 호출 한도는 backend 터미널 또는 루트 `.env`에서 설정합니다.
+
+```bash
+export VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY=500
+export VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES=44640
+```
+
+Docker Compose 운영 배포는 `docker-compose.yml`과 `docker-compose.prod.yml`을 함께 사용합니다.
+`docker-compose.prod.yml`은 nginx/TLS 오버레이만 추가하므로, Video LLM 관련 런타임 값은 기본
+`docker-compose.yml`의 `video-llm-engine` 및 `backend` 서비스 환경으로 전달됩니다.
+compose 기반 운영에서 실제 모델을 켜려면 루트 `.env`에 `VIDEO_LLM_ENABLED=true`,
+`NVIDIA_API_KEY`, 필요한 `NVIDIA_*` override, `VIDEO_LLM_MONTHLY_RATE_LIMIT_*` 값을 채운 뒤
+배포하세요. 키 값은 저장소에 커밋하지 말고 운영 환경변수 또는 시크릿으로 관리해야 합니다.
+
+비용과 한도 측면에서는 backend가 실제 Video LLM 호출 전에 월간 카운터를 확인합니다.
+`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`를 초과하면 NVIDIA 호출을 보내지 않고 Video LLM 분석을
+생략하며, 결과 화면에는 `SKIPPED` 상태와 생략 사유가 표시됩니다. 이 동작은 서비스 장애를 막는
+안전장치이지, NVIDIA의 실제 무료 rate limit이 500회라는 뜻은 아닙니다.
+
+알려진 품질/운영 한계는 `docs/service-plan/video-llm-model-options.md`에 계속 갱신합니다.
+2026-07-13 기준으로 120초/1.2MB 샘플까지 성공했지만 NVIDIA 무료 API의 정확한 분당/일당
+rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않았습니다. 또한 60초 이상 영상에서는
+3구간 프롬프트 적용 후 시간 구간화가 개선됐지만, 일부 라벨은 실제 시각 변화보다 프롬프트 구조를
+따른 추정일 가능성이 있어 품질 검수 없이 최종 사용자 판단 근거로 과신하면 안 됩니다.
+
+### 5.2 비밀번호 재설정 이메일 발송 활성화
+
+비밀번호 재설정은 `POST /api/auth/password-reset/request`로 이메일을 요청하고,
+`/reset-password?token=...` 화면에서 새 비밀번호를 확정하는 흐름입니다. 토큰 원문은 DB에 저장하지
+않고 SHA-256 해시만 저장하며, 기본 만료 시간은 30분입니다. 요청 API는 이메일 존재 여부와 무관하게
+항상 같은 성공 메시지를 반환해 계정 존재 여부가 노출되지 않도록 합니다.
+
+| 환경변수 | 의미 |
+| --- | --- |
+| `SMTP_HOST` | SMTP 서버 호스트입니다. 비어 있으면 local/dev에서는 개발용 로그 폴백을 사용하고, prod에서는 링크를 로그에 출력하지 않습니다. |
+| `SMTP_PORT` | SMTP 포트입니다. 기본값은 `587`입니다. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | SMTP 인증 계정입니다. |
+| `SMTP_AUTH` | SMTP auth 사용 여부입니다. 기본값은 `true`입니다. |
+| `SMTP_STARTTLS_ENABLE` | STARTTLS 사용 여부입니다. 기본값은 `true`입니다. |
+| `MAIL_FROM_ADDRESS` | 발신자 주소입니다. 기본값은 `no-reply@example.com`입니다. |
+| `PASSWORD_RESET_URL_BASE` | 메일에 들어갈 프론트 재설정 URL입니다. 기본값은 `http://localhost:5173/reset-password`입니다. 운영에서는 실제 도메인으로 바꾸세요. |
+| `PASSWORD_RESET_TOKEN_EXPIRATION_MINUTES` | 재설정 토큰 만료 시간입니다. 기본값은 `30`분입니다. |
+| `PASSWORD_RESET_RATE_LIMIT_CAPACITY` / `PASSWORD_RESET_RATE_LIMIT_REFILL_MINUTES` | 재설정 요청 rate limit입니다. 기본값은 10분당 5회입니다. |
+
+로컬 개발에서 SMTP 없이 테스트할 때는 `SMTP_HOST`를 비워 둡니다. 그러면 backend 로그에
+`PASSWORD_RESET_DEV_FALLBACK 개발용 폴백` 접두어와 함께 재설정 링크가 출력됩니다. 운영(`prod`)
+프로필에서 `SMTP_HOST`가 비어 있으면 링크를 로그에 남기지 않고, 발송 실패 로그만 남깁니다.
+
+운영 배포에서는 루트 `.env` 또는 배포 시크릿에 아래 값을 설정합니다.
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=...
+SMTP_PASSWORD=...
+MAIL_FROM_ADDRESS=no-reply@example.com
+PASSWORD_RESET_URL_BASE=https://your-domain.example/reset-password
+```
+
 정상 확인:
 
 ```bash
@@ -770,6 +861,8 @@ DB_PASSWORD=실제비밀번호 \
 ## 15. 의존성 업데이트 자동화
 
 Dependabot은 매주 backend(Gradle), frontend(npm), analysis-engine/video-llm-engine(pip), 4개 Dockerfile, GitHub Actions 의존성을 확인해 업데이트 PR을 자동으로 생성합니다. 이는 CI를 즉시 실패시키는 게이트가 아니라 PR 생성 방식이므로, 실제 병합 여부는 변경 내용과 CI 결과를 사람이 검토해 결정해야 합니다.
+
+CI의 `docker-build` job은 4개 서비스 이미지(`backend`, `frontend`, `analysis-engine`, `video-llm-engine`)를 빌드한 뒤 Trivy로 컨테이너 OS 패키지 취약점을 스캔합니다. 현재는 `CRITICAL,HIGH` 결과를 로그에 표로 남기는 보고 전용 단계이며, `exit-code: 0`이라 취약점 발견만으로 빌드를 실패시키지 않습니다. 실제 CI에서 나온 CVE 목록을 확인한 뒤, 베이스 이미지 업데이트로 해결 가능한 항목과 예외 처리할 항목을 분류하고 차후 실패 기준을 정해야 합니다.
 
 ## 16. 현재 구현 범위
 

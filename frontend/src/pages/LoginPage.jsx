@@ -1,6 +1,7 @@
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import StateMessage from "../components/StateMessage";
+import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
 
 const inputStyle = {
@@ -21,6 +22,7 @@ function LoginPage() {
 
     const [email, setEmail] = useState(location.state?.email || "");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [sessionExpired, setSessionExpired] = useState(
@@ -97,7 +99,7 @@ function LoginPage() {
                             <span>
                                 <strong>비밀번호</strong>
                                 <input
-                                    type="password"
+                                    type={showPassword ? "text" : "password"}
                                     value={password}
                                     onChange={(event) => setPassword(event.target.value)}
                                     autoComplete="current-password"
@@ -107,6 +109,15 @@ function LoginPage() {
                                 />
                             </span>
                         </label>
+
+                        <PasswordToggleButton
+                            visible={showPassword}
+                            onToggle={() => setShowPassword((prev) => !prev)}
+                        />
+
+                        <p className="auth-policy-links" style={{ textAlign: "right" }}>
+                            <Link to="/forgot-password">비밀번호를 잊으셨나요?</Link>
+                        </p>
 
                         <StateMessage type="info">
                             {sessionExpired ? "세션이 만료되어 다시 로그인해주세요." : ""}

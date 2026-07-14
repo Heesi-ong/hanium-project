@@ -11,6 +11,10 @@ function getVisualGenerationModeLabel(mode) {
         return "Mock 영상 분석";
     }
 
+    if (mode === "SKIPPED") {
+        return "Video LLM 분석 생략";
+    }
+
     return "분석 방식 알 수 없음";
 }
 

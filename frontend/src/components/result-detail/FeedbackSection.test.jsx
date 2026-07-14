@@ -67,6 +67,7 @@ describe("FeedbackSection", () => {
         ["REAL", "실제 영상 AI"],
         ["FALLBACK", "영상 AI 실패 후 Mock 대체"],
         ["MOCK", "Mock 영상 분석"],
+        ["SKIPPED", "Video LLM 분석 생략"],
     ])("renders %s generation mode badge", (generationMode, label) => {
         renderFeedbackSection({
             model: {
@@ -83,6 +84,9 @@ describe("FeedbackSection", () => {
         const badge = within(visualAnalysisCard).getByText(label);
 
         expect(badge).toHaveClass("mini-badge");
+        expect(
+            within(visualAnalysisCard).queryByText("분석 방식 알 수 없음")
+        ).not.toBeInTheDocument();
     });
 
     it("renders an empty state when visual analysis is missing", () => {

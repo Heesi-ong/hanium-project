@@ -101,6 +101,7 @@ public class ResultMergeService {
     ) {
         Map<String, Object> visualAnalysis = new LinkedHashMap<>();
 
+        visualAnalysis.put("status", videoLlmEngineResponse.status());
         visualAnalysis.put("model", nullSafeMap(videoLlmEngineResponse.model()));
         visualAnalysis.put("observations", nullSafeObject(videoLlmEngineResponse.observations()));
         visualAnalysis.put("globalSummary", nullSafeMap(videoLlmEngineResponse.globalSummary()));

@@ -8,6 +8,7 @@ import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
@@ -97,6 +98,7 @@ class AnalysisCommandServiceQueueFullTest {
                 mock(AnalysisEngineClient.class),
                 mock(VideoLlmEngineClient.class),
                 mock(OpenAiClient.class),
+                mock(UserRateLimiter.class),
                 mock(VideoDurationProbe.class),
                 mock(JobIdGenerator.class),
                 analysisProgressService,

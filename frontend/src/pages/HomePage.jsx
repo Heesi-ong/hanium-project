@@ -162,165 +162,179 @@ function HomePage() {
     return (
         <div className="landing-page">
             <section className="landing-hero">
-                <div className="landing-hero-copy">
-                    <p className="landing-badge">AI 발표 코칭</p>
-                    <h1 className="landing-heading">
-                        발표는 감이 아니라,
-                        <br />
-                        데이터로 완성됩니다
-                    </h1>
-                    <p className="landing-hero-description">
-                        업로드한 발표 영상을 기반으로 자세, 시선, 제스처, 음성 속도,
-                        필러 표현, 침묵 구간을 분석하고 맞춤형 피드백을 제공합니다.
-                    </p>
-                    <div className="landing-hero-actions">
-                        {isAuthenticated ? (
-                            <>
-                                <Link to="/upload" className="landing-button primary">
-                                    영상 업로드 시작
-                                </Link>
-                                <Link to="/results" className="landing-button secondary">
-                                    분석 결과 보기
-                                </Link>
-                            </>
-                        ) : (
-                            <>
-                                <Link to="/signup" className="landing-button primary">
-                                    무료로 시작하기
-                                </Link>
-                                <Link to="/login" className="landing-button secondary">
-                                    로그인
-                                </Link>
-                            </>
-                        )}
+                <div className="landing-hero-inner">
+                    <div className="landing-hero-copy">
+                        <p className="landing-badge">AI 발표 코칭</p>
+                        <h1 className="landing-heading">
+                            발표는 감이 아니라,
+                            <br />
+                            데이터로 완성됩니다
+                        </h1>
+                        <p className="landing-hero-description">
+                            업로드한 발표 영상을 기반으로 자세, 시선, 제스처, 음성 속도,
+                            필러 표현, 침묵 구간을 분석하고 맞춤형 피드백을 제공합니다.
+                        </p>
+                        <div className="landing-hero-actions">
+                            {isAuthenticated ? (
+                                <>
+                                    <Link to="/upload" className="landing-button primary">
+                                        영상 업로드 시작
+                                    </Link>
+                                    <Link to="/results" className="landing-button secondary">
+                                        분석 결과 보기
+                                    </Link>
+                                </>
+                            ) : (
+                                <>
+                                    <Link to="/signup" className="landing-button primary">
+                                        무료로 시작하기
+                                    </Link>
+                                    <Link to="/login" className="landing-button secondary">
+                                        로그인
+                                    </Link>
+                                </>
+                            )}
+                        </div>
                     </div>
-                </div>
 
-                <div className="landing-hero-visual">
-                    <HeroIllustration />
+                    <div className="landing-hero-visual">
+                        <HeroIllustration />
+                    </div>
                 </div>
             </section>
 
             <section className="landing-band" id="features">
-                <div className="landing-section-header">
-                    <p className="landing-eyebrow">핵심 기능</p>
-                    <h2 className="landing-title">
-                        발표의 모든 순간을
-                        <br />
-                        세심하게 살핍니다
-                    </h2>
-                </div>
+                <div className="landing-band-inner">
+                    <div className="landing-section-header">
+                        <p className="landing-eyebrow">핵심 기능</p>
+                        <h2 className="landing-title">
+                            발표의 모든 순간을
+                            <br />
+                            세심하게 살핍니다
+                        </h2>
+                    </div>
 
-                <div className="landing-feature-grid">
-                    {FEATURE_ITEMS.map((item) => (
-                        <article className="landing-feature-card" key={item.title}>
-                            <div className="landing-feature-icon" style={{ background: item.color }}>
-                                {item.icon}
-                            </div>
-                            <h3>{item.title}</h3>
-                            <p>{item.description}</p>
-                        </article>
-                    ))}
+                    <div className="landing-feature-grid">
+                        {FEATURE_ITEMS.map((item) => (
+                            <article className="landing-feature-card" key={item.title}>
+                                <div className="landing-feature-icon" style={{ background: item.color }}>
+                                    {item.icon}
+                                </div>
+                                <h3>{item.title}</h3>
+                                <p>{item.description}</p>
+                            </article>
+                        ))}
+                    </div>
                 </div>
             </section>
 
             <section className="landing-band" id="analysis-detail">
-                <div className="landing-section-header">
-                    <p className="landing-eyebrow">분석 항목 상세 소개</p>
-                    <h2 className="landing-title">
-                        결과 상세 화면에서
-                        <br />
-                        확인하는 실제 지표
-                    </h2>
-                </div>
+                <div className="landing-band-inner">
+                    <div className="landing-section-header">
+                        <p className="landing-eyebrow">분석 항목 상세 소개</p>
+                        <h2 className="landing-title">
+                            결과 상세 화면에서
+                            <br />
+                            확인하는 실제 지표
+                        </h2>
+                    </div>
 
-                <div className="landing-feature-grid">
-                    {ANALYSIS_DETAIL_ITEMS.map((item) => (
-                        <article className="landing-feature-card plain" key={item.title}>
-                            <h3>{item.title}</h3>
-                            <p>{item.description}</p>
-                        </article>
-                    ))}
+                    <div className="landing-feature-grid">
+                        {ANALYSIS_DETAIL_ITEMS.map((item) => (
+                            <article className="landing-feature-card plain" key={item.title}>
+                                <h3>{item.title}</h3>
+                                <p>{item.description}</p>
+                            </article>
+                        ))}
+                    </div>
                 </div>
             </section>
 
             <section className="landing-band" id="how-it-works">
-                <div className="landing-section-header center">
-                    <p className="landing-eyebrow">사용 방법</p>
-                    <h2 className="landing-title">3단계면 충분합니다</h2>
-                </div>
+                <div className="landing-band-inner">
+                    <div className="landing-section-header center">
+                        <p className="landing-eyebrow">사용 방법</p>
+                        <h2 className="landing-title">3단계면 충분합니다</h2>
+                    </div>
 
-                <div className="landing-steps-grid">
-                    {HOW_IT_WORKS_STEPS.map((step, index) => (
-                        <div className="landing-step" key={step.title}>
-                            <div className="landing-step-number">{index + 1}</div>
-                            <h3>{step.title}</h3>
-                            <p>{step.description}</p>
-                        </div>
-                    ))}
+                    <div className="landing-steps-grid">
+                        {HOW_IT_WORKS_STEPS.map((step, index) => (
+                            <div className="landing-step" key={step.title}>
+                                <div className="landing-step-number">{index + 1}</div>
+                                <h3>{step.title}</h3>
+                                <p>{step.description}</p>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </section>
 
             <section className="landing-band" id="faq">
-                <div className="landing-section-header">
-                    <p className="landing-eyebrow">FAQ</p>
-                    <h2 className="landing-title">자주 묻는 질문</h2>
-                </div>
+                <div className="landing-band-inner">
+                    <div className="landing-section-header">
+                        <p className="landing-eyebrow">FAQ</p>
+                        <h2 className="landing-title">자주 묻는 질문</h2>
+                    </div>
 
-                <div className="landing-faq-list">
-                    {FAQ_ITEMS.map((item, index) => {
-                        const isOpen = openFaqIndex === index;
+                    <div className="landing-faq-list">
+                        {FAQ_ITEMS.map((item, index) => {
+                            const isOpen = openFaqIndex === index;
 
-                        return (
-                            <div className="landing-faq-item" key={item.question}>
-                                <button
-                                    type="button"
-                                    className="landing-faq-question"
-                                    onClick={() => toggleFaq(index)}
-                                    aria-expanded={isOpen}
-                                >
-                                    <span>{item.question}</span>
-                                    <span className="landing-faq-symbol">{isOpen ? "\u2212" : "+"}</span>
-                                </button>
-                                {isOpen && <p className="landing-faq-answer">{item.answer}</p>}
-                            </div>
-                        );
-                    })}
+                            return (
+                                <div className="landing-faq-item" key={item.question}>
+                                    <button
+                                        type="button"
+                                        className="landing-faq-question"
+                                        onClick={() => toggleFaq(index)}
+                                        aria-expanded={isOpen}
+                                    >
+                                        <span>{item.question}</span>
+                                        <span className="landing-faq-symbol">{isOpen ? "\u2212" : "+"}</span>
+                                    </button>
+                                    {isOpen && <p className="landing-faq-answer">{item.answer}</p>}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             </section>
 
             <section className="landing-cta">
-                <h2>지금, 데이터로 발표를 완성하세요</h2>
-                {isAuthenticated ? (
-                    <Link to="/upload" className="landing-button primary large">
-                        지금 업로드하기
-                    </Link>
-                ) : (
-                    <Link to="/signup" className="landing-button primary large">
-                        무료 회원가입
-                    </Link>
-                )}
+                <div className="landing-cta-inner">
+                    <h2>지금, 데이터로 발표를 완성하세요</h2>
+                    {isAuthenticated ? (
+                        <Link to="/upload" className="landing-button primary large">
+                            지금 업로드하기
+                        </Link>
+                    ) : (
+                        <Link to="/signup" className="landing-button primary large">
+                            무료 회원가입
+                        </Link>
+                    )}
+                </div>
             </section>
 
             <footer className="landing-footer">
-                <div className="landing-footer-top">
-                    <div>
-                        <p className="landing-footer-brand">AI Presentation Coach</p>
-                        <p className="landing-footer-tagline">
-                            누구나 자신 있게 발표할 수 있도록, 데이터로 돕는 AI 발표 분석 서비스입니다.
-                        </p>
+                <div className="landing-footer-inner">
+                    <div className="landing-footer-top">
+                        <div>
+                            <p className="landing-footer-brand">AI Presentation Coach</p>
+                            <p className="landing-footer-tagline">
+                                누구나 자신 있게 발표할 수 있도록, 데이터로 돕는 AI 발표 분석 서비스입니다.
+                            </p>
+                        </div>
+
+                        <div className="landing-footer-links">
+                            <span className="landing-footer-links-title">서비스</span>
+                            <a href="#features">기능</a>
+                            <a href="#how-it-works">사용 방법</a>
+                            <a href="#faq">FAQ</a>
+                        </div>
                     </div>
 
-                    <div className="landing-footer-links">
-                        <span className="landing-footer-links-title">서비스</span>
-                        <a href="#features">기능</a>
-                        <a href="#how-it-works">사용 방법</a>
-                        <a href="#faq">FAQ</a>
+                    <div className="landing-footer-bottom">
+                        &copy; {new Date().getFullYear()} AI Presentation Coach. All rights reserved.
                     </div>
-                </div>
-
-                <div className="landing-footer-bottom">
-                    &copy; {new Date().getFullYear()} AI Presentation Coach. All rights reserved.
                 </div>
             </footer>
         </div>

@@ -4,17 +4,6 @@ import { confirmPasswordReset } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
 
-const inputStyle = {
-    width: "100%",
-    minHeight: 46,
-    marginTop: 8,
-    padding: "0 14px",
-    border: "1px solid rgba(43, 36, 32, 0.18)",
-    borderRadius: 12,
-    background: "#ffffff",
-    color: "#2B2420",
-};
-
 const hintStyle = {
     display: "block",
     marginTop: 6,
@@ -78,7 +67,7 @@ function ResetPasswordPage() {
                                     onChange={(event) => setNewPassword(event.target.value)}
                                     autoComplete="new-password"
                                     minLength={8}
-                                    style={inputStyle}
+                                    className="text-input"
                                     required
                                     disabled={!token}
                                 />

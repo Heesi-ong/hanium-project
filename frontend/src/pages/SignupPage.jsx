@@ -5,17 +5,6 @@ import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
 
-const inputStyle = {
-    width: "100%",
-    minHeight: 46,
-    marginTop: 8,
-    padding: "0 14px",
-    border: "1px solid rgba(43, 36, 32, 0.18)",
-    borderRadius: 12,
-    background: "#ffffff",
-    color: "#2B2420",
-};
-
 const hintStyle = {
     display: "block",
     marginTop: 6,
@@ -94,7 +83,7 @@ function SignupPage() {
                                     value={email}
                                     onChange={(event) => setEmail(event.target.value)}
                                     autoComplete="email"
-                                    style={inputStyle}
+                                    className="text-input"
                                     required
                                 />
                             </span>
@@ -109,7 +98,7 @@ function SignupPage() {
                                     onChange={(event) => setPassword(event.target.value)}
                                     autoComplete="new-password"
                                     minLength={8}
-                                    style={inputStyle}
+                                    className="text-input"
                                     required
                                 />
                                 <small style={hintStyle}>

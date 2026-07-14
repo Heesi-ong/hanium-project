@@ -18,6 +18,7 @@ export async function uploadAnalysisVideo(file) {
         headers: {
             "Content-Type": "multipart/form-data",
         },
+        timeout: 20 * 60 * 1000,
     });
 
     return unwrapApiResponse(response);

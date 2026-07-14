@@ -60,12 +60,14 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-changeme}
       BACKUP_DIR: /backups
       BACKUP_LOG_PATH: /logs/backup.log
+      BACKUP_METRICS_PATH: /metrics/mysql_backup.prom
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
     volumes:
       - ./scripts/backup-mysql.sh:/scripts/backup-mysql.sh:ro
       - ./storage/backups:/backups
       - ./storage/logs:/logs
+      - ./storage/metrics:/metrics
     entrypoint:
       - /bin/bash
       - -c

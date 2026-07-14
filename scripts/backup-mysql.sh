@@ -7,6 +7,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_ROOT/storage/backups}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 BACKUP_LOG_PATH="${BACKUP_LOG_PATH:-$PROJECT_ROOT/storage/logs/backup.log}"
+BACKUP_METRICS_PATH="${BACKUP_METRICS_PATH:-$PROJECT_ROOT/storage/metrics/mysql_backup.prom}"
 MYSQLDUMP_BIN="${MYSQLDUMP_BIN:-mysqldump}"
 
 log() {
@@ -19,10 +20,35 @@ log() {
     printf '%s\n' "$line" >> "$BACKUP_LOG_PATH"
 }
 
+write_metric() {
+    local status="$1"  # 1=success, 0=failure
+    local now
+    now="$(date +%s)"
+    mkdir -p "$(dirname "$BACKUP_METRICS_PATH")"
+    local tmp_metrics_file="$BACKUP_METRICS_PATH.tmp"
+
+    {
+        echo "# HELP mysql_backup_last_run_status Result of the most recent mysqldump backup attempt (1=success, 0=failure)"
+        echo "# TYPE mysql_backup_last_run_status gauge"
+        echo "mysql_backup_last_run_status $status"
+        echo "# HELP mysql_backup_last_attempt_timestamp_seconds Unix timestamp of the most recent backup attempt"
+        echo "# TYPE mysql_backup_last_attempt_timestamp_seconds gauge"
+        echo "mysql_backup_last_attempt_timestamp_seconds $now"
+        if [[ "$status" == "1" ]]; then
+            echo "# HELP mysql_backup_last_success_timestamp_seconds Unix timestamp of the most recent successful backup"
+            echo "# TYPE mysql_backup_last_success_timestamp_seconds gauge"
+            echo "mysql_backup_last_success_timestamp_seconds $now"
+        fi
+    } > "$tmp_metrics_file"
+
+    mv "$tmp_metrics_file" "$BACKUP_METRICS_PATH"
+}
+
 require_env() {
     local name="$1"
     if [[ -z "${!name:-}" ]]; then
         log "ERROR: required environment variable $name is empty"
+        write_metric 0
         exit 1
     fi
 }
@@ -62,6 +88,7 @@ validate_backup_file() {
     if ! gzip -t "$file"; then
         log "ERROR: backup integrity check failed (corrupt gzip): $file"
         rm -f "$file"
+        write_metric 0
         exit 1
     fi
 
@@ -69,6 +96,7 @@ validate_backup_file() {
     if [[ "$size" -lt 200 ]]; then
         log "ERROR: backup file suspiciously small (possibly empty dump): $file ($size bytes)"
         rm -f "$file"
+        write_metric 0
         exit 1
     fi
 }
@@ -89,9 +117,11 @@ if MYSQL_PWD="$DB_PASSWORD" "$MYSQLDUMP_BIN" \
     mv "$tmp_file" "$backup_file"
     validate_backup_file "$backup_file"
     log "backup completed: $backup_file ($(du -h "$backup_file" | awk '{print $1}'))"
+    write_metric 1
 else
     rm -f "$tmp_file"
     log "ERROR: mysqldump failed; incomplete backup removed"
+    write_metric 0
     exit 1
 fi
 

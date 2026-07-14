@@ -44,6 +44,29 @@ groups:
           summary: "Video LLM 월간 호출 한도 소진 임박"
           description: "이번 달 NVIDIA Video LLM 실제 API 호출량이 설정된 한도의 90%를 초과한 상태가 5분 이상 지속되고 있습니다. 한도 상향 또는 비용을 확인하세요."
 
+  - name: backup-alerts
+    rules:
+      - alert: MysqlBackupFailed
+        expr: mysql_backup_last_run_status == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL 백업이 실패했습니다"
+          description: "가장 최근 mysqldump 백업 시도가 실패한 상태가 5분 이상 지속되고 있습니다. backup 컨테이너 로그(storage/logs/backup.log)를 확인하세요."
+
+      - alert: MysqlBackupStale
+        # 기본 BACKUP_INTERVAL_HOURS=24를 기준으로, 26시간(24h + 2h 여유) 동안
+        # 성공한 백업이 없으면 발동합니다. BACKUP_INTERVAL_HOURS를 바꾼 경우
+        # 이 임계값(93600초)도 함께 조정하세요.
+        expr: time() - mysql_backup_last_success_timestamp_seconds > 93600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL 백업이 오랫동안 성공하지 못했습니다"
+          description: "가장 최근 성공한 MySQL 백업으로부터 26시간 이상 경과했습니다. backup 컨테이너가 살아있는지, mysqldump가 계속 실패하고 있는지 확인하세요."
+
   - name: host-alerts
     rules:
       - alert: HostDiskSpaceLow

@@ -4,8 +4,8 @@ function EmptyState({ title, description, loading = false }) {
     return (
         <div className="empty-state">
             {loading && <Spinner />}
-            {title && <p>{title}</p>}
-            {description && <p>{description}</p>}
+            {title && <p className="empty-state-title">{title}</p>}
+            {description && <p className="empty-state-description">{description}</p>}
         </div>
     );
 }

@@ -3,17 +3,6 @@ import { useState } from "react";
 import { requestPasswordReset } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
 
-const inputStyle = {
-    width: "100%",
-    minHeight: 46,
-    marginTop: 8,
-    padding: "0 14px",
-    border: "1px solid rgba(43, 36, 32, 0.18)",
-    borderRadius: 12,
-    background: "#ffffff",
-    color: "#2B2420",
-};
-
 function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
     const [loading, setLoading] = useState(false);
@@ -56,7 +45,7 @@ function ForgotPasswordPage() {
                                     value={email}
                                     onChange={(event) => setEmail(event.target.value)}
                                     autoComplete="email"
-                                    style={inputStyle}
+                                    className="text-input"
                                     required
                                 />
                             </span>

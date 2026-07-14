@@ -78,8 +78,8 @@ function ScoreTrendChart({ results }) {
             {
                 label: "총점",
                 data: completedResults.map((result) => result.scoreSummary.totalScore),
-                borderColor: "#2563eb",
-                backgroundColor: "rgba(37, 99, 235, 0.14)",
+                borderColor: "#E2704A",
+                backgroundColor: "rgba(226, 112, 74, 0.14)",
                 pointRadius: 4,
                 pointHoverRadius: 6,
                 tension: 0.3,

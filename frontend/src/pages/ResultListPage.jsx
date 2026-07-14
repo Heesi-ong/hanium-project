@@ -8,6 +8,7 @@ import PageHeader from "../components/PageHeader";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
+import { useConfirm } from "../context/ConfirmContext";
 
 const FILTER_OPTIONS = [
     {
@@ -71,6 +72,7 @@ const SORT_OPTIONS = [
 ];
 
 function ResultListPage() {
+    const confirm = useConfirm();
     const [results, setResults] = useState([]);
     const [filterStatus, setFilterStatus] = useState("ALL");
     const [generationModeFilter, setGenerationModeFilter] = useState("ALL");
@@ -205,7 +207,7 @@ function ResultListPage() {
             return;
         }
 
-        const confirmed = window.confirm(
+        const confirmed = await confirm(
             "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 JSON 파일도 함께 삭제됩니다."
         );
 

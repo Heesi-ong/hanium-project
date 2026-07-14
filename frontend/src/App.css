@@ -545,6 +545,39 @@ pre {
   color: #1d4ed8;
 }
 
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(43, 36, 32, 0.45);
+}
+
+.confirm-dialog {
+  width: min(420px, 100%);
+  padding: 24px;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.2);
+}
+
+.confirm-dialog p {
+  margin: 0;
+  color: #2B2420;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;

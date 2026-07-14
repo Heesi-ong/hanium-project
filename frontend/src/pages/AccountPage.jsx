@@ -5,6 +5,7 @@ import { getErrorMessage } from "../api/errorUtils";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
+import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
 
 const inputStyle = {
@@ -22,6 +23,7 @@ function AccountPage() {
     const navigate = useNavigate();
     const { user, logout } = useAuth();
     const { showToast } = useToast();
+    const confirm = useConfirm();
 
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -31,7 +33,7 @@ function AccountPage() {
     async function handleWithdraw(event) {
         event.preventDefault();
 
-        const confirmed = window.confirm(
+        const confirmed = await confirm(
             "정말로 회원탈퇴하시겠습니까? 업로드한 영상과 분석 결과가 모두 영구적으로 삭제되며 되돌릴 수 없습니다."
         );
 

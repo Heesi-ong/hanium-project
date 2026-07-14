@@ -4,6 +4,7 @@ import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
+import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
 import {
     cancelAnalysis,
@@ -45,6 +46,7 @@ const STATUS_STEP_LABELS = {
 function UploadPage() {
     const navigate = useNavigate();
     const { showToast } = useToast();
+    const confirm = useConfirm();
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
     const progressTimerRef = useRef(null);
@@ -330,7 +332,7 @@ function UploadPage() {
             ? "대기 중인 분석을 취소하시겠습니까? 즉시 취소됩니다."
             : "진행 중인 분석을 취소하시겠습니까? 현재 실행 중인 단계가 끝난 뒤 취소됩니다.";
 
-        const confirmed = window.confirm(confirmMessage);
+        const confirmed = await confirm(confirmMessage);
 
         if (!confirmed) {
             return;

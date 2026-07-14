@@ -15,6 +15,10 @@ const toastMock = vi.hoisted(() => ({
     showToast: vi.fn(),
 }));
 
+const confirmMock = vi.hoisted(() => ({
+    confirm: vi.fn(),
+}));
+
 vi.mock("../api/analysisApi", () => ({
     cancelAnalysis: analysisApiMock.cancelAnalysis,
     getAnalysisProgress: analysisApiMock.getAnalysisProgress,
@@ -27,6 +31,10 @@ vi.mock("../context/ToastContext", () => ({
     useToast: () => ({
         showToast: toastMock.showToast,
     }),
+}));
+
+vi.mock("../context/ConfirmContext", () => ({
+    useConfirm: () => confirmMock.confirm,
 }));
 
 const createObjectURLMock = vi.fn();
@@ -76,6 +84,7 @@ describe("UploadPage", () => {
         analysisApiMock.runAnalysis.mockReset();
         analysisApiMock.uploadAnalysisVideo.mockReset();
         toastMock.showToast.mockReset();
+        confirmMock.confirm.mockReset();
         createObjectURLMock.mockReset();
         revokeObjectURLMock.mockReset();
         createObjectURLMock.mockImplementation((file) => `blob:${file.name}`);
@@ -174,7 +183,7 @@ describe("UploadPage", () => {
             },
         });
 
-        window.confirm = vi.fn().mockReturnValue(true);
+        confirmMock.confirm.mockResolvedValue(true);
 
         renderUploadPage();
 
@@ -188,7 +197,7 @@ describe("UploadPage", () => {
         const cancelButton = await screen.findByRole("button", { name: "대기 중 취소" });
         fireEvent.click(cancelButton);
 
-        expect(window.confirm).toHaveBeenCalled();
+        expect(confirmMock.confirm).toHaveBeenCalled();
 
         await waitFor(() => {
             expect(analysisApiMock.cancelAnalysis).toHaveBeenCalledWith(jobId);

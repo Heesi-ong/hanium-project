@@ -36,6 +36,10 @@ vi.mock("../components/result-detail/VideoPlayerSection", () => ({
     default: () => <div data-testid="video-player-section" />,
 }));
 
+vi.mock("../context/ConfirmContext", () => ({
+    useConfirm: () => vi.fn(),
+}));
+
 function renderResultDetailPage() {
     return render(
         <MemoryRouter initialEntries={["/results/job-print-test"]}>

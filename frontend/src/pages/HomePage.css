@@ -52,12 +52,17 @@
 }
 
 .landing-hero {
+    padding: 88px 64px 96px;
+    background: radial-gradient(circle at 85% 20%, rgba(226, 112, 74, 0.12), transparent 55%);
+}
+
+.landing-hero-inner {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
     gap: 48px;
     align-items: center;
-    padding: 88px 64px 96px;
-    background: radial-gradient(circle at 85% 20%, rgba(226, 112, 74, 0.12), transparent 55%);
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .landing-badge {
@@ -90,11 +95,35 @@
     margin: 0 0 36px;
 }
 
+@keyframes landing-fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes landing-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
 .landing-hero-actions {
     display: flex;
     gap: 14px;
     align-items: center;
     flex-wrap: wrap;
+}
+
+.landing-hero-copy {
+    animation: landing-fade-up 0.5s ease both;
 }
 
 .landing-button {
@@ -105,11 +134,16 @@
     border-radius: 100px;
     font-size: 16px;
     font-weight: 600;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
 .landing-button.primary {
     background: var(--landing-dark);
     color: var(--landing-bg);
+}
+
+.landing-button.primary:hover {
+    background: #3F342D;
 }
 
 .landing-button.secondary {
@@ -120,6 +154,15 @@
     padding: 16px 4px;
 }
 
+.landing-button.secondary:hover {
+    color: var(--landing-accent-dark);
+    border-color: var(--landing-accent-dark);
+}
+
+.landing-button:active {
+    transform: translateY(1px);
+}
+
 .landing-button.large {
     padding: 18px 36px;
     font-size: 17px;
@@ -128,6 +171,7 @@
 .landing-hero-visual {
     display: flex;
     justify-content: center;
+    animation: landing-fade-in 0.6s ease 0.15s both;
 }
 
 .hero-illustration {
@@ -145,6 +189,11 @@
     background: var(--landing-bg);
 }
 
+.landing-band-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
 .landing-feature-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -156,6 +205,12 @@
     border-radius: 16px;
     padding: 36px;
     border: 1px solid var(--landing-border);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.landing-feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 32px rgba(43, 36, 32, 0.08);
 }
 
 .landing-feature-card.plain {
@@ -253,18 +308,35 @@
     font-weight: 400;
 }
 
+@keyframes landing-faq-answer-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .landing-faq-answer {
     font-size: 15px;
     line-height: 1.6;
     color: var(--landing-muted);
     margin: 14px 0 0;
     max-width: 600px;
+    animation: landing-faq-answer-in 0.2s ease;
 }
 
 .landing-cta {
     padding: 88px 64px;
     text-align: center;
     background: var(--landing-bg-alt);
+}
+
+.landing-cta-inner {
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .landing-cta h2 {
@@ -278,6 +350,11 @@
     padding: 56px 64px 40px;
     border-top: 1px solid var(--landing-border);
     background: var(--landing-bg);
+}
+
+.landing-footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .landing-footer-top {
@@ -331,8 +408,11 @@
 
 @media (max-width: 860px) {
     .landing-hero {
-        grid-template-columns: 1fr;
         padding: 56px 24px 64px;
+    }
+
+    .landing-hero-inner {
+        grid-template-columns: 1fr;
     }
 
     .landing-band,

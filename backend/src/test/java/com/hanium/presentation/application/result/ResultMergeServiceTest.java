@@ -162,9 +162,32 @@ class ResultMergeServiceTest {
         assertThat(failureResult).containsEntry("notableMoments", List.of());
     }
 
+    @Test
+    void createFinalResultIncludesVideoLlmStatusInVisualAnalysis() {
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1",
+                analysisResponse(Map.of(), Map.of(), Map.of(), Map.of()),
+                new VideoLlmEngineResponse(
+                        "job-1",
+                        "skipped",
+                        Map.of("generationMode", "SKIPPED"),
+                        Map.of(),
+                        Map.of("visualDelivery", "Video LLM 분석 생략")
+                ),
+                openAiFeedbackResponse()
+        );
+
+        assertThat(visualAnalysis(finalResult)).containsEntry("status", "skipped");
+    }
+
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> notableMoments(Map<String, Object> finalResult) {
         return (List<Map<String, Object>>) finalResult.get("notableMoments");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> visualAnalysis(Map<String, Object> finalResult) {
+        return (Map<String, Object>) finalResult.get("visualAnalysis");
     }
 
     private Map<String, Object> findMoment(

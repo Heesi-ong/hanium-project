@@ -8,6 +8,7 @@ import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
+import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
@@ -32,8 +33,11 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AnalysisCommandServiceVideoLlmDurationTest {
@@ -44,15 +48,18 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     private AnalysisCommandService analysisCommandService;
     private VideoDurationProbe videoDurationProbe;
     private VideoLlmEngineClient videoLlmEngineClient;
+    private ResultCommandService resultCommandService;
+    private UserRateLimiter userRateLimiter;
 
     @BeforeEach
     void setUp() {
         AnalysisJobRepository analysisJobRepository = mock(AnalysisJobRepository.class);
         UploadedVideoRepository uploadedVideoRepository = mock(UploadedVideoRepository.class);
-        ResultCommandService resultCommandService = mock(ResultCommandService.class);
+        resultCommandService = mock(ResultCommandService.class);
         AnalysisEngineClient analysisEngineClient = mock(AnalysisEngineClient.class);
         videoLlmEngineClient = mock(VideoLlmEngineClient.class);
         videoDurationProbe = mock(VideoDurationProbe.class);
+        userRateLimiter = mock(UserRateLimiter.class);
 
         ThreadPoolTaskExecutor analysisTaskExecutor = mock(ThreadPoolTaskExecutor.class);
         doAnswer(invocation -> {
@@ -83,6 +90,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
                 .thenReturn(successEngineResponse());
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenAnswer(invocation -> videoLlmResponse(invocation.getArgument(0, VideoLlmEngineRequest.class).jobId()));
+        when(userRateLimiter.tryConsume(eq("video-llm-monthly"), anyString())).thenReturn(true);
         when(resultCommandService.saveEngineResultsAndCompact(anyString(), any(), any()))
                 .thenReturn(Map.of());
 
@@ -94,6 +102,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
                 analysisEngineClient,
                 videoLlmEngineClient,
                 mock(OpenAiClient.class),
+                userRateLimiter,
                 videoDurationProbe,
                 mock(JobIdGenerator.class),
                 mock(AnalysisProgressService.class),
@@ -127,6 +136,50 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         ArgumentCaptor<VideoLlmEngineRequest> captor = ArgumentCaptor.forClass(VideoLlmEngineRequest.class);
         org.mockito.Mockito.verify(videoLlmEngineClient).analyze(captor.capture());
         assertThat(captor.getValue().durationSec()).isNull();
+    }
+
+    @Test
+    void skipsVideoLlmEngineCallWhenMonthlyBudgetExceeded() {
+        when(userRateLimiter.tryConsume(eq("video-llm-monthly"), anyString())).thenReturn(false);
+
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
+
+        ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
+        verify(resultCommandService).saveEngineResultsAndCompact(eq(JOB_ID), any(), captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo("skipped");
+        assertThat(captor.getValue().model()).containsEntry("name", "video-llm-skipped");
+        assertThat(captor.getValue().model()).containsEntry("generationMode", "SKIPPED");
+        assertThat(captor.getValue().globalSummary().get("visualDelivery").toString())
+                .contains("호출 한도");
+        assertThat(captor.getValue().globalSummary().get("mainStrength").toString())
+                .contains("월간 한도");
+    }
+
+    @Test
+    void skipsVideoLlmEngineCallWithDisabledReasonWhenUserTurnsOffVideoLlm() {
+        analysisCommandService.runAnalysis(JOB_ID, 1L, false, false);
+
+        verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
+        verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
+
+        ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
+        verify(resultCommandService).saveEngineResultsAndCompact(eq(JOB_ID), any(), captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo("skipped");
+        assertThat(captor.getValue().model()).containsEntry("generationMode", "SKIPPED");
+        assertThat(captor.getValue().globalSummary().get("visualDelivery").toString())
+                .contains("설정");
+        assertThat(captor.getValue().globalSummary().get("mainStrength").toString())
+                .contains("비활성화");
+    }
+
+    @Test
+    void consumesMonthlyBudgetAndCallsVideoLlmEngineWhenBudgetAllows() {
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        verify(userRateLimiter).tryConsume(eq("video-llm-monthly"), anyString());
+        verify(videoLlmEngineClient).analyze(any(VideoLlmEngineRequest.class));
     }
 
     private AnalysisEngineResponse successEngineResponse() {

@@ -35,6 +35,15 @@ groups:
           summary: "OpenAI 월간 호출 한도 소진 임박"
           description: "이번 달 OpenAI 실제 API 호출량이 설정된 한도의 90%를 초과한 상태가 5분 이상 지속되고 있습니다. 한도 상향 또는 비용을 확인하세요."
 
+      - alert: VideoLlmMonthlyBudgetNearExhaustion
+        expr: video_llm_monthly_usage / clamp_min(video_llm_monthly_budget_capacity, 1) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Video LLM 월간 호출 한도 소진 임박"
+          description: "이번 달 NVIDIA Video LLM 실제 API 호출량이 설정된 한도의 90%를 초과한 상태가 5분 이상 지속되고 있습니다. 한도 상향 또는 비용을 확인하세요."
+
   - name: host-alerts
     rules:
       - alert: HostDiskSpaceLow

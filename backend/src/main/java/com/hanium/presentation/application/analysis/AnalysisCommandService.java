@@ -11,6 +11,7 @@ import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.analysis.type.AnalysisStep;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
+import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
@@ -41,9 +42,10 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.nio.file.Path;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,6 +57,29 @@ public class AnalysisCommandService {
 
     private static final Logger log = LoggerFactory.getLogger(AnalysisCommandService.class);
 
+    private enum VideoLlmSkipReason {
+        DISABLED(
+                "이 작업은 Video LLM 분석 없이 진행하도록 설정되었습니다.",
+                "Video LLM 분석 비활성화",
+                "사용자 설정으로 Video LLM 분석이 생략되었습니다."
+        ),
+        MONTHLY_BUDGET_EXCEEDED(
+                "이번 달 Video LLM 분석 호출 한도를 초과해 이 작업은 Video LLM 분석 없이 처리되었습니다.",
+                "Video LLM 월간 한도 초과",
+                "월간 호출 한도 초과로 Video LLM 분석이 생략되었습니다."
+        );
+
+        private final String visualDelivery;
+        private final String mainStrength;
+        private final String mainWeakness;
+
+        VideoLlmSkipReason(String visualDelivery, String mainStrength, String mainWeakness) {
+            this.visualDelivery = visualDelivery;
+            this.mainStrength = mainStrength;
+            this.mainWeakness = mainWeakness;
+        }
+    }
+
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
     private final VideoFileCommandService videoFileCommandService;
@@ -62,6 +87,7 @@ public class AnalysisCommandService {
     private final AnalysisEngineClient analysisEngineClient;
     private final VideoLlmEngineClient videoLlmEngineClient;
     private final OpenAiClient openAiClient;
+    private final UserRateLimiter userRateLimiter;
     private final VideoDurationProbe videoDurationProbe;
     private final JobIdGenerator jobIdGenerator;
     private final AnalysisProgressService analysisProgressService;
@@ -91,6 +117,7 @@ public class AnalysisCommandService {
             AnalysisEngineClient analysisEngineClient,
             VideoLlmEngineClient videoLlmEngineClient,
             OpenAiClient openAiClient,
+            UserRateLimiter userRateLimiter,
             VideoDurationProbe videoDurationProbe,
             JobIdGenerator jobIdGenerator,
             AnalysisProgressService analysisProgressService,
@@ -107,6 +134,7 @@ public class AnalysisCommandService {
         this.analysisEngineClient = analysisEngineClient;
         this.videoLlmEngineClient = videoLlmEngineClient;
         this.openAiClient = openAiClient;
+        this.userRateLimiter = userRateLimiter;
         this.videoDurationProbe = videoDurationProbe;
         this.jobIdGenerator = jobIdGenerator;
         this.analysisProgressService = analysisProgressService;
@@ -506,7 +534,13 @@ public class AnalysisCommandService {
 
             VideoLlmEngineResponse videoLlmEngineResponse;
 
-            if (useVideoLlm) {
+            if (!useVideoLlm) {
+                log.info("[{}] Video LLM 분석을 건너뜁니다. (useVideoLlm=false)", jobId);
+                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.DISABLED);
+            } else if (!canUseMonthlyVideoLlmBudget(jobId)) {
+                log.info("[{}] Video LLM 분석을 건너뜁니다. (월간 한도 초과)", jobId);
+                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED);
+            } else {
                 if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                     return;
                 }
@@ -527,9 +561,6 @@ public class AnalysisCommandService {
                         )
                 );
                 log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);
-            } else {
-                log.info("[{}] Video LLM 분석을 건너뜁니다. (useVideoLlm=false)", jobId);
-                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId);
             }
 
             analysisJobStatusService.updateStatus(jobId, AnalysisStatus.COMPACTING);
@@ -642,6 +673,18 @@ public class AnalysisCommandService {
             log.warn("[{}] Video LLM durationSec 계산에 실패해 null로 전송합니다. path={}", jobId, storedFilePath, e);
             return null;
         }
+    }
+
+    private boolean canUseMonthlyVideoLlmBudget(String jobId) {
+        boolean allowed = userRateLimiter.tryConsume("video-llm-monthly", currentMonthKey());
+        if (!allowed) {
+            log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
+        }
+        return allowed;
+    }
+
+    private String currentMonthKey() {
+        return YearMonth.now().toString();
     }
 
     // 각 단계 사이에서 호출됩니다. (1) 마감 시각 초과면 timeout으로, (2) 취소 요청이 있으면
@@ -777,19 +820,20 @@ public class AnalysisCommandService {
         }
     }
 
-    private VideoLlmEngineResponse createSkippedVideoLlmResponse(String jobId) {
+    private VideoLlmEngineResponse createSkippedVideoLlmResponse(String jobId, VideoLlmSkipReason reason) {
         return new VideoLlmEngineResponse(
                 jobId,
                 "skipped",
                 Map.of(
                         "name", "video-llm-skipped",
-                        "version", "none"
+                        "version", "none",
+                        "generationMode", "SKIPPED"
                 ),
                 Map.of(),
                 Map.of(
-                        "visualDelivery", "Video LLM 분석을 사용하지 않았습니다.",
-                        "mainStrength", "Video LLM 분석 생략",
-                        "mainWeakness", "Video LLM 분석 생략"
+                        "visualDelivery", reason.visualDelivery,
+                        "mainStrength", reason.mainStrength,
+                        "mainWeakness", reason.mainWeakness
                 )
         );
     }

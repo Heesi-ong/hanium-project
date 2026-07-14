@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import MainLayout from "../layouts/MainLayout";
 import ProtectedRoute from "./ProtectedRoute";
+import Spinner from "../components/Spinner";
 
 const HomePage = lazy(() => import("../pages/HomePage"));
 const UploadPage = lazy(() => import("../pages/UploadPage"));
@@ -20,7 +21,8 @@ const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 function RouteLoadingFallback() {
     return (
         <div style={{ padding: "48px 24px", textAlign: "center" }}>
-            불러오는 중...
+            <Spinner />
+            <p style={{ marginTop: "12px" }}>불러오는 중...</p>
         </div>
     );
 }

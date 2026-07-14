@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { motion, useReducedMotion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
+import { buttonVariantClassName } from "../components/ui/Button";
 import "./HomePage.css";
 
 const FEATURE_ITEMS = [
@@ -8,7 +10,7 @@ const FEATURE_ITEMS = [
         title: "자세·시선·제스처 분석",
         description:
             "자세, 시선, 제스처, 표정을 정량 지표로 분석해 어디를 개선해야 하는지 짚어줍니다.",
-        color: "var(--landing-accent)",
+        color: "#F27424",
         icon: (
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#FAF6F1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="7" r="3" />
@@ -20,7 +22,7 @@ const FEATURE_ITEMS = [
         title: "영상 재생 + 주요 순간 이동",
         description:
             "업로드한 영상을 결과 화면에서 바로 재생하고, 자세나 시선이 가장 흔들린 순간으로 클릭 한 번에 이동합니다.",
-        color: "var(--landing-green)",
+        color: "#4FC78A",
         icon: (
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#FAF6F1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="9" />
@@ -32,7 +34,7 @@ const FEATURE_ITEMS = [
         title: "AI 코칭 피드백",
         description:
             "정량 분석 결과를 바탕으로 이해하기 쉬운 코칭 문장과 연습 계획을 생성합니다.",
-        color: "var(--landing-gold)",
+        color: "#F6A66B",
         icon: (
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#FAF6F1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
@@ -43,7 +45,7 @@ const FEATURE_ITEMS = [
         title: "회차별 성장 추이",
         description:
             "완료한 분석들의 총점을 시간순으로 비교해, 연습할수록 나아지는 과정을 확인합니다.",
-        color: "var(--landing-dark)",
+        color: "#72A5FF",
         icon: (
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#FAF6F1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="4 16 10 10 14 13 20 6" />
@@ -119,30 +121,30 @@ function HeroIllustration() {
     return (
         <svg
             viewBox="0 0 400 500"
-            className="hero-illustration"
+            className="w-full max-w-[340px] h-auto"
             role="img"
             aria-label="분석 결과 화면을 표현한 일러스트"
         >
-            <rect x="0" y="0" width="400" height="500" rx="20" fill="#FFFFFF" stroke="#EADFD3" strokeWidth="1.5" />
-            <rect x="0" y="0" width="400" height="40" rx="20" fill="#F1EBE3" />
-            <circle cx="24" cy="20" r="5" fill="#E2704A" />
-            <circle cx="42" cy="20" r="5" fill="#C9A15A" />
-            <circle cx="60" cy="20" r="5" fill="#8BAA8A" />
-            <rect x="24" y="60" width="352" height="180" rx="14" fill="#2B2420" />
-            <circle cx="200" cy="150" r="28" fill="rgba(250,246,241,0.14)" />
-            <path d="M190 135l30 15-30 15z" fill="#FAF6F1" />
-            <rect x="24" y="258" width="164" height="70" rx="14" fill="#F1EBE3" />
-            <text x="40" y="285" fontSize="12" fill="#8A8078">총점</text>
-            <text x="40" y="315" fontSize="26" fill="#2B2420">82</text>
-            <rect x="212" y="258" width="164" height="70" rx="14" fill="#F1EBE3" />
-            <text x="228" y="285" fontSize="12" fill="#8A8078">등급</text>
-            <text x="228" y="315" fontSize="26" fill="#2B2420">B+</text>
-            <rect x="24" y="344" width="352" height="120" rx="14" fill="#F1EBE3" />
-            <text x="40" y="368" fontSize="12" fill="#8A8078">회차별 총점 추이</text>
+            <rect x="0" y="0" width="400" height="500" rx="20" fill="#17130F" stroke="rgba(255,255,255,0.09)" strokeWidth="1.5" />
+            <rect x="0" y="0" width="400" height="40" rx="20" fill="#211A14" />
+            <circle cx="24" cy="20" r="5" fill="#F27424" />
+            <circle cx="42" cy="20" r="5" fill="#F6A66B" />
+            <circle cx="60" cy="20" r="5" fill="#4FC78A" />
+            <rect x="24" y="60" width="352" height="180" rx="14" fill="#2A2018" />
+            <circle cx="200" cy="150" r="28" fill="rgba(247,243,238,0.12)" />
+            <path d="M190 135l30 15-30 15z" fill="#F5EFE8" />
+            <rect x="24" y="258" width="164" height="70" rx="14" fill="#211A14" />
+            <text x="40" y="285" fontSize="12" fill="#B7ADA4">총점</text>
+            <text x="40" y="315" fontSize="26" fill="#F5EFE8">82</text>
+            <rect x="212" y="258" width="164" height="70" rx="14" fill="#211A14" />
+            <text x="228" y="285" fontSize="12" fill="#B7ADA4">등급</text>
+            <text x="228" y="315" fontSize="26" fill="#F5EFE8">B+</text>
+            <rect x="24" y="344" width="352" height="120" rx="14" fill="#211A14" />
+            <text x="40" y="368" fontSize="12" fill="#B7ADA4">회차별 총점 추이</text>
             <polyline
                 points="40 430 96 410 152 420 208 380 264 390 320 360"
                 fill="none"
-                stroke="#E2704A"
+                stroke="#F27424"
                 strokeWidth="3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -154,6 +156,7 @@ function HeroIllustration() {
 function HomePage() {
     const { isAuthenticated } = useAuth();
     const [openFaqIndex, setOpenFaqIndex] = useState(null);
+    const prefersReducedMotion = useReducedMotion();
 
     function toggleFaq(index) {
         setOpenFaqIndex((current) => (current === index ? null : index));
@@ -161,137 +164,191 @@ function HomePage() {
 
     return (
         <div className="landing-page">
-            <section className="landing-hero">
-                <div className="landing-hero-inner">
-                    <div className="landing-hero-copy">
-                        <p className="landing-badge">AI 발표 코칭</p>
-                        <h1 className="landing-heading">
+            <section className="relative overflow-hidden bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16 lg:py-32">
+                <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                        background:
+                            "radial-gradient(circle at 50% 30%, rgba(200,90,25,0.25), transparent 55%)",
+                    }}
+                    aria-hidden="true"
+                />
+                <div className="relative mx-auto grid max-w-[1200px] items-center gap-12 lg:grid-cols-[1.1fr_0.9fr]">
+                    <motion.div
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                    >
+                        <p className="mb-6 inline-flex items-center gap-2 rounded-full bg-primary-orange/15 px-4 py-2 text-sm font-semibold text-soft-orange">
+                            AI 발표 코칭
+                        </p>
+                        <h1 className="mb-6 text-[40px] font-semibold leading-[1.2] tracking-tight sm:text-[54px] lg:text-[64px]">
                             발표는 감이 아니라,
                             <br />
                             데이터로 완성됩니다
                         </h1>
-                        <p className="landing-hero-description">
+                        <p className="mb-9 max-w-[480px] text-lg leading-relaxed text-text-secondary">
                             업로드한 발표 영상을 기반으로 자세, 시선, 제스처, 음성 속도,
                             필러 표현, 침묵 구간을 분석하고 맞춤형 피드백을 제공합니다.
                         </p>
-                        <div className="landing-hero-actions">
+                        <div className="flex flex-wrap items-center gap-4">
                             {isAuthenticated ? (
                                 <>
-                                    <Link to="/upload" className="landing-button primary">
+                                    <Link to="/upload" className={buttonVariantClassName("primary")}>
                                         영상 업로드 시작
                                     </Link>
-                                    <Link to="/results" className="landing-button secondary">
+                                    <Link to="/results" className={buttonVariantClassName("secondary")}>
                                         분석 결과 보기
                                     </Link>
                                 </>
                             ) : (
                                 <>
-                                    <Link to="/signup" className="landing-button primary">
+                                    <Link to="/signup" className={buttonVariantClassName("primary")}>
                                         무료로 시작하기
                                     </Link>
-                                    <Link to="/login" className="landing-button secondary">
+                                    <Link to="/login" className={buttonVariantClassName("secondary")}>
                                         로그인
                                     </Link>
                                 </>
                             )}
                         </div>
-                    </div>
+                    </motion.div>
 
-                    <div className="landing-hero-visual">
+                    <motion.div
+                        className="flex justify-center"
+                        initial={prefersReducedMotion ? false : { opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
+                    >
                         <HeroIllustration />
-                    </div>
+                    </motion.div>
                 </div>
             </section>
 
-            <section className="landing-band" id="features">
-                <div className="landing-band-inner">
-                    <div className="landing-section-header">
-                        <p className="landing-eyebrow">핵심 기능</p>
-                        <h2 className="landing-title">
+            <section className="bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="features">
+                <div className="mx-auto max-w-[1200px]">
+                    <div className="mb-14 max-w-[560px]">
+                        <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">핵심 기능</p>
+                        <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">
                             발표의 모든 순간을
                             <br />
                             세심하게 살핍니다
                         </h2>
                     </div>
 
-                    <div className="landing-feature-grid">
-                        {FEATURE_ITEMS.map((item) => (
-                            <article className="landing-feature-card" key={item.title}>
-                                <div className="landing-feature-icon" style={{ background: item.color }}>
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        {FEATURE_ITEMS.map((item, index) => (
+                            <motion.article
+                                className="rounded-2xl border border-white/10 bg-surface-primary p-9 transition-transform duration-200 hover:-translate-y-1"
+                                key={item.title}
+                                initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, amount: 0.2 }}
+                                transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                            >
+                                <div
+                                    className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl"
+                                    style={{ background: item.color }}
+                                >
                                     {item.icon}
                                 </div>
-                                <h3>{item.title}</h3>
-                                <p>{item.description}</p>
-                            </article>
+                                <h3 className="mb-2.5 text-xl font-semibold text-text-primary">{item.title}</h3>
+                                <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
+                            </motion.article>
                         ))}
                     </div>
                 </div>
             </section>
 
-            <section className="landing-band" id="analysis-detail">
-                <div className="landing-band-inner">
-                    <div className="landing-section-header">
-                        <p className="landing-eyebrow">분석 항목 상세 소개</p>
-                        <h2 className="landing-title">
+            <section className="bg-background-secondary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="analysis-detail">
+                <div className="mx-auto max-w-[1200px]">
+                    <div className="mb-14 max-w-[560px]">
+                        <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">분석 항목 상세 소개</p>
+                        <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">
                             결과 상세 화면에서
                             <br />
                             확인하는 실제 지표
                         </h2>
                     </div>
 
-                    <div className="landing-feature-grid">
-                        {ANALYSIS_DETAIL_ITEMS.map((item) => (
-                            <article className="landing-feature-card plain" key={item.title}>
-                                <h3>{item.title}</h3>
-                                <p>{item.description}</p>
-                            </article>
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        {ANALYSIS_DETAIL_ITEMS.map((item, index) => (
+                            <motion.article
+                                className="rounded-2xl border border-white/10 bg-surface-secondary p-9 transition-transform duration-200 hover:-translate-y-1"
+                                key={item.title}
+                                initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, amount: 0.2 }}
+                                transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                            >
+                                <h3 className="mb-2.5 text-xl font-semibold text-text-primary">{item.title}</h3>
+                                <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
+                            </motion.article>
                         ))}
                     </div>
                 </div>
             </section>
 
-            <section className="landing-band" id="how-it-works">
-                <div className="landing-band-inner">
-                    <div className="landing-section-header center">
-                        <p className="landing-eyebrow">사용 방법</p>
-                        <h2 className="landing-title">3단계면 충분합니다</h2>
+            <section className="bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="how-it-works">
+                <div className="mx-auto max-w-[1200px]">
+                    <div className="mx-auto mb-14 max-w-[560px] text-center">
+                        <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">사용 방법</p>
+                        <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">3단계면 충분합니다</h2>
                     </div>
 
-                    <div className="landing-steps-grid">
+                    <div className="mx-auto grid max-w-[1000px] grid-cols-1 gap-10 sm:grid-cols-3">
                         {HOW_IT_WORKS_STEPS.map((step, index) => (
-                            <div className="landing-step" key={step.title}>
-                                <div className="landing-step-number">{index + 1}</div>
-                                <h3>{step.title}</h3>
-                                <p>{step.description}</p>
-                            </div>
+                            <motion.div
+                                className="text-center"
+                                key={step.title}
+                                initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, amount: 0.2 }}
+                                transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                            >
+                                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary-orange text-2xl font-semibold text-warm-white">
+                                    {index + 1}
+                                </div>
+                                <h3 className="mb-2 text-lg font-semibold text-text-primary">{step.title}</h3>
+                                <p className="text-sm leading-relaxed text-text-secondary">{step.description}</p>
+                            </motion.div>
                         ))}
                     </div>
                 </div>
             </section>
 
-            <section className="landing-band" id="faq">
-                <div className="landing-band-inner">
-                    <div className="landing-section-header">
-                        <p className="landing-eyebrow">FAQ</p>
-                        <h2 className="landing-title">자주 묻는 질문</h2>
+            <section className="bg-background-secondary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="faq">
+                <div className="mx-auto max-w-[1200px]">
+                    <div className="mb-14 max-w-[560px]">
+                        <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">FAQ</p>
+                        <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">자주 묻는 질문</h2>
                     </div>
 
-                    <div className="landing-faq-list">
+                    <div className="max-w-[760px]">
                         {FAQ_ITEMS.map((item, index) => {
                             const isOpen = openFaqIndex === index;
 
                             return (
-                                <div className="landing-faq-item" key={item.question}>
+                                <div className="border-b border-white/10 py-6" key={item.question}>
                                     <button
                                         type="button"
-                                        className="landing-faq-question"
+                                        className="flex w-full items-center justify-between text-left text-base font-semibold text-text-primary"
                                         onClick={() => toggleFaq(index)}
                                         aria-expanded={isOpen}
                                     >
                                         <span>{item.question}</span>
-                                        <span className="landing-faq-symbol">{isOpen ? "\u2212" : "+"}</span>
+                                        <span className="text-xl font-normal text-primary-bright">{isOpen ? "\u2212" : "+"}</span>
                                     </button>
-                                    {isOpen && <p className="landing-faq-answer">{item.answer}</p>}
+                                    {isOpen && (
+                                        <motion.p
+                                            className="mt-3.5 max-w-[600px] text-sm leading-relaxed text-text-secondary"
+                                            initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ duration: 0.2, ease: "easeOut" }}
+                                        >
+                                            {item.answer}
+                                        </motion.p>
+                                    )}
                                 </div>
                             );
                         })}
@@ -299,40 +356,46 @@ function HomePage() {
                 </div>
             </section>
 
-            <section className="landing-cta">
-                <div className="landing-cta-inner">
-                    <h2>지금, 데이터로 발표를 완성하세요</h2>
+            <section className="bg-background-primary px-6 py-24 text-center text-text-primary sm:px-10 lg:px-16">
+                <div className="mx-auto max-w-[1200px]">
+                    <h2 className="mb-8 text-3xl font-semibold sm:text-4xl">지금, 데이터로 발표를 완성하세요</h2>
                     {isAuthenticated ? (
-                        <Link to="/upload" className="landing-button primary large">
+                        <Link
+                            to="/upload"
+                            className="inline-flex items-center justify-center rounded-full bg-primary-orange px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-bright active:bg-primary-deep"
+                        >
                             지금 업로드하기
                         </Link>
                     ) : (
-                        <Link to="/signup" className="landing-button primary large">
+                        <Link
+                            to="/signup"
+                            className="inline-flex items-center justify-center rounded-full bg-primary-orange px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-bright active:bg-primary-deep"
+                        >
                             무료 회원가입
                         </Link>
                     )}
                 </div>
             </section>
 
-            <footer className="landing-footer">
-                <div className="landing-footer-inner">
-                    <div className="landing-footer-top">
+            <footer className="border-t border-white/10 bg-background-primary px-6 py-14 text-text-primary sm:px-10 lg:px-16">
+                <div className="mx-auto max-w-[1200px]">
+                    <div className="mb-10 flex flex-wrap items-start justify-between gap-8">
                         <div>
-                            <p className="landing-footer-brand">AI Presentation Coach</p>
-                            <p className="landing-footer-tagline">
+                            <p className="mb-2.5 text-2xl italic text-text-primary">AI Presentation Coach</p>
+                            <p className="max-w-[280px] text-sm leading-relaxed text-text-muted">
                                 누구나 자신 있게 발표할 수 있도록, 데이터로 돕는 AI 발표 분석 서비스입니다.
                             </p>
                         </div>
 
-                        <div className="landing-footer-links">
-                            <span className="landing-footer-links-title">서비스</span>
-                            <a href="#features">기능</a>
-                            <a href="#how-it-works">사용 방법</a>
-                            <a href="#faq">FAQ</a>
+                        <div className="flex flex-col gap-2.5 text-sm">
+                            <span className="mb-1 text-xs font-semibold text-text-primary">서비스</span>
+                            <a className="text-text-secondary hover:text-primary-bright" href="#features">기능</a>
+                            <a className="text-text-secondary hover:text-primary-bright" href="#how-it-works">사용 방법</a>
+                            <a className="text-text-secondary hover:text-primary-bright" href="#faq">FAQ</a>
                         </div>
                     </div>
 
-                    <div className="landing-footer-bottom">
+                    <div className="border-t border-white/10 pt-6 text-xs text-text-muted">
                         &copy; {new Date().getFullYear()} AI Presentation Coach. All rights reserved.
                     </div>
                 </div>

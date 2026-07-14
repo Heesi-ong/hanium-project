@@ -87,6 +87,9 @@ public class UserRateLimiter {
             case "password-reset-request" -> rateLimitProperties.passwordResetRequest();
             case "openai-monthly" -> rateLimitProperties.openaiMonthly();
             case "video-llm-monthly" -> rateLimitProperties.videoLlmMonthly();
+            case "results-query" -> rateLimitProperties.resultsQuery();
+            case "video-access-token" -> rateLimitProperties.videoAccessToken();
+            case "job-status-poll" -> rateLimitProperties.jobStatusPoll();
             default -> throw new IllegalArgumentException("Unknown rate limit bucket: " + bucketName);
         };
     }

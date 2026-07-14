@@ -201,6 +201,17 @@ rate-limit:
     # 실제 계약/카탈로그 한도가 확인되면 VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY로 조정하세요.
     capacity: ${VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY:500}
     refill-minutes: ${VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}
+  results-query:
+    capacity: ${RESULTS_QUERY_RATE_LIMIT_CAPACITY:120}
+    refill-minutes: ${RESULTS_QUERY_RATE_LIMIT_REFILL_MINUTES:1}
+  video-access-token:
+    capacity: ${VIDEO_ACCESS_TOKEN_RATE_LIMIT_CAPACITY:30}
+    refill-minutes: ${VIDEO_ACCESS_TOKEN_RATE_LIMIT_REFILL_MINUTES:1}
+  job-status-poll:
+    # 프론트가 분석 진행 중 1.5초 간격으로 폴링합니다(POLLING_INTERVAL_MS). 정상적인 폴링을
+    # 막지 않도록 넉넉하게 잡되, 스크립트를 이용한 과도한 반복 호출은 차단합니다.
+    capacity: ${JOB_STATUS_POLL_RATE_LIMIT_CAPACITY:90}
+    refill-minutes: ${JOB_STATUS_POLL_RATE_LIMIT_REFILL_MINUTES:1}
 
 scheduler:
   lock:

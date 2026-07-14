@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { withdrawAccount } from "../api/authApi";
 import { getErrorMessage } from "../api/errorUtils";
 import StateMessage from "../components/StateMessage";
+import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 
@@ -23,6 +24,7 @@ function AccountPage() {
     const { showToast } = useToast();
 
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
@@ -76,7 +78,7 @@ function AccountPage() {
                         <span>
                             <strong>비밀번호 확인</strong>
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 value={password}
                                 onChange={(event) => setPassword(event.target.value)}
                                 autoComplete="current-password"
@@ -86,6 +88,11 @@ function AccountPage() {
                             />
                         </span>
                     </label>
+
+                    <PasswordToggleButton
+                        visible={showPassword}
+                        onToggle={() => setShowPassword((prev) => !prev)}
+                    />
 
                     <StateMessage type="error">{error}</StateMessage>
 

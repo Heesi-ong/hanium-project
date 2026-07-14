@@ -69,4 +69,11 @@ describe("LoginPage", () => {
             password: "password123",
         });
     });
+
+    it("links to the forgot password page", () => {
+        renderLoginPage();
+
+        expect(screen.getByRole("link", { name: "비밀번호를 잊으셨나요?" }))
+            .toHaveAttribute("href", "/forgot-password");
+    });
 });

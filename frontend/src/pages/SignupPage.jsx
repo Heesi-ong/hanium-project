@@ -2,6 +2,7 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { signup } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
+import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
 
 const inputStyle = {
@@ -28,6 +29,7 @@ function SignupPage() {
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -102,7 +104,7 @@ function SignupPage() {
                             <span>
                                 <strong>비밀번호</strong>
                                 <input
-                                    type="password"
+                                    type={showPassword ? "text" : "password"}
                                     value={password}
                                     onChange={(event) => setPassword(event.target.value)}
                                     autoComplete="new-password"
@@ -115,6 +117,11 @@ function SignupPage() {
                                 </small>
                             </span>
                         </label>
+
+                        <PasswordToggleButton
+                            visible={showPassword}
+                            onToggle={() => setShowPassword((prev) => !prev)}
+                        />
 
                         <label className="terms-agreement">
                             <input

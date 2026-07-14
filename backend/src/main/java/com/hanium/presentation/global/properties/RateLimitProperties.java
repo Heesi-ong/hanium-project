@@ -9,7 +9,9 @@ public record RateLimitProperties(
         Limit login,
         Limit loginIp,
         Limit signup,
-        Limit openaiMonthly
+        Limit passwordResetRequest,
+        Limit openaiMonthly,
+        Limit videoLlmMonthly
 ) {
 
     public record Limit(

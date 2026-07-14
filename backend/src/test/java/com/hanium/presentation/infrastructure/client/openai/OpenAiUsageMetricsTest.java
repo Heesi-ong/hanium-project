@@ -24,7 +24,9 @@ class OpenAiUsageMetricsTest {
                 null,
                 null,
                 null,
-                new RateLimitProperties.Limit(1000, 44640)
+                null,
+                new RateLimitProperties.Limit(1000, 44640),
+                null
         );
 
         new OpenAiUsageMetrics(meterRegistry, userRateLimiter, rateLimitProperties);

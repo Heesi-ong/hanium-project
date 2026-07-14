@@ -169,9 +169,17 @@ rate-limit:
   signup:
     capacity: ${SIGNUP_RATE_LIMIT_CAPACITY:5}
     refill-minutes: ${SIGNUP_RATE_LIMIT_REFILL_MINUTES:10}
+  password-reset-request:
+    capacity: ${PASSWORD_RESET_RATE_LIMIT_CAPACITY:5}
+    refill-minutes: ${PASSWORD_RESET_RATE_LIMIT_REFILL_MINUTES:10}
   openai-monthly:
     capacity: ${OPENAI_MONTHLY_RATE_LIMIT_CAPACITY:1000}
     refill-minutes: ${OPENAI_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}
+  video-llm-monthly:
+    # NVIDIA hosted API의 정확한 무료 한도가 아직 확정되지 않아 OpenAI 기본값보다 보수적으로 둡니다.
+    # 실제 계약/카탈로그 한도가 확인되면 VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY로 조정하세요.
+    capacity: ${VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY:500}
+    refill-minutes: ${VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}
 
 scheduler:
   lock:

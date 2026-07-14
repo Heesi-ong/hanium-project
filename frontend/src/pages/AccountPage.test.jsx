@@ -17,6 +17,10 @@ const toastMock = vi.hoisted(() => ({
     showToast: vi.fn(),
 }));
 
+const confirmMock = vi.hoisted(() => ({
+    confirm: vi.fn(),
+}));
+
 vi.mock("../context/AuthContext", () => ({
     useAuth: () => ({
         user: authMock.user,
@@ -32,6 +36,10 @@ vi.mock("../context/ToastContext", () => ({
     useToast: () => ({
         showToast: toastMock.showToast,
     }),
+}));
+
+vi.mock("../context/ConfirmContext", () => ({
+    useConfirm: () => confirmMock.confirm,
 }));
 
 function renderAccountPage() {
@@ -50,7 +58,8 @@ describe("AccountPage", () => {
         authMock.logout.mockReset();
         apiMock.withdrawAccount.mockReset();
         toastMock.showToast.mockReset();
-        vi.spyOn(window, "confirm").mockReturnValue(true);
+        confirmMock.confirm.mockReset();
+        confirmMock.confirm.mockResolvedValue(true);
     });
 
     afterEach(() => {
@@ -58,8 +67,8 @@ describe("AccountPage", () => {
         vi.restoreAllMocks();
     });
 
-    it("does not call withdrawAccount when confirmation is cancelled", () => {
-        window.confirm.mockReturnValue(false);
+    it("does not call withdrawAccount when confirmation is cancelled", async () => {
+        confirmMock.confirm.mockResolvedValue(false);
 
         renderAccountPage();
 
@@ -68,7 +77,9 @@ describe("AccountPage", () => {
         });
         fireEvent.click(screen.getByRole("button", { name: "회원탈퇴" }));
 
-        expect(window.confirm).toHaveBeenCalled();
+        await waitFor(() => {
+            expect(confirmMock.confirm).toHaveBeenCalled();
+        });
         expect(apiMock.withdrawAccount).not.toHaveBeenCalled();
         expect(authMock.logout).not.toHaveBeenCalled();
     });

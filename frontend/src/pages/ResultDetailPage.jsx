@@ -30,6 +30,7 @@ import {
     retryAnalysis,
 } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
+import { useConfirm } from "../context/ConfirmContext";
 
 const POLLING_INTERVAL_MS = 1500;
 const POLLING_TIMEOUT_MS = 35 * 60 * 1000;
@@ -48,6 +49,7 @@ const RUNNING_STATUSES = [
 function ResultDetailPage() {
     const { jobId } = useParams();
     const navigate = useNavigate();
+    const confirm = useConfirm();
 
     const pollingTimerRef = useRef(null);
     const pollingStartedAtRef = useRef(null);
@@ -353,7 +355,7 @@ function ResultDetailPage() {
             ? "대기 중인 분석을 취소하시겠습니까? 즉시 취소됩니다."
             : "진행 중인 분석을 취소하시겠습니까? 현재 실행 중인 단계가 끝난 뒤 취소됩니다.";
 
-        const confirmed = window.confirm(confirmMessage);
+        const confirmed = await confirm(confirmMessage);
 
         if (!confirmed) {
             return;
@@ -387,7 +389,7 @@ function ResultDetailPage() {
             return;
         }
 
-        const confirmed = window.confirm(
+        const confirmed = await confirm(
             "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 JSON 파일도 함께 삭제됩니다."
         );
 

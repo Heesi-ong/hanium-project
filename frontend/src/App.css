@@ -569,6 +569,37 @@ pre {
   margin-top: 8px;
 }
 
+.spinner {
+  margin: 0 auto;
+  border: 3px solid rgba(43, 36, 32, 0.12);
+  border-top-color: #E2704A;
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.password-toggle-button {
+  display: block;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #5C534B;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.password-toggle-button:hover {
+  color: #2B2420;
+  text-decoration: underline;
+}
+
 .upload-result-box {
   display: flex;
   flex-direction: column;

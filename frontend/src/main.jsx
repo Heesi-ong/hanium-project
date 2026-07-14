@@ -6,6 +6,7 @@ import { AuthProvider } from "./context/AuthContext.jsx";
 import { ConfirmProvider } from "./context/ConfirmContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import "./index.css";
+import "./styles/tailwind-tokens.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
     <React.StrictMode>

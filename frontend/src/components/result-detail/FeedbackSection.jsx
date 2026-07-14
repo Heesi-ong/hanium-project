@@ -1,14 +1,14 @@
 function getVisualGenerationModeLabel(mode) {
     if (mode === "REAL") {
-        return "실제 영상 AI";
+        return "실제 Video LLM";
     }
 
     if (mode === "FALLBACK") {
-        return "영상 AI 실패 후 Mock 대체";
+        return "Video LLM 실패 후 Mock 대체";
     }
 
     if (mode === "MOCK") {
-        return "Mock 영상 분석";
+        return "Mock Video LLM 분석";
     }
 
     if (mode === "SKIPPED") {
@@ -41,7 +41,7 @@ function VisualAnalysisBox({ visualAnalysis }) {
 
     return (
         <article className="detail-card">
-            <h2>시각 분석</h2>
+            <h2>시각 분석 (Video LLM)</h2>
 
             {summaryItems.length === 0 ? (
                 <p className="muted-text">영상 분석 데이터가 아직 없습니다.</p>

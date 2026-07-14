@@ -43,6 +43,51 @@ const STATUS_STEP_LABELS = {
     CANCELLED: "분석 취소됨",
 };
 
+// 백엔드는 각 단계가 시작될 때 고정된 퍼센트(예: 기본분석 시작 시 10%)만 보내고,
+// 그 단계가 끝날 때까지는 새 값을 보내지 않는다. 그래서 그대로 표시하면 오래 걸리는
+// 단계에서 퍼센트가 한참 멈춰 있는 것처럼 보인다. 아래 두 맵은 각 단계에 머문 시간에
+// 비례해 다음 마일스톤 직전까지만(최대 95%) 화면상 퍼센트를 부드럽게 올리기 위한
+// 프론트 전용 추정치다. 실제 완료 신호는 항상 백엔드가 보내는 진짜 percent가 대신한다.
+const PROGRESS_STEP_ESTIMATED_DURATION_MS = {
+    BASIC_ANALYZING: 90000,
+    VIDEO_LLM_ANALYZING: 15000,
+    COMPACTING: 5000,
+    OPENAI_GENERATING: 15000,
+    MERGING_RESULT: 5000,
+};
+
+const PROGRESS_STEP_NEXT_MILESTONE = {
+    BASIC_ANALYZING: 40,
+    VIDEO_LLM_ANALYZING: 60,
+    COMPACTING: 75,
+    OPENAI_GENERATING: 90,
+    MERGING_RESULT: 100,
+};
+
+function getDisplayPercent(progress) {
+    if (!progress || typeof progress.percent !== "number") {
+        return 0;
+    }
+
+    const estimatedDurationMs = PROGRESS_STEP_ESTIMATED_DURATION_MS[progress.status];
+    const nextMilestone = PROGRESS_STEP_NEXT_MILESTONE[progress.status];
+
+    if (!estimatedDurationMs || !nextMilestone || !progress.updatedAt) {
+        return progress.percent;
+    }
+
+    const elapsedMs = Date.now() - new Date(progress.updatedAt).getTime();
+
+    if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+        return progress.percent;
+    }
+
+    const fraction = Math.min(elapsedMs / estimatedDurationMs, 0.95);
+    const interpolated = progress.percent + (nextMilestone - progress.percent) * fraction;
+
+    return Math.round(interpolated);
+}
+
 function UploadPage() {
     const navigate = useNavigate();
     const { showToast } = useToast();
@@ -620,18 +665,18 @@ function UploadPage() {
                                         <div
                                             className="progress-bar-track"
                                             role="progressbar"
-                                            aria-valuenow={progress?.percent ?? 0}
+                                            aria-valuenow={getDisplayPercent(progress)}
                                             aria-valuemin={0}
                                             aria-valuemax={100}
                                             aria-label="분석 진행률"
                                         >
                                             <div
                                                 className="progress-bar-fill"
-                                                style={{ width: `${progress?.percent ?? 0}%` }}
+                                                style={{ width: `${getDisplayPercent(progress)}%` }}
                                             />
                                         </div>
                                         <span className="progress-bar-label">
-                                            {progress?.percent ?? 0}% · {progress?.message || "진행률을 확인하는 중입니다."}
+                                            {getDisplayPercent(progress)}% · {progress?.message || "진행률을 확인하는 중입니다."}
                                         </span>
                                     </div>
                                 )}

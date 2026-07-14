@@ -17,7 +17,7 @@ function renderFeedbackSection(visualAnalysis) {
 
 function getVisualAnalysisCard() {
     return screen.getByRole("heading", {
-        name: "시각 분석",
+        name: "시각 분석 (Video LLM)",
     }).closest("article");
 }
 
@@ -64,9 +64,9 @@ describe("FeedbackSection", () => {
     });
 
     it.each([
-        ["REAL", "실제 영상 AI"],
-        ["FALLBACK", "영상 AI 실패 후 Mock 대체"],
-        ["MOCK", "Mock 영상 분석"],
+        ["REAL", "실제 Video LLM"],
+        ["FALLBACK", "Video LLM 실패 후 Mock 대체"],
+        ["MOCK", "Mock Video LLM 분석"],
         ["SKIPPED", "Video LLM 분석 생략"],
     ])("renders %s generation mode badge", (generationMode, label) => {
         renderFeedbackSection({

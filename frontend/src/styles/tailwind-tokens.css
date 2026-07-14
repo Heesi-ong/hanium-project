@@ -1,0 +1,27 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme {
+  --color-background-primary: #090807;
+  --color-background-secondary: #100E0C;
+  --color-surface-primary: #17130F;
+  --color-surface-secondary: #211A14;
+  --color-elevated-surface: #2A2018;
+
+  --color-primary-orange: #C85A19;
+  --color-primary-bright: #F27424;
+  --color-primary-deep: #7A2F0B;
+  --color-highlight-orange: #FF934D;
+  --color-soft-orange: #F6A66B;
+
+  --color-warm-white: #F7F3EE;
+  --color-text-primary: #F5EFE8;
+  --color-text-secondary: #B7ADA4;
+  --color-text-muted: #776E66;
+
+  --color-success: #4FC78A;
+  --color-warning: #F4B04A;
+  --color-error: #E7685A;
+  --color-information: #72A5FF;
+}

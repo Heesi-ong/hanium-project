@@ -38,9 +38,9 @@ def test_readiness_rejects_request_with_wrong_internal_api_key(monkeypatch):
 def test_readiness_reports_not_ready_when_models_not_loaded(monkeypatch):
     client = create_client(monkeypatch)
 
-    monkeypatch.setattr(model_registry, "_whisper_model", None)
-    monkeypatch.setattr(model_registry, "_pose_landmarker", None)
-    monkeypatch.setattr(model_registry, "_face_landmarker", None)
+    monkeypatch.setattr(model_registry, "_whisper_loaded_count", 0)
+    monkeypatch.setattr(model_registry, "_pose_loaded_count", 0)
+    monkeypatch.setattr(model_registry, "_face_loaded_count", 0)
 
     response = client.get(
         "/api/internal/readiness",
@@ -57,9 +57,9 @@ def test_readiness_reports_not_ready_when_models_not_loaded(monkeypatch):
 def test_readiness_reports_ready_when_models_loaded(monkeypatch):
     client = create_client(monkeypatch)
 
-    monkeypatch.setattr(model_registry, "_whisper_model", object())
-    monkeypatch.setattr(model_registry, "_pose_landmarker", object())
-    monkeypatch.setattr(model_registry, "_face_landmarker", object())
+    monkeypatch.setattr(model_registry, "_whisper_loaded_count", 1)
+    monkeypatch.setattr(model_registry, "_pose_loaded_count", 1)
+    monkeypatch.setattr(model_registry, "_face_loaded_count", 1)
 
     response = client.get(
         "/api/internal/readiness",

@@ -1,5 +1,7 @@
 import atexit
 import logging
+import os
+import queue
 import threading
 import urllib.request
 from contextlib import contextmanager
@@ -27,120 +29,162 @@ FACE_TASK_MODEL_URL = (
     "face_landmarker.task"
 )
 
-_whisper_model = None
-_pose_landmarker = None
-_face_landmarker = None
+# 동시에 여러 분석 작업이 들어와도 모델 추론이 완전히 직렬화되지 않도록, 모델별로
+# 미리 만들어둔 인스턴스 풀에서 빌려 쓰고 반납하는 방식을 사용합니다. 풀 크기만큼
+# 동시 추론이 가능해지고, 그 이상 요청이 몰리면 인스턴스가 반납될 때까지 자연스럽게
+# 대기합니다(단일 락과 달리 완전 직렬화는 아닙니다). 풀 크기는 컨테이너 CPU/메모리
+# 제한에 맞게 환경변수로 조정하세요.
+WHISPER_POOL_SIZE = int(os.environ.get("ANALYSIS_ENGINE_WHISPER_POOL_SIZE", "2"))
+POSE_POOL_SIZE = int(os.environ.get("ANALYSIS_ENGINE_POSE_POOL_SIZE", "2"))
+FACE_POOL_SIZE = int(os.environ.get("ANALYSIS_ENGINE_FACE_POOL_SIZE", "2"))
+
+_whisper_pool: "queue.Queue[object]" = queue.Queue()
+_pose_pool: "queue.Queue[object]" = queue.Queue()
+_face_pool: "queue.Queue[object]" = queue.Queue()
 
 _whisper_load_lock = threading.Lock()
 _pose_load_lock = threading.Lock()
 _face_load_lock = threading.Lock()
 
-_whisper_inference_lock = threading.Lock()
-_pose_inference_lock = threading.Lock()
-_face_inference_lock = threading.Lock()
+# 풀에 지금까지 만들어 넣은 인스턴스 개수입니다. 풀(Queue)이 일시적으로 비어 있는 것은
+# "인스턴스가 전부 대여 중"인 정상 상태일 수 있으므로, model_status()는 풀 크기가 아니라
+# 이 카운터로 "최소 1개는 로드됐는지"를 판단합니다.
+_whisper_loaded_count = 0
+_pose_loaded_count = 0
+_face_loaded_count = 0
 
 
 def preload_all() -> None:
-    get_whisper_model()
-    get_pose_landmarker()
-    get_face_landmarker()
-    logger.info("모델 프리로딩 완료: whisper=%s, pose=loaded, face=loaded", WHISPER_MODEL_SIZE)
+    _ensure_whisper_pool()
+    _ensure_pose_pool()
+    _ensure_face_pool()
+    logger.info(
+        "모델 프리로딩 완료: whisper=%s(x%d), pose=loaded(x%d), face=loaded(x%d)",
+        WHISPER_MODEL_SIZE,
+        WHISPER_POOL_SIZE,
+        POSE_POOL_SIZE,
+        FACE_POOL_SIZE,
+    )
 
 
-def get_whisper_model():
-    global _whisper_model
+def _create_whisper_instance():
+    from faster_whisper import WhisperModel
 
-    if _whisper_model is None:
-        with _whisper_load_lock:
-            if _whisper_model is None:
-                from faster_whisper import WhisperModel
-
-                logger.info(
-                    "Whisper 모델을 로딩합니다. size=%s device=%s computeType=%s",
-                    WHISPER_MODEL_SIZE,
-                    WHISPER_DEVICE,
-                    WHISPER_COMPUTE_TYPE,
-                )
-                _whisper_model = WhisperModel(
-                    WHISPER_MODEL_SIZE,
-                    device=WHISPER_DEVICE,
-                    compute_type=WHISPER_COMPUTE_TYPE,
-                )
-
-    return _whisper_model
+    logger.info(
+        "Whisper 모델 인스턴스를 로딩합니다. size=%s device=%s computeType=%s",
+        WHISPER_MODEL_SIZE,
+        WHISPER_DEVICE,
+        WHISPER_COMPUTE_TYPE,
+    )
+    return WhisperModel(
+        WHISPER_MODEL_SIZE,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE,
+    )
 
 
-def get_pose_landmarker():
-    global _pose_landmarker
+def _ensure_whisper_pool() -> None:
+    global _whisper_loaded_count
 
-    if _pose_landmarker is None:
-        with _pose_load_lock:
-            if _pose_landmarker is None:
-                pose_model_path = get_pose_model_path()
-                logger.info("PoseLandmarker 모델을 로딩합니다. path=%s", pose_model_path)
-                _pose_landmarker = vision.PoseLandmarker.create_from_options(
-                    vision.PoseLandmarkerOptions(
-                        base_options=python.BaseOptions(
-                            model_asset_path=str(pose_model_path),
-                            delegate=python.BaseOptions.Delegate.CPU,
-                        ),
-                        running_mode=vision.RunningMode.IMAGE,
-                        num_poses=1,
-                        min_pose_detection_confidence=0.5,
-                        min_pose_presence_confidence=0.5,
-                        min_tracking_confidence=0.5,
-                    )
-                )
+    if _whisper_loaded_count >= WHISPER_POOL_SIZE:
+        return
 
-    return _pose_landmarker
+    with _whisper_load_lock:
+        while _whisper_loaded_count < WHISPER_POOL_SIZE:
+            _whisper_pool.put(_create_whisper_instance())
+            _whisper_loaded_count += 1
 
 
-def get_face_landmarker():
-    global _face_landmarker
+def _create_pose_instance():
+    pose_model_path = get_pose_model_path()
+    logger.info("PoseLandmarker 모델 인스턴스를 로딩합니다. path=%s", pose_model_path)
+    return vision.PoseLandmarker.create_from_options(
+        vision.PoseLandmarkerOptions(
+            base_options=python.BaseOptions(
+                model_asset_path=str(pose_model_path),
+                delegate=python.BaseOptions.Delegate.CPU,
+            ),
+            running_mode=vision.RunningMode.IMAGE,
+            num_poses=1,
+            min_pose_detection_confidence=0.5,
+            min_pose_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
+        )
+    )
 
-    if _face_landmarker is None:
-        with _face_load_lock:
-            if _face_landmarker is None:
-                face_model_path = get_face_model_path()
-                logger.info("FaceLandmarker 모델을 로딩합니다. path=%s", face_model_path)
-                _face_landmarker = vision.FaceLandmarker.create_from_options(
-                    vision.FaceLandmarkerOptions(
-                        base_options=python.BaseOptions(
-                            model_asset_path=str(face_model_path),
-                            delegate=python.BaseOptions.Delegate.CPU,
-                        ),
-                        running_mode=vision.RunningMode.IMAGE,
-                        num_faces=1,
-                        min_face_detection_confidence=0.5,
-                        min_face_presence_confidence=0.5,
-                        min_tracking_confidence=0.5,
-                        output_face_blendshapes=False,
-                        output_facial_transformation_matrixes=False,
-                    )
-                )
 
-    return _face_landmarker
+def _ensure_pose_pool() -> None:
+    global _pose_loaded_count
+
+    if _pose_loaded_count >= POSE_POOL_SIZE:
+        return
+
+    with _pose_load_lock:
+        while _pose_loaded_count < POSE_POOL_SIZE:
+            _pose_pool.put(_create_pose_instance())
+            _pose_loaded_count += 1
+
+
+def _create_face_instance():
+    face_model_path = get_face_model_path()
+    logger.info("FaceLandmarker 모델 인스턴스를 로딩합니다. path=%s", face_model_path)
+    return vision.FaceLandmarker.create_from_options(
+        vision.FaceLandmarkerOptions(
+            base_options=python.BaseOptions(
+                model_asset_path=str(face_model_path),
+                delegate=python.BaseOptions.Delegate.CPU,
+            ),
+            running_mode=vision.RunningMode.IMAGE,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
+            output_face_blendshapes=False,
+            output_facial_transformation_matrixes=False,
+        )
+    )
+
+
+def _ensure_face_pool() -> None:
+    global _face_loaded_count
+
+    if _face_loaded_count >= FACE_POOL_SIZE:
+        return
+
+    with _face_load_lock:
+        while _face_loaded_count < FACE_POOL_SIZE:
+            _face_pool.put(_create_face_instance())
+            _face_loaded_count += 1
 
 
 @contextmanager
 def whisper_model_context() -> Iterator[object]:
-    model = get_whisper_model()
-    with _whisper_inference_lock:
+    _ensure_whisper_pool()
+    model = _whisper_pool.get()
+    try:
         yield model
+    finally:
+        _whisper_pool.put(model)
 
 
 @contextmanager
 def pose_landmarker_context() -> Iterator[object]:
-    landmarker = get_pose_landmarker()
-    with _pose_inference_lock:
+    _ensure_pose_pool()
+    landmarker = _pose_pool.get()
+    try:
         yield landmarker
+    finally:
+        _pose_pool.put(landmarker)
 
 
 @contextmanager
 def face_landmarker_context() -> Iterator[object]:
-    landmarker = get_face_landmarker()
-    with _face_inference_lock:
+    _ensure_face_pool()
+    landmarker = _face_pool.get()
+    try:
         yield landmarker
+    finally:
+        _face_pool.put(landmarker)
 
 
 def resolve_project_root() -> Path:
@@ -192,9 +236,9 @@ def get_face_model_path() -> Path:
 
 def model_status() -> dict[str, bool]:
     return {
-        "whisper": _whisper_model is not None,
-        "pose": _pose_landmarker is not None,
-        "face": _face_landmarker is not None,
+        "whisper": _whisper_loaded_count > 0,
+        "pose": _pose_loaded_count > 0,
+        "face": _face_loaded_count > 0,
     }
 
 
@@ -203,15 +247,18 @@ def is_ready() -> bool:
 
 
 def close_all() -> None:
-    for model_name, model in (
-        ("pose", _pose_landmarker),
-        ("face", _face_landmarker),
-    ):
-        if model is not None and hasattr(model, "close"):
+    for pool_name, pool in (("pose", _pose_pool), ("face", _face_pool)):
+        while not pool.empty():
             try:
-                model.close()
-            except Exception:
-                logger.warning("%s landmarker 종료 중 오류가 발생했습니다.", model_name, exc_info=True)
+                instance = pool.get_nowait()
+            except queue.Empty:
+                break
+
+            if hasattr(instance, "close"):
+                try:
+                    instance.close()
+                except Exception:
+                    logger.warning("%s landmarker 종료 중 오류가 발생했습니다.", pool_name, exc_info=True)
 
 
 atexit.register(close_all)

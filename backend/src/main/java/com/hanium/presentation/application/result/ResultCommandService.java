@@ -181,6 +181,13 @@ public class ResultCommandService {
             throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
         }
 
+        if (analysisJob.isQueued() || analysisJob.isRunning()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_DELETE_NOT_ALLOWED,
+                    "진행 중이거나 대기 중인 분석 작업은 삭제할 수 없습니다. 먼저 취소한 뒤 다시 시도해주세요. status=" + analysisJob.getStatus()
+            );
+        }
+
         UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
                 .orElse(null);
 

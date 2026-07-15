@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getAdminStats, getAdminUsers } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
@@ -155,6 +156,7 @@ function AdminDashboardPage() {
                                 <th>가입일</th>
                                 <th>온보딩</th>
                                 <th>분석 작업 수</th>
+                                <th>상세</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -165,6 +167,11 @@ function AdminDashboardPage() {
                                     <td>{formatDateTime(user.createdAt)}</td>
                                     <td>{user.onboardingCompleted ? "완료" : "미완료"}</td>
                                     <td>{user.analysisJobCount}</td>
+                                    <td>
+                                        <Link to={`/admin/users/${user.id}`} className="secondary-button">
+                                            상세 보기
+                                        </Link>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

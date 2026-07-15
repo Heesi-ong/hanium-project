@@ -15,6 +15,7 @@ public enum ErrorCode {
     INSUFFICIENT_STORAGE_SPACE(HttpStatus.INSUFFICIENT_STORAGE, "서버 저장 공간이 부족하여 업로드할 수 없습니다. 잠시 후 다시 시도해주세요."),
     VIDEO_DURATION_EXCEEDED(HttpStatus.BAD_REQUEST, "허용된 최대 재생 시간을 초과한 영상입니다."),
     INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "비밀번호가 올바르지 않습니다."),
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
 
     ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다."),
     ANALYSIS_JOB_ACCESS_DENIED(HttpStatus.FORBIDDEN, "본인이 소유한 분석 작업이 아닙니다."),

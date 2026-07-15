@@ -19,3 +19,18 @@ export async function getAdminStats() {
     const response = await apiClient.get("/api/admin/stats");
     return unwrapApiResponse(response);
 }
+
+export async function getAdminUserResults(userId, { page, size } = {}) {
+    const params = {};
+
+    if (page !== undefined) {
+        params.page = page;
+    }
+
+    if (size !== undefined) {
+        params.size = size;
+    }
+
+    const response = await apiClient.get(`/api/admin/users/${userId}/results`, { params });
+    return unwrapApiResponse(response);
+}

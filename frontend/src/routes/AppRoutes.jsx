@@ -20,6 +20,7 @@ const PricingPage = lazy(() => import("../pages/PricingPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
 const StatusPage = lazy(() => import("../pages/StatusPage"));
 const AdminDashboardPage = lazy(() => import("../pages/AdminDashboardPage"));
+const AdminUserDetailPage = lazy(() => import("../pages/AdminUserDetailPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 function RouteLoadingFallback() {
@@ -57,6 +58,7 @@ function AppRoutes() {
 
                     <Route element={<AdminRoute />}>
                         <Route path="/admin" element={<AdminDashboardPage />} />
+                        <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
                     </Route>
 
                     <Route path="*" element={<NotFoundPage />} />

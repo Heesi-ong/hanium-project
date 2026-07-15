@@ -1,9 +1,12 @@
 package com.hanium.presentation.presentation.controller;
 
+import com.hanium.presentation.application.admin.AdminAuditLogService;
 import com.hanium.presentation.application.admin.AdminDashboardService;
 import com.hanium.presentation.global.response.ApiResponse;
+import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
 import com.hanium.presentation.presentation.dto.response.AdminUserSummaryResponse;
+import com.hanium.presentation.presentation.dto.response.PagedAdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.PagedAdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
@@ -17,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 관리자 전용 API입니다. 이번 Unit까지는 조회 전용(사용자 목록/집계 통계/사용자별 분석 결과 목록)까지만 다룹니다.
+ * 관리자 전용 API입니다. 이번 Unit까지는 조회 전용(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그 조회)까지만 다룹니다.
  * 계정 정지/강제 탈퇴/결과 삭제 등 관리 액션은 후속 Unit에서 이 컨트롤러에 추가합니다.
  */
 @RestController
@@ -28,9 +31,14 @@ public class AdminController {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final AdminDashboardService adminDashboardService;
+    private final AdminAuditLogService adminAuditLogService;
 
-    public AdminController(AdminDashboardService adminDashboardService) {
+    public AdminController(
+            AdminDashboardService adminDashboardService,
+            AdminAuditLogService adminAuditLogService
+    ) {
         this.adminDashboardService = adminDashboardService;
+        this.adminAuditLogService = adminAuditLogService;
     }
 
     @GetMapping("/ping")
@@ -73,6 +81,19 @@ public class AdminController {
         return ApiResponse.success(
                 "사용자 분석 결과 목록 조회가 완료되었습니다.",
                 PagedResultSummaryResponse.from(results)
+        );
+    }
+
+    @GetMapping("/audit-logs")
+    public ApiResponse<PagedAdminAuditLogResponse> getAuditLogs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Page<AdminAuditLogResponse> auditLogs = adminAuditLogService.getAuditLogs(createPageable(page, size));
+
+        return ApiResponse.success(
+                "관리자 감사로그 조회가 완료되었습니다.",
+                PagedAdminAuditLogResponse.from(auditLogs)
         );
     }
 

@@ -71,4 +71,7 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
     // 큐 백프레셔 검사용: 사용자별 QUEUED 작업 수. 전역 한도와 별도로, 한 사용자가
     // 대기열을 독점하지 못하게 막을 때 사용합니다.
     long countByStatusAndOwnerId(AnalysisStatus status, Long ownerId);
+
+    // 관리자 대시보드: 사용자별 전체 분석 작업 수(상태 무관)를 보여줄 때 사용합니다.
+    long countByOwnerId(Long ownerId);
 }

@@ -1,7 +1,10 @@
 package com.hanium.presentation.domain.user.entity;
 
+import com.hanium.presentation.domain.user.type.UserRole;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -47,6 +50,10 @@ public class User {
     @Column(name = "onboarding_completed_at")
     private LocalDateTime onboardingCompletedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 20)
+    private UserRole role;
+
     protected User() {
     }
 
@@ -61,6 +68,7 @@ public class User {
         this.createdAt = LocalDateTime.now();
         this.termsAgreedAt = termsAgreedAt;
         this.termsVersion = termsVersion;
+        this.role = UserRole.USER;
     }
 
     public static User create(String email, String passwordHash) {
@@ -130,5 +138,17 @@ public class User {
 
     public LocalDateTime getOnboardingCompletedAt() {
         return onboardingCompletedAt;
+    }
+
+    public UserRole getRole() {
+        return role;
+    }
+
+    public boolean isAdmin() {
+        return role == UserRole.ADMIN;
+    }
+
+    public void syncRole(UserRole role) {
+        this.role = role;
     }
 }

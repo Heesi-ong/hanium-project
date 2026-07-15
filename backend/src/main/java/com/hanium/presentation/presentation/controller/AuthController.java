@@ -5,11 +5,13 @@ import com.hanium.presentation.application.auth.PasswordResetService;
 import com.hanium.presentation.domain.user.TermsVersion;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
+import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.JwtBlacklist;
 import com.hanium.presentation.global.config.JwtCookieSupport;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.config.SecurityConfig.JwtTokenProvider;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.properties.AdminProperties;
 import com.hanium.presentation.global.response.ApiResponse;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -53,6 +55,7 @@ public class AuthController {
     private final UserRateLimiter userRateLimiter;
     private final JwtCookieSupport jwtCookieSupport;
     private final PasswordResetService passwordResetService;
+    private final AdminProperties adminProperties;
 
     public AuthController(
             UserRepository userRepository,
@@ -61,7 +64,8 @@ public class AuthController {
             JwtBlacklist jwtBlacklist,
             UserRateLimiter userRateLimiter,
             JwtCookieSupport jwtCookieSupport,
-            PasswordResetService passwordResetService
+            PasswordResetService passwordResetService,
+            AdminProperties adminProperties
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -70,6 +74,7 @@ public class AuthController {
         this.userRateLimiter = userRateLimiter;
         this.jwtCookieSupport = jwtCookieSupport;
         this.passwordResetService = passwordResetService;
+        this.adminProperties = adminProperties;
     }
 
     @PostMapping("/signup")
@@ -93,12 +98,14 @@ public class AuthController {
         }
 
         try {
-            User user = userRepository.save(User.create(
+            User user = User.create(
                     email,
                     passwordEncoder.encode(request.password()),
                     LocalDateTime.now(),
                     TermsVersion.CURRENT
-            ));
+            );
+            user.syncRole(adminProperties.isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER);
+            user = userRepository.save(user);
 
             return ResponseEntity
                     .status(HttpStatus.CREATED)
@@ -139,6 +146,12 @@ public class AuthController {
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(ApiResponse.fail("이메일 또는 비밀번호가 올바르지 않습니다."));
+        }
+
+        UserRole expectedRole = adminProperties.isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER;
+        if (user.getRole() != expectedRole) {
+            user.syncRole(expectedRole);
+            user = userRepository.save(user);
         }
 
         String accessToken = jwtTokenProvider.createToken(user);
@@ -336,14 +349,16 @@ public class AuthController {
     public record AuthUserResponse(
             Long id,
             String email,
-            boolean onboardingCompleted
+            boolean onboardingCompleted,
+            boolean admin
     ) {
 
         public static AuthUserResponse from(User user) {
             return new AuthUserResponse(
                     user.getId(),
                     user.getEmail(),
-                    user.getOnboardingCompletedAt() != null
+                    user.getOnboardingCompletedAt() != null,
+                    user.isAdmin()
             );
         }
     }

@@ -1,5 +1,6 @@
 package com.hanium.presentation;
 
+import com.hanium.presentation.global.properties.AdminProperties;
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
@@ -20,7 +21,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         RateLimitProperties.class,
         AnalysisRetryProperties.class,
         AnalysisQueueProperties.class,
-        VideoProperties.class
+        VideoProperties.class,
+        AdminProperties.class
 })
 @SpringBootApplication
 public class BackendApplication {

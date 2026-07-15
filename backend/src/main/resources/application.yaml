@@ -212,6 +212,12 @@ rate-limit:
     # 막지 않도록 넉넉하게 잡되, 스크립트를 이용한 과도한 반복 호출은 차단합니다.
     capacity: ${JOB_STATUS_POLL_RATE_LIMIT_CAPACITY:90}
     refill-minutes: ${JOB_STATUS_POLL_RATE_LIMIT_REFILL_MINUTES:1}
+  coach-daily:
+    # AI 코치 대화 1턴(사용자 메시지 1건)당 1회 소비. 사용자당 하루 메시지 수를 제한해
+    # 한 사용자가 OpenAI 비용을 독점하거나 남용하는 것을 막는다. openai-monthly(전역 월간
+    # 예산)와는 별개로, 이 한도를 통과해야만 openai-monthly 소비 단계로 넘어간다.
+    capacity: ${COACH_DAILY_RATE_LIMIT_CAPACITY:30}
+    refill-minutes: ${COACH_DAILY_RATE_LIMIT_REFILL_MINUTES:1440}
 
 scheduler:
   lock:

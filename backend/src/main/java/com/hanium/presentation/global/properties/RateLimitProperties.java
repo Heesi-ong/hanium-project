@@ -14,7 +14,8 @@ public record RateLimitProperties(
         Limit videoLlmMonthly,
         Limit resultsQuery,
         Limit videoAccessToken,
-        Limit jobStatusPoll
+        Limit jobStatusPoll,
+        Limit coachDaily
 ) {
 
     public record Limit(

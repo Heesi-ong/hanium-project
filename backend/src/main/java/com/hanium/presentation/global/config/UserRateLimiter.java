@@ -90,6 +90,7 @@ public class UserRateLimiter {
             case "results-query" -> rateLimitProperties.resultsQuery();
             case "video-access-token" -> rateLimitProperties.videoAccessToken();
             case "job-status-poll" -> rateLimitProperties.jobStatusPoll();
+            case "coach-daily" -> rateLimitProperties.coachDaily();
             default -> throw new IllegalArgumentException("Unknown rate limit bucket: " + bucketName);
         };
     }

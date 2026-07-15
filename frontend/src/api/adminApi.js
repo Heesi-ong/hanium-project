@@ -34,3 +34,13 @@ export async function getAdminUserResults(userId, { page, size } = {}) {
     const response = await apiClient.get(`/api/admin/users/${userId}/results`, { params });
     return unwrapApiResponse(response);
 }
+
+export async function suspendAdminUser(userId) {
+    const response = await apiClient.post(`/api/admin/users/${userId}/suspend`);
+    return unwrapApiResponse(response);
+}
+
+export async function activateAdminUser(userId) {
+    const response = await apiClient.post(`/api/admin/users/${userId}/activate`);
+    return unwrapApiResponse(response);
+}

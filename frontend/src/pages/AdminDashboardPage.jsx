@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getAdminStats, getAdminUsers } from "../api/adminApi";
+import { activateAdminUser, getAdminStats, getAdminUsers, suspendAdminUser } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
+import { useAuth } from "../context/AuthContext";
+import { useConfirm } from "../context/ConfirmContext";
 
 function AdminDashboardPage() {
+    const { user: currentUser } = useAuth();
+    const confirm = useConfirm();
     const [stats, setStats] = useState(null);
     const [users, setUsers] = useState([]);
     const [page, setPage] = useState(0);
     const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
+    const [actionUserId, setActionUserId] = useState("");
     const [error, setError] = useState("");
 
     const loadDashboard = useCallback(async () => {
@@ -58,6 +63,42 @@ function AdminDashboardPage() {
             ));
         } finally {
             setLoadingMore(false);
+        }
+    }
+
+    async function handleToggleStatus(targetUser) {
+        const isSuspending = targetUser.status !== "SUSPENDED";
+        const confirmMessage = isSuspending
+            ? `${targetUser.email} 계정을 정지하시겠습니까?`
+            : `${targetUser.email} 계정을 다시 활성화하시겠습니까?`;
+
+        const confirmed = await confirm(confirmMessage);
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setActionUserId(targetUser.id);
+            setError("");
+
+            if (isSuspending) {
+                await suspendAdminUser(targetUser.id);
+            } else {
+                await activateAdminUser(targetUser.id);
+            }
+
+            setUsers((prevUsers) => prevUsers.map((item) =>
+                item.id === targetUser.id
+                    ? { ...item, status: isSuspending ? "SUSPENDED" : "ACTIVE" }
+                    : item
+            ));
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "계정 상태를 변경하는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setActionUserId("");
         }
     }
 
@@ -108,7 +149,7 @@ function AdminDashboardPage() {
             <PageHeader
                 eyebrow="Admin"
                 title="관리자 대시보드"
-                description="가입자 현황과 분석 작업 통계를 확인합니다. 조회 전용이며, 사용자 개별 분석 결과 내용은 표시하지 않습니다."
+                description="가입자 현황과 분석 작업 통계를 확인합니다. 사용자 개별 분석 결과 내용은 상세 화면에서만 확인할 수 있습니다."
             />
 
             <StateMessage type="error">{error}</StateMessage>
@@ -153,10 +194,12 @@ function AdminDashboardPage() {
                             <tr>
                                 <th>이메일</th>
                                 <th>권한</th>
+                                <th>상태</th>
                                 <th>가입일</th>
                                 <th>온보딩</th>
                                 <th>분석 작업 수</th>
                                 <th>상세</th>
+                                <th>관리</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -164,6 +207,7 @@ function AdminDashboardPage() {
                                 <tr key={user.id}>
                                     <td>{user.email}</td>
                                     <td>{formatRole(user.role)}</td>
+                                    <td>{user.status === "SUSPENDED" ? "정지" : "활성"}</td>
                                     <td>{formatDateTime(user.createdAt)}</td>
                                     <td>{user.onboardingCompleted ? "완료" : "미완료"}</td>
                                     <td>{user.analysisJobCount}</td>
@@ -171,6 +215,22 @@ function AdminDashboardPage() {
                                         <Link to={`/admin/users/${user.id}`} className="secondary-button">
                                             상세 보기
                                         </Link>
+                                    </td>
+                                    <td>
+                                        {currentUser?.id === user.id ? (
+                                            <span>-</span>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className={user.status === "SUSPENDED" ? "secondary-button" : "danger-button"}
+                                                onClick={() => handleToggleStatus(user)}
+                                                disabled={actionUserId === user.id}
+                                            >
+                                                {actionUserId === user.id
+                                                    ? "처리 중..."
+                                                    : user.status === "SUSPENDED" ? "활성화" : "정지"}
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

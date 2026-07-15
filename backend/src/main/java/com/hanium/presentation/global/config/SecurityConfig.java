@@ -225,6 +225,7 @@ public class SecurityConfig {
             bearerToken.ifPresent(token -> jwtTokenProvider.extractEmail(token)
                     .flatMap(userRepository::findByEmail)
                     .filter(user -> isTokenIssuedAfterPasswordChange(token, user))
+                    .filter(user -> !user.isSuspended())
                     .ifPresent(this::authenticate));
 
             filterChain.doFilter(request, response);

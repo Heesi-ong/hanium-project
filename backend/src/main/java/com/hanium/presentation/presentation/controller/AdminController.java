@@ -2,6 +2,7 @@ package com.hanium.presentation.presentation.controller;
 
 import com.hanium.presentation.application.admin.AdminAuditLogService;
 import com.hanium.presentation.application.admin.AdminDashboardService;
+import com.hanium.presentation.application.admin.AdminUserActionService;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
@@ -13,15 +14,17 @@ import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 관리자 전용 API입니다. 이번 Unit까지는 조회 전용(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그 조회)까지만 다룹니다.
- * 계정 정지/강제 탈퇴/결과 삭제 등 관리 액션은 후속 Unit에서 이 컨트롤러에 추가합니다.
+ * 관리자 전용 API입니다. 조회(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그)에 더해
+ * 이번 Unit부터 계정 정지/활성화 액션을 제공합니다. 강제 탈퇴/결과 삭제는 후속 Unit에서 추가합니다.
  */
 @RestController
 @RequestMapping("/api/admin")
@@ -32,13 +35,16 @@ public class AdminController {
 
     private final AdminDashboardService adminDashboardService;
     private final AdminAuditLogService adminAuditLogService;
+    private final AdminUserActionService adminUserActionService;
 
     public AdminController(
             AdminDashboardService adminDashboardService,
-            AdminAuditLogService adminAuditLogService
+            AdminAuditLogService adminAuditLogService,
+            AdminUserActionService adminUserActionService
     ) {
         this.adminDashboardService = adminDashboardService;
         this.adminAuditLogService = adminAuditLogService;
+        this.adminUserActionService = adminUserActionService;
     }
 
     @GetMapping("/ping")
@@ -95,6 +101,39 @@ public class AdminController {
                 "관리자 감사로그 조회가 완료되었습니다.",
                 PagedAdminAuditLogResponse.from(auditLogs)
         );
+    }
+
+    @PostMapping("/users/{userId}/suspend")
+    public ApiResponse<Void> suspendUser(
+            @PathVariable Long userId,
+            Authentication authentication
+    ) {
+        adminUserActionService.suspendUser(getCurrentUserId(authentication), authentication.getName(), userId);
+
+        return ApiResponse.success("사용자를 정지했습니다.");
+    }
+
+    @PostMapping("/users/{userId}/activate")
+    public ApiResponse<Void> activateUser(
+            @PathVariable Long userId,
+            Authentication authentication
+    ) {
+        adminUserActionService.activateUser(getCurrentUserId(authentication), authentication.getName(), userId);
+
+        return ApiResponse.success("사용자를 활성화했습니다.");
+    }
+
+    private Long getCurrentUserId(Authentication authentication) {
+        Object details = authentication.getDetails();
+        if (details instanceof Long userId) {
+            return userId;
+        }
+
+        if (details instanceof Number number) {
+            return number.longValue();
+        }
+
+        throw new IllegalStateException("인증 정보에서 사용자 id를 찾을 수 없습니다.");
     }
 
     private Pageable createPageable(int page, int size) {

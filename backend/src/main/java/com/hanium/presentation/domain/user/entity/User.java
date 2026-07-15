@@ -1,6 +1,7 @@
 package com.hanium.presentation.domain.user.entity;
 
 import com.hanium.presentation.domain.user.type.UserRole;
+import com.hanium.presentation.domain.user.type.UserStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -54,6 +55,10 @@ public class User {
     @Column(name = "role", nullable = false, length = 20)
     private UserRole role;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private UserStatus status;
+
     protected User() {
     }
 
@@ -69,6 +74,7 @@ public class User {
         this.termsAgreedAt = termsAgreedAt;
         this.termsVersion = termsVersion;
         this.role = UserRole.USER;
+        this.status = UserStatus.ACTIVE;
     }
 
     public static User create(String email, String passwordHash) {
@@ -150,5 +156,21 @@ public class User {
 
     public void syncRole(UserRole role) {
         this.role = role;
+    }
+
+    public UserStatus getStatus() {
+        return status;
+    }
+
+    public boolean isSuspended() {
+        return status == UserStatus.SUSPENDED;
+    }
+
+    public void suspend() {
+        this.status = UserStatus.SUSPENDED;
+    }
+
+    public void activate() {
+        this.status = UserStatus.ACTIVE;
     }
 }

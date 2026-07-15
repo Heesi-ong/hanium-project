@@ -15,6 +15,7 @@ const ResetPasswordPage = lazy(() => import("../pages/ResetPasswordPage"));
 const OnboardingPage = lazy(() => import("../pages/OnboardingPage"));
 const PrivacyPage = lazy(() => import("../pages/PrivacyPage"));
 const TermsPage = lazy(() => import("../pages/TermsPage"));
+const PricingPage = lazy(() => import("../pages/PricingPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
 const StatusPage = lazy(() => import("../pages/StatusPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
@@ -41,6 +42,7 @@ function AppRoutes() {
                     <Route path="/" element={<HomePage />} />
                     <Route path="/privacy" element={<PrivacyPage />} />
                     <Route path="/terms" element={<TermsPage />} />
+                    <Route path="/pricing" element={<PricingPage />} />
 
                     <Route element={<ProtectedRoute />}>
                         <Route path="/onboarding" element={<OnboardingPage />} />

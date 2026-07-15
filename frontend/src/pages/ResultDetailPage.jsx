@@ -6,6 +6,7 @@ import ResultScoreChart from "../components/chart/ResultScoreChart";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import AudioAnalysisSection from "../components/result-detail/AudioAnalysisSection";
+import CoachChatSection from "../components/result-detail/CoachChatSection";
 import EmotionAnalysisSection from "../components/result-detail/EmotionAnalysisSection";
 import FaceAnalysisSection from "../components/result-detail/FaceAnalysisSection";
 import FeedbackSection from "../components/result-detail/FeedbackSection";
@@ -729,6 +730,10 @@ function ResultDetailPage() {
                 feedback={feedback}
                 visualAnalysis={visualAnalysis}
             />
+
+            <div className="no-print">
+                <CoachChatSection jobId={jobId} isCompleted={isCompleted} />
+            </div>
 
             <PracticePlanSection practicePlan={practicePlan} />
 

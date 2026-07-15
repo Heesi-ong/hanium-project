@@ -267,3 +267,33 @@
 4. **O3는 구현됐지만 테스트 통과 확인과 영상 길이 제한이 남았습니다.** 저장 공간/413 응답 코드는 있으나 전체 테스트 실행 확인이 아직 없고, `basic_analysis.py:272-308`은 duration을 계산만 합니다.
 5. **백업은 실제 복구 리허설이 부족합니다.** `scripts/backup-mysql.sh:60-86`은 백업/보존을 수행하지만 실제 MySQL 복구, 원격 보관, 암호화, 알림은 남아 있습니다.
 6. **운영 관측성은 health 중심입니다.** Actuator health, 파일 로그는 있으나 metrics/alerting/Prometheus/Grafana 연동은 아직 없습니다.
+
+---
+
+## 업데이트: 2026-07-15 현재 상태
+
+2026-07-04 업데이트 이후 완료된 작업(NVIDIA Video LLM 실연동, JWT 쿠키 전환, 분산 워커 폴러, 모니터링 스택, 백업 자동화, 관리자 대시보드 등)을 반영해 A/B 항목과 잔여 리스크를 다시 확인했다. 기존 업데이트 본문은 스냅샷으로 남겨둔다.
+
+### 주요 변화 요약
+
+| 항목 | 07-04 판정 | 07-15 판정 | 근거 |
+| --- | --- | --- | --- |
+| Video LLM 실제 모델 연동 | 미해결(mock) | 부분해결 | `video-llm-engine/app/api/video_llm_analysis.py:64-146`에 NVIDIA API Catalog(`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`) 실호출 코드가 완성돼 있고 예외 시 mock 폴백. 다만 기본값은 여전히 비활성(`video-llm-engine/.env:14` `VIDEO_LLM_ENABLED=false`, `:38` `VIDEO_LLM_BACKEND=mock`). |
+| JWT 저장 위치 | localStorage(최대 잔여 리스크) | 해결 | `frontend/src/api/apiClient.js`가 `withCredentials: true`만 쓰고 토큰을 localStorage에 저장하지 않음. `AuthController.java:166-169`, `JwtCookieSupport.java:32-38`에서 httpOnly+secure+SameSite=Lax 쿠키로 발급. 단 `AuthContext.test.jsx`/`apiClient.test.js` 등 구 테스트가 localStorage 가정을 그대로 갖고 있어 정리가 필요할 수 있음. |
+| 비동기 작업 큐 | 내부 스레드풀만 | 부분해결 | `AsyncConfig.java`는 여전히 `ThreadPoolTaskExecutor` 기반이지만, `QueuedAnalysisJobPoller`가 DB에서 QUEUED 작업을 원자적 claim해 `analysis-worker` 컨테이너로 분리 실행 가능(`docker-compose.yml:224-297`, `--scale analysis-worker=N`). 진짜 메시지 브로커(재시도/데드레터/우선순위)는 아님. |
+| 파일 저장소 | 로컬 디스크 | 미해결 | `FilePathGenerator.java:17-75`, `application.yaml:161-166` 전부 로컬 경로 기반. S3/MinIO 등 공유 스토리지 없음. **현재 가장 크게 남은 구조적 갭.** |
+| 스케줄러 분산 락 | 없음 | 해결 | `StorageCleanupService.java`, `StuckAnalysisJobWatchdogService.java`가 `SchedulerDistributedLock`(Redis SETNX 기반) 사용. 단 Redis 장애 시 fail-open(락 없이 실행)이라는 트레이드오프가 있음(`SchedulerDistributedLock.java:33-36`). |
+| 모니터링/관측성 | health 중심 | 해결 | `docker-compose.monitoring.yml`에 prometheus/node-exporter/cadvisor/grafana/alertmanager 5종, `infra/prometheus/alerts.yml`, `infra/grafana/provisioning/dashboards/json/*.json` 실존. backend `/actuator/prometheus` 노출. |
+| 백업 실제 검증 | fake mysqldump 수준 | 부분해결 | `storage/backups/`에 실제 MySQL 대상 반복 백업 파일과 `storage/logs/backup.log` 존재(fake 아님). 단 `scripts/restore-mysql.sh`는 있으나 실제 복구 리허설 로그는 확인 안 됨, CI에 백업/복구 job도 없음. |
+| 영상 길이 제한(O3) | 계산만, 제한 미적용 | 해결 | `VideoFileCommandService.java:102-108`에서 `VIDEO_MAX_DURATION_MINUTES`(기본 30분) 초과 시 거부. `FfprobeVideoDurationProbe.java`는 ffprobe 실행 실패 시 fail-open으로 통과시키는 정책이 남아 있음. |
+| 관리자 대시보드/권한 | 미착수 | 해결 | `SecurityConfig.java:78`에서 `/api/admin/**`에 `hasRole("ADMIN")` 적용. `AdminController.java`에 사용자 목록/통계/상세조회/감사로그/정지·활성화/강제탈퇴/결과삭제 10개 엔드포인트 완비. |
+| CI 구조 | backend/frontend/python 기본 | 해결 | `.github/workflows/verify.yml`에 backend, frontend(lint+test+build+audit), python-engines matrix(analysis-engine+video-llm-engine, pip-audit+pytest), docker-build matrix(4개 서비스+Trivy), compose-validate까지 포함. |
+| DB 마이그레이션 | V5까지 | 해결 | `backend/src/main/resources/db/migration/`이 V1~V14까지 진행. dev/prod 모두 MySQL+Flyway 유지. |
+
+### 2026-07-15 기준 가장 큰 잔여 리스크 (우선순위 순)
+
+1. **파일 저장소가 여전히 로컬 디스크입니다.** `analysis-worker`를 여러 인스턴스로 수평 확장할 수 있는 구조(claim 기반 폴러)는 갖췄지만, 업로드/결과 파일이 로컬 디스크에 있는 한 다중 인스턴스 배포 시 파일 접근 문제가 그대로 남습니다. 이제 다른 A/B 항목이 대부분 해소된 만큼, 우선순위가 가장 높은 잔여 갭입니다.
+2. **Video LLM 실연동이 기본 비활성 상태입니다.** 코드는 완성됐지만 `VIDEO_LLM_ENABLED=false`가 기본값이라 실제 운영에서 켜려면 별도 결정과 비용/실패 정책 점검이 필요합니다.
+3. **백업 복구 리허설이 없습니다.** 백업 자체는 실제 MySQL 대상으로 검증됐지만, 복구가 실제로 되는지 확인된 적이 없습니다.
+4. **스케줄러 분산 락이 Redis 장애 시 fail-open입니다.** 의도된 트레이드오프이지만, Redis 다운 상황에서 스케줄러 중복 실행 가능성이 문서화되어 있어야 합니다.
+5. **구 프론트 테스트 파일이 localStorage 가정을 갖고 있습니다.** 실제 구현(쿠키 기반)과 테스트 가정이 어긋나 있어 테스트가 실제 동작을 검증하지 못하고 있을 가능성이 있습니다(`AuthContext.test.jsx`, `apiClient.test.js` 확인 필요).

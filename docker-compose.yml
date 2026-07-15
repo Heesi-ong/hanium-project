@@ -161,6 +161,7 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SECURITY_JWT_SECRET: ${SECURITY_JWT_SECRET:-presentation-coaching-local-jwt-secret-change-me-2026}
       SECURITY_JWT_EXPIRATION_MINUTES: ${SECURITY_JWT_EXPIRATION_MINUTES:-30}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${DB_NAME:-hanium_dev}
@@ -245,6 +246,7 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SECURITY_JWT_SECRET: ${SECURITY_JWT_SECRET:-presentation-coaching-local-jwt-secret-change-me-2026}
       SECURITY_JWT_EXPIRATION_MINUTES: ${SECURITY_JWT_EXPIRATION_MINUTES:-30}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${DB_NAME:-hanium_dev}

@@ -271,9 +271,9 @@ pre {
   min-height: 180px;
   margin-top: 20px;
   padding: 28px;
-  border: 2px dashed rgba(226, 112, 74, 0.35);
+  border: 2px dashed rgba(242, 116, 36, 0.35);
   border-radius: 20px;
-  background: rgba(226, 112, 74, 0.05);
+  background: rgba(242, 116, 36, 0.05);
   transition:
           border-color 0.2s ease,
           background 0.2s ease,
@@ -281,14 +281,14 @@ pre {
 }
 
 .file-drop-zone:hover {
-  border-color: #E2704A;
-  background: rgba(226, 112, 74, 0.09);
+  border-color: #F27424;
+  background: rgba(242, 116, 36, 0.09);
 }
 
 .file-drop-zone.drag-active {
-  border-color: #E2704A;
-  background: rgba(226, 112, 74, 0.12);
-  box-shadow: 0 0 0 4px rgba(226, 112, 74, 0.14);
+  border-color: #F27424;
+  background: rgba(242, 116, 36, 0.12);
+  box-shadow: 0 0 0 4px rgba(242, 116, 36, 0.14);
 }
 
 .file-drop-zone input {
@@ -296,7 +296,7 @@ pre {
 }
 
 .file-drop-title {
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 18px;
   font-weight: 800;
   line-height: 1.5;
@@ -305,17 +305,17 @@ pre {
 
 .file-drop-subtitle {
   margin-top: 8px;
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 14px;
 }
 
 .upload-video-preview {
   margin-top: 16px;
   padding: 12px;
-  border: 1px solid #dbe4f0;
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 18px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  background: #17130F;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
 }
 
 .option-panel {
@@ -324,14 +324,14 @@ pre {
   gap: 14px;
   margin-top: 22px;
   padding: 18px;
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 18px;
-  background: #F1EBE3;
+  background: #211A14;
 }
 
 .option-panel h3 {
   margin: 0;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 16px;
 }
 
@@ -340,7 +340,7 @@ pre {
   grid-template-columns: 20px 1fr;
   gap: 12px;
   align-items: start;
-  color: #1e293b;
+  color: #F5EFE8;
 }
 
 .option-row input {
@@ -357,7 +357,7 @@ pre {
 
 .option-row small {
   display: block;
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -594,18 +594,18 @@ pre {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 0;
-  border-bottom: 1px solid rgba(43, 36, 32, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .result-row span,
 .stored-path span {
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 14px;
   font-weight: 700;
 }
 
 .result-row strong {
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 14px;
   text-align: right;
   word-break: break-all;
@@ -629,14 +629,14 @@ pre {
 .pipeline-box {
   margin-top: 22px;
   padding: 18px;
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 18px;
-  background: #F1EBE3;
+  background: #211A14;
 }
 
 .pipeline-box h3 {
   margin: 0 0 16px;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 16px;
 }
 
@@ -648,21 +648,21 @@ pre {
   width: 100%;
   height: 10px;
   border-radius: 999px;
-  background: #F1EBE3;
+  background: #17130F;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
   border-radius: 999px;
-  background: #1d4ed8;
+  background: #F27424;
   transition: width 0.4s ease;
 }
 
 .progress-bar-label {
   display: block;
   margin-top: 8px;
-  color: #475569;
+  color: #B7ADA4;
   font-size: 13px;
   font-weight: 700;
 }
@@ -678,7 +678,7 @@ pre {
   grid-template-columns: 18px 1fr;
   gap: 10px;
   align-items: center;
-  color: #94a3b8;
+  color: #776E66;
   font-size: 13px;
   font-weight: 800;
 }
@@ -686,9 +686,9 @@ pre {
 .pipeline-step span {
   width: 12px;
   height: 12px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid rgba(255, 255, 255, 0.15);
   border-radius: 999px;
-  background: #ffffff;
+  background: #17130F;
 }
 
 .pipeline-step strong {
@@ -696,31 +696,31 @@ pre {
 }
 
 .pipeline-step.done {
-  color: #166534;
+  color: #4FC78A;
 }
 
 .pipeline-step.done span {
-  border-color: #16a34a;
-  background: #22c55e;
+  border-color: #4FC78A;
+  background: #4FC78A;
 }
 
 .pipeline-step.active {
-  color: #1d4ed8;
+  color: #FF934D;
 }
 
 .pipeline-step.active span {
-  border-color: #1d4ed8;
-  background: #60a5fa;
-  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.16);
+  border-color: #FF934D;
+  background: #F27424;
+  box-shadow: 0 0 0 5px rgba(242, 116, 36, 0.18);
 }
 
 .pipeline-step.failed {
-  color: #b91c1c;
+  color: #E7685A;
 }
 
 .pipeline-step.failed span {
-  border-color: #dc2626;
-  background: #ef4444;
+  border-color: #E7685A;
+  background: #E7685A;
 }
 
 .summary-grid {
@@ -735,7 +735,7 @@ pre {
 
 .summary-card span {
   display: block;
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 14px;
   font-weight: 800;
 }
@@ -743,7 +743,7 @@ pre {
 .summary-card strong {
   display: block;
   margin-top: 8px;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 34px;
   line-height: 1;
   letter-spacing: -0.05em;

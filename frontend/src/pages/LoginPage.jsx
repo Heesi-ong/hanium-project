@@ -60,7 +60,7 @@ function LoginPage() {
     }
 
     return (
-        <main className="app-main">
+        <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
             <section className="page-section">
                 <article className="upload-card">
                     <p className="eyebrow">Sign in</p>

@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.admin;
 
+import com.hanium.presentation.application.user.UserWithdrawalService;
 import com.hanium.presentation.domain.admin.type.AdminAuditAction;
 import com.hanium.presentation.domain.admin.type.AdminAuditTargetType;
 import com.hanium.presentation.domain.user.entity.User;
@@ -14,13 +15,16 @@ public class AdminUserActionService {
 
     private final UserRepository userRepository;
     private final AdminAuditLogService adminAuditLogService;
+    private final UserWithdrawalService userWithdrawalService;
 
     public AdminUserActionService(
             UserRepository userRepository,
-            AdminAuditLogService adminAuditLogService
+            AdminAuditLogService adminAuditLogService,
+            UserWithdrawalService userWithdrawalService
     ) {
         this.userRepository = userRepository;
         this.adminAuditLogService = adminAuditLogService;
+        this.userWithdrawalService = userWithdrawalService;
     }
 
     @Transactional
@@ -58,6 +62,28 @@ public class AdminUserActionService {
                 AdminAuditTargetType.USER,
                 String.valueOf(targetUserId),
                 null
+        );
+    }
+
+    @Transactional
+    public void forceWithdrawUser(Long adminId, String adminEmail, Long targetUserId) {
+        if (adminId.equals(targetUserId)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE, "자기 자신은 강제 탈퇴시킬 수 없습니다.");
+        }
+
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        String targetEmail = targetUser.getEmail();
+
+        userWithdrawalService.forceWithdraw(targetUserId);
+
+        adminAuditLogService.record(
+                adminId,
+                adminEmail,
+                AdminAuditAction.FORCE_WITHDRAW_USER,
+                AdminAuditTargetType.USER,
+                String.valueOf(targetUserId),
+                targetEmail
         );
     }
 }

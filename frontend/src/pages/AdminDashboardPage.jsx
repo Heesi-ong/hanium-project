@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { activateAdminUser, getAdminStats, getAdminUsers, suspendAdminUser } from "../api/adminApi";
+import { activateAdminUser, forceWithdrawAdminUser, getAdminStats, getAdminUsers, suspendAdminUser } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
@@ -96,6 +96,31 @@ function AdminDashboardPage() {
             setError(getErrorMessage(
                 requestError,
                 "계정 상태를 변경하는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setActionUserId("");
+        }
+    }
+
+    async function handleForceWithdraw(targetUser) {
+        const confirmed = await confirm(
+            `${targetUser.email} 계정을 강제 탈퇴시키겠습니까? 소유한 분석 데이터가 모두 삭제되며 되돌릴 수 없습니다.`
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setActionUserId(targetUser.id);
+            setError("");
+
+            await forceWithdrawAdminUser(targetUser.id);
+
+            setUsers((prevUsers) => prevUsers.filter((item) => item.id !== targetUser.id));
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "계정을 강제 탈퇴시키는 중 오류가 발생했습니다."
             ));
         } finally {
             setActionUserId("");
@@ -220,16 +245,27 @@ function AdminDashboardPage() {
                                         {currentUser?.id === user.id ? (
                                             <span>-</span>
                                         ) : (
-                                            <button
-                                                type="button"
-                                                className={user.status === "SUSPENDED" ? "secondary-button" : "danger-button"}
-                                                onClick={() => handleToggleStatus(user)}
-                                                disabled={actionUserId === user.id}
-                                            >
-                                                {actionUserId === user.id
-                                                    ? "처리 중..."
-                                                    : user.status === "SUSPENDED" ? "활성화" : "정지"}
-                                            </button>
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    className={user.status === "SUSPENDED" ? "secondary-button" : "danger-button"}
+                                                    onClick={() => handleToggleStatus(user)}
+                                                    disabled={actionUserId === user.id}
+                                                >
+                                                    {actionUserId === user.id
+                                                        ? "처리 중..."
+                                                        : user.status === "SUSPENDED" ? "활성화" : "정지"}
+                                                </button>
+                                                {" "}
+                                                <button
+                                                    type="button"
+                                                    className="danger-button"
+                                                    onClick={() => handleForceWithdraw(user)}
+                                                    disabled={actionUserId === user.id}
+                                                >
+                                                    {actionUserId === user.id ? "처리 중..." : "강제 탈퇴"}
+                                                </button>
+                                            </>
                                         )}
                                     </td>
                                 </tr>

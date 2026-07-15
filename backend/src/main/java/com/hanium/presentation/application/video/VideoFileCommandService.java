@@ -9,7 +9,10 @@ import com.hanium.presentation.global.properties.StorageProperties;
 import com.hanium.presentation.global.properties.VideoProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -17,28 +20,34 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 
 @Service
 public class VideoFileCommandService {
+
+    private static final Logger log = LoggerFactory.getLogger(VideoFileCommandService.class);
 
     private final LocalFileStorage localFileStorage;
     private final FilePathGenerator filePathGenerator;
     private final StorageProperties storageProperties;
     private final VideoDurationProbe videoDurationProbe;
     private final VideoProperties videoProperties;
+    private final ObjectStorage objectStorage;
 
     public VideoFileCommandService(
             LocalFileStorage localFileStorage,
             FilePathGenerator filePathGenerator,
             StorageProperties storageProperties,
             VideoDurationProbe videoDurationProbe,
-            VideoProperties videoProperties
+            VideoProperties videoProperties,
+            ObjectStorage objectStorage
     ) {
         this.localFileStorage = localFileStorage;
         this.filePathGenerator = filePathGenerator;
         this.storageProperties = storageProperties;
         this.videoDurationProbe = videoDurationProbe;
         this.videoProperties = videoProperties;
+        this.objectStorage = objectStorage;
     }
 
     public StoredVideoInfo store(VideoUploadCommand command) {
@@ -57,6 +66,7 @@ public class VideoFileCommandService {
 
         localFileStorage.saveFile(file, storedPath);
         validateVideoDuration(storedPath);
+        mirrorToObjectStorage(command.jobId(), extension, storedPath, file);
 
         return new StoredVideoInfo(
                 originalFileName,
@@ -64,6 +74,27 @@ public class VideoFileCommandService {
                 fileType,
                 file.getSize()
         );
+    }
+
+    /**
+     * 로컬 디스크에 저장된 원본 영상을 오브젝트 스토리지(MinIO)에도 미러링합니다.
+     * 아직 어떤 서비스도 이 사본을 실제로 읽지 않으므로(Phase C에서 전환 예정),
+     * 이 미러링은 best-effort입니다 - 실패해도 업로드 자체는 그대로 성공 처리합니다.
+     */
+    private void mirrorToObjectStorage(String jobId, String extension, Path storedPath, MultipartFile file) {
+        String objectKey = "uploads/" + jobId + "/original" + extension;
+        String contentType = Objects.requireNonNullElse(file.getContentType(), "application/octet-stream");
+
+        try (InputStream inputStream = Files.newInputStream(storedPath)) {
+            objectStorage.putObject(objectKey, inputStream, file.getSize(), contentType);
+        } catch (IOException | RuntimeException exception) {
+            log.warn(
+                    "OBJECT_STORAGE_MIRROR_FAILED jobId={} objectKey={} reason={}",
+                    jobId,
+                    objectKey,
+                    exception.toString()
+            );
+        }
     }
 
     private void validateFile(MultipartFile file) {

@@ -9,12 +9,14 @@ import com.hanium.presentation.global.properties.StorageProperties;
 import com.hanium.presentation.global.properties.VideoProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,6 +25,12 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class VideoFileCommandServiceTest {
 
@@ -30,9 +38,11 @@ class VideoFileCommandServiceTest {
     private Path tempDir;
 
     private VideoFileCommandService videoFileCommandService;
+    private ObjectStorage objectStorage;
 
     @BeforeEach
     void setUp() {
+        objectStorage = mock(ObjectStorage.class);
         videoFileCommandService = createService(0L);
     }
 
@@ -56,7 +66,8 @@ class VideoFileCommandServiceTest {
                 new FilePathGenerator(storageProperties),
                 storageProperties,
                 videoDurationProbe,
-                videoProperties
+                videoProperties,
+                objectStorage
         );
     }
 
@@ -135,7 +146,43 @@ class VideoFileCommandServiceTest {
         assertValidUpload("job-probe-failed", "video.mp4", VideoFileType.MP4, mp4Header());
     }
 
-    private void assertValidUpload(
+    @Test
+    void storeMirrorsUploadedVideoToObjectStorage() {
+        byte[] content = mp4Header();
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                "video/mp4",
+                content
+        );
+
+        videoFileCommandService.store(new VideoUploadCommand("job-mirror", file));
+
+        verify(objectStorage).putObject(
+                eq("uploads/job-mirror/original.mp4"),
+                any(InputStream.class),
+                eq((long) content.length),
+                eq("video/mp4")
+        );
+    }
+
+    @Test
+    void storeSucceedsEvenWhenObjectStorageMirrorFails() {
+        doThrow(new RuntimeException("minio down"))
+                .when(objectStorage)
+                .putObject(any(), any(), anyLong(), any());
+
+        StoredVideoInfo storedVideoInfo = assertValidUpload(
+                "job-mirror-fail",
+                "video.mp4",
+                VideoFileType.MP4,
+                mp4Header()
+        );
+
+        assertThat(storedVideoInfo).isNotNull();
+    }
+
+    private StoredVideoInfo assertValidUpload(
             String jobId,
             String fileName,
             VideoFileType expectedFileType,
@@ -155,6 +202,8 @@ class VideoFileCommandServiceTest {
         assertThat(storedVideoInfo.fileSize()).isEqualTo((long) content.length);
         assertThat(Files.exists(storedPath)).isTrue();
         assertThat(Files.exists(tempDir.resolve("uploads").resolve(jobId))).isTrue();
+
+        return storedVideoInfo;
     }
 
     private void assertInvalidUpload(

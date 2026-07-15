@@ -1,0 +1,191 @@
+import { useCallback, useEffect, useState } from "react";
+import { getAdminStats, getAdminUsers } from "../api/adminApi";
+import { getErrorMessage } from "../api/errorUtils";
+import EmptyState from "../components/EmptyState";
+import PageHeader from "../components/PageHeader";
+import StateMessage from "../components/StateMessage";
+
+function AdminDashboardPage() {
+    const [stats, setStats] = useState(null);
+    const [users, setUsers] = useState([]);
+    const [page, setPage] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [error, setError] = useState("");
+
+    const loadDashboard = useCallback(async () => {
+        try {
+            const [statsResponse, usersResponse] = await Promise.all([
+                getAdminStats(),
+                getAdminUsers({ page: 0 }),
+            ]);
+
+            setStats(statsResponse.data);
+            setUsers(usersResponse.data?.content || []);
+            setHasMore(usersResponse.data?.last === false);
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "관리자 대시보드 정보를 불러오는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 시 관리자 API를 호출한 뒤 응답 상태를 화면에 반영해야 합니다.
+        loadDashboard();
+    }, [loadDashboard]);
+
+    async function loadMoreUsers() {
+        try {
+            setLoadingMore(true);
+            setError("");
+
+            const nextPage = page + 1;
+            const usersResponse = await getAdminUsers({ page: nextPage });
+
+            setUsers((prevUsers) => [...prevUsers, ...(usersResponse.data?.content || [])]);
+            setPage(nextPage);
+            setHasMore(usersResponse.data?.last === false);
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "사용자 목록을 더 불러오는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setLoadingMore(false);
+        }
+    }
+
+    function formatDateTime(value) {
+        if (!value) {
+            return "-";
+        }
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleString("ko-KR", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    }
+
+    function formatRole(role) {
+        return role === "ADMIN" ? "관리자" : "일반 사용자";
+    }
+
+    if (loading) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Admin"
+                    title="관리자 대시보드"
+                    description="가입자 현황과 분석 작업 통계를 불러오는 중입니다."
+                />
+
+                <EmptyState
+                    loading
+                    title="로딩 중"
+                    description="잠시만 기다려 주세요."
+                />
+            </section>
+        );
+    }
+
+    return (
+        <section className="page-section">
+            <PageHeader
+                eyebrow="Admin"
+                title="관리자 대시보드"
+                description="가입자 현황과 분석 작업 통계를 확인합니다. 조회 전용이며, 사용자 개별 분석 결과 내용은 표시하지 않습니다."
+            />
+
+            <StateMessage type="error">{error}</StateMessage>
+
+            <div className="result-summary-grid">
+                <article className="summary-card">
+                    <span>전체 가입자</span>
+                    <strong>{stats?.totalUsers ?? 0}</strong>
+                    <p>지금까지 가입한 전체 사용자 수입니다.</p>
+                </article>
+
+                <article className="summary-card">
+                    <span>관리자</span>
+                    <strong>{stats?.adminUsers ?? 0}</strong>
+                    <p>ADMIN_EMAILS에 등록된 관리자 계정 수입니다.</p>
+                </article>
+
+                <article className="summary-card">
+                    <span>전체 분석 작업</span>
+                    <strong>{stats?.totalAnalysisJobs ?? 0}</strong>
+                    <p>지금까지 접수된 전체 분석 작업 수입니다.</p>
+                </article>
+
+                <article className="summary-card">
+                    <span>완료된 분석</span>
+                    <strong>{stats?.completedAnalysisJobs ?? 0}</strong>
+                    <p>정상적으로 완료된 분석 작업 수입니다.</p>
+                </article>
+            </div>
+
+            {users.length === 0 ? (
+                <EmptyState
+                    title="표시할 사용자가 없습니다."
+                    description="아직 가입한 사용자가 없습니다."
+                />
+            ) : (
+                <div className="pose-frame-table-wrap">
+                    <h3>사용자 목록</h3>
+
+                    <table className="pose-frame-table">
+                        <thead>
+                            <tr>
+                                <th>이메일</th>
+                                <th>권한</th>
+                                <th>가입일</th>
+                                <th>온보딩</th>
+                                <th>분석 작업 수</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {users.map((user) => (
+                                <tr key={user.id}>
+                                    <td>{user.email}</td>
+                                    <td>{formatRole(user.role)}</td>
+                                    <td>{formatDateTime(user.createdAt)}</td>
+                                    <td>{user.onboardingCompleted ? "완료" : "미완료"}</td>
+                                    <td>{user.analysisJobCount}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {hasMore && (
+                <div className="button-row">
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={loadMoreUsers}
+                        disabled={loadingMore}
+                    >
+                        {loadingMore ? "불러오는 중..." : "더 보기"}
+                    </button>
+                </div>
+            )}
+        </section>
+    );
+}
+
+export default AdminDashboardPage;

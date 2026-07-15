@@ -53,6 +53,12 @@ function MainLayout() {
                                     시스템 상태
                                 </NavLink>
 
+                                {user?.admin && (
+                                    <NavLink to="/admin" className={navLinkClassName}>
+                                        관리자
+                                    </NavLink>
+                                )}
+
                                 {/* 로그인한 이메일 표시부를 계정 설정 진입점으로 합쳤습니다.
                                     이메일을 누르면 /account(계정 설정)로 이동합니다. */}
                                 <NavLink to="/account" className={accountLinkClassName} title="계정 설정">

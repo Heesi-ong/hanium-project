@@ -9,7 +9,7 @@ const hintStyle = {
     display: "block",
     marginTop: 6,
     fontSize: 13,
-    color: "#5C534B",
+    color: "#B7ADA4",
 };
 
 function SignupPage() {
@@ -65,7 +65,7 @@ function SignupPage() {
     }
 
     return (
-        <main className="app-main">
+        <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
             <section className="page-section">
                 <article className="upload-card">
                     <p className="eyebrow">Create account</p>

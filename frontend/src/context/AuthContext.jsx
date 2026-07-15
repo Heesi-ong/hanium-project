@@ -63,6 +63,10 @@ export function AuthProvider({ children }) {
         }
     }, [showToast]);
 
+    const updateUser = useCallback((patch) => {
+        setUser((previous) => (previous ? { ...previous, ...patch } : previous));
+    }, []);
+
     const value = useMemo(
         () => ({
             user,
@@ -70,8 +74,9 @@ export function AuthProvider({ children }) {
             isAuthenticated: Boolean(user),
             login,
             logout,
+            updateUser,
         }),
-        [user, isInitializing, login, logout]
+        [user, isInitializing, login, logout, updateUser]
     );
 
     return (

@@ -12,6 +12,7 @@ const LoginPage = lazy(() => import("../pages/LoginPage"));
 const SignupPage = lazy(() => import("../pages/SignupPage"));
 const ForgotPasswordPage = lazy(() => import("../pages/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("../pages/ResetPasswordPage"));
+const OnboardingPage = lazy(() => import("../pages/OnboardingPage"));
 const PrivacyPage = lazy(() => import("../pages/PrivacyPage"));
 const TermsPage = lazy(() => import("../pages/TermsPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
@@ -42,6 +43,7 @@ function AppRoutes() {
                     <Route path="/terms" element={<TermsPage />} />
 
                     <Route element={<ProtectedRoute />}>
+                        <Route path="/onboarding" element={<OnboardingPage />} />
                         <Route path="/upload" element={<UploadPage />} />
                         <Route path="/results" element={<ResultListPage />} />
                         <Route path="/results/:jobId" element={<ResultDetailPage />} />

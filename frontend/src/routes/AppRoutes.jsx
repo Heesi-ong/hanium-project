@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import MainLayout from "../layouts/MainLayout";
+import AdminRoute from "./AdminRoute";
 import ProtectedRoute from "./ProtectedRoute";
 import Spinner from "../components/Spinner";
 
@@ -18,6 +19,7 @@ const TermsPage = lazy(() => import("../pages/TermsPage"));
 const PricingPage = lazy(() => import("../pages/PricingPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
 const StatusPage = lazy(() => import("../pages/StatusPage"));
+const AdminDashboardPage = lazy(() => import("../pages/AdminDashboardPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
 
 function RouteLoadingFallback() {
@@ -51,6 +53,10 @@ function AppRoutes() {
                         <Route path="/results/:jobId" element={<ResultDetailPage />} />
                         <Route path="/account" element={<AccountPage />} />
                         <Route path="/status" element={<StatusPage />} />
+                    </Route>
+
+                    <Route element={<AdminRoute />}>
+                        <Route path="/admin" element={<AdminDashboardPage />} />
                     </Route>
 
                     <Route path="*" element={<NotFoundPage />} />

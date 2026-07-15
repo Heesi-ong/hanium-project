@@ -2,6 +2,7 @@ package com.hanium.presentation.presentation.controller;
 
 import com.hanium.presentation.application.admin.AdminAuditLogService;
 import com.hanium.presentation.application.admin.AdminDashboardService;
+import com.hanium.presentation.application.admin.AdminResultActionService;
 import com.hanium.presentation.application.admin.AdminUserActionService;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
@@ -15,6 +16,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 관리자 전용 API입니다. 조회(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그)에 더해
- * 계정 정지/활성화, 강제 탈퇴 액션을 제공합니다. 결과 삭제는 후속 Unit에서 추가합니다.
+ * 계정 정지/활성화, 강제 탈퇴, 분석 결과 삭제 액션을 제공합니다.
  */
 @RestController
 @RequestMapping("/api/admin")
@@ -36,15 +38,18 @@ public class AdminController {
     private final AdminDashboardService adminDashboardService;
     private final AdminAuditLogService adminAuditLogService;
     private final AdminUserActionService adminUserActionService;
+    private final AdminResultActionService adminResultActionService;
 
     public AdminController(
             AdminDashboardService adminDashboardService,
             AdminAuditLogService adminAuditLogService,
-            AdminUserActionService adminUserActionService
+            AdminUserActionService adminUserActionService,
+            AdminResultActionService adminResultActionService
     ) {
         this.adminDashboardService = adminDashboardService;
         this.adminAuditLogService = adminAuditLogService;
         this.adminUserActionService = adminUserActionService;
+        this.adminResultActionService = adminResultActionService;
     }
 
     @GetMapping("/ping")
@@ -131,6 +136,16 @@ public class AdminController {
         adminUserActionService.forceWithdrawUser(getCurrentUserId(authentication), authentication.getName(), userId);
 
         return ApiResponse.success("사용자를 강제 탈퇴시켰습니다.");
+    }
+
+    @DeleteMapping("/results/{jobId}")
+    public ApiResponse<Void> deleteResult(
+            @PathVariable String jobId,
+            Authentication authentication
+    ) {
+        adminResultActionService.deleteResult(getCurrentUserId(authentication), authentication.getName(), jobId);
+
+        return ApiResponse.success("분석 결과를 삭제했습니다.");
     }
 
     private Long getCurrentUserId(Authentication authentication) {

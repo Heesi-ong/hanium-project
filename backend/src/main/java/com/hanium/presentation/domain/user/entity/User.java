@@ -35,6 +35,18 @@ public class User {
     @Column(name = "password_changed_at")
     private LocalDateTime passwordChangedAt;
 
+    @Column(name = "purpose", length = 30)
+    private String purpose;
+
+    @Column(name = "experience_level", length = 30)
+    private String experienceLevel;
+
+    @Column(name = "improvement_goal", length = 30)
+    private String improvementGoal;
+
+    @Column(name = "onboarding_completed_at")
+    private LocalDateTime onboardingCompletedAt;
+
     protected User() {
     }
 
@@ -95,5 +107,28 @@ public class User {
 
     public LocalDateTime getPasswordChangedAt() {
         return passwordChangedAt;
+    }
+
+    public void completeOnboarding(String purpose, String experienceLevel, String improvementGoal) {
+        this.purpose = purpose;
+        this.experienceLevel = experienceLevel;
+        this.improvementGoal = improvementGoal;
+        this.onboardingCompletedAt = LocalDateTime.now();
+    }
+
+    public String getPurpose() {
+        return purpose;
+    }
+
+    public String getExperienceLevel() {
+        return experienceLevel;
+    }
+
+    public String getImprovementGoal() {
+        return improvementGoal;
+    }
+
+    public LocalDateTime getOnboardingCompletedAt() {
+        return onboardingCompletedAt;
     }
 }

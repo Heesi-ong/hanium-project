@@ -29,6 +29,7 @@ class OpenAiUsageMetricsTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
 

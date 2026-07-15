@@ -1,5 +1,7 @@
 package com.hanium.presentation.infrastructure.client.openai.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +29,21 @@ public record OpenAiResponsesApiRequest(
         );
     }
 
+    // AI 코치 대화용: 멀티턴 메시지 목록을 그대로 받아 자유 텍스트 응답을 요청한다.
+    // 피드백 생성(create)과 달리 json_schema 구조 강제가 없다 (TextFormat.text()).
+    public static OpenAiResponsesApiRequest createChat(
+            String model,
+            List<InputMessage> messages
+    ) {
+        return new OpenAiResponsesApiRequest(
+                model,
+                messages,
+                TextFormat.text(),
+                800,
+                false
+        );
+    }
+
     public record InputMessage(
             String role,
             List<Content> content
@@ -41,6 +58,13 @@ public record OpenAiResponsesApiRequest(
         public static InputMessage user(String text) {
             return new InputMessage(
                     "user",
+                    List.of(Content.inputText(text))
+            );
+        }
+
+        public static InputMessage assistant(String text) {
+            return new InputMessage(
+                    "assistant",
                     List.of(Content.inputText(text))
             );
         }
@@ -68,6 +92,11 @@ public record OpenAiResponsesApiRequest(
                             createSchema()
                     )
             );
+        }
+
+        // AI 코치 대화용: 구조 강제 없이 일반 텍스트로 응답받는다.
+        public static TextFormat text() {
+            return new TextFormat(new Format("text", null, null, null, null));
         }
 
         private static Map<String, Object> createSchema() {
@@ -139,6 +168,7 @@ public record OpenAiResponsesApiRequest(
         }
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Format(
             String type,
             String name,

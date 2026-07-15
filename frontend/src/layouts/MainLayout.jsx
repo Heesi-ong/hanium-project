@@ -35,6 +35,10 @@ function MainLayout() {
                             홈
                         </NavLink>
 
+                        <NavLink to="/pricing" className={navLinkClassName}>
+                            요금제
+                        </NavLink>
+
                         {isAuthenticated ? (
                             <>
                                 <NavLink to="/upload" className={navLinkClassName}>

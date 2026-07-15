@@ -75,6 +75,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll()
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()
                 )
@@ -286,10 +287,21 @@ public class SecurityConfig {
                     new UsernamePasswordAuthenticationToken(
                             user.getEmail(),
                             null,
-                            USER_AUTHORITIES
+                            resolveAuthorities(user)
                     );
             authentication.setDetails(user.getId());
             SecurityContextHolder.getContext().setAuthentication(authentication);
+        }
+
+        private List<SimpleGrantedAuthority> resolveAuthorities(User user) {
+            if (user.isAdmin()) {
+                return List.of(
+                        new SimpleGrantedAuthority("ROLE_USER"),
+                        new SimpleGrantedAuthority("ROLE_ADMIN")
+                );
+            }
+
+            return USER_AUTHORITIES;
         }
     }
 }

@@ -4,6 +4,7 @@ import com.hanium.presentation.global.properties.AdminProperties;
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
+import com.hanium.presentation.global.properties.MinioProperties;
 import com.hanium.presentation.global.properties.OpenAiProperties;
 import com.hanium.presentation.global.properties.RateLimitProperties;
 import com.hanium.presentation.global.properties.StorageProperties;
@@ -22,7 +23,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         AnalysisRetryProperties.class,
         AnalysisQueueProperties.class,
         VideoProperties.class,
-        AdminProperties.class
+        AdminProperties.class,
+        MinioProperties.class
 })
 @SpringBootApplication
 public class BackendApplication {

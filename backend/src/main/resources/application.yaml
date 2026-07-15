@@ -172,6 +172,12 @@ storage:
     cron: "${STORAGE_RETENTION_CRON:0 0 3 * * *}"
     original-video-days: ${STORAGE_RETENTION_ORIGINAL_VIDEO_DAYS:30}
 
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  bucket-name: ${MINIO_BUCKET_NAME:hanium-storage}
+
 video:
   max-duration-minutes: ${VIDEO_MAX_DURATION_MINUTES:30}
 

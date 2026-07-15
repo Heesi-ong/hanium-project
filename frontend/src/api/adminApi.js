@@ -44,3 +44,8 @@ export async function activateAdminUser(userId) {
     const response = await apiClient.post(`/api/admin/users/${userId}/activate`);
     return unwrapApiResponse(response);
 }
+
+export async function forceWithdrawAdminUser(userId) {
+    const response = await apiClient.post(`/api/admin/users/${userId}/withdraw`);
+    return unwrapApiResponse(response);
+}

@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 관리자 전용 API입니다. 조회(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그)에 더해
- * 이번 Unit부터 계정 정지/활성화 액션을 제공합니다. 강제 탈퇴/결과 삭제는 후속 Unit에서 추가합니다.
+ * 계정 정지/활성화, 강제 탈퇴 액션을 제공합니다. 결과 삭제는 후속 Unit에서 추가합니다.
  */
 @RestController
 @RequestMapping("/api/admin")
@@ -121,6 +121,16 @@ public class AdminController {
         adminUserActionService.activateUser(getCurrentUserId(authentication), authentication.getName(), userId);
 
         return ApiResponse.success("사용자를 활성화했습니다.");
+    }
+
+    @PostMapping("/users/{userId}/withdraw")
+    public ApiResponse<Void> forceWithdrawUser(
+            @PathVariable Long userId,
+            Authentication authentication
+    ) {
+        adminUserActionService.forceWithdrawUser(getCurrentUserId(authentication), authentication.getName(), userId);
+
+        return ApiResponse.success("사용자를 강제 탈퇴시켰습니다.");
     }
 
     private Long getCurrentUserId(Authentication authentication) {

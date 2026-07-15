@@ -45,11 +45,27 @@ public class UserWithdrawalService {
             throw new BusinessException(ErrorCode.INVALID_PASSWORD);
         }
 
+        deleteUserAndOwnedResults(user);
+    }
+
+    /**
+     * 관리자가 대상 사용자의 비밀번호 없이 강제로 탈퇴시킵니다.
+     * 관리자 권한 검증과 감사로그 기록은 호출 측(AdminUserActionService)의 책임입니다.
+     */
+    public void forceWithdraw(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+        deleteUserAndOwnedResults(user);
+    }
+
+    private void deleteUserAndOwnedResults(User user) {
+        Long userId = user.getId();
         List<String> failedJobIds = deleteOwnedResults(userId);
         if (!failedJobIds.isEmpty()) {
             throw new BusinessException(
                     ErrorCode.FILE_DELETE_FAILED,
-                    "일부 분석 데이터 삭제에 실패해 회원탈퇴를 중단했습니다."
+                    "일부 분석 데이터 삭제에 실패해 탈퇴를 중단했습니다."
             );
         }
 

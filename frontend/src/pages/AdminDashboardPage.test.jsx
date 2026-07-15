@@ -9,6 +9,7 @@ const apiMock = vi.hoisted(() => ({
     getAdminUsers: vi.fn(),
     suspendAdminUser: vi.fn(),
     activateAdminUser: vi.fn(),
+    forceWithdrawAdminUser: vi.fn(),
 }));
 
 const authMock = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ vi.mock("../api/adminApi", () => ({
     getAdminUsers: apiMock.getAdminUsers,
     suspendAdminUser: apiMock.suspendAdminUser,
     activateAdminUser: apiMock.activateAdminUser,
+    forceWithdrawAdminUser: apiMock.forceWithdrawAdminUser,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -91,6 +93,7 @@ describe("AdminDashboardPage", () => {
         apiMock.getAdminUsers.mockReset();
         apiMock.suspendAdminUser.mockReset();
         apiMock.activateAdminUser.mockReset();
+        apiMock.forceWithdrawAdminUser.mockReset();
         confirmMock.confirm.mockReset();
         confirmMock.confirm.mockResolvedValue(true);
     });
@@ -150,5 +153,24 @@ describe("AdminDashboardPage", () => {
         await screen.findByText("member@example.com");
 
         expect(screen.getAllByRole("button", { name: "정지" })).toHaveLength(1);
+    });
+
+    it("force-withdraws another user after confirmation and removes the row", async () => {
+        apiMock.getAdminStats.mockResolvedValue(statsResponse);
+        apiMock.getAdminUsers.mockResolvedValue(usersResponse);
+        apiMock.forceWithdrawAdminUser.mockResolvedValue({ success: true });
+
+        renderAdminDashboardPage();
+
+        await screen.findByText("member@example.com");
+
+        fireEvent.click(screen.getByRole("button", { name: "강제 탈퇴" }));
+
+        await waitFor(() => {
+            expect(apiMock.forceWithdrawAdminUser).toHaveBeenCalledWith(2);
+        });
+        await waitFor(() => {
+            expect(screen.queryByText("member@example.com")).not.toBeInTheDocument();
+        });
     });
 });

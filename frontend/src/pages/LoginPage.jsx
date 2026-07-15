@@ -40,7 +40,7 @@ function LoginPage() {
             setLoading(true);
             setError("");
 
-            await login({
+            const result = await login({
                 email,
                 password,
             });
@@ -48,6 +48,12 @@ function LoginPage() {
             sessionStorage.removeItem("redirectAfterLogin");
             sessionStorage.removeItem("sessionExpired");
             setSessionExpired(false);
+
+            if (result.user?.onboardingCompleted === false) {
+                navigate("/onboarding", { replace: true, state: { from: redirectPath } });
+                return;
+            }
+
             navigate(redirectPath, { replace: true });
         } catch (requestError) {
             setError(

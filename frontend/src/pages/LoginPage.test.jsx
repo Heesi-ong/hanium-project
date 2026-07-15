@@ -23,6 +23,7 @@ function renderLoginPage() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/" element={<div>홈</div>} />
                 <Route path="/results/:jobId" element={<div>결과 상세</div>} />
+                <Route path="/onboarding" element={<div>온보딩</div>} />
             </Routes>
         </MemoryRouter>
     );
@@ -75,5 +76,26 @@ describe("LoginPage", () => {
 
         expect(screen.getByRole("link", { name: "비밀번호를 잊으셨나요?" }))
             .toHaveAttribute("href", "/forgot-password");
+    });
+
+    it("redirects to onboarding when the logged-in user has not completed it", async () => {
+        authMock.login.mockResolvedValue({
+            accessToken: "token",
+            user: { email: "user@example.com", onboardingCompleted: false },
+        });
+
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText("이메일"), {
+            target: { value: "user@example.com" },
+        });
+        fireEvent.change(screen.getByLabelText("비밀번호"), {
+            target: { value: "password123" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+        await waitFor(() => {
+            expect(screen.getByText("온보딩")).toBeInTheDocument();
+        });
     });
 });

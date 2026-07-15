@@ -177,6 +177,10 @@ function AdminDashboardPage() {
                 description="가입자 현황과 분석 작업 통계를 확인합니다. 사용자 개별 분석 결과 내용은 상세 화면에서만 확인할 수 있습니다."
             />
 
+            <p className="policy-links">
+                <Link to="/admin/audit-logs">감사로그 보기 →</Link>
+            </p>
+
             <StateMessage type="error">{error}</StateMessage>
 
             <div className="result-summary-grid">

@@ -54,3 +54,18 @@ export async function deleteAdminResult(jobId) {
     const response = await apiClient.delete(`/api/admin/results/${jobId}`);
     return unwrapApiResponse(response);
 }
+
+export async function getAdminAuditLogs({ page, size } = {}) {
+    const params = {};
+
+    if (page !== undefined) {
+        params.page = page;
+    }
+
+    if (size !== undefined) {
+        params.size = size;
+    }
+
+    const response = await apiClient.get("/api/admin/audit-logs", { params });
+    return unwrapApiResponse(response);
+}

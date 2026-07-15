@@ -1098,7 +1098,7 @@ pre {
 .feedback-block {
   padding: 20px;
   border-radius: 18px;
-  background: #F1EBE3;
+  background: #211A14;
 }
 
 .feedback-block h3,
@@ -1106,7 +1106,7 @@ pre {
 .practice-item h3,
 .timeline-item h3 {
   margin: 0 0 8px;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 16px;
 }
 
@@ -1115,7 +1115,7 @@ pre {
 .timeline-item p,
 .muted-text {
   margin: 0;
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 14px;
   line-height: 1.7;
 }
@@ -1129,14 +1129,14 @@ pre {
 
 .feedback-columns div {
   padding: 20px;
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 18px;
 }
 
 .feedback-columns ul {
   margin: 0;
   padding-left: 18px;
-  color: #2B2420;
+  color: #F5EFE8;
   line-height: 1.7;
 }
 
@@ -1152,17 +1152,17 @@ pre {
   gap: 8px;
   padding: 14px;
   border-radius: 14px;
-  background: #F1EBE3;
+  background: #211A14;
 }
 
 .key-value-item span {
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 13px;
   font-weight: 900;
 }
 
 .key-value-item strong {
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 14px;
   word-break: break-all;
 }
@@ -1180,7 +1180,7 @@ pre {
   gap: 14px;
   padding: 18px;
   border-radius: 18px;
-  background: #F1EBE3;
+  background: #211A14;
 }
 
 .practice-item > span {
@@ -1190,8 +1190,8 @@ pre {
   width: 38px;
   height: 38px;
   border-radius: 14px;
-  background: #E2704A;
-  color: #ffffff;
+  background: #C85A19;
+  color: #F7F3EE;
   font-weight: 900;
 }
 
@@ -1200,16 +1200,16 @@ pre {
   margin-top: 10px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: rgba(114, 165, 255, 0.16);
+  color: #72A5FF;
   font-size: 12px;
 }
 
 .timeline-item {
   padding: 18px;
-  border-left: 4px solid #E2704A;
+  border-left: 4px solid #F27424;
   border-radius: 16px;
-  background: #F1EBE3;
+  background: #211A14;
 }
 
 .timeline-item > span {
@@ -1217,8 +1217,8 @@ pre {
   margin-bottom: 10px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: rgba(242, 116, 36, 0.16);
+  color: #FF934D;
   font-size: 12px;
   font-weight: 900;
 }

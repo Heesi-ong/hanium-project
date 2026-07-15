@@ -148,6 +148,13 @@ public class AuthController {
                     .body(ApiResponse.fail("이메일 또는 비밀번호가 올바르지 않습니다."));
         }
 
+        if (user.isSuspended()) {
+            ErrorCode errorCode = ErrorCode.ACCOUNT_SUSPENDED;
+            return ResponseEntity
+                    .status(errorCode.getStatus())
+                    .body(ApiResponse.fail(errorCode.getMessage()));
+        }
+
         UserRole expectedRole = adminProperties.isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER;
         if (user.getRole() != expectedRole) {
             user.syncRole(expectedRole);

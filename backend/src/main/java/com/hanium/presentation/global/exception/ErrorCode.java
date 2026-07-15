@@ -16,6 +16,7 @@ public enum ErrorCode {
     VIDEO_DURATION_EXCEEDED(HttpStatus.BAD_REQUEST, "허용된 최대 재생 시간을 초과한 영상입니다."),
     INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "비밀번호가 올바르지 않습니다."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
+    ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "정지된 계정입니다. 관리자에게 문의해주세요."),
 
     ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다."),
     ANALYSIS_JOB_ACCESS_DENIED(HttpStatus.FORBIDDEN, "본인이 소유한 분석 작업이 아닙니다."),

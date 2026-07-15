@@ -63,7 +63,7 @@ pre {
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #B85530;
+  color: #FF934D;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -73,7 +73,7 @@ pre {
 .page-header h1,
 .detail-header-card h1 {
   margin: 0;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: clamp(36px, 6vw, 64px);
   line-height: 1.05;
   letter-spacing: -0.055em;
@@ -82,7 +82,7 @@ pre {
 .hero-description {
   max-width: 680px;
   margin: 24px 0 0;
-  color: #475569;
+  color: #B7ADA4;
   font-size: 18px;
   line-height: 1.7;
 }
@@ -126,101 +126,101 @@ pre {
 }
 
 .primary-button {
-  background: #2B2420;
-  color: #FAF6F1;
+  background: #C85A19;
+  color: #F7F3EE;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: #3F342D;
+  background: #F27424;
 }
 
 .secondary-button {
-  border: 1px solid rgba(43, 36, 32, 0.18);
-  background: #ffffff;
-  color: #2B2420;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: #211A14;
+  color: #F5EFE8;
 }
 
 .secondary-button:hover:not(:disabled) {
-  background: #F1EBE3;
+  background: #2A2018;
 }
 
 .danger-button {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(231, 104, 90, 0.16);
+  color: #E7685A;
 }
 
 .danger-button:hover:not(:disabled) {
-  background: #fecaca;
+  background: rgba(231, 104, 90, 0.26);
 }
 
 .upload-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .summary-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .detail-header-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .score-panel {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .score-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .detail-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .engine-dashboard {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .engine-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .metric-card {
-  border: 1px solid rgba(43, 36, 32, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 22px;
-  background: #ffffff;
-  box-shadow: 0 16px 42px rgba(43, 36, 32, 0.06);
+  background: #17130F;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
 
 .upload-card h2,
 .detail-card h2,
 .section-title-row h2 {
   margin: 0 0 10px;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 20px;
   letter-spacing: -0.03em;
 }
@@ -231,7 +231,7 @@ pre {
 .section-title-row p,
 .engine-card p {
   margin: 0;
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 15px;
   line-height: 1.7;
 }

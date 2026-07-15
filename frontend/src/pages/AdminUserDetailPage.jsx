@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getAdminUserResults } from "../api/adminApi";
+import { deleteAdminResult, getAdminUserResults } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
+import { useConfirm } from "../context/ConfirmContext";
 
 function AdminUserDetailPage() {
     const { userId } = useParams();
+    const confirm = useConfirm();
+    const [actionJobId, setActionJobId] = useState("");
     const [results, setResults] = useState([]);
     const [page, setPage] = useState(0);
     const [hasMore, setHasMore] = useState(false);
@@ -95,6 +98,31 @@ function AdminUserDetailPage() {
         });
     }
 
+    async function handleDeleteResult(jobId) {
+        const confirmed = await confirm(
+            "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 파일도 함께 삭제되며 되돌릴 수 없습니다."
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setActionJobId(jobId);
+            setError("");
+
+            await deleteAdminResult(jobId);
+
+            setResults((prevResults) => prevResults.filter((item) => item.jobId !== jobId));
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "분석 결과를 삭제하는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setActionJobId("");
+        }
+    }
+
     if (loading) {
         return (
             <section className="page-section">
@@ -170,6 +198,17 @@ function AdminUserDetailPage() {
                                         <span>생성일</span>
                                         <strong>{formatDateTime(result.createdAt)}</strong>
                                     </div>
+                                </div>
+
+                                <div className="button-row">
+                                    <button
+                                        type="button"
+                                        className="danger-button"
+                                        onClick={() => handleDeleteResult(result.jobId)}
+                                        disabled={actionJobId === result.jobId}
+                                    >
+                                        {actionJobId === result.jobId ? "삭제 중..." : "삭제"}
+                                    </button>
                                 </div>
                             </article>
                         );

@@ -49,3 +49,8 @@ export async function forceWithdrawAdminUser(userId) {
     const response = await apiClient.post(`/api/admin/users/${userId}/withdraw`);
     return unwrapApiResponse(response);
 }
+
+export async function deleteAdminResult(jobId) {
+    const response = await apiClient.delete(`/api/admin/results/${jobId}`);
+    return unwrapApiResponse(response);
+}

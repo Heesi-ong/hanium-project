@@ -335,11 +335,16 @@ public class AuthController {
 
     public record AuthUserResponse(
             Long id,
-            String email
+            String email,
+            boolean onboardingCompleted
     ) {
 
         public static AuthUserResponse from(User user) {
-            return new AuthUserResponse(user.getId(), user.getEmail());
+            return new AuthUserResponse(
+                    user.getId(),
+                    user.getEmail(),
+                    user.getOnboardingCompletedAt() != null
+            );
         }
     }
 

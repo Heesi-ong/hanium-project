@@ -1058,10 +1058,10 @@ pre {
 .policy-disclaimer {
   margin: 18px 0 24px;
   padding: 14px 16px;
-  border: 1px solid #f59e0b;
+  border: 1px solid rgba(244, 176, 74, 0.35);
   border-radius: 8px;
-  background: #fffbeb;
-  color: #92400e;
+  background: rgba(244, 176, 74, 0.12);
+  color: #F4B04A;
   font-weight: 800;
   line-height: 1.6;
 }
@@ -1072,12 +1072,12 @@ pre {
 
 .policy-section h3 {
   margin: 0 0 10px;
-  color: #2B2420;
+  color: #F5EFE8;
 }
 
 .policy-section p {
   margin: 0;
-  color: #5C534B;
+  color: #B7ADA4;
   line-height: 1.8;
 }
 
@@ -1254,7 +1254,7 @@ pre {
 
 .engine-card h3 {
   margin: 0 0 8px;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 18px;
   letter-spacing: -0.03em;
 }
@@ -1272,18 +1272,18 @@ pre {
 }
 
 .engine-status-badge.up {
-  background: #dcfce7;
-  color: #166534;
+  background: rgba(79, 199, 138, 0.16);
+  color: #4FC78A;
 }
 
 .engine-status-badge.down {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(231, 104, 90, 0.16);
+  color: #E7685A;
 }
 
 .engine-status-badge.unknown {
-  background: #f1f5f9;
-  color: #475569;
+  background: rgba(255, 255, 255, 0.12);
+  color: #776E66;
 }
 
 .engine-meta {
@@ -1296,13 +1296,13 @@ pre {
 .engine-meta div {
   min-width: 0;
   padding-top: 10px;
-  border-top: 1px solid rgba(43, 36, 32, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
 }
 
 .engine-meta span {
   display: block;
   margin-bottom: 4px;
-  color: #5C534B;
+  color: #B7ADA4;
   font-size: 12px;
   font-weight: 900;
 }
@@ -1310,7 +1310,7 @@ pre {
 .engine-meta strong {
   display: block;
   overflow: hidden;
-  color: #2B2420;
+  color: #F5EFE8;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;

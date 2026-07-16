@@ -4,6 +4,8 @@ import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.MinioProperties;
 import io.minio.GetObjectArgs;
+import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.Http;
 import io.minio.ListObjectsArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -20,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -152,6 +155,23 @@ public class MinioObjectStorage implements ObjectStorage {
         } catch (Exception exception) {
             log.error("MINIO_DELETE_PREFIX_FAILED prefix={}", prefix, exception);
             throw new BusinessException(ErrorCode.FILE_DELETE_FAILED, "오브젝트 일괄 삭제에 실패했습니다. prefix=" + prefix);
+        }
+    }
+
+    @Override
+    public String generatePresignedUrl(String objectKey, Duration expiry) {
+        try {
+            return minioClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                            .bucket(bucketName)
+                            .object(objectKey)
+                            .method(Http.Method.GET)
+                            .expiry((int) expiry.toSeconds())
+                            .build()
+            );
+        } catch (Exception exception) {
+            log.error("MINIO_PRESIGNED_URL_FAILED objectKey={}", objectKey, exception);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "다운로드 URL 생성에 실패했습니다. key=" + objectKey);
         }
     }
 }

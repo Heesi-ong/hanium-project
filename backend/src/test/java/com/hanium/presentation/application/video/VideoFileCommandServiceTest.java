@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class VideoFileCommandServiceTest {
 
@@ -180,6 +181,32 @@ class VideoFileCommandServiceTest {
         );
 
         assertThat(storedVideoInfo).isNotNull();
+    }
+
+    @Test
+    void resolveDownloadUrlReturnsPresignedUrlFromObjectStorage() {
+        when(objectStorage.generatePresignedUrl(eq("uploads/job-download/original.mp4"), any()))
+                .thenReturn("https://minio.local/hanium-storage/uploads/job-download/original.mp4?X-Amz-Signature=abc");
+
+        String url = videoFileCommandService.resolveDownloadUrl(
+                "job-download",
+                tempDir.resolve("uploads").resolve("job-download").resolve("original.mp4").toString()
+        );
+
+        assertThat(url).isEqualTo("https://minio.local/hanium-storage/uploads/job-download/original.mp4?X-Amz-Signature=abc");
+    }
+
+    @Test
+    void resolveDownloadUrlReturnsNullWhenObjectStorageFails() {
+        when(objectStorage.generatePresignedUrl(any(), any()))
+                .thenThrow(new RuntimeException("minio down"));
+
+        String url = videoFileCommandService.resolveDownloadUrl(
+                "job-download-fail",
+                tempDir.resolve("uploads").resolve("job-download-fail").resolve("original.mp4").toString()
+        );
+
+        assertThat(url).isNull();
     }
 
     private StoredVideoInfo assertValidUpload(

@@ -858,6 +858,16 @@ DB_PASSWORD=실제비밀번호 \
 
 `restore-mysql.sh`는 로컬 호스트에 `mysql` CLI가 설치되어 있고 compose MySQL 포트가 `127.0.0.1`로 열려 있는 방식을 전제로 합니다. 대상 DB에 기존 테이블이 있으면 실수로 덮어쓰지 않도록 기본적으로 중단하며, 테스트 DB처럼 덮어써도 되는 대상임을 확인한 경우에만 `--force`를 붙여 실행합니다. 실행 로그는 `RESTORE_LOG_PATH`가 있으면 그 경로에, 없으면 `BACKUP_LOG_PATH` 또는 `storage/logs/restore.log`에 남습니다.
 
+## 14-1. MinIO 오브젝트 스토리지 백필
+
+Phase B1/B2에서 MinIO 이중 쓰기가 도입되기 전에 로컬 디스크(`storage/uploads`, `storage/results`)에만 저장된 기존 파일은 MinIO에 사본이 없습니다. `ObjectStorageBackfillRunner`는 이런 과거 파일만 MinIO로 채워 넣는 1회성 배치이며, `storage.backfill.enabled=true`(환경변수 `STORAGE_BACKFILL_ENABLED=true`)로 명시적으로 켰을 때만 동작하고 끝나면 프로세스가 자동 종료됩니다.
+
+```bash
+docker compose run --rm -e STORAGE_BACKFILL_ENABLED=true backend
+```
+
+이미 MinIO에 존재하는 오브젝트는 건너뛰므로(idempotent) 중간에 실패해도 다시 실행하면 이어서 진행됩니다. 개별 파일 업로드 실패는 `storage/logs`의 애플리케이션 로그에 `OBJECT_STORAGE_BACKFILL_FILE_FAILED`로 남고 나머지 파일 백필은 계속됩니다. 완료 시 `OBJECT_STORAGE_BACKFILL_DONE` 로그에 uploads/results 각각의 scanned/uploaded/skipped/failed 건수가 남습니다. 평소 `docker compose up`으로 기동할 때는 `STORAGE_BACKFILL_ENABLED`가 기본값 `false`이므로 이 러너는 절대 동작하지 않습니다.
+
 ## 15. 의존성 업데이트 자동화
 
 Dependabot은 매주 backend(Gradle), frontend(npm), analysis-engine/video-llm-engine(pip), 4개 Dockerfile, GitHub Actions 의존성을 확인해 업데이트 PR을 자동으로 생성합니다. 이는 CI를 즉시 실패시키는 게이트가 아니라 PR 생성 방식이므로, 실제 병합 여부는 변경 내용과 CI 결과를 사람이 검토해 결정해야 합니다.

@@ -8,6 +8,7 @@
 - 무결성: 매 백업 후 `gzip -t`와 최소 파일 크기(200바이트) 검사를 통과해야 성공으로 기록됨
 - 메트릭: `storage/metrics/mysql_backup.prom` (`mysql_backup_last_run_status`, `mysql_backup_last_success_timestamp_seconds`) — Prometheus/Grafana에서 조회 가능
 - 로그: `storage/logs/backup.log`
+- 원격 반출: 로컬 백업 성공 및 무결성 검사 통과 후, `MinIO` 버킷 `MINIO_BACKUP_BUCKET_NAME`(기본 `hanium-backups`, 사용자 파일이 들어가는 버킷과는 별도)으로 best-effort 업로드를 시도합니다. MinIO 업로드가 실패해도 로컬 백업 성공 여부와 `mysql_backup_last_run_status` 메트릭에는 영향을 주지 않습니다. 실패 시 `backup.log`에 `WARNING: MinIO 원격 반출 실패` 로그가 남습니다.
 
 ## 복구 (비상시 절차)
 

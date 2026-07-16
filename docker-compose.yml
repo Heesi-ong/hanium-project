@@ -47,6 +47,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      minio:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -63,6 +65,10 @@ services:
       BACKUP_METRICS_PATH: /metrics/mysql_backup.prom
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?.env에 MINIO_ROOT_USER를 설정하세요 (.env.example 참고).}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?.env에 MINIO_ROOT_PASSWORD를 설정하세요 (.env.example 참고). 8자 이상이어야 합니다.}
+      MINIO_BACKUP_BUCKET_NAME: ${MINIO_BACKUP_BUCKET_NAME:-hanium-backups}
     volumes:
       - ./scripts/backup-mysql.sh:/scripts/backup-mysql.sh:ro
       - ./storage/backups:/backups
@@ -72,6 +78,13 @@ services:
       - /bin/bash
       - -c
       - |
+        if ! command -v mc >/dev/null 2>&1; then
+          if curl -fsSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc && chmod +x /usr/local/bin/mc; then
+            echo "$(date -Iseconds) mc client installed" >> /logs/backup.log
+          else
+            echo "$(date -Iseconds) mc client install failed, MinIO backup export will be skipped" >> /logs/backup.log
+          fi
+        fi
         while true; do
           /bin/bash /scripts/backup-mysql.sh || echo "$(date -Iseconds) backup run failed" >> /logs/backup.log
           sleep "$((BACKUP_INTERVAL_HOURS * 3600))"
@@ -122,11 +135,13 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?.env에 MINIO_ROOT_USER를 설정하세요 (.env.example 참고).}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?.env에 MINIO_ROOT_PASSWORD를 설정하세요 (.env.example 참고). 8자 이상이어야 합니다.}
       MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-hanium-storage}
+      MINIO_BACKUP_BUCKET_NAME: ${MINIO_BACKUP_BUCKET_NAME:-hanium-backups}
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
       mc mb --ignore-existing local/$$MINIO_BUCKET_NAME &&
-      echo 'MinIO bucket ready: '$$MINIO_BUCKET_NAME
+      mc mb --ignore-existing local/$$MINIO_BACKUP_BUCKET_NAME &&
+      echo 'MinIO bucket ready: '$$MINIO_BUCKET_NAME' and '$$MINIO_BACKUP_BUCKET_NAME
       "
 
   analysis-engine:

@@ -101,6 +101,30 @@ validate_backup_file() {
     fi
 }
 
+upload_to_object_storage() {
+    local file="$1"
+    local object_name
+    object_name="$(basename "$file")"
+
+    if [[ -z "${MINIO_ENDPOINT:-}" || -z "${MINIO_ACCESS_KEY:-}" || -z "${MINIO_SECRET_KEY:-}" || -z "${MINIO_BACKUP_BUCKET_NAME:-}" ]]; then
+        log "MinIO 원격 반출 건너뜀: MINIO_ENDPOINT/MINIO_ACCESS_KEY/MINIO_SECRET_KEY/MINIO_BACKUP_BUCKET_NAME 중 일부가 설정되지 않았습니다."
+        return 0
+    fi
+
+    if ! command -v mc >/dev/null 2>&1; then
+        log "MinIO 원격 반출 건너뜀: mc 클라이언트를 찾을 수 없습니다."
+        return 0
+    fi
+
+    if mc alias set backup-remote "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" >/dev/null 2>&1 \
+        && mc mb --ignore-existing "backup-remote/$MINIO_BACKUP_BUCKET_NAME" >/dev/null 2>&1 \
+        && mc cp "$file" "backup-remote/$MINIO_BACKUP_BUCKET_NAME/$object_name" >/dev/null 2>&1; then
+        log "MinIO 원격 반출 완료: $MINIO_BACKUP_BUCKET_NAME/$object_name"
+    else
+        log "WARNING: MinIO 원격 반출 실패 (로컬 백업은 정상 완료됨): $MINIO_BACKUP_BUCKET_NAME/$object_name"
+    fi
+}
+
 log "backup started: db=$DB_NAME host=$DB_HOST port=$DB_PORT backup=$backup_file"
 
 if MYSQL_PWD="$DB_PASSWORD" "$MYSQLDUMP_BIN" \
@@ -118,6 +142,7 @@ if MYSQL_PWD="$DB_PASSWORD" "$MYSQLDUMP_BIN" \
     validate_backup_file "$backup_file"
     log "backup completed: $backup_file ($(du -h "$backup_file" | awk '{print $1}'))"
     write_metric 1
+    upload_to_object_storage "$backup_file"
 else
     rm -f "$tmp_file"
     log "ERROR: mysqldump failed; incomplete backup removed"

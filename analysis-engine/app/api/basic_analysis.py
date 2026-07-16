@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 import cv2
 import imageio_ffmpeg
 import mediapipe as mp
+import requests
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -105,6 +106,7 @@ KOREAN_FILLER_WORDS = [
 class BasicAnalysisRequest(BaseModel):
     jobId: str
     videoPath: str
+    videoDownloadUrl: str | None = None
 
 
 TOTAL_ANALYSIS_STEPS = 9
@@ -142,7 +144,11 @@ def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
 
     try:
         log_step(job_id, 1, "영상 파일 확인 중...")
-        resolved_video_path = resolve_video_path(request.videoPath)
+        resolved_video_path = resolve_or_download_video_path(
+            job_id,
+            request.videoPath,
+            request.videoDownloadUrl,
+        )
 
         if resolved_video_path is None:
             log_step(job_id, 1, "영상 파일을 찾지 못해 분석을 중단합니다.")
@@ -262,6 +268,68 @@ def resolve_video_path(video_path: str) -> Path | None:
             return normalized_path
 
     return None
+
+
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = 60
+
+
+def resolve_or_download_video_path(
+        job_id: str,
+        video_path: str,
+        video_download_url: str | None,
+) -> Path | None:
+    """videoDownloadUrl(MinIO presigned URL)이 있으면 먼저 그 영상을 내려받아 사용하고,
+    URL이 없거나 다운로드에 실패하면 기존처럼 로컬 videoPath를 그대로 사용합니다.
+    로컬 videoPath 기반 흐름은 이 함수를 거치지 않는 다른 코드에는 영향이 없습니다.
+    """
+    if video_download_url:
+        downloaded_path = download_video_from_url(job_id, video_download_url, video_path)
+
+        if downloaded_path is not None:
+            return downloaded_path
+
+        logger.warning(
+            "(%s) MinIO 다운로드 URL에서 영상을 내려받지 못해 로컬 경로로 폴백합니다.",
+            job_id,
+        )
+
+    return resolve_video_path(video_path)
+
+
+def download_video_from_url(
+        job_id: str,
+        video_download_url: str,
+        original_video_path: str,
+) -> Path | None:
+    try:
+        project_root = resolve_project_root()
+        download_directory = project_root / "storage" / "temp" / job_id / "download"
+        download_directory.mkdir(parents=True, exist_ok=True)
+
+        extension = Path(original_video_path).suffix or ".mp4"
+        download_path = download_directory / f"original{extension}"
+
+        response = requests.get(
+            video_download_url,
+            stream=True,
+            timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+
+        with open(download_path, "wb") as video_file:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    video_file.write(chunk)
+
+        if not download_path.exists() or download_path.stat().st_size == 0:
+            logger.warning("(%s) 다운로드한 영상 파일이 비어 있습니다: %s", job_id, download_path)
+            return None
+
+        return download_path.resolve()
+
+    except Exception as exception:
+        logger.warning("(%s) MinIO 다운로드 URL 요청 실패: %s", job_id, exception)
+        return None
 
 
 def resolve_project_root() -> Path:

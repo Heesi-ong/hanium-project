@@ -355,6 +355,107 @@ def test_resolve_video_path_finds_absolute_and_relative_files(tmp_path, monkeypa
     assert basic.resolve_video_path("missing.mp4") is None
 
 
+class FakeDownloadResponse:
+    def __init__(self, chunks, status_code=200):
+        self._chunks = chunks
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise basic.requests.HTTPError(f"status {self.status_code}")
+
+    def iter_content(self, chunk_size):
+        for chunk in self._chunks:
+            yield chunk
+
+
+def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout: FakeDownloadResponse([b"video-bytes"]),
+    )
+
+    downloaded_path = basic.download_video_from_url(
+        "job-download",
+        "https://minio.local/uploads/job-download/original.mp4",
+        "/storage/uploads/job-download/original.mp4",
+    )
+
+    assert downloaded_path is not None
+    assert downloaded_path.read_bytes() == b"video-bytes"
+    assert downloaded_path.suffix == ".mp4"
+
+
+def test_download_video_from_url_returns_none_when_request_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+
+    def raise_error(url, stream, timeout):
+        raise basic.requests.ConnectionError("connection failed")
+
+    monkeypatch.setattr(basic.requests, "get", raise_error)
+
+    downloaded_path = basic.download_video_from_url(
+        "job-download-fail",
+        "https://minio.local/uploads/job-download-fail/original.mp4",
+        "/storage/uploads/job-download-fail/original.mp4",
+    )
+
+    assert downloaded_path is None
+
+
+def test_resolve_or_download_video_path_prefers_download_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout: FakeDownloadResponse([b"video-bytes"]),
+    )
+
+    resolved_path = basic.resolve_or_download_video_path(
+        "job-prefer-url",
+        "missing-local-file.mp4",
+        "https://minio.local/uploads/job-prefer-url/original.mp4",
+    )
+
+    assert resolved_path is not None
+    assert resolved_path.read_bytes() == b"video-bytes"
+
+
+def test_resolve_or_download_video_path_falls_back_to_local_path_when_download_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+
+    def raise_error(url, stream, timeout):
+        raise basic.requests.ConnectionError("connection failed")
+
+    monkeypatch.setattr(basic.requests, "get", raise_error)
+
+    video_file = tmp_path / "sample.mp4"
+    video_file.write_bytes(b"local-video")
+
+    resolved_path = basic.resolve_or_download_video_path(
+        "job-fallback",
+        str(video_file),
+        "https://minio.local/uploads/job-fallback/original.mp4",
+    )
+
+    assert resolved_path == video_file.resolve()
+
+
+def test_resolve_or_download_video_path_uses_local_path_when_no_download_url(tmp_path):
+    video_file = tmp_path / "sample.mp4"
+    video_file.write_bytes(b"local-video")
+
+    resolved_path = basic.resolve_or_download_video_path(
+        "job-no-url",
+        str(video_file),
+        None,
+    )
+
+    assert resolved_path == video_file.resolve()
+
+
 def test_cleanup_temp_directory_deletes_only_job_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
     job_dir = tmp_path / "storage" / "temp" / "job-1"

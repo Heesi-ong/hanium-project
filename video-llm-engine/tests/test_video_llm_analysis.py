@@ -664,3 +664,79 @@ def test_call_real_video_llm_model_raises_on_nvidia_timeout(monkeypatch, tmp_pat
                 videoPath=create_video_file(tmp_path),
             )
         )
+
+
+class FakeDownloadClient:
+    response_status = 200
+    response_content = b""
+    response_headers = None
+    raised_exception = None
+
+    def __init__(self, timeout):
+        self.timeout = timeout
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def get(self, url):
+        if FakeDownloadClient.raised_exception:
+            raise FakeDownloadClient.raised_exception
+
+        return httpx.Response(
+            FakeDownloadClient.response_status,
+            content=FakeDownloadClient.response_content,
+            headers=FakeDownloadClient.response_headers or {"content-type": "video/mp4"},
+            request=httpx.Request("GET", url),
+        )
+
+
+def test_resolve_video_bytes_downloads_when_video_download_url_present(monkeypatch, tmp_path):
+    FakeDownloadClient.response_status = 200
+    FakeDownloadClient.response_content = b"downloaded-bytes"
+    FakeDownloadClient.response_headers = {"content-type": "video/mp4"}
+    FakeDownloadClient.raised_exception = None
+    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-download-1",
+        videoPath=create_video_file(tmp_path),
+        videoDownloadUrl="https://minio.local/uploads/video-llm-download-1/original.mp4",
+    )
+
+    video_bytes, content_type = video_llm_analysis.resolve_video_bytes(request)
+
+    assert video_bytes == b"downloaded-bytes"
+    assert content_type == "video/mp4"
+
+
+def test_resolve_video_bytes_falls_back_to_local_path_when_download_fails(monkeypatch, tmp_path):
+    FakeDownloadClient.raised_exception = httpx.ConnectError("connection failed")
+    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+
+    video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-download-2",
+        videoPath=video_path,
+        videoDownloadUrl="https://minio.local/uploads/video-llm-download-2/original.mp4",
+    )
+
+    video_bytes, content_type = video_llm_analysis.resolve_video_bytes(request)
+
+    assert video_bytes == b"fake mp4 bytes"
+    assert content_type == "video/mp4"
+
+
+def test_resolve_video_bytes_uses_local_path_when_no_download_url(tmp_path):
+    video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-no-url",
+        videoPath=video_path,
+    )
+
+    video_bytes, content_type = video_llm_analysis.resolve_video_bytes(request)
+
+    assert video_bytes == b"fake mp4 bytes"
+    assert content_type == "video/mp4"

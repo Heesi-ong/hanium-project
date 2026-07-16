@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.List;
 
 @Validated
@@ -133,14 +134,25 @@ public class ResultController {
                 jobId,
                 accessToken
         );
-        FileSystemResource resource = new FileSystemResource(uploadedVideo.getStoredFilePath());
-        ResourceRegion resourceRegion = createResourceRegion(resource, headers);
 
-        // 영상 바이너리는 JSON ApiResponse로 감싸지 않고 HTTP Range 스트리밍 응답으로 직접 반환합니다.
-        return ResponseEntity
-                .status(HttpStatus.PARTIAL_CONTENT)
-                .contentType(resolveMediaType(uploadedVideo.getFileType()))
-                .body(resourceRegion);
+        // MinIO에 이미 미러링된 영상이면 브라우저를 presigned URL로 바로 리다이렉트해
+        // 백엔드가 바이트 스트리밍을 직접 처리하지 않도록 합니다. 아직 미러링되지 않았거나
+        // MinIO가 응답하지 않으면 null이 반환되어 아래 기존 로컬 디스크 스트리밍으로 이어집니다.
+        String presignedStreamingUrl = videoStreamingService.resolvePresignedStreamingUrl(jobId, uploadedVideo);
+
+        if (presignedStreamingUrl != null) {
+            return createRedirectResponse(presignedStreamingUrl);
+        }
+
+        return createLocalStreamingResponse(uploadedVideo, headers);
+    }
+
+    @SuppressWarnings("unchecked")
+    private ResponseEntity<ResourceRegion> createRedirectResponse(String presignedStreamingUrl) {
+        return (ResponseEntity<ResourceRegion>) (ResponseEntity<?>) ResponseEntity
+                .status(HttpStatus.FOUND)
+                .location(URI.create(presignedStreamingUrl))
+                .build();
     }
 
     private Long getCurrentUserId(Authentication authentication) {
@@ -176,6 +188,20 @@ public class ResultController {
 
         long contentLength = resource.contentLength();
         return new ResourceRegion(resource, 0, contentLength);
+    }
+
+    private ResponseEntity<ResourceRegion> createLocalStreamingResponse(
+            UploadedVideo uploadedVideo,
+            HttpHeaders headers
+    ) throws IOException {
+        FileSystemResource resource = new FileSystemResource(uploadedVideo.getStoredFilePath());
+        ResourceRegion resourceRegion = createResourceRegion(resource, headers);
+
+        // 영상 바이너리는 JSON ApiResponse로 감싸지 않고 HTTP Range 스트리밍 응답으로 직접 반환합니다.
+        return ResponseEntity
+                .status(HttpStatus.PARTIAL_CONTENT)
+                .contentType(resolveMediaType(uploadedVideo.getFileType()))
+                .body(resourceRegion);
     }
 
     private MediaType resolveMediaType(VideoFileType fileType) {

@@ -105,9 +105,7 @@ public class VideoFileCommandService {
      */
     public String resolveDownloadUrl(String jobId, String storedFilePath) {
         try {
-            String fileName = Path.of(storedFilePath).getFileName().toString();
-            String extension = extractExtension(fileName);
-            String objectKey = "uploads/" + jobId + "/original" + extension;
+            String objectKey = buildUploadObjectKey(jobId, storedFilePath);
             return objectStorage.generatePresignedUrl(objectKey, Duration.ofHours(1));
         } catch (Exception exception) {
             log.warn(
@@ -117,6 +115,38 @@ public class VideoFileCommandService {
             );
             return null;
         }
+    }
+
+    /**
+     * 브라우저 영상 재생(스트리밍)을 위한 presigned URL을 생성합니다. resolveDownloadUrl과 달리
+     * 오브젝트가 실제로 MinIO에 존재하는지 먼저 확인합니다 - 스트리밍은 여기서 실패를 감지하지
+     * 못하면(예: 아직 미러링되지 않은 영상) 브라우저가 깨진 링크로 리다이렉트되어 재생이
+     * 실패하기 때문입니다. 존재하지 않거나 확인 자체가 실패하면 null을 반환해 호출부가
+     * 기존 로컬 디스크 스트리밍으로 계속 동작하게 합니다.
+     */
+    public String resolveStreamingUrl(String jobId, String storedFilePath) {
+        try {
+            String objectKey = buildUploadObjectKey(jobId, storedFilePath);
+
+            if (!objectStorage.exists(objectKey)) {
+                return null;
+            }
+
+            return objectStorage.generatePublicPresignedUrl(objectKey, Duration.ofHours(1));
+        } catch (Exception exception) {
+            log.warn(
+                    "OBJECT_STORAGE_STREAMING_URL_FAILED jobId={} reason={}",
+                    jobId,
+                    exception.toString()
+            );
+            return null;
+        }
+    }
+
+    private String buildUploadObjectKey(String jobId, String storedFilePath) {
+        String fileName = Path.of(storedFilePath).getFileName().toString();
+        String extension = extractExtension(fileName);
+        return "uploads/" + jobId + "/original" + extension;
     }
 
     private void validateFile(MultipartFile file) {

@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.application.video.VideoFileCommandService;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
@@ -31,11 +32,13 @@ class VideoStreamingServiceTest {
     private final AnalysisJobRepository analysisJobRepository = mock(AnalysisJobRepository.class);
     private final UploadedVideoRepository uploadedVideoRepository = mock(UploadedVideoRepository.class);
     private final VideoAccessTokenProvider videoAccessTokenProvider = mock(VideoAccessTokenProvider.class);
+    private final VideoFileCommandService videoFileCommandService = mock(VideoFileCommandService.class);
 
     private final VideoStreamingService videoStreamingService = new VideoStreamingService(
             analysisJobRepository,
             uploadedVideoRepository,
-            videoAccessTokenProvider
+            videoAccessTokenProvider,
+            videoFileCommandService
     );
 
     @TempDir
@@ -122,5 +125,41 @@ class VideoStreamingServiceTest {
 
         assertThat(videoStreamingService.resolveVideoForStreaming(JOB_ID, "valid-token"))
                 .isSameAs(uploadedVideo);
+    }
+
+    @Test
+    void resolvePresignedStreamingUrlDelegatesToVideoFileCommandService() {
+        UploadedVideo uploadedVideo = UploadedVideo.create(
+                JOB_ID,
+                "original.mp4",
+                tempDir.resolve("original.mp4").toString(),
+                VideoFileType.MP4,
+                10L
+        );
+
+        when(videoFileCommandService.resolveStreamingUrl(JOB_ID, uploadedVideo.getStoredFilePath()))
+                .thenReturn("https://minio.local/hanium-storage/uploads/" + JOB_ID + "/original.mp4?X-Amz-Signature=abc");
+
+        String url = videoStreamingService.resolvePresignedStreamingUrl(JOB_ID, uploadedVideo);
+
+        assertThat(url).isEqualTo("https://minio.local/hanium-storage/uploads/" + JOB_ID + "/original.mp4?X-Amz-Signature=abc");
+    }
+
+    @Test
+    void resolvePresignedStreamingUrlReturnsNullWhenVideoFileCommandServiceReturnsNull() {
+        UploadedVideo uploadedVideo = UploadedVideo.create(
+                JOB_ID,
+                "original.mp4",
+                tempDir.resolve("original.mp4").toString(),
+                VideoFileType.MP4,
+                10L
+        );
+
+        when(videoFileCommandService.resolveStreamingUrl(JOB_ID, uploadedVideo.getStoredFilePath()))
+                .thenReturn(null);
+
+        String url = videoStreamingService.resolvePresignedStreamingUrl(JOB_ID, uploadedVideo);
+
+        assertThat(url).isNull();
     }
 }

@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -204,6 +205,45 @@ class VideoFileCommandServiceTest {
         String url = videoFileCommandService.resolveDownloadUrl(
                 "job-download-fail",
                 tempDir.resolve("uploads").resolve("job-download-fail").resolve("original.mp4").toString()
+        );
+
+        assertThat(url).isNull();
+    }
+
+    @Test
+    void resolveStreamingUrlReturnsPresignedUrlWhenObjectExists() {
+        when(objectStorage.exists("uploads/job-stream/original.mp4")).thenReturn(true);
+        when(objectStorage.generatePublicPresignedUrl(eq("uploads/job-stream/original.mp4"), any()))
+                .thenReturn("https://minio.local/hanium-storage/uploads/job-stream/original.mp4?X-Amz-Signature=abc");
+
+        String url = videoFileCommandService.resolveStreamingUrl(
+                "job-stream",
+                tempDir.resolve("uploads").resolve("job-stream").resolve("original.mp4").toString()
+        );
+
+        assertThat(url).isEqualTo("https://minio.local/hanium-storage/uploads/job-stream/original.mp4?X-Amz-Signature=abc");
+    }
+
+    @Test
+    void resolveStreamingUrlReturnsNullWhenObjectDoesNotExist() {
+        when(objectStorage.exists("uploads/job-stream-missing/original.mp4")).thenReturn(false);
+
+        String url = videoFileCommandService.resolveStreamingUrl(
+                "job-stream-missing",
+                tempDir.resolve("uploads").resolve("job-stream-missing").resolve("original.mp4").toString()
+        );
+
+        assertThat(url).isNull();
+        verify(objectStorage, never()).generatePublicPresignedUrl(any(), any());
+    }
+
+    @Test
+    void resolveStreamingUrlReturnsNullWhenExistsCheckFails() {
+        when(objectStorage.exists(any())).thenThrow(new RuntimeException("minio down"));
+
+        String url = videoFileCommandService.resolveStreamingUrl(
+                "job-stream-error",
+                tempDir.resolve("uploads").resolve("job-stream-error").resolve("original.mp4").toString()
         );
 
         assertThat(url).isNull();

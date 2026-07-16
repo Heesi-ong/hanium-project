@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MinioObjectStorageIntegrationTest {
 
     private final String endpoint = System.getenv().getOrDefault("MINIO_ENDPOINT", "http://localhost:9000");
+    private final String publicEndpoint = System.getenv().getOrDefault("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000");
     private final String accessKey = System.getenv("MINIO_ACCESS_KEY");
     private final String secretKey = System.getenv("MINIO_SECRET_KEY");
     private final String bucketName = System.getenv().getOrDefault("MINIO_BUCKET_NAME", "hanium-storage");
@@ -34,7 +35,7 @@ class MinioObjectStorageIntegrationTest {
                 .endpoint(endpoint)
                 .credentials(accessKey, secretKey)
                 .build();
-        MinioProperties minioProperties = new MinioProperties(endpoint, accessKey, secretKey, bucketName);
+        MinioProperties minioProperties = new MinioProperties(endpoint, publicEndpoint, accessKey, secretKey, bucketName);
         return new MinioObjectStorage(minioClient, minioProperties);
     }
 
@@ -90,6 +91,21 @@ class MinioObjectStorageIntegrationTest {
         String url = objectStorage.generatePresignedUrl(objectKey, java.time.Duration.ofMinutes(5));
 
         assertThat(url).isNotBlank();
+        assertThat(url).contains(objectKey);
+
+        objectStorage.deleteObject(objectKey);
+    }
+
+    @Test
+    void generatePublicPresignedUrlUsesPublicEndpointHost() throws Exception {
+        MinioObjectStorage objectStorage = createObjectStorage();
+        String objectKey = "test/public-presigned-url-" + System.currentTimeMillis() + ".txt";
+        byte[] contentBytes = "public presigned url test".getBytes(StandardCharsets.UTF_8);
+        objectStorage.putObject(objectKey, new ByteArrayInputStream(contentBytes), contentBytes.length, "text/plain");
+
+        String url = objectStorage.generatePublicPresignedUrl(objectKey, java.time.Duration.ofMinutes(5));
+
+        assertThat(url).startsWith(publicEndpoint);
         assertThat(url).contains(objectKey);
 
         objectStorage.deleteObject(objectKey);

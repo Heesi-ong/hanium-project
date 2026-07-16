@@ -29,7 +29,7 @@ public class CoachMessage {
     private CoachMessageRole role;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Column(name = "generation_mode", length = 20)

@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.application.video.VideoFileCommandService;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
@@ -20,15 +21,18 @@ public class VideoStreamingService {
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
     private final VideoAccessTokenProvider videoAccessTokenProvider;
+    private final VideoFileCommandService videoFileCommandService;
 
     public VideoStreamingService(
             AnalysisJobRepository analysisJobRepository,
             UploadedVideoRepository uploadedVideoRepository,
-            VideoAccessTokenProvider videoAccessTokenProvider
+            VideoAccessTokenProvider videoAccessTokenProvider,
+            VideoFileCommandService videoFileCommandService
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
         this.videoAccessTokenProvider = videoAccessTokenProvider;
+        this.videoFileCommandService = videoFileCommandService;
     }
 
     public String issueAccessToken(String jobId, Long ownerId) {
@@ -55,5 +59,14 @@ public class VideoStreamingService {
         }
 
         return uploadedVideo;
+    }
+
+    /**
+     * MinIO에 미러링된 오브젝트가 있으면 브라우저가 바로 그쪽으로 재생하도록 presigned URL을
+     * 반환합니다. 아직 미러링되지 않았거나 MinIO가 응답하지 않으면 null을 반환해 호출부(컨트롤러)가
+     * 기존처럼 로컬 디스크 기반 Range 스트리밍으로 계속 동작하게 합니다.
+     */
+    public String resolvePresignedStreamingUrl(String jobId, UploadedVideo uploadedVideo) {
+        return videoFileCommandService.resolveStreamingUrl(jobId, uploadedVideo.getStoredFilePath());
     }
 }

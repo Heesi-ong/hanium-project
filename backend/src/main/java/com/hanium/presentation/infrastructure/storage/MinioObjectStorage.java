@@ -33,10 +33,16 @@ public class MinioObjectStorage implements ObjectStorage {
     private static final String NO_SUCH_KEY = "NoSuchKey";
 
     private final MinioClient minioClient;
+    private final MinioClient publicPresignClient;
     private final String bucketName;
 
     public MinioObjectStorage(MinioClient minioClient, MinioProperties minioProperties) {
         this.minioClient = minioClient;
+        this.publicPresignClient = MinioClient.builder()
+                .endpoint(minioProperties.publicEndpoint())
+                .credentials(minioProperties.accessKey(), minioProperties.secretKey())
+                .region("us-east-1")
+                .build();
         this.bucketName = minioProperties.bucketName();
     }
 
@@ -171,6 +177,23 @@ public class MinioObjectStorage implements ObjectStorage {
             );
         } catch (Exception exception) {
             log.error("MINIO_PRESIGNED_URL_FAILED objectKey={}", objectKey, exception);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "다운로드 URL 생성에 실패했습니다. key=" + objectKey);
+        }
+    }
+
+    @Override
+    public String generatePublicPresignedUrl(String objectKey, Duration expiry) {
+        try {
+            return publicPresignClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                            .bucket(bucketName)
+                            .object(objectKey)
+                            .method(Http.Method.GET)
+                            .expiry((int) expiry.toSeconds())
+                            .build()
+            );
+        } catch (Exception exception) {
+            log.error("MINIO_PUBLIC_PRESIGNED_URL_FAILED objectKey={}", objectKey, exception);
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "다운로드 URL 생성에 실패했습니다. key=" + objectKey);
         }
     }

@@ -21,7 +21,14 @@ public interface ObjectStorage {
     void deleteObjectsWithPrefix(String prefix);
 
     /**
-     * 지정한 오브젝트를 만료 시간 동안 인증 없이 다운로드할 수 있는 presigned GET URL을 생성합니다.
+     * Docker 내부 네트워크에서 지정한 오브젝트를 만료 시간 동안 인증 없이 다운로드할 수 있는
+     * presigned GET URL을 생성합니다. analysis-engine/video-llm-engine 등 컨테이너 간 통신에 사용합니다.
      */
     String generatePresignedUrl(String objectKey, Duration expiry);
+
+    /**
+     * 브라우저/호스트에서 지정한 오브젝트를 만료 시간 동안 인증 없이 다운로드할 수 있는
+     * presigned GET URL을 생성합니다. 영상 재생 리다이렉트처럼 사용자가 직접 따라가는 URL에 사용합니다.
+     */
+    String generatePublicPresignedUrl(String objectKey, Duration expiry);
 }

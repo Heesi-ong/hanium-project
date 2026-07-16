@@ -96,6 +96,38 @@ jobs:
           vuln-type: os
           severity: CRITICAL,HIGH
 
+  backend-boot-smoke:
+    # docker compose config(compose-validate)는 YAML 문법만 검사하고 컨테이너를 띄우지 않아서,
+    # 엔티티 매핑과 Flyway 마이그레이션이 어긋나 Hibernate schema-validation에서 기동 자체가
+    # 실패하는 유형의 버그(2026-07-16에 ai_coach_messages.content에서 실제로 발생)를 잡지 못한다.
+    # 이 잡은 실제 MySQL/Redis/MinIO를 띄우고 backend를 dev 프로필(ddl-auto: validate)로
+    # 부팅해 컴포즈 헬스체크를 통과하는지 확인한다.
+    runs-on: ubuntu-latest
+    env:
+      INTERNAL_ENGINE_API_KEY: ci-smoke-test-internal-key
+      SECURITY_JWT_SECRET: ci-smoke-test-jwt-secret-not-a-placeholder-value
+      MINIO_ROOT_USER: ci-smoke-minio-admin
+      MINIO_ROOT_PASSWORD: ci-smoke-minio-password12345
+      DB_PASSWORD: ci-smoke-db-password
+      DB_ROOT_PASSWORD: ci-smoke-db-root-password
+      REDIS_PASSWORD: ci-smoke-redis-password
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start database/cache/object-storage dependencies
+        run: docker compose up -d --wait mysql redis minio
+      - name: Create MinIO buckets
+        run: docker compose up minio-init
+      - name: Build backend image
+        run: docker compose build backend
+      - name: Boot backend (dev profile) and wait for health check
+        run: docker compose up -d --wait --no-deps backend
+      - name: Dump backend logs on failure
+        if: failure()
+        run: docker compose logs backend
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   compose-validate:
     runs-on: ubuntu-latest
     steps:

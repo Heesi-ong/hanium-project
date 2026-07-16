@@ -136,6 +136,7 @@ if MYSQL_PWD="$DB_PASSWORD" "$MYSQLDUMP_BIN" \
     --routines \
     --triggers \
     --events \
+    --no-tablespaces \
     --databases "$DB_NAME" \
     | gzip -c > "$tmp_file"; then
     mv "$tmp_file" "$backup_file"

@@ -3,6 +3,7 @@ package com.hanium.presentation.application.storage;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +29,7 @@ public class StorageCleanupService {
     private final AnalysisJobRepository analysisJobRepository;
     private final FilePathGenerator filePathGenerator;
     private final SchedulerDistributedLock schedulerDistributedLock;
+    private final ObjectStorage objectStorage;
     private final Duration tempMaxAge;
     private final Duration orphanMaxAge;
     private final Duration lockTtl;
@@ -36,6 +38,7 @@ public class StorageCleanupService {
             AnalysisJobRepository analysisJobRepository,
             FilePathGenerator filePathGenerator,
             SchedulerDistributedLock schedulerDistributedLock,
+            ObjectStorage objectStorage,
             @Value("${storage.cleanup.temp-max-age-hours:6}") long tempMaxAgeHours,
             @Value("${storage.cleanup.orphan-max-age-hours:24}") long orphanMaxAgeHours,
             @Value("${scheduler.lock.storage-cleanup-ttl-minutes:10}") long lockTtlMinutes
@@ -43,6 +46,7 @@ public class StorageCleanupService {
         this.analysisJobRepository = analysisJobRepository;
         this.filePathGenerator = filePathGenerator;
         this.schedulerDistributedLock = schedulerDistributedLock;
+        this.objectStorage = objectStorage;
         this.tempMaxAge = Duration.ofHours(tempMaxAgeHours);
         this.orphanMaxAge = Duration.ofHours(orphanMaxAgeHours);
         this.lockTtl = Duration.ofMinutes(lockTtlMinutes);
@@ -65,12 +69,14 @@ public class StorageCleanupService {
         int deletedUploadDirectories = cleanupOrphanDirectories(
                 filePathGenerator.generateUploadRootDirectory(),
                 orphanMaxAge,
-                now
+                now,
+                "uploads/"
         );
         int deletedResultDirectories = cleanupOrphanDirectories(
                 filePathGenerator.generateResultRootDirectory(),
                 orphanMaxAge,
-                now
+                now,
+                "results/"
         );
 
         log.info(
@@ -82,17 +88,25 @@ public class StorageCleanupService {
     }
 
     private int cleanupOldDirectories(Path rootDirectory, Duration maxAge, Instant now) {
-        return cleanupDirectories(rootDirectory, directory -> isOlderThan(directory, maxAge, now));
+        return cleanupDirectories(
+                rootDirectory,
+                directory -> isOlderThan(directory, maxAge, now),
+                null
+        );
     }
 
-    private int cleanupOrphanDirectories(Path rootDirectory, Duration maxAge, Instant now) {
-        return cleanupDirectories(rootDirectory, directory -> {
-            String jobId = directory.getFileName().toString();
-            return !analysisJobRepository.existsByJobId(jobId) && isOlderThan(directory, maxAge, now);
-        });
+    private int cleanupOrphanDirectories(Path rootDirectory, Duration maxAge, Instant now, String objectStoragePrefix) {
+        return cleanupDirectories(
+                rootDirectory,
+                directory -> {
+                    String jobId = directory.getFileName().toString();
+                    return !analysisJobRepository.existsByJobId(jobId) && isOlderThan(directory, maxAge, now);
+                },
+                objectStoragePrefix
+        );
     }
 
-    private int cleanupDirectories(Path rootDirectory, DirectoryDeletePredicate deletePredicate) {
+    private int cleanupDirectories(Path rootDirectory, DirectoryDeletePredicate deletePredicate, String objectStoragePrefix) {
         if (rootDirectory == null || !Files.isDirectory(rootDirectory)) {
             return 0;
         }
@@ -103,6 +117,10 @@ public class StorageCleanupService {
             for (Path path : paths.filter(Files::isDirectory).toList()) {
                 if (deletePredicate.shouldDelete(path) && deleteDirectory(path)) {
                     deletedDirectories++;
+
+                    if (objectStoragePrefix != null) {
+                        deleteObjectStoragePrefixQuietly(objectStoragePrefix + path.getFileName() + "/");
+                    }
                 }
             }
         } catch (IOException e) {
@@ -110,6 +128,18 @@ public class StorageCleanupService {
         }
 
         return deletedDirectories;
+    }
+
+    /**
+     * 로컬 디렉토리 삭제와 별개로 MinIO에 미러링된 오브젝트도 정리합니다. 이 호출이 실패해도
+     * 로컬 정리 결과(deletedDirectories 카운트)에는 영향을 주지 않는 best-effort입니다.
+     */
+    private void deleteObjectStoragePrefixQuietly(String prefix) {
+        try {
+            objectStorage.deleteObjectsWithPrefix(prefix);
+        } catch (Exception exception) {
+            log.warn("OBJECT_STORAGE_CLEANUP_FAILED prefix={} reason={}", prefix, exception.toString());
+        }
     }
 
     private boolean isOlderThan(Path directory, Duration maxAge, Instant now) {

@@ -297,3 +297,25 @@
 3. **백업 복구 리허설이 없습니다.** 백업 자체는 실제 MySQL 대상으로 검증됐지만, 복구가 실제로 되는지 확인된 적이 없습니다.
 4. **스케줄러 분산 락이 Redis 장애 시 fail-open입니다.** 의도된 트레이드오프이지만, Redis 다운 상황에서 스케줄러 중복 실행 가능성이 문서화되어 있어야 합니다.
 5. **구 프론트 테스트 파일이 localStorage 가정을 갖고 있습니다.** 실제 구현(쿠키 기반)과 테스트 가정이 어긋나 있어 테스트가 실제 동작을 검증하지 못하고 있을 가능성이 있습니다(`AuthContext.test.jsx`, `apiClient.test.js` 확인 필요).
+
+---
+
+## 업데이트: 2026-07-16 현재 상태
+
+2026-07-15 업데이트 이후 완료된 파일 저장소 MinIO 마이그레이션(Phase A-F)과, 이미 완료됐으나 이 문서에 반영되지 않았던 백업 복구 리허설/Redis fail-open 문서화 작업을 반영해 잔여 리스크를 다시 확인했다. 기존 07-15 업데이트 본문은 스냅샷으로 남겨둔다.
+
+### 주요 변화 요약
+
+| 항목 | 07-15 판정 | 07-16 판정 | 근거 |
+| --- | --- | --- | --- |
+| 파일 저장소 | 미해결(로컬 디스크) | 부분해결 | Phase A-F로 MinIO 이중 쓰기(`VideoFileCommandService.java:85-99`, `JsonFileStorage.java:57-75`), 엔진용 presigned 다운로드 URL(`VideoFileCommandService.java:106-118`, `analysis-engine/app/api/basic_analysis.py`, `video-llm-engine/app/api/video_llm_analysis.py`), 브라우저 스트리밍 presigned 리다이렉트(`VideoFileCommandService.java:127-144`, `ResultController.java`, internal/public endpoint 분리), 정리 스케줄러의 MinIO prefix 삭제(`StorageCleanupService.java`, `OriginalVideoRetentionService.java`), 기존 로컬 파일 백필 러너(`ObjectStorageBackfillRunner.java`)까지 완료됐다. 다만 로컬 디스크 fallback 코드는 안전망으로 의도적으로 유지 중이며, 실제 운영 MinIO 환경에서 백필 스크립트를 돌려본 리허설은 아직 없다. |
+| 백업 복구 리허설 | 없음 | 해결 | `docs/ops/backup-restore-runbook.md`와 `storage/logs/restore-rehearsal-20260715_184840.log`에 2026-07-15 실제 리허설 기록이 있다. 일회용 `mysql:8.4` 컨테이너에 실제 백업 파일(`hanium_dev_20260714_065215.sql.gz`)을 복구해 테이블 5개/약 13행이 정상 복구됐음을 확인했다. |
+| 스케줄러 분산 락 fail-open 문서화 | 미문서화 | 해결 | `docs/ops/scheduler-distributed-lock.md`에 fail-open 정책과 트레이드오프, 향후 개선 방향(Prometheus 메트릭화)이 문서화됐다. 정책 자체(Redis 장애 시 락 없이 실행)는 의도된 설계로 유지된다. |
+| 프론트 localStorage 테스트 가정 | 확인 필요 | 해결(문제 아니었음) | `apiClient.test.js:10-14`는 localStorage에 스토어 토큰을 일부러 심어두고 Authorization 헤더로 전송되지 않는지 검증하는 테스트이고, `AuthContext.test.jsx`도 로그인/로그아웃 후 localStorage가 비어 있는지(즉 쿠키 전용 인증에 토큰이 새지 않는지) 확인하는 테스트다. 실제로는 쿠키 기반 인증과 일치하는 안전장치 테스트였다. |
+
+### 2026-07-16 기준 가장 큰 잔여 리스크 (우선순위 순)
+
+1. **Video LLM 실연동이 기본 비활성 상태입니다.** 코드는 완성됐지만 `VIDEO_LLM_ENABLED=false`가 기본값이라 실제 운영에서 켜려면 비용/실패 정책 재점검이 필요합니다. 다른 A/B 항목이 대부분 해소된 지금 가장 우선순위가 높은 잔여 갭입니다.
+2. **MinIO 백필 스크립트가 실제 운영 환경에서 리허설되지 않았습니다.** `ObjectStorageBackfillRunner`는 코드/단위 테스트로만 검증됐고, 실제 MinIO가 떠 있는 환경에서 `STORAGE_BACKFILL_ENABLED=true`로 1회 실행해 본 적은 없습니다.
+3. **로컬 디스크 fallback 제거 여부가 결정되지 않았습니다.** 현재는 MinIO 실패 시 로컬 디스크로 계속 동작하는 이중 구조입니다. 다중 인스턴스 수평 확장을 완전히 전제하려면 로컬 fallback을 언제 걷어낼지 별도 결정이 필요합니다.
+4. **원격 백업 보관과 암호화가 없습니다.** 복구 리허설은 완료됐지만, 백업 파일은 여전히 로컬 `storage/backups/`에만 있고 원격 저장소 반출이나 암호화는 없습니다.

@@ -171,6 +171,8 @@ storage:
   retention:
     cron: "${STORAGE_RETENTION_CRON:0 0 3 * * *}"
     original-video-days: ${STORAGE_RETENTION_ORIGINAL_VIDEO_DAYS:30}
+  backfill:
+    enabled: ${STORAGE_BACKFILL_ENABLED:false}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

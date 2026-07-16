@@ -27,6 +27,7 @@ class VideoLlmAnalysisRequest(BaseModel):
     sampleFps: int = 1
     maxFrames: int = 90
     durationSec: float | None = None
+    videoDownloadUrl: str | None = None
 
 
 def resolve_video_llm_enabled() -> bool:
@@ -239,7 +240,7 @@ def prepare_nvidia_video_input(
     asset_base_url: str,
     request: VideoLlmAnalysisRequest,
 ) -> Dict[str, str | None]:
-    video_bytes, content_type = read_video_bytes(request.videoPath)
+    video_bytes, content_type = resolve_video_bytes(request)
     if len(video_bytes) <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
         encoded = base64.b64encode(video_bytes).decode("ascii")
         return {
@@ -287,6 +288,40 @@ def build_duration_prompt(duration_sec: float | None) -> str:
         "in that segment. Unless the behavior truly does not change for the whole video, "
         "do not collapse all observations into a single [0, duration] range. "
     )
+
+
+VIDEO_DOWNLOAD_TIMEOUT_SECONDS = 60.0
+
+
+def resolve_video_bytes(request: VideoLlmAnalysisRequest) -> tuple[bytes, str]:
+    """videoDownloadUrl(MinIO presigned URL)이 있으면 먼저 그 영상을 내려받아 사용하고,
+    없거나 다운로드에 실패하면 기존처럼 로컬 videoPath 파일을 읽습니다.
+    """
+    if request.videoDownloadUrl:
+        downloaded = download_video_bytes(request.jobId, request.videoDownloadUrl)
+
+        if downloaded is not None:
+            return downloaded
+
+    return read_video_bytes(request.videoPath)
+
+
+def download_video_bytes(job_id: str, video_download_url: str) -> tuple[bytes, str] | None:
+    try:
+        with httpx.Client(timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS) as client:
+            response = client.get(video_download_url)
+            response.raise_for_status()
+
+        content_type = response.headers.get("content-type") or "video/mp4"
+        return response.content, content_type
+
+    except Exception as exception:
+        logger.warning(
+            "(%s) MinIO 다운로드 URL 요청 실패, 로컬 경로로 폴백합니다: %s",
+            job_id,
+            exception,
+        )
+        return None
 
 
 def read_video_bytes(video_path: str) -> tuple[bytes, str]:

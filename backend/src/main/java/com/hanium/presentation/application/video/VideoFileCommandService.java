@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Objects;
 
 @Service
@@ -94,6 +95,27 @@ public class VideoFileCommandService {
                     objectKey,
                     exception.toString()
             );
+        }
+    }
+
+    /**
+     * 업로드된 원본 영상을 오브젝트 스토리지(MinIO)에서 바로 내려받을 수 있는 presigned URL을 생성합니다.
+     * MinIO가 응답하지 않거나 아직 미러링되지 않았을 수 있으므로 best-effort이며,
+     * 실패 시 null을 반환해 호출부가 기존처럼 로컬 경로(videoPath) 기반으로 계속 동작하게 합니다.
+     */
+    public String resolveDownloadUrl(String jobId, String storedFilePath) {
+        try {
+            String fileName = Path.of(storedFilePath).getFileName().toString();
+            String extension = extractExtension(fileName);
+            String objectKey = "uploads/" + jobId + "/original" + extension;
+            return objectStorage.generatePresignedUrl(objectKey, Duration.ofHours(1));
+        } catch (Exception exception) {
+            log.warn(
+                    "OBJECT_STORAGE_PRESIGNED_URL_FAILED jobId={} reason={}",
+                    jobId,
+                    exception.toString()
+            );
+            return null;
         }
     }
 

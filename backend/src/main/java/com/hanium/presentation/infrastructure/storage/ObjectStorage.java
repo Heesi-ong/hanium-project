@@ -1,6 +1,7 @@
 package com.hanium.presentation.infrastructure.storage;
 
 import java.io.InputStream;
+import java.time.Duration;
 
 /**
  * 오브젝트 스토리지(예: MinIO/S3) 접근을 위한 추상화입니다.
@@ -18,4 +19,9 @@ public interface ObjectStorage {
     void deleteObject(String objectKey);
 
     void deleteObjectsWithPrefix(String prefix);
+
+    /**
+     * 지정한 오브젝트를 만료 시간 동안 인증 없이 다운로드할 수 있는 presigned GET URL을 생성합니다.
+     */
+    String generatePresignedUrl(String objectKey, Duration expiry);
 }

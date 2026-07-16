@@ -79,4 +79,19 @@ class MinioObjectStorageIntegrationTest {
         assertThat(objectStorage.exists(keyA)).isFalse();
         assertThat(objectStorage.exists(keyB)).isFalse();
     }
+
+    @Test
+    void generatePresignedUrlReturnsDownloadableUrl() throws Exception {
+        MinioObjectStorage objectStorage = createObjectStorage();
+        String objectKey = "test/presigned-url-" + System.currentTimeMillis() + ".txt";
+        byte[] contentBytes = "presigned url test".getBytes(StandardCharsets.UTF_8);
+        objectStorage.putObject(objectKey, new ByteArrayInputStream(contentBytes), contentBytes.length, "text/plain");
+
+        String url = objectStorage.generatePresignedUrl(objectKey, java.time.Duration.ofMinutes(5));
+
+        assertThat(url).isNotBlank();
+        assertThat(url).contains(objectKey);
+
+        objectStorage.deleteObject(objectKey);
+    }
 }

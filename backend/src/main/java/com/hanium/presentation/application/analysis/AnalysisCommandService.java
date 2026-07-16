@@ -524,10 +524,13 @@ public class AnalysisCommandService {
                     lastPercent, "영상/음성 기본 분석을 실행하는 중입니다."
             );
 
+            String videoDownloadUrl = videoFileCommandService.resolveDownloadUrl(jobId, uploadedVideo.getStoredFilePath());
+
             AnalysisEngineResponse analysisEngineResponse = analysisEngineClient.analyze(
                     new AnalysisEngineRequest(
                             jobId,
-                            uploadedVideo.getStoredFilePath()
+                            uploadedVideo.getStoredFilePath(),
+                            videoDownloadUrl
                     )
             );
             log.info("[{}] 기본 분석 응답을 받았습니다.", jobId);
@@ -557,7 +560,8 @@ public class AnalysisCommandService {
                         VideoLlmEngineRequest.defaultOption(
                                 jobId,
                                 uploadedVideo.getStoredFilePath(),
-                                resolveDurationSec(jobId, uploadedVideo.getStoredFilePath())
+                                resolveDurationSec(jobId, uploadedVideo.getStoredFilePath()),
+                                videoDownloadUrl
                         )
                 );
                 log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);

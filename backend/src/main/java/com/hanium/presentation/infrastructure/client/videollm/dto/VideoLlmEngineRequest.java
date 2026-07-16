@@ -5,7 +5,8 @@ public record VideoLlmEngineRequest(
         String videoPath,
         Integer sampleFps,
         Integer maxFrames,
-        Double durationSec
+        Double durationSec,
+        String videoDownloadUrl
 ) {
 
     public static VideoLlmEngineRequest defaultOption(
@@ -17,6 +18,7 @@ public record VideoLlmEngineRequest(
                 videoPath,
                 1,
                 90,
+                null,
                 null
         );
     }
@@ -31,7 +33,24 @@ public record VideoLlmEngineRequest(
                 videoPath,
                 1,
                 90,
-                durationSec
+                durationSec,
+                null
+        );
+    }
+
+    public static VideoLlmEngineRequest defaultOption(
+            String jobId,
+            String videoPath,
+            Double durationSec,
+            String videoDownloadUrl
+    ) {
+        return new VideoLlmEngineRequest(
+                jobId,
+                videoPath,
+                1,
+                90,
+                durationSec,
+                videoDownloadUrl
         );
     }
 }

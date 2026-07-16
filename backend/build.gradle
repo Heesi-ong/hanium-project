@@ -35,7 +35,7 @@ dependencies {
     // 분석 진행률(%) 캐시와 사용자별 비싼 분석 API rate limit 카운터에 사용합니다.
     // Redis INCR/EXPIRE로 여러 backend 인스턴스에서도 동일한 제한을 공유합니다.
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
-    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    implementation 'io.jsonwebtoken:jjwt-api:0.13.0'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.17'
     implementation 'io.minio:minio:9.0.3'
 
@@ -44,8 +44,8 @@ dependencies {
 
     runtimeOnly 'com.h2database:h2'
     runtimeOnly 'com.mysql:mysql-connector-j'
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
 
     // dev/prod(MySQL) 프로필에서 DB 스키마 버전 관리를 위해 사용합니다.
     // local(H2) 프로필은 spring.flyway.enabled=false 로 꺼져 있어 영향 없습니다.

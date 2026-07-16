@@ -7,6 +7,7 @@ import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +32,7 @@ public class OriginalVideoRetentionService {
     private final FilePathGenerator filePathGenerator;
     private final LocalFileStorage localFileStorage;
     private final SchedulerDistributedLock schedulerDistributedLock;
+    private final ObjectStorage objectStorage;
     private final long originalVideoRetentionDays;
     private final Duration lockTtl;
 
@@ -40,6 +42,7 @@ public class OriginalVideoRetentionService {
             FilePathGenerator filePathGenerator,
             LocalFileStorage localFileStorage,
             SchedulerDistributedLock schedulerDistributedLock,
+            ObjectStorage objectStorage,
             @Value("${storage.retention.original-video-days:30}") long originalVideoRetentionDays,
             @Value("${scheduler.lock.original-video-retention-ttl-minutes:10}") long lockTtlMinutes
     ) {
@@ -48,6 +51,7 @@ public class OriginalVideoRetentionService {
         this.filePathGenerator = filePathGenerator;
         this.localFileStorage = localFileStorage;
         this.schedulerDistributedLock = schedulerDistributedLock;
+        this.objectStorage = objectStorage;
         this.originalVideoRetentionDays = originalVideoRetentionDays;
         this.lockTtl = Duration.ofMinutes(lockTtlMinutes);
     }
@@ -93,11 +97,31 @@ public class OriginalVideoRetentionService {
             localFileStorage.deleteDirectoryIfExists(uploadDirectory);
             uploadedVideoRepository.findByJobId(jobId)
                     .ifPresent(uploadedVideoRepository::delete);
+            deleteObjectStoragePrefixQuietly(jobId);
             log.info("[{}] 보존 기간이 지난 원본 영상 업로드 디렉토리를 삭제했습니다.", jobId);
             return true;
         } catch (Exception exception) {
             log.warn("[{}] 보존 기간이 지난 원본 영상 삭제 중 오류가 발생했습니다.", jobId, exception);
             return false;
+        }
+    }
+
+    /**
+     * 로컬 삭제와 별개로 MinIO에 미러링된 원본 영상 오브젝트도 정리합니다. 이 호출이 실패해도
+     * 로컬 삭제가 이미 끝난 뒤이므로 deleteOriginalVideo()의 성공/실패 결과에는 영향을 주지 않습니다
+     * (보존 정책은 로컬 디스크 기준으로는 항상 지켜지고, MinIO 정리는 best-effort로 뒤따릅니다).
+     */
+    private void deleteObjectStoragePrefixQuietly(String jobId) {
+        String objectKeyPrefix = "uploads/" + jobId + "/";
+        try {
+            objectStorage.deleteObjectsWithPrefix(objectKeyPrefix);
+        } catch (Exception exception) {
+            log.warn(
+                    "[{}] OBJECT_STORAGE_RETENTION_CLEANUP_FAILED prefix={} reason={}",
+                    jobId,
+                    objectKeyPrefix,
+                    exception.toString()
+            );
         }
     }
 }

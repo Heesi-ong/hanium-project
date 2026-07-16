@@ -8,6 +8,7 @@ import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,7 @@ import java.util.Comparator;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
@@ -58,6 +60,9 @@ class OriginalVideoRetentionServiceTest {
     @MockBean
     private SchedulerDistributedLock schedulerDistributedLock;
 
+    @MockBean
+    private ObjectStorage objectStorage;
+
     @BeforeEach
     void setUp() throws IOException {
         uploadedVideoRepository.deleteAll();
@@ -86,6 +91,11 @@ class OriginalVideoRetentionServiceTest {
         assertThat(uploadedVideoRepository.existsByJobId(OLD_FAILED_JOB_ID)).isTrue();
         assertThat(uploadedVideoRepository.existsByJobId(OLD_CANCELLED_JOB_ID)).isTrue();
         assertThat(findJob(OLD_COMPLETED_JOB_ID).getStatus()).isEqualTo(AnalysisStatus.COMPLETED);
+
+        verify(objectStorage).deleteObjectsWithPrefix("uploads/" + OLD_COMPLETED_JOB_ID + "/");
+        verify(objectStorage, org.mockito.Mockito.never()).deleteObjectsWithPrefix("uploads/" + RECENT_COMPLETED_JOB_ID + "/");
+        verify(objectStorage, org.mockito.Mockito.never()).deleteObjectsWithPrefix("uploads/" + OLD_FAILED_JOB_ID + "/");
+        verify(objectStorage, org.mockito.Mockito.never()).deleteObjectsWithPrefix("uploads/" + OLD_CANCELLED_JOB_ID + "/");
     }
 
     @Test
@@ -97,6 +107,18 @@ class OriginalVideoRetentionServiceTest {
 
         assertUploadAndResultRemain(LOCKED_JOB_ID);
         assertThat(uploadedVideoRepository.existsByJobId(LOCKED_JOB_ID)).isTrue();
+    }
+
+    @Test
+    void cleanupExpiredOriginalVideosStillDeletesLocalFilesWhenObjectStorageCleanupFails() throws IOException {
+        createJobWithFiles(completedJob(OLD_COMPLETED_JOB_ID, LocalDateTime.now().minusDays(31)));
+        org.mockito.Mockito.doThrow(new RuntimeException("minio down"))
+                .when(objectStorage).deleteObjectsWithPrefix(any());
+
+        originalVideoRetentionService.cleanupExpiredOriginalVideos();
+
+        assertThat(filePathGenerator.generateUploadDirectory(OLD_COMPLETED_JOB_ID)).doesNotExist();
+        assertThat(uploadedVideoRepository.existsByJobId(OLD_COMPLETED_JOB_ID)).isFalse();
     }
 
     private void createJobWithFiles(AnalysisJob analysisJob) throws IOException {

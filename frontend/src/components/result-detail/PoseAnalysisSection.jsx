@@ -1,3 +1,4 @@
+import CollapsibleDetails from "../CollapsibleDetails";
 import {
     formatAnalysisMethod,
     formatNumber,
@@ -54,39 +55,39 @@ function PoseAnalysisSection({
             </div>
 
             {Array.isArray(poseFrameResults) && poseFrameResults.length > 0 ? (
-                <div className="pose-frame-table-wrap">
-                    <h3>프레임별 자세 분석</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>순서</th>
-                            <th>시간</th>
-                            <th>검출</th>
-                            <th>어깨 차이</th>
-                            <th>어깨 균형 점수</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {poseFrameResults.map((frameResult, index) => (
-                            <tr key={`${frameResult.sequence}-${index}`}>
-                                <td>{frameResult.sequence ?? index + 1}</td>
-                                <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                <td>
-                                    {frameResult.poseDetected ? (
-                                        <span className="mini-badge success">검출</span>
-                                    ) : (
-                                        <span className="mini-badge muted">미검출</span>
-                                    )}
-                                </td>
-                                <td>{formatNumber(frameResult.shoulderDiff, 4)}</td>
-                                <td>{frameResult.shoulderBalanceScore ?? 0}</td>
+                <CollapsibleDetails summary={`프레임별 자세 분석 (${poseFrameResults.length}개 프레임) — 자세히 보기`}>
+                    <div className="pose-frame-table-wrap">
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>검출</th>
+                                <th>어깨 차이</th>
+                                <th>어깨 균형 점수</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+
+                            <tbody>
+                            {poseFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.poseDetected ? (
+                                            <span className="mini-badge success">검출</span>
+                                        ) : (
+                                            <span className="mini-badge muted">미검출</span>
+                                        )}
+                                    </td>
+                                    <td>{formatNumber(frameResult.shoulderDiff, 4)}</td>
+                                    <td>{frameResult.shoulderBalanceScore ?? 0}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CollapsibleDetails>
             ) : (
                 <p className="muted-text">표시할 프레임별 자세 분석 결과가 없습니다.</p>
             )}

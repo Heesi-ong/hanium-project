@@ -128,6 +128,22 @@ export function formatSttSuccess(success) {
     return "-";
 }
 
+export function formatGenerationModeLabel(mode) {
+    if (mode === "REAL") {
+        return "실제 AI 응답";
+    }
+
+    if (mode === "FALLBACK") {
+        return "AI 호출 실패 후 대체 응답";
+    }
+
+    if (mode === "MOCK") {
+        return "Mock 응답(AI 미호출)";
+    }
+
+    return "알 수 없음";
+}
+
 export function formatAnalysisMethod(method) {
     if (method === "duration_based_estimation") {
         return "영상 길이 기반 추정";

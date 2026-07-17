@@ -1,20 +1,11 @@
-# ==========================================================================
-# 이 파일 전체는 플레이스홀더 설정입니다. 실제 배포 전 반드시 다음을 수행하세요.
-#   1. smtp_smarthost / smtp_from / smtp_auth_username / receivers의 to를
-#      실제 SMTP 서버와 실제 이메일 주소로 교체
-#   2. infra/alertmanager/secrets/smtp_password.example을 복사해
-#      infra/alertmanager/secrets/smtp_password 파일을 만들고
-#      실제 SMTP 비밀번호로 채우기 (이 파일은 .gitignore로 커밋되지 않습니다)
-# ==========================================================================
+# docker-compose.monitoring.yml이 이 파일을 템플릿으로 읽어 환경변수를 치환한 뒤
+# /tmp/alertmanager.yml로 실행합니다. 실제 값이 없으면 alertmanager 컨테이너가
+# fail-fast로 종료되어, 플레이스홀더 알림 설정으로 조용히 떠 있는 상태를 막습니다.
 
 global:
-  # 실제 배포 전 반드시 실제 SMTP 서버 주소:포트로 교체하세요.
-  smtp_smarthost: 'smtp.example.com:587'
-  # 실제 배포 전 반드시 실제 발신 주소로 교체하세요.
-  smtp_from: 'alerts@example.com'
-  # 실제 배포 전 반드시 실제 SMTP 계정으로 교체하세요.
-  smtp_auth_username: 'alerts@example.com'
-  # 비밀번호는 git에 커밋되지 않는 별도 파일에서 읽습니다.
+  smtp_smarthost: '__ALERT_SMTP_SMARTHOST__'
+  smtp_from: '__ALERT_SMTP_FROM__'
+  smtp_auth_username: '__ALERT_SMTP_USERNAME__'
   smtp_auth_password_file: '/etc/alertmanager/secrets/smtp_password'
   smtp_require_tls: true
 
@@ -28,6 +19,5 @@ route:
 receivers:
   - name: 'email-default'
     email_configs:
-      # 실제 배포 전 반드시 실제 수신자 주소로 교체하세요.
-      - to: 'oncall@example.com'
+      - to: '__ALERT_EMAIL_TO__'
         send_resolved: true

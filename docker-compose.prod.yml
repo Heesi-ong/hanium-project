@@ -10,6 +10,22 @@ services:
       - frontend
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN must be set}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:?MINIO_PUBLIC_ENDPOINT must be set for video playback CSP}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        cert_dir="/etc/letsencrypt/live/$${DOMAIN}"
+        if [ ! -f "$${cert_dir}/fullchain.pem" ] || [ ! -f "$${cert_dir}/privkey.pem" ]; then
+          mkdir -p "$${cert_dir}"
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout "$${cert_dir}/privkey.pem" \
+            -out "$${cert_dir}/fullchain.pem" \
+            -subj "/CN=$${DOMAIN}"
+          touch "$${cert_dir}/.bootstrap-self-signed"
+        fi
+        nginx -g 'daemon off;'
     ports:
       - "80:80"
       - "443:443"
@@ -22,13 +38,70 @@ services:
     image: certbot/certbot:latest
     restart: unless-stopped
     entrypoint: /bin/sh
-    command: -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;"
+    command:
+      - -c
+      - |
+        set -e
+        cert_dir="/etc/letsencrypt/live/$${DOMAIN}"
+        if [ -f "$${cert_dir}/.bootstrap-self-signed" ] && [ ! -f "/etc/letsencrypt/renewal/$${DOMAIN}.conf" ]; then
+          rm -rf "$${cert_dir}"
+        fi
+        if [ ! -f "/etc/letsencrypt/renewal/$${DOMAIN}.conf" ]; then
+          certbot certonly --webroot -w /var/www/certbot \
+            -d "$${DOMAIN}" \
+            --email "$${CERTBOT_EMAIL}" \
+            --agree-tos \
+            --no-eff-email
+        fi
+        trap exit TERM
+        while :; do
+          certbot renew --webroot -w /var/www/certbot --quiet
+          sleep 12h & wait $${!}
+        done
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN must be set}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:?CERTBOT_EMAIL must be set for Let's Encrypt}
     volumes:
       - certbot-webroot:/var/www/certbot
       - letsencrypt:/etc/letsencrypt
 
   backend:
     ports: !reset []
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SECURITY_JWT_SECRET: ${SECURITY_JWT_SECRET:?SECURITY_JWT_SECRET must be set}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:?MINIO_PUBLIC_ENDPOINT must be set}
+      PASSWORD_RESET_URL_BASE: ${PASSWORD_RESET_URL_BASE:?PASSWORD_RESET_URL_BASE must be set}
+      STORAGE_OBJECT_WRITE_REQUIRED: "true"
+      STORAGE_OBJECT_READ_PREFERRED: "true"
+
+  analysis-worker:
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SECURITY_JWT_SECRET: ${SECURITY_JWT_SECRET:?SECURITY_JWT_SECRET must be set}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      STORAGE_OBJECT_WRITE_REQUIRED: "true"
+      STORAGE_OBJECT_READ_PREFERRED: "true"
+
+  mysql:
+    environment:
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set}
+
+  redis:
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+
+  backup:
+    environment:
+      # 운영 백업은 MinIO로 원격 반출되므로 평문 덤프 생성을 허용하지 않는다.
+      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:?BACKUP_ENCRYPTION_PASSPHRASE must be set}
+      BACKUP_ENCRYPTION_REQUIRED: "true"
+      BACKUP_REMOTE_REQUIRED: "true"
 
   frontend:
     build:

@@ -95,9 +95,27 @@ services:
     image: prom/alertmanager:v0.33.0
     restart: unless-stopped
     volumes:
-      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml.template:ro
       # SMTP 비밀번호 파일(secrets/smtp_password)을 컨테이너에서 읽습니다.
       - ./infra/alertmanager/secrets:/etc/alertmanager/secrets:ro
+    environment:
+      ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST:?ALERT_SMTP_SMARTHOST must be set}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:?ALERT_SMTP_FROM must be set}
+      ALERT_SMTP_USERNAME: ${ALERT_SMTP_USERNAME:?ALERT_SMTP_USERNAME must be set}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:?ALERT_EMAIL_TO must be set}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        test -s /etc/alertmanager/secrets/smtp_password
+        sed \
+          -e "s|__ALERT_SMTP_SMARTHOST__|$${ALERT_SMTP_SMARTHOST}|g" \
+          -e "s|__ALERT_SMTP_FROM__|$${ALERT_SMTP_FROM}|g" \
+          -e "s|__ALERT_SMTP_USERNAME__|$${ALERT_SMTP_USERNAME}|g" \
+          -e "s|__ALERT_EMAIL_TO__|$${ALERT_EMAIL_TO}|g" \
+          /etc/alertmanager/alertmanager.yml.template > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     deploy:
       resources:
         limits:

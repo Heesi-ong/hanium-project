@@ -223,7 +223,7 @@ function FeedbackSection({ feedback, visualAnalysis, onSeekToTime }) {
                     <p className="muted-text">
                         AI가 실제로 생성해 전달한 텍스트를 가공 없이 그대로 보여줍니다.
                     </p>
-                    <pre className="llm-raw-text">
+                    <pre className="llm-raw-text" tabIndex={0}>
                         {feedback?.overall || "표시할 종합 피드백이 없습니다."}
                     </pre>
                 </div>

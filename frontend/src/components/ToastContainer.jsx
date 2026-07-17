@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useToast } from "../context/ToastContext";
+import { EASE_OUT } from "./motion/animationVariants";
 
 function ToastContainer() {
     const { toasts, dismissToast } = useToast();
@@ -23,7 +24,7 @@ function ToastContainer() {
                         {...liveRegionProps}
                         initial={prefersReducedMotion ? false : { opacity: 0, y: -14, scale: 0.96 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+                        transition={{ duration: 0.28, ease: EASE_OUT }}
                     >
                         <span>{toast.message}</span>
                         <button

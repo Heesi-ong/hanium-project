@@ -72,7 +72,10 @@ function SttSection({
             </div>
 
             {Array.isArray(sttSegments) && sttSegments.length > 0 ? (
-                <CollapsibleDetails summary={`STT Segment (${sttSegments.length}개 구간) — 자세히 보기`}>
+                <CollapsibleDetails
+                    headingLevel={3}
+                    summary={`STT Segment (${sttSegments.length}개 구간) — 자세히 보기`}
+                >
                     <div className="pose-frame-table-wrap">
                         <table className="pose-frame-table">
                             <thead>

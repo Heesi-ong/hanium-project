@@ -1,8 +1,7 @@
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
-
-const PAGE_TRANSITION_EASE = [0.16, 1, 0.3, 1];
+import { EASE_OUT } from "../components/motion/animationVariants";
 
 function navLinkClassName({ isActive }) {
     const base = "rounded-lg px-3.5 py-2.5 text-sm font-bold transition-colors duration-150";
@@ -30,7 +29,7 @@ function MainLayout() {
                 className="sticky top-0 z-20 border-b border-white/10 bg-background-primary/90 backdrop-blur-md"
                 initial={prefersReducedMotion ? false : { opacity: 0, y: -18 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: 0.42, ease: EASE_OUT }}
             >
                 <div className="mx-auto flex h-[72px] max-w-[1120px] items-center justify-between px-6">
                     <NavLink to="/" className="inline-flex items-center gap-2.5 font-extrabold text-text-primary transition-transform duration-200 hover:-translate-y-0.5">
@@ -122,13 +121,13 @@ function MainLayout() {
             </motion.header>
 
             <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-                <AnimatePresence mode="wait">
+                <AnimatePresence>
                     <motion.div
                         key={location.pathname}
                         initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={prefersReducedMotion ? undefined : { opacity: 0, y: -12 }}
-                        transition={{ duration: 0.32, ease: PAGE_TRANSITION_EASE }}
+                        transition={{ duration: 0.32, ease: EASE_OUT }}
                     >
                         <Outlet />
                     </motion.div>

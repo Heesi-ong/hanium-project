@@ -55,7 +55,10 @@ function PoseAnalysisSection({
             </div>
 
             {Array.isArray(poseFrameResults) && poseFrameResults.length > 0 ? (
-                <CollapsibleDetails summary={`프레임별 자세 분석 (${poseFrameResults.length}개 프레임) — 자세히 보기`}>
+                <CollapsibleDetails
+                    headingLevel={3}
+                    summary={`프레임별 자세 분석 (${poseFrameResults.length}개 프레임) — 자세히 보기`}
+                >
                     <div className="pose-frame-table-wrap">
                         <table className="pose-frame-table">
                             <thead>

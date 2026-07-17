@@ -124,6 +124,9 @@ analysis:
   retry:
     max-count: ${ANALYSIS_RETRY_MAX_COUNT:3}
   executor:
+    core-pool-size: ${ANALYSIS_EXECUTOR_CORE_POOL_SIZE:2}
+    max-pool-size: ${ANALYSIS_EXECUTOR_MAX_POOL_SIZE:4}
+    queue-capacity: ${ANALYSIS_EXECUTOR_QUEUE_CAPACITY:20}
     await-termination-seconds: ${ANALYSIS_EXECUTOR_AWAIT_TERMINATION_SECONDS:25}
   job:
     # 작업 1건의 최대 실행 시간(분). 초과 시 단계 사이 체크포인트에서 자동 실패 처리합니다.

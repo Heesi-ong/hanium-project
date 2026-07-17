@@ -21,12 +21,15 @@ public class AsyncConfig {
     // StuckAnalysisJobWatchdogService가 이후 멈춘 작업으로 감지해 복구합니다.
     @Bean
     public ThreadPoolTaskExecutor analysisTaskExecutor(
+            @Value("${analysis.executor.core-pool-size:2}") int corePoolSize,
+            @Value("${analysis.executor.max-pool-size:4}") int maxPoolSize,
+            @Value("${analysis.executor.queue-capacity:20}") int queueCapacity,
             @Value("${analysis.executor.await-termination-seconds:25}") int analysisExecutorAwaitTerminationSeconds
     ) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
-        executor.setQueueCapacity(20);
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("analysis-worker-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(analysisExecutorAwaitTerminationSeconds);

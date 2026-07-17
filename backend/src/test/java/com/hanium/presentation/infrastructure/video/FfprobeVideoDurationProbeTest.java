@@ -1,5 +1,6 @@
 package com.hanium.presentation.infrastructure.video;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -14,9 +15,19 @@ class FfprobeVideoDurationProbeTest {
     void probeReturnsEmptyWhenFfprobeCannotReadVideo() throws Exception {
         assumeTrue(isFfprobeAvailable(), "ffprobe not available");
 
-        FfprobeVideoDurationProbe probe = new FfprobeVideoDurationProbe();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        FfprobeVideoDurationProbe probe = new FfprobeVideoDurationProbe(meterRegistry);
 
         assertThat(probe.probe(Path.of("missing-video-file.mp4"))).isEqualTo(Optional.empty());
+
+        // ffprobe가 존재하지 않는 파일을 읽지 못하면 fail-open 카운터가 하나 증가해야 합니다.
+        double failOpenCount = meterRegistry.find("video_duration_probe.result")
+                .tag("outcome", "fail_open")
+                .counters()
+                .stream()
+                .mapToDouble(counter -> counter.count())
+                .sum();
+        assertThat(failOpenCount).isEqualTo(1.0);
     }
 
     private boolean isFfprobeAvailable() throws Exception {

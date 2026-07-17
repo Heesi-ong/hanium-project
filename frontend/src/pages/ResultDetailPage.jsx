@@ -17,6 +17,7 @@ import OpenAiFeedbackStatusSection from "../components/result-detail/OpenAiFeedb
 import PipelineSection from "../components/result-detail/PipelineSection";
 import PoseAnalysisSection from "../components/result-detail/PoseAnalysisSection";
 import PracticePlanSection from "../components/result-detail/PracticePlanSection";
+import { formatDateTime } from "../components/result-detail/resultDetailFormatters";
 import ResultSummaryOverview from "../components/result-detail/ResultSummaryOverview";
 import SttSection from "../components/result-detail/SttSection";
 import TimelineFeedbackSection from "../components/result-detail/TimelineFeedbackSection";
@@ -668,6 +669,12 @@ function ResultDetailPage() {
                             status={currentStatus}
                             label={currentStatusDescription}
                         />
+                        {analysisStatus?.startedAt && (
+                            <>
+                                {" "}
+                                (접수 시각: {formatDateTime(analysisStatus.startedAt)})
+                            </>
+                        )}
                     </>
                 ) : (
                     ""

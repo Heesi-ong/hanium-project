@@ -6,6 +6,7 @@ import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.StorageProperties;
+import com.hanium.presentation.global.properties.ObjectStoragePolicyProperties;
 import com.hanium.presentation.global.properties.VideoProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
@@ -34,6 +35,7 @@ public class VideoFileCommandService {
     private final VideoDurationProbe videoDurationProbe;
     private final VideoProperties videoProperties;
     private final ObjectStorage objectStorage;
+    private final ObjectStoragePolicyProperties objectStoragePolicy;
 
     public VideoFileCommandService(
             LocalFileStorage localFileStorage,
@@ -41,7 +43,8 @@ public class VideoFileCommandService {
             StorageProperties storageProperties,
             VideoDurationProbe videoDurationProbe,
             VideoProperties videoProperties,
-            ObjectStorage objectStorage
+            ObjectStorage objectStorage,
+            ObjectStoragePolicyProperties objectStoragePolicy
     ) {
         this.localFileStorage = localFileStorage;
         this.filePathGenerator = filePathGenerator;
@@ -49,6 +52,7 @@ public class VideoFileCommandService {
         this.videoDurationProbe = videoDurationProbe;
         this.videoProperties = videoProperties;
         this.objectStorage = objectStorage;
+        this.objectStoragePolicy = objectStoragePolicy;
     }
 
     public StoredVideoInfo store(VideoUploadCommand command) {
@@ -77,11 +81,7 @@ public class VideoFileCommandService {
         );
     }
 
-    /**
-     * 로컬 디스크에 저장된 원본 영상을 오브젝트 스토리지(MinIO)에도 미러링합니다.
-     * 아직 어떤 서비스도 이 사본을 실제로 읽지 않으므로(Phase C에서 전환 예정),
-     * 이 미러링은 best-effort입니다 - 실패해도 업로드 자체는 그대로 성공 처리합니다.
-     */
+    /** 로컬에 저장한 원본을 MinIO에도 기록합니다. 운영 strict 모드에서는 실패 시 업로드를 거부합니다. */
     private void mirrorToObjectStorage(String jobId, String extension, Path storedPath, MultipartFile file) {
         String objectKey = "uploads/" + jobId + "/original" + extension;
         String contentType = Objects.requireNonNullElse(file.getContentType(), "application/octet-stream");
@@ -95,6 +95,19 @@ public class VideoFileCommandService {
                     objectKey,
                     exception.toString()
             );
+
+            if (objectStoragePolicy.writeRequired()) {
+                localFileStorage.deleteFileIfExists(storedPath);
+
+                if (exception instanceof BusinessException businessException) {
+                    throw businessException;
+                }
+
+                throw new BusinessException(
+                        ErrorCode.FILE_UPLOAD_FAILED,
+                        "오브젝트 스토리지에 영상을 저장하지 못했습니다."
+                );
+            }
         }
     }
 
@@ -106,6 +119,16 @@ public class VideoFileCommandService {
     public String resolveDownloadUrl(String jobId, String storedFilePath) {
         try {
             String objectKey = buildUploadObjectKey(jobId, storedFilePath);
+
+            if (!objectStorage.exists(objectKey)) {
+                log.info(
+                        "OBJECT_STORAGE_DOWNLOAD_OBJECT_MISSING jobId={} objectKey={} localFallback=true",
+                        jobId,
+                        objectKey
+                );
+                return null;
+            }
+
             return objectStorage.generatePresignedUrl(objectKey, Duration.ofHours(1));
         } catch (Exception exception) {
             log.warn(

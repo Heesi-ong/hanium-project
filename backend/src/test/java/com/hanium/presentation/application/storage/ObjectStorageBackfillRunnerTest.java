@@ -99,6 +99,17 @@ class ObjectStorageBackfillRunnerTest {
         verifyNoInteractions(objectStorage);
     }
 
+    @Test
+    void determineExitCodeFailsWhenAnyBackfillResultHasFailures() {
+        ObjectStorageBackfillRunner.BackfillResult successful = new ObjectStorageBackfillRunner.BackfillResult();
+        successful.uploaded = 2;
+        ObjectStorageBackfillRunner.BackfillResult failed = new ObjectStorageBackfillRunner.BackfillResult();
+        failed.failed = 1;
+
+        assertThat(ObjectStorageBackfillRunner.determineExitCode(successful, failed)).isEqualTo(1);
+        assertThat(ObjectStorageBackfillRunner.determineExitCode(successful)).isZero();
+    }
+
     private void createFile(Path file, String content) throws IOException {
         Files.createDirectories(file.getParent());
         Files.writeString(file, content);

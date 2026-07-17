@@ -66,7 +66,8 @@ public class ObjectStorageBackfillRunner implements ApplicationRunner {
                 resultResult.scanned, resultResult.uploaded, resultResult.skipped, resultResult.failed
         );
 
-        System.exit(SpringApplication.exit(applicationContext, () -> 0));
+        int exitCode = determineExitCode(uploadResult, resultResult);
+        System.exit(SpringApplication.exit(applicationContext, () -> exitCode));
     }
 
     BackfillResult backfillRootDirectory(Path rootDirectory, String objectKeyPrefix) {
@@ -81,6 +82,7 @@ public class ObjectStorageBackfillRunner implements ApplicationRunner {
                 backfillJobDirectory(jobDirectory, objectKeyPrefix, result);
             }
         } catch (IOException e) {
+            result.failed++;
             log.warn("OBJECT_STORAGE_BACKFILL_LIST_FAILED rootDirectory={}", rootDirectory, e);
         }
 
@@ -96,8 +98,18 @@ public class ObjectStorageBackfillRunner implements ApplicationRunner {
                 backfillFile(file, objectKeyPrefix + jobId + "/" + file.getFileName(), result);
             }
         } catch (IOException e) {
+            result.failed++;
             log.warn("OBJECT_STORAGE_BACKFILL_LIST_FAILED jobDirectory={}", jobDirectory, e);
         }
+    }
+
+    static int determineExitCode(BackfillResult... results) {
+        for (BackfillResult result : results) {
+            if (result.failed > 0) {
+                return 1;
+            }
+        }
+        return 0;
     }
 
     private void backfillFile(Path file, String objectKey, BackfillResult result) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getVideoAccessToken } from "../../api/analysisApi";
 import { API_BASE_URL } from "../../api/apiClient";
 import {
@@ -10,7 +10,7 @@ import EmptyState from "../EmptyState";
 import StateMessage from "../StateMessage";
 import { formatTimestamp } from "./resultDetailFormatters";
 
-function VideoPlayerSection({ jobId, notableMoments = [] }) {
+function VideoPlayerSection({ jobId, notableMoments = [], seekControllerRef }) {
     const videoRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [videoUrl, setVideoUrl] = useState("");
@@ -75,8 +75,8 @@ function VideoPlayerSection({ jobId, notableMoments = [] }) {
         };
     }, [jobId]);
 
-    function handleSeekToMoment(timestampSec) {
-        if (!videoRef.current) {
+    const handleSeekToMoment = useCallback((timestampSec) => {
+        if (!videoRef.current || typeof timestampSec !== "number") {
             return;
         }
 
@@ -86,7 +86,22 @@ function VideoPlayerSection({ jobId, notableMoments = [] }) {
         if (playResult?.catch) {
             playResult.catch(() => {});
         }
-    }
+    }, []);
+
+    // 부모(ResultDetailPage)가 시각 분석 관찰 항목 클릭 시 이 영상을 해당 구간으로
+    // 이동시킬 수 있도록, 시크 함수를 공유 ref에 등록합니다.
+    useEffect(() => {
+        if (!seekControllerRef) {
+            return undefined;
+        }
+
+        seekControllerRef.current = handleSeekToMoment;
+        return () => {
+            if (seekControllerRef.current === handleSeekToMoment) {
+                seekControllerRef.current = null;
+            }
+        };
+    }, [seekControllerRef, handleSeekToMoment]);
 
     if (loading) {
         return <EmptyState title="영상을 불러오는 중입니다." />;

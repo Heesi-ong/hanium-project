@@ -75,6 +75,9 @@ frontend/dist/
 frontend/.vite/
 frontend/playwright-report/
 frontend/test-results/
+frontend/coverage/
+.playwright-cli/
+backend/build/reports/jacoco/
 
 # Environment files
 .env

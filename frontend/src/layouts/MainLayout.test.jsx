@@ -41,7 +41,9 @@ describe("MainLayout", () => {
 
         renderMainLayout();
 
-        expect(screen.getByRole("link", { name: "홈" })).toHaveAttribute("href", "/");
+        expect(screen.getByRole("link", { name: "홈" }))
+            .toHaveAttribute("href", "/")
+            .toHaveClass("bg-primary-deep");
         expect(screen.getByRole("link", { name: "로그인" })).toHaveAttribute("href", "/login");
         expect(screen.getByRole("link", { name: "회원가입" })).toHaveAttribute("href", "/signup");
         expect(screen.queryByRole("link", { name: "영상 업로드" })).not.toBeInTheDocument();
@@ -50,8 +52,12 @@ describe("MainLayout", () => {
         expect(screen.queryByRole("link", { name: "시스템 상태" })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "로그아웃" })).not.toBeInTheDocument();
         expect(screen.queryByText("user@example.com")).not.toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "개인정보처리방침" })).toHaveAttribute("href", "/privacy");
-        expect(screen.getByRole("link", { name: "이용약관" })).toHaveAttribute("href", "/terms");
+        expect(screen.getByRole("link", { name: "개인정보처리방침" }))
+            .toHaveAttribute("href", "/privacy")
+            .toHaveClass("text-text-secondary");
+        expect(screen.getByRole("link", { name: "이용약관" }))
+            .toHaveAttribute("href", "/terms")
+            .toHaveClass("text-text-secondary");
     });
 
     it("shows authenticated navigation links and user controls for authenticated users", () => {

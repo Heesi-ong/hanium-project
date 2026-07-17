@@ -26,18 +26,84 @@ function getVisualGenerationModeClassName(mode) {
     return "mini-badge muted";
 }
 
+// 실제 영상 분석(REAL)이 아니라 예시/대체 데이터로 채워진 경우, 사용자가 이 결과를
+// 자신의 발표 영상에 기반한 것으로 오해하지 않도록 경고 문구를 반환합니다.
+function getSampleWarning(mode) {
+    if (mode === "MOCK") {
+        return "※ 이 시각 분석은 실제 영상 분석이 아닌 예시(샘플) 데이터입니다. 업로드한 발표 영상의 내용에 기반하지 않습니다.";
+    }
+
+    if (mode === "FALLBACK") {
+        return "※ 실제 영상 분석에 실패해 예시(샘플) 데이터로 대체되었습니다. 이 시각 분석 결과는 업로드한 발표 영상에 기반하지 않습니다.";
+    }
+
+    return "";
+}
+
 function hasText(value) {
     return typeof value === "string" && value.trim().length > 0;
 }
 
-function VisualAnalysisBox({ visualAnalysis }) {
+// Video LLM 관찰 카테고리를 사용자에게 보여줄 순서와 한국어 라벨로 매핑합니다.
+const OBSERVATION_CATEGORIES = [
+    ["eyeContact", "시선"],
+    ["facialExpression", "표정"],
+    ["gesture", "제스처"],
+    ["posture", "자세"],
+];
+
+// 초 단위 값을 m:ss 형태로 표시합니다(예: 75 -> "1:15"). 숫자가 아니면 빈 문자열.
+function formatSeconds(value) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+        return "";
+    }
+
+    const total = Math.max(0, Math.round(value));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+// 한 관찰 항목의 구간을 "0:12–0:18" 또는 "0:12" 형태로 표시합니다.
+function formatObservationRange(item) {
+    const start = formatSeconds(item?.startSec);
+    const end = formatSeconds(item?.endSec);
+    if (start && end && start !== end) {
+        return `${start}–${end}`;
+    }
+    return start || end || "";
+}
+
+// 신뢰도(0~1)를 백분율 문자열로. 범위를 벗어나거나 숫자가 아니면 빈 문자열.
+function formatConfidence(value) {
+    if (typeof value !== "number" || Number.isNaN(value) || value < 0 || value > 1) {
+        return "";
+    }
+    return `${Math.round(value * 100)}%`;
+}
+
+// observations 객체에서 항목이 하나라도 있는 카테고리만 [라벨, 항목목록]으로 추립니다.
+function getObservationGroups(observations) {
+    if (!observations || typeof observations !== "object") {
+        return [];
+    }
+
+    return OBSERVATION_CATEGORIES.map(([key, label]) => {
+        const items = observations[key];
+        return [label, Array.isArray(items) ? items : []];
+    }).filter(([, items]) => items.length > 0);
+}
+
+function VisualAnalysisBox({ visualAnalysis, onSeekToTime }) {
     const globalSummary = visualAnalysis?.globalSummary || {};
     const generationMode = visualAnalysis?.model?.generationMode || "UNKNOWN";
+    const sampleWarning = getSampleWarning(generationMode);
     const summaryItems = [
         ["전체 인상", globalSummary.visualDelivery],
         ["강점", globalSummary.mainStrength],
         ["개선점", globalSummary.mainWeakness],
     ].filter(([, value]) => hasText(value));
+    const observationGroups = getObservationGroups(visualAnalysis?.observations);
 
     return (
         <article className="detail-card">
@@ -57,6 +123,12 @@ function VisualAnalysisBox({ visualAnalysis }) {
                             </strong>
                         </div>
 
+                        {sampleWarning && (
+                            <p className="muted-text" role="note">
+                                {sampleWarning}
+                            </p>
+                        )}
+
                         {summaryItems.map(([label, value]) => (
                             <div className="key-value-item" key={label}>
                                 <span>{label}</span>
@@ -65,14 +137,73 @@ function VisualAnalysisBox({ visualAnalysis }) {
                         ))}
                     </div>
 
-                    <p className="muted-text">세부 관찰 데이터는 준비 중입니다.</p>
+                    <div className="observation-groups">
+                        <h3>세부 관찰</h3>
+                        {observationGroups.length === 0 ? (
+                            <p className="muted-text">표시할 세부 관찰 데이터가 없습니다.</p>
+                        ) : (
+                            observationGroups.map(([categoryLabel, items]) => (
+                                <div className="observation-group" key={categoryLabel}>
+                                    <h4>{categoryLabel}</h4>
+                                    <ul className="observation-list">
+                                        {items.map((item, index) => {
+                                            const range = formatObservationRange(item);
+                                            const confidence = formatConfidence(item?.confidence);
+                                            return (
+                                                <li
+                                                    className="observation-item"
+                                                    key={`${categoryLabel}-${index}`}
+                                                >
+                                                    <div className="observation-meta">
+                                                        {range &&
+                                                            (onSeekToTime &&
+                                                            typeof item?.startSec === "number" ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="observation-time observation-seek"
+                                                                    onClick={() =>
+                                                                        onSeekToTime(item.startSec)
+                                                                    }
+                                                                    aria-label={`영상을 ${range} 구간으로 이동`}
+                                                                >
+                                                                    {range}
+                                                                </button>
+                                                            ) : (
+                                                                <span className="observation-time">
+                                                                    {range}
+                                                                </span>
+                                                            ))}
+                                                        {hasText(item?.label) && (
+                                                            <span className="mini-badge muted">
+                                                                {item.label.trim()}
+                                                            </span>
+                                                        )}
+                                                        {confidence && (
+                                                            <span className="observation-confidence">
+                                                                신뢰도 {confidence}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {hasText(item?.description) && (
+                                                        <p className="observation-description">
+                                                            {item.description.trim()}
+                                                        </p>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </>
             )}
         </article>
     );
 }
 
-function FeedbackSection({ feedback, visualAnalysis }) {
+function FeedbackSection({ feedback, visualAnalysis, onSeekToTime }) {
     return (
         <div className="detail-grid">
             <article className="detail-card wide">
@@ -114,7 +245,10 @@ function FeedbackSection({ feedback, visualAnalysis }) {
                 </div>
             </article>
 
-            <VisualAnalysisBox visualAnalysis={visualAnalysis} />
+            <VisualAnalysisBox
+                visualAnalysis={visualAnalysis}
+                onSeekToTime={onSeekToTime}
+            />
         </div>
     );
 }

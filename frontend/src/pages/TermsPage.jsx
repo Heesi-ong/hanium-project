@@ -5,7 +5,7 @@ function TermsPage() {
         <section className="page-section">
             <article className="upload-card policy-card">
                 <p className="eyebrow">Terms Draft</p>
-                <h2>이용약관</h2>
+                <h1>이용약관</h1>
 
                 <div className="policy-disclaimer">
                     이 문서는 초안이며 법률 전문가의 검토를 거치지 않았습니다.

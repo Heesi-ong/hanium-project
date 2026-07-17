@@ -412,8 +412,14 @@ grep '"requestId":"<requestId>"' storage/logs/backend.log | jq .
 cd ~/Desktop/hanium\ project/frontend
 
 npm install
+echo "VITE_API_BASE_URL=http://localhost:8080" > .env
 npm run dev
 ```
+
+`.env`(git에 커밋되지 않음)로 `VITE_API_BASE_URL`을 지정하지 않으면 빈 문자열이 기본값이 되어,
+브라우저가 API 요청을 backend(8080)가 아니라 frontend 자기 자신(5173)으로 보냅니다. 이 경우
+정적 페이지는 정상적으로 보이지만 로그인을 포함한 모든 API 호출이 조용히 실패합니다(`docker
+compose`로 실행할 때는 `VITE_API_BASE_URL`이 빌드 인자로 주입되므로 이 문제가 없습니다. 7.1 참고).
 
 브라우저 접속:
 
@@ -795,8 +801,14 @@ export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 
 ```bash
 cd ~/Desktop/hanium\ project/frontend
+echo "VITE_API_BASE_URL=http://localhost:8080" > .env
 npm run dev
 ```
+
+`.env` 없이 실행하면 `VITE_API_BASE_URL`이 빈 문자열로 기본 적용되어 브라우저가 API 요청을
+backend(8080)가 아니라 frontend 자기 자신(5173)으로 보냅니다. 홈 화면은 정상적으로 보이지만
+로그인을 포함한 모든 API 호출이 조용히 실패하니, 아래 12.2 브라우저 테스트를 진행하기 전에
+반드시 이 `.env`를 만들어야 합니다.
 
 ### 12.2 브라우저 테스트
 

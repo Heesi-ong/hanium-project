@@ -319,3 +319,42 @@
 2. **MinIO 백필 스크립트가 실제 운영 환경에서 리허설되지 않았습니다.** `ObjectStorageBackfillRunner`는 코드/단위 테스트로만 검증됐고, 실제 MinIO가 떠 있는 환경에서 `STORAGE_BACKFILL_ENABLED=true`로 1회 실행해 본 적은 없습니다.
 3. **로컬 디스크 fallback 제거 여부가 결정되지 않았습니다.** 현재는 MinIO 실패 시 로컬 디스크로 계속 동작하는 이중 구조입니다. 다중 인스턴스 수평 확장을 완전히 전제하려면 로컬 fallback을 언제 걷어낼지 별도 결정이 필요합니다.
 4. **원격 백업 보관과 암호화가 없습니다.** 복구 리허설은 완료됐지만, 백업 파일은 여전히 로컬 `storage/backups/`에만 있고 원격 저장소 반출이나 암호화는 없습니다.
+
+---
+
+## 업데이트: 2026-07-17 현재 상태
+
+2026-07-16 이후 실제 MinIO·MySQL·멀티워커 검증과 운영 보강 결과를 반영한다. 이전 절은 당시 스냅샷으로 유지한다.
+
+### 완료된 잔여 리스크
+
+- **MinIO 백필과 다중 워커**: 일회용 실제 MinIO에서 백필 최초 실행과 재실행 idempotency를 검증했고, 서로 다른 로컬 저장 경로를 쓰는 API 1개+worker 2개가 영상 4건을 각각 2건씩 처리했다. API 로컬 결과가 0개인 상태에서도 MinIO 결과 4건을 조회했다. 상세 기록은 `docs/ops/minio-backfill-and-fallback-plan.md`에 있다.
+- **prod 저장 정책**: 신규 업로드·결과의 MinIO 쓰기를 필수로 만들고 결과 JSON은 MinIO 우선 읽기로 전환했다. 기존 파일 보호를 위한 로컬 읽기 fallback만 유지한다.
+- **백업 원격 반출·암호화**: MySQL 덤프의 MinIO 반출과 AES-256-CBC/PBKDF2 암호화, 잘못된 키 실패, 실제 MySQL 복구와 데이터 대조를 완료했다.
+- **P4 관측성·부하**: ffprobe fail-open 및 Video LLM 폴백 카운터와 알림을 추가했고, k6 시나리오에서 의도한 429를 실패율로 오인하지 않도록 검증했다.
+
+### analysis-engine 모델 풀 운영 보강
+
+- 모델 재사용 자체는 `model_registry.py` 인스턴스 풀과 FastAPI lifespan으로 이미 해결된 상태였다.
+- 풀 크기 환경변수가 0·음수·비정수이면 요청이 무기한 대기할 수 있어, 프로세스 시작 시 1 이상의 정수만 허용하도록 fail-fast 검증을 추가했다.
+- 루트 `.env.example`, `analysis-engine/.env.example`, `docker-compose.yml`에 Whisper/Pose/Face 풀 크기를 연결했다.
+- FastAPI lifespan 종료 시 모델 인스턴스를 닫고 readiness 카운터를 초기화한다. 레지스트리와 lifecycle을 포함한 analysis-engine 전체 테스트 63개가 통과했다.
+- Compose는 두 엔진에 HTTP healthcheck를 두고 backend와 analysis-worker가 `service_healthy`까지 기다리도록 변경했다. 최초 모델 프리로드 중 backend가 먼저 올라와 초기 분석 요청이 실패하는 기동 순서 위험을 제거했으며, CI가 렌더링된 의존 조건을 검사한다.
+- Redis도 인증 healthcheck와 `service_healthy` 의존 조건을 적용했다. 기존 command가 공백 포함 비밀번호를 여러 인자로 분리하던 문제를 컨테이너 환경변수 기반 실행으로 수정했으며, 실제 `redis:7-alpine`에서 공백 포함 키의 `healthy`/`PONG`과 잘못된 키 거부를 검증했다.
+- backend·analysis-worker·backup은 MinIO 서버 준비뿐 아니라 `minio-init`의 버킷 생성 성공까지 기다린다. 격리 Compose에서 `MinIO Healthy → minio-init exit 0 → 두 버킷 확인 소비자 실행` 순서와 초기화 재실행 종료 코드 0을 검증했다.
+- MySQL healthcheck를 인증 없는 `mysqladmin ping`에서 root 인증 TCP `SELECT 1`로 강화했다. 실제 `mysql:8.4`에서 공백 포함 root 키의 `healthy`/쿼리 성공과 잘못된 키의 종료 코드 1·`Access denied`를 검증했으며, CI가 MySQL을 포함한 핵심 의존성 전체의 health 계약을 검사한다.
+- backup은 더 이상 컨테이너 시작 시 AMD64 전용 `mc`를 다운로드하지 않는다. 공식 멀티 아키텍처 `minio/mc`에서 바이너리를 포함한 전용 이미지를 빌드하며, ARM64에서 실제 MySQL 덤프→AES-256 암호화→MinIO 업로드→다운로드 해시 일치→복호화 데이터 대조까지 검증했다. CI도 백업 이미지를 빌드하고 필수 도구 존재를 확인한다.
+- 로컬 덤프 성공만 기록하고 MinIO 반출 실패는 경고 로그로만 남던 관측 공백을 해소했다. 로컬·원격 상태와 마지막 성공 시각을 독립 메트릭으로 기록하고, 운영에서는 원격 실패를 종료 코드 1로 전파하며, 원격 실패·26시간 정체 알림과 셸 회귀 테스트를 추가했다.
+- 엔진용 presigned URL이 객체 존재 여부 확인 없이 생성돼 백필 누락 파일마다 엔진 다운로드 timeout 후 로컬 fallback으로 늦게 전환되던 문제를 수정했다. 실제 MinIO 통합 테스트에서 누락 객체는 URL을 생성하지 않고 즉시 로컬 fallback 신호(`null`)를 반환함을 확인했다.
+- Video LLM 엔진이 최대 500MB 영상을 MinIO 응답과 NVIDIA Asset PUT에서 통째로 `bytes`에 적재하던 메모리 위험을 제거했다. 다운로드는 크기 제한 임시 파일, Asset PUT은 `Content-Length`가 있는 1MB 청크 스트림으로 처리하고 임시 파일은 성공·실패 모두 정리한다.
+- analysis-engine의 MinIO 다운로드에도 500MB 상한을 헤더·누적 스트림 양쪽에 적용했다. 기존에는 연결 중단·HTTP 오류·빈 응답·과대 객체에서 부분 파일이 남을 수 있었으나, 이제 모든 실패 경로에서 부분 파일과 응답 연결을 정리한다.
+- 두 Python 엔진의 영상 크기 상한은 FastAPI lifespan에서 1 이상의 정수인지 검증한다. 잘못된 운영값은 첫 분석 요청까지 숨지 않고 프로세스 기동을 fail-fast로 중단한다.
+- Starlette 1.3.1 TestClient가 기존 `httpx` fallback을 폐기할 예정인데도 HTTPX2가 requirements에 없고 로컬 venv 잔존 패키지에 의존하던 CI 재현성 문제를 해소했다. HTTPX2 2.7.0과 전이 의존성을 고정했으며 깨끗한 Python 3.13 venv 설치·전체 테스트에서 경고 없이 통과했다.
+- analysis-engine 배포 이미지는 Python 3.12 전용 MediaPipe/OpenCV 분기를 사용하지만 기존 CI pytest는 Python 3.13만 실행하던 런타임 불일치를 해소했다. docker-build job이 실제 Python 3.12 이미지에 테스트만 읽기 전용 마운트해 전체 pytest와 `pip check`를 수행하고, Video LLM runtime 이미지도 앱 import·설정·의존성 smoke를 통과해야 한다.
+
+### 남은 외부 환경 항목
+
+1. staging 기존 `storage/uploads`, `storage/results` 전체 백필과 객체 수 대조
+2. staging MinIO 강제 중단 시 신규 쓰기 실패 동작 확인
+3. 실제 NVIDIA Video LLM 활성화와 비용·국외 이전 정책 확정
+4. 실제 운영 CPU/GPU에서 장시간 부하 측정 후 backend executor와 analysis-engine 모델 풀 크기 조정

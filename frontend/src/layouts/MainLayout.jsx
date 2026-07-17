@@ -1,6 +1,8 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
-import { motion, useReducedMotion } from "motion/react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
+
+const PAGE_TRANSITION_EASE = [0.16, 1, 0.3, 1];
 
 function navLinkClassName({ isActive }) {
     const base = "rounded-lg px-3.5 py-2.5 text-sm font-bold transition-colors duration-150";
@@ -20,6 +22,7 @@ function accountLinkClassName({ isActive }) {
 function MainLayout() {
     const { isAuthenticated, user, logout } = useAuth();
     const prefersReducedMotion = useReducedMotion();
+    const location = useLocation();
 
     return (
         <div className="min-h-screen bg-background-primary text-text-primary">
@@ -118,14 +121,19 @@ function MainLayout() {
                 </div>
             </motion.header>
 
-            <motion.main
-                className="mx-auto max-w-[1120px] px-6 pb-20 pt-12"
-                initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-            >
-                <Outlet />
-            </motion.main>
+            <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={location.pathname}
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={prefersReducedMotion ? undefined : { opacity: 0, y: -12 }}
+                        transition={{ duration: 0.32, ease: PAGE_TRANSITION_EASE }}
+                    >
+                        <Outlet />
+                    </motion.div>
+                </AnimatePresence>
+            </main>
 
             <footer className="px-6 py-6 text-center text-sm text-text-muted">
                 <Link to="/privacy" className="text-text-secondary hover:text-primary-bright">

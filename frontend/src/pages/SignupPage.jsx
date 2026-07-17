@@ -3,6 +3,7 @@ import { useState } from "react";
 import { signup } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
+import PageFadeIn from "../components/motion/PageFadeIn";
 import { useAuth } from "../context/AuthContext";
 
 const hintStyle = {
@@ -66,7 +67,7 @@ function SignupPage() {
 
     return (
         <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <section className="page-section">
+            <PageFadeIn className="page-section">
                 <article className="upload-card">
                     <p className="eyebrow">Create account</p>
                     <h2>회원가입</h2>
@@ -148,7 +149,7 @@ function SignupPage() {
                         </div>
                     </form>
                 </article>
-            </section>
+            </PageFadeIn>
         </main>
     );
 }

@@ -2,6 +2,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
+import PageFadeIn from "../components/motion/PageFadeIn";
 import { useAuth } from "../context/AuthContext";
 
 function LoginPage() {
@@ -67,7 +68,7 @@ function LoginPage() {
 
     return (
         <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <section className="page-section">
+            <PageFadeIn className="page-section">
                 <article className="upload-card">
                     <p className="eyebrow">Sign in</p>
                     <h2>로그인</h2>
@@ -140,7 +141,7 @@ function LoginPage() {
                         <Link to="/terms">이용약관</Link>
                     </p>
                 </article>
-            </section>
+            </PageFadeIn>
         </main>
     );
 }

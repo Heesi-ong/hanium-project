@@ -1,4 +1,5 @@
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -271,6 +272,28 @@ def resolve_video_path(video_path: str) -> Path | None:
 
 
 VIDEO_DOWNLOAD_TIMEOUT_SECONDS = 60
+VIDEO_DOWNLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+DEFAULT_ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB = 500
+
+
+def resolve_analysis_engine_max_video_size_bytes() -> int:
+    raw_value = os.getenv(
+        "ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB",
+        str(DEFAULT_ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB),
+    ).strip()
+    try:
+        max_size_mb = int(raw_value)
+    except ValueError as exception:
+        raise RuntimeError(
+            "ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB must be a positive integer."
+        ) from exception
+
+    if max_size_mb <= 0:
+        raise RuntimeError(
+            "ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB must be a positive integer."
+        )
+
+    return max_size_mb * 1024 * 1024
 
 
 def resolve_or_download_video_path(
@@ -298,9 +321,11 @@ def resolve_or_download_video_path(
 
 def download_video_from_url(
         job_id: str,
-        video_download_url: str,
-        original_video_path: str,
+    video_download_url: str,
+    original_video_path: str,
 ) -> Path | None:
+    download_path: Path | None = None
+    response = None
     try:
         project_root = resolve_project_root()
         download_directory = project_root / "storage" / "temp" / job_id / "download"
@@ -308,6 +333,7 @@ def download_video_from_url(
 
         extension = Path(original_video_path).suffix or ".mp4"
         download_path = download_directory / f"original{extension}"
+        max_size = resolve_analysis_engine_max_video_size_bytes()
 
         response = requests.get(
             video_download_url,
@@ -316,20 +342,38 @@ def download_video_from_url(
         )
         response.raise_for_status()
 
+        content_length = response.headers.get("content-length")
+        if content_length is not None and int(content_length) > max_size:
+            raise ValueError(
+                "Downloaded video exceeds ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB "
+                f"({content_length} bytes > {max_size} bytes)."
+            )
+
+        downloaded_size = 0
         with open(download_path, "wb") as video_file:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
+            for chunk in response.iter_content(chunk_size=VIDEO_DOWNLOAD_CHUNK_SIZE_BYTES):
                 if chunk:
+                    downloaded_size += len(chunk)
+                    if downloaded_size > max_size:
+                        raise ValueError(
+                            "Downloaded video exceeds ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB "
+                            f"({downloaded_size} bytes > {max_size} bytes)."
+                        )
                     video_file.write(chunk)
 
-        if not download_path.exists() or download_path.stat().st_size == 0:
-            logger.warning("(%s) 다운로드한 영상 파일이 비어 있습니다: %s", job_id, download_path)
-            return None
+        if downloaded_size == 0:
+            raise ValueError("Downloaded video is empty.")
 
         return download_path.resolve()
 
     except Exception as exception:
+        if download_path is not None:
+            download_path.unlink(missing_ok=True)
         logger.warning("(%s) MinIO 다운로드 URL 요청 실패: %s", job_id, exception)
         return None
+    finally:
+        if response is not None:
+            response.close()
 
 
 def resolve_project_root() -> Path:

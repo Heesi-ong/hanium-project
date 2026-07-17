@@ -29,14 +29,28 @@ FACE_TASK_MODEL_URL = (
     "face_landmarker.task"
 )
 
+def _positive_int_from_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name, str(default))
+
+    try:
+        value = int(raw_value)
+    except ValueError as exception:
+        raise ValueError(f"{name} must be a positive integer, got {raw_value!r}.") from exception
+
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1, got {value}.")
+
+    return value
+
+
 # 동시에 여러 분석 작업이 들어와도 모델 추론이 완전히 직렬화되지 않도록, 모델별로
 # 미리 만들어둔 인스턴스 풀에서 빌려 쓰고 반납하는 방식을 사용합니다. 풀 크기만큼
 # 동시 추론이 가능해지고, 그 이상 요청이 몰리면 인스턴스가 반납될 때까지 자연스럽게
 # 대기합니다(단일 락과 달리 완전 직렬화는 아닙니다). 풀 크기는 컨테이너 CPU/메모리
 # 제한에 맞게 환경변수로 조정하세요.
-WHISPER_POOL_SIZE = int(os.environ.get("ANALYSIS_ENGINE_WHISPER_POOL_SIZE", "2"))
-POSE_POOL_SIZE = int(os.environ.get("ANALYSIS_ENGINE_POSE_POOL_SIZE", "2"))
-FACE_POOL_SIZE = int(os.environ.get("ANALYSIS_ENGINE_FACE_POOL_SIZE", "2"))
+WHISPER_POOL_SIZE = _positive_int_from_env("ANALYSIS_ENGINE_WHISPER_POOL_SIZE", 2)
+POSE_POOL_SIZE = _positive_int_from_env("ANALYSIS_ENGINE_POSE_POOL_SIZE", 2)
+FACE_POOL_SIZE = _positive_int_from_env("ANALYSIS_ENGINE_FACE_POOL_SIZE", 2)
 
 _whisper_pool: "queue.Queue[object]" = queue.Queue()
 _pose_pool: "queue.Queue[object]" = queue.Queue()
@@ -246,19 +260,37 @@ def is_ready() -> bool:
     return all(model_status().values())
 
 
-def close_all() -> None:
-    for pool_name, pool in (("pose", _pose_pool), ("face", _face_pool)):
-        while not pool.empty():
-            try:
-                instance = pool.get_nowait()
-            except queue.Empty:
-                break
+def _close_pool(pool_name: str, pool: queue.Queue[object]) -> None:
+    while not pool.empty():
+        try:
+            instance = pool.get_nowait()
+        except queue.Empty:
+            break
 
-            if hasattr(instance, "close"):
-                try:
-                    instance.close()
-                except Exception:
-                    logger.warning("%s landmarker 종료 중 오류가 발생했습니다.", pool_name, exc_info=True)
+        if hasattr(instance, "close"):
+            try:
+                instance.close()
+            except Exception:
+                logger.warning("%s 모델 종료 중 오류가 발생했습니다.", pool_name, exc_info=True)
+
+
+def close_all() -> None:
+    global _whisper_loaded_count, _pose_loaded_count, _face_loaded_count
+
+    # FastAPI lifespan 종료 시점에는 요청 처리가 끝난 상태입니다. 각 생성 락을 잡고 풀을
+    # 비운 뒤 카운터도 함께 초기화해, 테스트 재기동이나 명시적 재초기화에서 readiness가
+    # 이미 닫힌 모델을 loaded로 오인하지 않게 합니다.
+    with _whisper_load_lock:
+        _close_pool("whisper", _whisper_pool)
+        _whisper_loaded_count = 0
+
+    with _pose_load_lock:
+        _close_pool("pose", _pose_pool)
+        _pose_loaded_count = 0
+
+    with _face_load_lock:
+        _close_pool("face", _face_pool)
+        _face_loaded_count = 0
 
 
 atexit.register(close_all)

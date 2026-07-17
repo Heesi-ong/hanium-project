@@ -356,9 +356,11 @@ def test_resolve_video_path_finds_absolute_and_relative_files(tmp_path, monkeypa
 
 
 class FakeDownloadResponse:
-    def __init__(self, chunks, status_code=200):
+    def __init__(self, chunks, status_code=200, headers=None):
         self._chunks = chunks
         self.status_code = status_code
+        self.headers = headers or {}
+        self.closed = False
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -366,15 +368,21 @@ class FakeDownloadResponse:
 
     def iter_content(self, chunk_size):
         for chunk in self._chunks:
+            if isinstance(chunk, Exception):
+                raise chunk
             yield chunk
+
+    def close(self):
+        self.closed = True
 
 
 def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypatch):
     monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    response = FakeDownloadResponse([b"video-bytes"])
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: FakeDownloadResponse([b"video-bytes"]),
+        lambda url, stream, timeout: response,
     )
 
     downloaded_path = basic.download_video_from_url(
@@ -386,6 +394,7 @@ def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypat
     assert downloaded_path is not None
     assert downloaded_path.read_bytes() == b"video-bytes"
     assert downloaded_path.suffix == ".mp4"
+    assert response.closed is True
 
 
 def test_download_video_from_url_returns_none_when_request_fails(tmp_path, monkeypatch):
@@ -403,6 +412,122 @@ def test_download_video_from_url_returns_none_when_request_fails(tmp_path, monke
     )
 
     assert downloaded_path is None
+
+
+def test_download_video_from_url_removes_partial_file_and_closes_response(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    response = FakeDownloadResponse([
+        b"partial-video",
+        basic.requests.ConnectionError("stream interrupted"),
+    ])
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout: response,
+    )
+
+    downloaded_path = basic.download_video_from_url(
+        "job-partial-download",
+        "https://minio.local/uploads/job-partial-download/original.mp4",
+        "/storage/uploads/job-partial-download/original.mp4",
+    )
+
+    expected_path = (
+        tmp_path / "storage" / "temp" / "job-partial-download" / "download" / "original.mp4"
+    )
+    assert downloaded_path is None
+    assert expected_path.exists() is False
+    assert response.closed is True
+
+
+def test_download_video_from_url_rejects_oversized_content_length(tmp_path, monkeypatch):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setenv("ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB", "1")
+    response = FakeDownloadResponse(
+        [b"not-written"],
+        headers={"content-length": str(1024 * 1024 + 1)},
+    )
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout: response,
+    )
+
+    downloaded_path = basic.download_video_from_url(
+        "job-oversized-header",
+        "https://minio.local/uploads/job-oversized-header/original.mp4",
+        "/storage/uploads/job-oversized-header/original.mp4",
+    )
+
+    assert downloaded_path is None
+    assert response.closed is True
+
+
+def test_download_video_from_url_rejects_oversized_stream_and_removes_file(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setenv("ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB", "1")
+    response = FakeDownloadResponse([b"x" * (1024 * 1024), b"overflow"])
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout: response,
+    )
+
+    downloaded_path = basic.download_video_from_url(
+        "job-oversized-stream",
+        "https://minio.local/uploads/job-oversized-stream/original.mp4",
+        "/storage/uploads/job-oversized-stream/original.mp4",
+    )
+
+    expected_path = (
+        tmp_path / "storage" / "temp" / "job-oversized-stream" / "download" / "original.mp4"
+    )
+    assert downloaded_path is None
+    assert expected_path.exists() is False
+    assert response.closed is True
+
+
+def test_download_video_from_url_rejects_empty_response_and_removes_file(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    response = FakeDownloadResponse([])
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout: response,
+    )
+
+    downloaded_path = basic.download_video_from_url(
+        "job-empty-download",
+        "https://minio.local/uploads/job-empty-download/original.mp4",
+        "/storage/uploads/job-empty-download/original.mp4",
+    )
+
+    expected_path = (
+        tmp_path / "storage" / "temp" / "job-empty-download" / "download" / "original.mp4"
+    )
+    assert downloaded_path is None
+    assert expected_path.exists() is False
+    assert response.closed is True
+
+
+@pytest.mark.parametrize("configured_value", ["0", "-1", "invalid"])
+def test_resolve_analysis_engine_max_video_size_rejects_invalid_values(
+    monkeypatch,
+    configured_value,
+):
+    monkeypatch.setenv("ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB", configured_value)
+
+    with pytest.raises(RuntimeError, match="must be a positive integer"):
+        basic.resolve_analysis_engine_max_video_size_bytes()
 
 
 def test_resolve_or_download_video_path_prefers_download_url(tmp_path, monkeypatch):

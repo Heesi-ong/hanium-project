@@ -3,12 +3,14 @@ package com.hanium.presentation.infrastructure.storage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.properties.ObjectStoragePolicyProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -19,10 +21,16 @@ public class JsonFileStorage {
 
     private final ObjectMapper objectMapper;
     private final ObjectStorage objectStorage;
+    private final ObjectStoragePolicyProperties objectStoragePolicy;
 
-    public JsonFileStorage(ObjectMapper objectMapper, ObjectStorage objectStorage) {
+    public JsonFileStorage(
+            ObjectMapper objectMapper,
+            ObjectStorage objectStorage,
+            ObjectStoragePolicyProperties objectStoragePolicy
+    ) {
         this.objectMapper = objectMapper;
         this.objectStorage = objectStorage;
+        this.objectStoragePolicy = objectStoragePolicy;
     }
 
     public void saveJson(Path path, Object data) {
@@ -38,6 +46,19 @@ public class JsonFileStorage {
     }
 
     public <T> T readJson(Path path, Class<T> type) {
+        if (!objectStoragePolicy.readPreferred() && Files.exists(path)) {
+            return readLocalJson(path, type);
+        }
+
+        T objectStorageValue = readObjectStorageJson(path, type);
+        if (objectStorageValue != null) {
+            return objectStorageValue;
+        }
+
+        return readLocalJson(path, type);
+    }
+
+    private <T> T readLocalJson(Path path, Class<T> type) {
         try {
             if (!Files.exists(path)) {
                 throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "JSON 파일을 찾을 수 없습니다.");
@@ -49,13 +70,25 @@ public class JsonFileStorage {
         }
     }
 
-    /**
-     * 로컬에 저장된 결과 JSON을 오브젝트 스토리지(MinIO)에도 미러링합니다.
-     * 아직 어떤 서비스도 이 사본을 실제로 읽지 않으므로(Phase C에서 전환 예정) best-effort입니다 -
-     * 로컬 저장은 이미 끝난 뒤라 미러링 실패가 saveJson() 자체를 실패시키지 않습니다.
-     */
+    private <T> T readObjectStorageJson(Path path, Class<T> type) {
+        String objectKey = buildObjectKey(path);
+
+        try (InputStream inputStream = objectStorage.getObject(objectKey)) {
+            return objectMapper.readValue(inputStream, type);
+        } catch (IOException | RuntimeException exception) {
+            log.warn(
+                    "OBJECT_STORAGE_READ_FAILED objectKey={} localFallback={} reason={}",
+                    objectKey,
+                    Files.exists(path),
+                    exception.toString()
+            );
+            return null;
+        }
+    }
+
+    /** 로컬에 저장한 결과 JSON을 MinIO에도 기록합니다. 운영 strict 모드에서는 실패를 전파합니다. */
     private void mirrorToObjectStorage(Path path, Object data) {
-        String objectKey = "results/" + path.getParent().getFileName() + "/" + path.getFileName();
+        String objectKey = buildObjectKey(path);
 
         try {
             byte[] jsonBytes = objectMapper.writeValueAsBytes(data);
@@ -70,6 +103,36 @@ public class JsonFileStorage {
                     "OBJECT_STORAGE_MIRROR_FAILED objectKey={} reason={}",
                     objectKey,
                     exception.toString()
+            );
+
+            if (objectStoragePolicy.writeRequired()) {
+                deleteLocalMirrorAfterStrictWriteFailure(path, objectKey);
+
+                if (exception instanceof BusinessException businessException) {
+                    throw businessException;
+                }
+
+                throw new BusinessException(
+                        ErrorCode.FILE_UPLOAD_FAILED,
+                        "오브젝트 스토리지에 JSON 결과를 저장하지 못했습니다. key=" + objectKey
+                );
+            }
+        }
+    }
+
+    private String buildObjectKey(Path path) {
+        return "results/" + path.getParent().getFileName() + "/" + path.getFileName();
+    }
+
+    private void deleteLocalMirrorAfterStrictWriteFailure(Path path, String objectKey) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException cleanupException) {
+            log.error(
+                    "OBJECT_STORAGE_STRICT_WRITE_LOCAL_CLEANUP_FAILED objectKey={} path={}",
+                    objectKey,
+                    path,
+                    cleanupException
             );
         }
     }

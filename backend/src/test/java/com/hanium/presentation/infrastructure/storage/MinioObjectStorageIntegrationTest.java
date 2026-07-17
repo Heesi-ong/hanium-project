@@ -1,12 +1,18 @@
 package com.hanium.presentation.infrastructure.storage;
 
+import com.hanium.presentation.application.video.VideoFileCommandService;
 import com.hanium.presentation.global.properties.MinioProperties;
+import com.hanium.presentation.global.properties.ObjectStoragePolicyProperties;
+import com.hanium.presentation.global.properties.StorageProperties;
+import com.hanium.presentation.global.properties.VideoProperties;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +29,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @EnabledIfEnvironmentVariable(named = "MINIO_INTEGRATION_TEST", matches = "true")
 class MinioObjectStorageIntegrationTest {
+
+    @TempDir
+    private Path tempDir;
 
     private final String endpoint = System.getenv().getOrDefault("MINIO_ENDPOINT", "http://localhost:9000");
     private final String publicEndpoint = System.getenv().getOrDefault("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000");
@@ -109,5 +118,35 @@ class MinioObjectStorageIntegrationTest {
         assertThat(url).contains(objectKey);
 
         objectStorage.deleteObject(objectKey);
+    }
+
+    @Test
+    void missingUploadObjectDoesNotProduceEngineDownloadUrl() {
+        MinioObjectStorage objectStorage = createObjectStorage();
+        String jobId = "missing-engine-download-" + System.currentTimeMillis();
+        StorageProperties storageProperties = new StorageProperties(
+                tempDir.toString(),
+                tempDir.resolve("uploads").toString(),
+                tempDir.resolve("results").toString(),
+                tempDir.resolve("temp").toString(),
+                tempDir.resolve("logs").toString(),
+                0L
+        );
+        VideoFileCommandService service = new VideoFileCommandService(
+                new LocalFileStorage(),
+                new FilePathGenerator(storageProperties),
+                storageProperties,
+                videoPath -> java.util.Optional.empty(),
+                new VideoProperties(30L),
+                objectStorage,
+                new ObjectStoragePolicyProperties(true, true)
+        );
+
+        String downloadUrl = service.resolveDownloadUrl(
+                jobId,
+                tempDir.resolve("uploads").resolve(jobId).resolve("original.mp4").toString()
+        );
+
+        assertThat(downloadUrl).isNull();
     }
 }

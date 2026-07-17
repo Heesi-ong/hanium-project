@@ -18,3 +18,10 @@ spring:
 
   flyway:
     enabled: true
+
+storage:
+  object-storage:
+    # 운영 다중 인스턴스에서는 새 파일이 인스턴스 로컬에만 남는 성공을 허용하지 않습니다.
+    write-required: ${STORAGE_OBJECT_WRITE_REQUIRED:true}
+    # API/워커가 서로 다른 로컬 디스크를 써도 결과를 조회할 수 있도록 MinIO를 먼저 읽습니다.
+    read-preferred: ${STORAGE_OBJECT_READ_PREFERRED:true}

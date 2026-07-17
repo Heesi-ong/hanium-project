@@ -176,6 +176,11 @@ storage:
     original-video-days: ${STORAGE_RETENTION_ORIGINAL_VIDEO_DAYS:30}
   backfill:
     enabled: ${STORAGE_BACKFILL_ENABLED:false}
+  object-storage:
+    # local/dev는 기존 로컬 fallback을 유지합니다. prod에서는 Compose 오버레이가 둘 다 true로
+    # 강제해 새 파일이 MinIO 없이 성공하지 않고, API가 결과 JSON을 MinIO에서 먼저 읽습니다.
+    write-required: ${STORAGE_OBJECT_WRITE_REQUIRED:false}
+    read-preferred: ${STORAGE_OBJECT_READ_PREFERRED:false}
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

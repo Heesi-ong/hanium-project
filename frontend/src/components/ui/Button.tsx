@@ -3,11 +3,11 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 export type ButtonVariant = "primary" | "secondary" | "ghost";
 
 export const BUTTON_BASE_CLASSNAME =
-    "inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-medium transition-[background,color,border-color,transform,box-shadow] duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0";
 
 export const BUTTON_VARIANT_CLASSNAMES: Record<ButtonVariant, string> = {
     primary:
-        "bg-primary-orange text-warm-white hover:bg-primary-bright active:bg-primary-deep",
+        "bg-primary-deep text-warm-white hover:bg-primary-deep/85 active:bg-primary-deep/70",
     secondary:
         "bg-surface-secondary text-text-primary border border-white/10 hover:bg-elevated-surface",
     ghost: "bg-transparent text-text-primary hover:bg-surface-primary",

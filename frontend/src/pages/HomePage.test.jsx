@@ -46,9 +46,11 @@ describe("HomePage", () => {
         expect(screen.getByRole("heading", { name: "3단계면 충분합니다" })).toBeInTheDocument();
         expect(screen.getByRole("heading", { name: "자주 묻는 질문" })).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "무료로 시작하기" }))
-            .toHaveAttribute("href", "/signup");
+            .toHaveAttribute("href", "/signup")
+            .toHaveClass("bg-primary-deep");
         expect(screen.getByRole("link", { name: "무료 회원가입" }))
-            .toHaveAttribute("href", "/signup");
+            .toHaveAttribute("href", "/signup")
+            .toHaveClass("bg-primary-deep");
         expect(screen.queryByRole("link", { name: "영상 업로드 시작" }))
             .not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "지금 업로드하기" }))

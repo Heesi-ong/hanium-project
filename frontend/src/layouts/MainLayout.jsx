@@ -1,11 +1,12 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { motion, useReducedMotion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 
 function navLinkClassName({ isActive }) {
     const base = "rounded-lg px-3.5 py-2.5 text-sm font-bold transition-colors duration-150";
 
     if (isActive) {
-        return `${base} bg-primary-orange text-warm-white`;
+        return `${base} bg-primary-deep text-warm-white`;
     }
 
     return `${base} text-text-secondary hover:bg-primary-orange/15 hover:text-text-primary`;
@@ -18,15 +19,29 @@ function accountLinkClassName({ isActive }) {
 
 function MainLayout() {
     const { isAuthenticated, user, logout } = useAuth();
+    const prefersReducedMotion = useReducedMotion();
 
     return (
         <div className="min-h-screen bg-background-primary text-text-primary">
-            <header className="sticky top-0 z-20 border-b border-white/10 bg-background-primary/90 backdrop-blur-md">
+            <motion.header
+                className="sticky top-0 z-20 border-b border-white/10 bg-background-primary/90 backdrop-blur-md"
+                initial={prefersReducedMotion ? false : { opacity: 0, y: -18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+            >
                 <div className="mx-auto flex h-[72px] max-w-[1120px] items-center justify-between px-6">
-                    <NavLink to="/" className="inline-flex items-center gap-2.5 font-extrabold text-text-primary">
-                        <span className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-xl bg-primary-orange text-sm text-warm-white">
+                    <NavLink to="/" className="inline-flex items-center gap-2.5 font-extrabold text-text-primary transition-transform duration-200 hover:-translate-y-0.5">
+                        <motion.span
+                            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-xl bg-primary-deep text-sm text-warm-white"
+                            animate={prefersReducedMotion ? undefined : { boxShadow: [
+                                "0 0 0 rgba(242,116,36,0)",
+                                "0 0 24px rgba(242,116,36,0.34)",
+                                "0 0 0 rgba(242,116,36,0)",
+                            ] }}
+                            transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+                        >
                             AI
-                        </span>
+                        </motion.span>
                         <span className="text-lg tracking-tight text-text-primary">Presentation Coach</span>
                     </NavLink>
 
@@ -101,11 +116,16 @@ function MainLayout() {
                         )}
                     </nav>
                 </div>
-            </header>
+            </motion.header>
 
-            <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
+            <motion.main
+                className="mx-auto max-w-[1120px] px-6 pb-20 pt-12"
+                initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+            >
                 <Outlet />
-            </main>
+            </motion.main>
 
             <footer className="px-6 py-6 text-center text-sm text-text-muted">
                 <Link to="/privacy" className="text-text-secondary hover:text-primary-bright">

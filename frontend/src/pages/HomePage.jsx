@@ -1,9 +1,38 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion, useReducedMotion } from "motion/react";
+import {
+    motion,
+    useReducedMotion,
+    useScroll,
+    useSpring,
+    useTransform,
+} from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { buttonVariantClassName } from "../components/ui/Button";
 import "./HomePage.css";
+
+const SECTION_VIEWPORT = { once: true, amount: 0.28 };
+const EASE_OUT = [0.16, 1, 0.3, 1];
+
+const fadeUp = {
+    hidden: { opacity: 0, y: 28, filter: "blur(12px)" },
+    visible: {
+        opacity: 1,
+        y: 0,
+        filter: "blur(0px)",
+        transition: { duration: 0.72, ease: EASE_OUT },
+    },
+};
+
+const staggerGroup = {
+    hidden: {},
+    visible: {
+        transition: {
+            staggerChildren: 0.08,
+            delayChildren: 0.06,
+        },
+    },
+};
 
 const FEATURE_ITEMS = [
     {
@@ -69,12 +98,12 @@ const ANALYSIS_DETAIL_ITEMS = [
     {
         title: "표정·감정",
         description:
-            "표정 점수, 표현력 원점수, 표정 다양성 점수와 주요 표정 상태 집계를 함께 보여줍니다.",
+            "표정 점수, 표현력 기본 점수, 표정 다양성 점수와 주요 표정 상태 집계를 함께 보여줍니다.",
     },
     {
         title: "음성·발화",
         description:
-            "WPM, 단어 수, 발화·침묵 시간, 침묵 비율, 필러 표현과 STT transcript를 확인합니다.",
+            "WPM(분당 단어 수), 단어 수, 발화·침묵 시간, 침묵 비율, 필러 표현과 음성을 텍스트로 옮긴 결과(STT)를 확인합니다.",
     },
 ];
 
@@ -93,6 +122,12 @@ const HOW_IT_WORKS_STEPS = [
         description:
             "점수와 AI 피드백을 확인하고, 다음에 분석한 결과와 비교해 성장을 추적합니다.",
     },
+];
+
+const HERO_METRICS = [
+    { label: "총점", value: "82", accent: "#F27424" },
+    { label: "응시율", value: "71%", accent: "#4FC78A" },
+    { label: "WPM", value: "128", accent: "#72A5FF" },
 ];
 
 const FAQ_ITEMS = [
@@ -117,39 +152,132 @@ const FAQ_ITEMS = [
     },
 ];
 
-function HeroIllustration() {
+function HeroIllustration({ prefersReducedMotion }) {
     return (
-        <svg
+        <motion.svg
             viewBox="0 0 400 500"
-            className="w-full max-w-[340px] h-auto"
+            className="hero-device"
             role="img"
             aria-label="분석 결과 화면을 표현한 일러스트"
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 34, rotateX: 8 }}
+            animate={{ opacity: 1, y: 0, rotateX: 0 }}
+            transition={{ duration: 0.8, delay: 0.12, ease: EASE_OUT }}
         >
             <rect x="0" y="0" width="400" height="500" rx="20" fill="#17130F" stroke="rgba(255,255,255,0.09)" strokeWidth="1.5" />
             <rect x="0" y="0" width="400" height="40" rx="20" fill="#211A14" />
-            <circle cx="24" cy="20" r="5" fill="#F27424" />
-            <circle cx="42" cy="20" r="5" fill="#F6A66B" />
-            <circle cx="60" cy="20" r="5" fill="#4FC78A" />
+            {[24, 42, 60].map((cx, index) => (
+                <motion.circle
+                    key={cx}
+                    cx={cx}
+                    cy="20"
+                    r="5"
+                    fill={["#F27424", "#F6A66B", "#4FC78A"][index]}
+                    animate={prefersReducedMotion ? undefined : { opacity: [0.42, 1, 0.42] }}
+                    transition={{
+                        duration: 2.4,
+                        repeat: Infinity,
+                        delay: index * 0.28,
+                        ease: "easeInOut",
+                    }}
+                />
+            ))}
             <rect x="24" y="60" width="352" height="180" rx="14" fill="#2A2018" />
-            <circle cx="200" cy="150" r="28" fill="rgba(247,243,238,0.12)" />
-            <path d="M190 135l30 15-30 15z" fill="#F5EFE8" />
-            <rect x="24" y="258" width="164" height="70" rx="14" fill="#211A14" />
+            <motion.rect
+                x="24"
+                y="60"
+                width="352"
+                height="180"
+                rx="14"
+                fill="url(#scanGradient)"
+                animate={prefersReducedMotion ? undefined : { opacity: [0.18, 0.42, 0.18] }}
+                transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.circle
+                cx="200"
+                cy="150"
+                r="28"
+                fill="rgba(247,243,238,0.12)"
+                animate={prefersReducedMotion ? undefined : { scale: [1, 1.08, 1] }}
+                transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut" }}
+                style={{ transformOrigin: "200px 150px" }}
+            />
+            <motion.path
+                d="M190 135l30 15-30 15z"
+                fill="#F5EFE8"
+                animate={prefersReducedMotion ? undefined : { x: [0, 3, 0] }}
+                transition={{ duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+            />
+            <motion.rect
+                x="24"
+                y="258"
+                width="164"
+                height="70"
+                rx="14"
+                fill="#211A14"
+                animate={prefersReducedMotion ? undefined : { y: [258, 252, 258] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            />
             <text x="40" y="285" fontSize="12" fill="#B7ADA4">총점</text>
             <text x="40" y="315" fontSize="26" fill="#F5EFE8">82</text>
-            <rect x="212" y="258" width="164" height="70" rx="14" fill="#211A14" />
+            <motion.rect
+                x="212"
+                y="258"
+                width="164"
+                height="70"
+                rx="14"
+                fill="#211A14"
+                animate={prefersReducedMotion ? undefined : { y: [258, 264, 258] }}
+                transition={{ duration: 4.4, repeat: Infinity, ease: "easeInOut" }}
+            />
             <text x="228" y="285" fontSize="12" fill="#B7ADA4">등급</text>
             <text x="228" y="315" fontSize="26" fill="#F5EFE8">B+</text>
             <rect x="24" y="344" width="352" height="120" rx="14" fill="#211A14" />
             <text x="40" y="368" fontSize="12" fill="#B7ADA4">회차별 총점 추이</text>
-            <polyline
+            <motion.polyline
                 points="40 430 96 410 152 420 208 380 264 390 320 360"
                 fill="none"
                 stroke="#F27424"
                 strokeWidth="3"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                initial={prefersReducedMotion ? false : { pathLength: 0, opacity: 0 }}
+                animate={{ pathLength: 1, opacity: 1 }}
+                transition={{ duration: 1.4, delay: 0.58, ease: "easeInOut" }}
             />
-        </svg>
+            <motion.polyline
+                points="40 442 96 430 152 432 208 408 264 414 320 398"
+                fill="none"
+                stroke="#72A5FF"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                initial={prefersReducedMotion ? false : { pathLength: 0, opacity: 0 }}
+                animate={{ pathLength: 1, opacity: 0.75 }}
+                transition={{ duration: 1.2, delay: 0.78, ease: "easeInOut" }}
+            />
+            <defs>
+                <linearGradient id="scanGradient" x1="24" x2="376" y1="60" y2="240">
+                    <stop offset="0%" stopColor="#F27424" stopOpacity="0" />
+                    <stop offset="50%" stopColor="#F27424" stopOpacity="0.45" />
+                    <stop offset="100%" stopColor="#72A5FF" stopOpacity="0" />
+                </linearGradient>
+            </defs>
+        </motion.svg>
+    );
+}
+
+function AnimatedSection({ children, className = "", id }) {
+    return (
+        <motion.section
+            id={id}
+            className={className}
+            variants={staggerGroup}
+            initial="hidden"
+            whileInView="visible"
+            viewport={SECTION_VIEWPORT}
+        >
+            {children}
+        </motion.section>
     );
 }
 
@@ -157,179 +285,238 @@ function HomePage() {
     const { isAuthenticated } = useAuth();
     const [openFaqIndex, setOpenFaqIndex] = useState(null);
     const prefersReducedMotion = useReducedMotion();
+    const pageRef = useRef(null);
+    const heroRef = useRef(null);
+    const { scrollYProgress } = useScroll();
+    const { scrollYProgress: heroScroll } = useScroll({
+        target: heroRef,
+        offset: ["start start", "end start"],
+    });
+    const progressScale = useSpring(scrollYProgress, {
+        stiffness: 120,
+        damping: 28,
+        mass: 0.3,
+    });
+    const heroTextY = useTransform(heroScroll, [0, 1], [0, -84]);
+    const heroVisualY = useTransform(heroScroll, [0, 1], [0, 72]);
+    const heroOpacity = useTransform(heroScroll, [0, 0.8], [1, 0.18]);
 
     function toggleFaq(index) {
         setOpenFaqIndex((current) => (current === index ? null : index));
     }
 
     return (
-        <div className="landing-page">
-            <section className="relative overflow-hidden bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16 lg:py-32">
-                <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                        background:
-                            "radial-gradient(circle at 50% 30%, rgba(200,90,25,0.25), transparent 55%)",
-                    }}
-                    aria-hidden="true"
-                />
-                <div className="relative mx-auto grid max-w-[1200px] items-center gap-12 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="landing-page" ref={pageRef}>
+            <motion.div
+                className="landing-scroll-progress"
+                style={{ scaleX: prefersReducedMotion ? 1 : progressScale }}
+                aria-hidden="true"
+            />
+            <section className="animated-hero-section" ref={heroRef}>
+                <div className="hero-ambient-grid" aria-hidden="true" />
+                <div className="hero-motion-ribbon ribbon-one" aria-hidden="true" />
+                <div className="hero-motion-ribbon ribbon-two" aria-hidden="true" />
+                <div className="hero-content-grid">
                     <motion.div
-                        initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+                        className="hero-copy"
+                        style={prefersReducedMotion ? undefined : { y: heroTextY, opacity: heroOpacity }}
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 18, filter: "blur(10px)" }}
                         animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, ease: "easeOut" }}
+                        transition={{ duration: 0.7, ease: EASE_OUT }}
                     >
-                        <p className="mb-6 inline-flex items-center gap-2 rounded-full bg-primary-orange/15 px-4 py-2 text-sm font-semibold text-soft-orange">
+                        <motion.p
+                            className="hero-eyebrow"
+                            animate={prefersReducedMotion ? undefined : { backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }}
+                            transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
+                        >
                             AI 발표 코칭
-                        </p>
-                        <h1 className="mb-6 text-[40px] font-semibold leading-[1.2] tracking-tight sm:text-[54px] lg:text-[64px]">
+                        </motion.p>
+                        <h1 className="hero-title">
                             발표는 감이 아니라,
                             <br />
                             데이터로 완성됩니다
                         </h1>
-                        <p className="mb-9 max-w-[480px] text-lg leading-relaxed text-text-secondary">
+                        <p className="hero-description-copy">
                             업로드한 발표 영상을 기반으로 자세, 시선, 제스처, 음성 속도,
                             필러 표현, 침묵 구간을 분석하고 맞춤형 피드백을 제공합니다.
                         </p>
-                        <div className="flex flex-wrap items-center gap-4">
+                        <div className="hero-metric-strip" aria-label="샘플 분석 지표">
+                            {HERO_METRICS.map((metric, index) => (
+                                <motion.div
+                                    className="hero-metric"
+                                    key={metric.label}
+                                    initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.45, delay: 0.36 + index * 0.08, ease: EASE_OUT }}
+                                    style={{ "--metric-accent": metric.accent }}
+                                >
+                                    <span>{metric.label}</span>
+                                    <strong>{metric.value}</strong>
+                                </motion.div>
+                            ))}
+                        </div>
+                        <div className="hero-actions">
                             {isAuthenticated ? (
                                 <>
-                                    <Link to="/upload" className={buttonVariantClassName("primary")}>
+                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
+                                        <Link to="/upload" className={buttonVariantClassName("primary", "motion-cta")}>
                                         영상 업로드 시작
-                                    </Link>
-                                    <Link to="/results" className={buttonVariantClassName("secondary")}>
+                                        </Link>
+                                    </motion.div>
+                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
+                                        <Link to="/results" className={buttonVariantClassName("secondary", "motion-cta")}>
                                         분석 결과 보기
-                                    </Link>
+                                        </Link>
+                                    </motion.div>
                                 </>
                             ) : (
                                 <>
-                                    <Link to="/signup" className={buttonVariantClassName("primary")}>
+                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
+                                        <Link to="/signup" className={buttonVariantClassName("primary", "motion-cta")}>
                                         무료로 시작하기
-                                    </Link>
-                                    <Link to="/login" className={buttonVariantClassName("secondary")}>
+                                        </Link>
+                                    </motion.div>
+                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
+                                        <Link to="/login" className={buttonVariantClassName("secondary", "motion-cta")}>
                                         로그인
-                                    </Link>
+                                        </Link>
+                                    </motion.div>
                                 </>
                             )}
                         </div>
                     </motion.div>
 
                     <motion.div
-                        className="flex justify-center"
-                        initial={prefersReducedMotion ? false : { opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
+                        className="hero-visual-stage"
+                        style={prefersReducedMotion ? undefined : { y: heroVisualY }}
                     >
-                        <HeroIllustration />
+                        <HeroIllustration prefersReducedMotion={prefersReducedMotion} />
+                        <motion.div
+                            className="hero-live-caption"
+                            initial={prefersReducedMotion ? false : { opacity: 0, x: 24 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ duration: 0.7, delay: 0.42, ease: EASE_OUT }}
+                        >
+                            <span>실시간 분석</span>
+                            <strong>표정 안정성 +12%</strong>
+                        </motion.div>
                     </motion.div>
                 </div>
             </section>
 
-            <section className="bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="features">
+            <AnimatedSection className="motion-section bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="features">
                 <div className="mx-auto max-w-[1200px]">
-                    <div className="mb-14 max-w-[560px]">
+                    <motion.div className="mb-14 max-w-[560px]" variants={fadeUp}>
                         <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">핵심 기능</p>
                         <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">
                             발표의 모든 순간을
                             <br />
                             세심하게 살핍니다
                         </h2>
-                    </div>
+                    </motion.div>
 
                     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                         {FEATURE_ITEMS.map((item, index) => (
                             <motion.article
-                                className="rounded-2xl border border-white/10 bg-surface-primary p-9 transition-transform duration-200 hover:-translate-y-1"
+                                className="motion-card rounded-2xl border border-white/10 bg-surface-primary p-9"
                                 key={item.title}
-                                initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true, amount: 0.2 }}
-                                transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                                variants={fadeUp}
+                                whileHover={prefersReducedMotion ? undefined : { y: -10, scale: 1.015 }}
+                                whileTap={{ scale: 0.99 }}
+                                transition={{ duration: 0.32, delay: index * 0.02, ease: EASE_OUT }}
                             >
-                                <div
+                                <motion.div
                                     className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl"
                                     style={{ background: item.color }}
+                                    animate={prefersReducedMotion ? undefined : { rotate: [0, -4, 4, 0] }}
+                                    transition={{ duration: 5, repeat: Infinity, delay: index * 0.35, ease: "easeInOut" }}
                                 >
                                     {item.icon}
-                                </div>
+                                </motion.div>
                                 <h3 className="mb-2.5 text-xl font-semibold text-text-primary">{item.title}</h3>
                                 <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
                             </motion.article>
                         ))}
                     </div>
                 </div>
-            </section>
+            </AnimatedSection>
 
-            <section className="bg-background-secondary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="analysis-detail">
+            <AnimatedSection className="motion-section bg-background-secondary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="analysis-detail">
                 <div className="mx-auto max-w-[1200px]">
-                    <div className="mb-14 max-w-[560px]">
+                    <motion.div className="mb-14 max-w-[560px]" variants={fadeUp}>
                         <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">분석 항목 상세 소개</p>
                         <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">
                             결과 상세 화면에서
                             <br />
                             확인하는 실제 지표
                         </h2>
-                    </div>
+                    </motion.div>
 
                     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                         {ANALYSIS_DETAIL_ITEMS.map((item, index) => (
                             <motion.article
-                                className="rounded-2xl border border-white/10 bg-surface-secondary p-9 transition-transform duration-200 hover:-translate-y-1"
+                                className="motion-card motion-card-alt rounded-2xl border border-white/10 bg-surface-secondary p-9"
                                 key={item.title}
-                                initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true, amount: 0.2 }}
-                                transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                                variants={fadeUp}
+                                whileHover={prefersReducedMotion ? undefined : { y: -8, rotateX: 2 }}
+                                transition={{ duration: 0.32, delay: index * 0.02, ease: EASE_OUT }}
                             >
+                                <span className="detail-index">0{index + 1}</span>
                                 <h3 className="mb-2.5 text-xl font-semibold text-text-primary">{item.title}</h3>
                                 <p className="text-sm leading-relaxed text-text-secondary">{item.description}</p>
                             </motion.article>
                         ))}
                     </div>
                 </div>
-            </section>
+            </AnimatedSection>
 
-            <section className="bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="how-it-works">
+            <AnimatedSection className="motion-section bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="how-it-works">
                 <div className="mx-auto max-w-[1200px]">
-                    <div className="mx-auto mb-14 max-w-[560px] text-center">
+                    <motion.div className="mx-auto mb-14 max-w-[560px] text-center" variants={fadeUp}>
                         <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">사용 방법</p>
                         <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">3단계면 충분합니다</h2>
-                    </div>
+                    </motion.div>
 
                     <div className="mx-auto grid max-w-[1000px] grid-cols-1 gap-10 sm:grid-cols-3">
                         {HOW_IT_WORKS_STEPS.map((step, index) => (
                             <motion.div
-                                className="text-center"
+                                className="process-step text-center"
                                 key={step.title}
-                                initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true, amount: 0.2 }}
-                                transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                                variants={fadeUp}
+                                whileHover={prefersReducedMotion ? undefined : { y: -6 }}
                             >
-                                <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary-orange text-2xl font-semibold text-warm-white">
+                                <motion.div
+                                    className="process-step-number mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary-orange text-2xl font-semibold text-warm-white"
+                                    animate={prefersReducedMotion ? undefined : { boxShadow: [
+                                        "0 0 0 rgba(242,116,36,0)",
+                                        "0 0 34px rgba(242,116,36,0.42)",
+                                        "0 0 0 rgba(242,116,36,0)",
+                                    ] }}
+                                    transition={{ duration: 3, repeat: Infinity, delay: index * 0.42, ease: "easeInOut" }}
+                                >
                                     {index + 1}
-                                </div>
+                                </motion.div>
                                 <h3 className="mb-2 text-lg font-semibold text-text-primary">{step.title}</h3>
                                 <p className="text-sm leading-relaxed text-text-secondary">{step.description}</p>
                             </motion.div>
                         ))}
                     </div>
                 </div>
-            </section>
+            </AnimatedSection>
 
-            <section className="bg-background-secondary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="faq">
+            <AnimatedSection className="motion-section bg-background-secondary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="faq">
                 <div className="mx-auto max-w-[1200px]">
-                    <div className="mb-14 max-w-[560px]">
+                    <motion.div className="mb-14 max-w-[560px]" variants={fadeUp}>
                         <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">FAQ</p>
                         <h2 className="text-3xl font-semibold leading-snug text-text-primary sm:text-4xl">자주 묻는 질문</h2>
-                    </div>
+                    </motion.div>
 
                     <div className="max-w-[760px]">
                         {FAQ_ITEMS.map((item, index) => {
                             const isOpen = openFaqIndex === index;
 
                             return (
-                                <div className="border-b border-white/10 py-6" key={item.question}>
+                                <motion.div className="faq-row border-b border-white/10 py-6" key={item.question} variants={fadeUp}>
                                     <button
                                         type="button"
                                         className="flex w-full items-center justify-between text-left text-base font-semibold text-text-primary"
@@ -337,45 +524,57 @@ function HomePage() {
                                         aria-expanded={isOpen}
                                     >
                                         <span>{item.question}</span>
-                                        <span className="text-xl font-normal text-primary-bright">{isOpen ? "\u2212" : "+"}</span>
+                                        <motion.span
+                                            className="text-xl font-normal text-primary-bright"
+                                            animate={{ rotate: isOpen ? 180 : 0 }}
+                                            transition={{ duration: 0.24, ease: "easeOut" }}
+                                        >
+                                            {isOpen ? "\u2212" : "+"}
+                                        </motion.span>
                                     </button>
                                     {isOpen && (
                                         <motion.p
                                             className="mt-3.5 max-w-[600px] text-sm leading-relaxed text-text-secondary"
-                                            initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ duration: 0.2, ease: "easeOut" }}
+                                            initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: -8 }}
+                                            animate={{ opacity: 1, height: "auto", y: 0 }}
+                                            transition={{ duration: 0.24, ease: "easeOut" }}
                                         >
                                             {item.answer}
                                         </motion.p>
                                     )}
-                                </div>
+                                </motion.div>
                             );
                         })}
                     </div>
                 </div>
-            </section>
+            </AnimatedSection>
 
-            <section className="bg-background-primary px-6 py-24 text-center text-text-primary sm:px-10 lg:px-16">
+            <AnimatedSection className="motion-section final-cta-section bg-background-primary px-6 py-24 text-center text-text-primary sm:px-10 lg:px-16">
                 <div className="mx-auto max-w-[1200px]">
-                    <h2 className="mb-8 text-3xl font-semibold sm:text-4xl">지금, 데이터로 발표를 완성하세요</h2>
+                    <motion.h2 className="mb-8 text-3xl font-semibold sm:text-4xl" variants={fadeUp}>
+                        지금, 데이터로 발표를 완성하세요
+                    </motion.h2>
                     {isAuthenticated ? (
-                        <Link
-                            to="/upload"
-                            className="inline-flex items-center justify-center rounded-full bg-primary-orange px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-bright active:bg-primary-deep"
-                        >
-                            지금 업로드하기
-                        </Link>
+                        <motion.div variants={fadeUp} whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <Link
+                                to="/upload"
+                                className="final-cta-link inline-flex items-center justify-center rounded-full bg-primary-deep px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-deep/85 active:bg-primary-deep/70"
+                            >
+                                지금 업로드하기
+                            </Link>
+                        </motion.div>
                     ) : (
-                        <Link
-                            to="/signup"
-                            className="inline-flex items-center justify-center rounded-full bg-primary-orange px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-bright active:bg-primary-deep"
-                        >
-                            무료 회원가입
-                        </Link>
+                        <motion.div variants={fadeUp} whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <Link
+                                to="/signup"
+                                className="final-cta-link inline-flex items-center justify-center rounded-full bg-primary-deep px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-deep/85 active:bg-primary-deep/70"
+                            >
+                                무료 회원가입
+                            </Link>
+                        </motion.div>
                     )}
                 </div>
-            </section>
+            </AnimatedSection>
 
             <footer className="border-t border-white/10 bg-background-primary px-6 py-14 text-text-primary sm:px-10 lg:px-16">
                 <div className="mx-auto max-w-[1200px]">

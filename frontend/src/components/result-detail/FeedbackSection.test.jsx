@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import FeedbackSection from "./FeedbackSection";
 
@@ -57,10 +57,126 @@ describe("FeedbackSection", () => {
         expect(
             within(visualAnalysisCard).getByText("손동작 변화가 적습니다.")
         ).toBeInTheDocument();
-        expect(
-            within(visualAnalysisCard).getByText("세부 관찰 데이터는 준비 중입니다.")
-        ).toBeInTheDocument();
+        // 관찰 데이터는 원본 카테고리 키(eyeContact)가 아니라 한국어 라벨(시선)로 렌더됩니다.
+        expect(within(visualAnalysisCard).getByText("시선")).toBeInTheDocument();
+        expect(within(visualAnalysisCard).getByText("direct")).toBeInTheDocument();
+        expect(within(visualAnalysisCard).getByText("0:00–0:10")).toBeInTheDocument();
         expect(within(visualAnalysisCard).queryByText("eyeContact")).not.toBeInTheDocument();
+    });
+
+    it("renders observation details (time range, label, confidence, description) per category", () => {
+        renderFeedbackSection({
+            model: { generationMode: "REAL" },
+            globalSummary: {
+                visualDelivery: "전체 인상",
+                mainStrength: "강점",
+                mainWeakness: "개선점",
+            },
+            observations: {
+                eyeContact: [
+                    {
+                        startSec: 12,
+                        endSec: 18,
+                        label: "looking_down",
+                        description: "중간 구간에서 시선이 아래로 이동했습니다.",
+                        confidence: 0.74,
+                    },
+                ],
+                posture: [
+                    {
+                        startSec: 0,
+                        endSec: 60,
+                        label: "stable",
+                        description: "상체 자세가 안정적입니다.",
+                        confidence: 0.81,
+                    },
+                ],
+            },
+        });
+
+        const card = getVisualAnalysisCard();
+        expect(within(card).getByText("시선")).toBeInTheDocument();
+        expect(within(card).getByText("자세")).toBeInTheDocument();
+        expect(within(card).getByText("0:12–0:18")).toBeInTheDocument();
+        expect(
+            within(card).getByText("중간 구간에서 시선이 아래로 이동했습니다.")
+        ).toBeInTheDocument();
+        expect(within(card).getByText("신뢰도 74%")).toBeInTheDocument();
+        expect(within(card).getByText("신뢰도 81%")).toBeInTheDocument();
+    });
+
+    it("calls onSeekToTime with the observation startSec when the time is clicked", () => {
+        const onSeekToTime = vi.fn();
+        render(
+            <FeedbackSection
+                feedback={baseFeedback}
+                onSeekToTime={onSeekToTime}
+                visualAnalysis={{
+                    model: { generationMode: "REAL" },
+                    globalSummary: {
+                        visualDelivery: "전체 인상",
+                        mainStrength: "강점",
+                        mainWeakness: "개선점",
+                    },
+                    observations: {
+                        eyeContact: [
+                            {
+                                startSec: 12,
+                                endSec: 18,
+                                label: "looking_down",
+                                description: "시선이 아래로 이동했습니다.",
+                                confidence: 0.7,
+                            },
+                        ],
+                    },
+                }}
+            />
+        );
+
+        const seekButton = screen.getByRole("button", {
+            name: /영상을 .* 구간으로 이동/,
+        });
+        fireEvent.click(seekButton);
+
+        expect(onSeekToTime).toHaveBeenCalledWith(12);
+    });
+
+    it("renders observation time as plain text (not a button) without onSeekToTime", () => {
+        renderFeedbackSection({
+            model: { generationMode: "REAL" },
+            globalSummary: {
+                visualDelivery: "전체 인상",
+                mainStrength: "강점",
+                mainWeakness: "개선점",
+            },
+            observations: {
+                eyeContact: [
+                    { startSec: 12, endSec: 18, label: "x", description: "d", confidence: 0.7 },
+                ],
+            },
+        });
+
+        const card = getVisualAnalysisCard();
+        expect(
+            within(card).queryByRole("button", { name: /구간으로 이동/ })
+        ).not.toBeInTheDocument();
+        expect(within(card).getByText("0:12–0:18")).toBeInTheDocument();
+    });
+
+    it("shows an empty observation note when observations are missing", () => {
+        renderFeedbackSection({
+            model: { generationMode: "REAL" },
+            globalSummary: {
+                visualDelivery: "전체 인상",
+                mainStrength: "강점",
+                mainWeakness: "개선점",
+            },
+        });
+
+        const card = getVisualAnalysisCard();
+        expect(
+            within(card).getByText("표시할 세부 관찰 데이터가 없습니다.")
+        ).toBeInTheDocument();
     });
 
     it.each([
@@ -86,6 +202,41 @@ describe("FeedbackSection", () => {
         expect(badge).toHaveClass("mini-badge");
         expect(
             within(visualAnalysisCard).queryByText("분석 방식 알 수 없음")
+        ).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ["MOCK"],
+        ["FALLBACK"],
+    ])("shows a sample-data warning for %s mode", (generationMode) => {
+        renderFeedbackSection({
+            model: { generationMode },
+            globalSummary: {
+                visualDelivery: "전체 인상",
+                mainStrength: "강점",
+                mainWeakness: "개선점",
+            },
+        });
+
+        const visualAnalysisCard = getVisualAnalysisCard();
+        expect(
+            within(visualAnalysisCard).getByText(/예시\(샘플\) 데이터/)
+        ).toBeInTheDocument();
+    });
+
+    it("does not show a sample-data warning for REAL mode", () => {
+        renderFeedbackSection({
+            model: { generationMode: "REAL" },
+            globalSummary: {
+                visualDelivery: "전체 인상",
+                mainStrength: "강점",
+                mainWeakness: "개선점",
+            },
+        });
+
+        const visualAnalysisCard = getVisualAnalysisCard();
+        expect(
+            within(visualAnalysisCard).queryByText(/예시\(샘플\) 데이터/)
         ).not.toBeInTheDocument();
     });
 

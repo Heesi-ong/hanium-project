@@ -8,7 +8,7 @@ describe("Button", () => {
         render(<Button>저장</Button>);
 
         const button = screen.getByRole("button", { name: "저장" });
-        expect(button).toHaveClass("bg-primary-orange");
+        expect(button).toHaveClass("bg-primary-deep");
     });
 
     it("applies the secondary variant class when requested", () => {
@@ -22,7 +22,7 @@ describe("Button", () => {
         render(<Button className="w-full">전체 너비</Button>);
 
         const button = screen.getByRole("button", { name: "전체 너비" });
-        expect(button).toHaveClass("w-full", "bg-primary-orange");
+        expect(button).toHaveClass("w-full", "bg-primary-deep");
     });
 
     it("forwards native button attributes such as disabled", () => {

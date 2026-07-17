@@ -69,3 +69,23 @@ export async function getAdminAuditLogs({ page, size } = {}) {
     const response = await apiClient.get("/api/admin/audit-logs", { params });
     return unwrapApiResponse(response);
 }
+
+export async function getAdminDeadLetterJobs({ page, size } = {}) {
+    const params = {};
+
+    if (page !== undefined) {
+        params.page = page;
+    }
+
+    if (size !== undefined) {
+        params.size = size;
+    }
+
+    const response = await apiClient.get("/api/admin/analysis-jobs/dead-letter", { params });
+    return unwrapApiResponse(response);
+}
+
+export async function requeueAdminDeadLetterJob(jobId) {
+    const response = await apiClient.post(`/api/admin/analysis-jobs/${jobId}/requeue`);
+    return unwrapApiResponse(response);
+}

@@ -22,6 +22,51 @@ jobs:
           java-version: "17"
       - run: chmod +x ./gradlew
       - run: ./gradlew test --no-daemon
+      - name: Start isolated MinIO for integration tests
+        run: >-
+          docker run -d --name hanium-minio-integration
+          -e MINIO_ROOT_USER=ci-minio-integration
+          -e MINIO_ROOT_PASSWORD=ci-minio-integration-password
+          -p 127.0.0.1:9000:9000
+          minio/minio:RELEASE.2024-12-13T22-19-12Z
+          server /data
+      - name: Wait for MinIO
+        run: |
+          for attempt in {1..30}; do
+            if docker exec hanium-minio-integration mc ready local; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs hanium-minio-integration
+          exit 1
+      - name: Create MinIO integration bucket
+        run: >-
+          docker run --rm
+          --network container:hanium-minio-integration
+          -e MC_HOST_local=http://ci-minio-integration:ci-minio-integration-password@127.0.0.1:9000
+          minio/mc:RELEASE.2025-08-13T08-35-41Z
+          mb --ignore-existing local/hanium-storage
+      - name: Run MinIO storage and backfill integration tests
+        env:
+          MINIO_INTEGRATION_TEST: "true"
+          MINIO_ENDPOINT: http://127.0.0.1:9000
+          MINIO_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+          MINIO_ACCESS_KEY: ci-minio-integration
+          MINIO_SECRET_KEY: ci-minio-integration-password
+          MINIO_BUCKET_NAME: hanium-storage
+        run: >-
+          ./gradlew test
+          --tests com.hanium.presentation.infrastructure.storage.MinioObjectStorageIntegrationTest
+          --tests com.hanium.presentation.application.storage.ObjectStorageBackfillMinioIntegrationTest
+          --rerun-tasks
+          --no-daemon
+      - name: Dump MinIO logs on failure
+        if: failure()
+        run: docker logs hanium-minio-integration
+      - name: Remove isolated MinIO
+        if: always()
+        run: docker rm -f hanium-minio-integration
 
   frontend:
     runs-on: ubuntu-latest
@@ -52,7 +97,7 @@ jobs:
           - engine: video-llm-engine
             # video-llm-engine은 현재 mock 중심이라, 테스트에 torch/transformers 등
             # 무거운 real-model 의존성(requirements-real-model.txt)이 필요 없습니다.
-            # requirements-test.txt(=requirements-base.txt + pytest)만 설치/감사합니다.
+            # requirements-test.txt(=requirements-base.txt + pytest + Starlette TestClient용 HTTPX2)만 설치/감사합니다.
             requirements-file: requirements-test.txt
     steps:
       - uses: actions/checkout@v4
@@ -82,11 +127,46 @@ jobs:
           - frontend
           - analysis-engine
           - video-llm-engine
+          - backup
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t hanium-${{ matrix.image }}:ci .
-        working-directory: ${{ matrix.image }}
+        run: |
+          if [[ "${{ matrix.image }}" == "backup" ]]; then
+            docker build -f infra/backup/Dockerfile -t hanium-backup:ci .
+          else
+            docker build -t "hanium-${{ matrix.image }}:ci" "${{ matrix.image }}"
+          fi
+      - name: Verify backup image tools
+        if: matrix.image == 'backup'
+        run: >-
+          docker run --rm --entrypoint /bin/bash hanium-backup:ci
+          -c 'command -v mysqldump gzip openssl mc && mc --version'
+      - name: Test backup local and remote status handling
+        if: matrix.image == 'backup'
+        run: bash scripts/tests/test-backup-mysql.sh
+      - name: Test analysis engine inside runtime image
+        if: matrix.image == 'analysis-engine'
+        run: >-
+          docker run --rm
+          --entrypoint python
+          -v "$PWD/analysis-engine/tests:/app/tests:ro"
+          hanium-analysis-engine:ci
+          -m pytest -q
+      - name: Smoke-test Video LLM runtime image
+        if: matrix.image == 'video-llm-engine'
+        run: >-
+          docker run --rm
+          --entrypoint python
+          hanium-video-llm-engine:ci
+          -c 'from app.main import app; from app.api.video_llm_analysis import resolve_video_max_size_bytes; assert resolve_video_max_size_bytes() == 500 * 1024 * 1024; print(app.title)'
+      - name: Verify Python runtime image dependencies
+        if: matrix.image == 'analysis-engine' || matrix.image == 'video-llm-engine'
+        run: >-
+          docker run --rm
+          --entrypoint python
+          hanium-${{ matrix.image }}:ci
+          -m pip check
       - name: Trivy image vulnerability scan (report only)
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -130,16 +210,86 @@ jobs:
 
   compose-validate:
     runs-on: ubuntu-latest
+    env:
+      DOMAIN: example.com
+      CERTBOT_EMAIL: ops@example.com
+      MINIO_PUBLIC_ENDPOINT: https://storage.example.com
+      CORS_ALLOWED_ORIGINS: https://example.com
+      PASSWORD_RESET_URL_BASE: https://example.com/reset-password
+      SECURITY_JWT_SECRET: ci-compose-validate-jwt-secret-not-a-placeholder
+      DB_PASSWORD: ci-compose-db-password
+      DB_ROOT_PASSWORD: ci-compose-db-root-password
+      REDIS_PASSWORD: ci-compose-redis-password
+      INTERNAL_ENGINE_API_KEY: ci-compose-internal-key
+      MINIO_ROOT_USER: ci-compose-minio-admin
+      MINIO_ROOT_PASSWORD: ci-compose-minio-password12345
+      BACKUP_ENCRYPTION_PASSPHRASE: ci-compose-backup-encryption-passphrase
+      ALERT_SMTP_SMARTHOST: smtp.example.com:587
+      ALERT_SMTP_FROM: alerts@example.com
+      ALERT_SMTP_USERNAME: alerts@example.com
+      ALERT_EMAIL_TO: oncall@example.com
     steps:
       - uses: actions/checkout@v4
       - name: Validate base compose
         run: docker compose -f docker-compose.yml config
+      - name: Verify service readiness startup contract
+        run: |
+          docker compose -f docker-compose.yml config --format json > /tmp/base-compose.json
+          python3 - <<'PY'
+          import json
+
+          with open('/tmp/base-compose.json', encoding='utf-8') as compose_file:
+              services = json.load(compose_file)['services']
+
+          readiness_dependencies = (
+              'mysql',
+              'redis',
+              'analysis-engine',
+              'minio',
+              'video-llm-engine',
+          )
+
+          for dependency in readiness_dependencies:
+              healthcheck = services[dependency].get('healthcheck', {})
+              assert healthcheck.get('test'), f'{dependency} healthcheck is missing'
+
+          for consumer in ('backend', 'analysis-worker'):
+              dependencies = services[consumer].get('depends_on', {})
+              for dependency in readiness_dependencies:
+                  condition = dependencies.get(dependency, {}).get('condition')
+                  assert condition == 'service_healthy', (
+                      f'{consumer} must wait for {dependency} service_healthy, got {condition!r}'
+                  )
+
+          for dependency in ('mysql', 'minio'):
+              condition = services['backup']['depends_on'].get(dependency, {}).get('condition')
+              assert condition == 'service_healthy', (
+                  f'backup must wait for {dependency} service_healthy, got {condition!r}'
+              )
+
+          for consumer in ('backup', 'backend', 'analysis-worker'):
+              condition = services[consumer]['depends_on'].get('minio-init', {}).get('condition')
+              assert condition == 'service_completed_successfully', (
+                  f'{consumer} must wait for minio-init completion, got {condition!r}'
+              )
+
+          print('Service readiness startup contract OK')
+          PY
       - name: Validate prod overlay
-        run: DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+      - name: Ensure prod rejects an unencrypted backup configuration
+        env:
+          BACKUP_ENCRYPTION_PASSPHRASE: ""
+        run: |
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/tmp/prod-compose.yml 2>/tmp/prod-compose.err; then
+            echo "Production compose unexpectedly accepted an empty backup encryption passphrase"
+            exit 1
+          fi
+          grep -q "BACKUP_ENCRYPTION_PASSPHRASE must be set" /tmp/prod-compose.err
       - name: Validate monitoring overlay
         run: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml config
       - name: Validate prod + monitoring together
-        run: DOMAIN=example.com docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml config
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml config
       - name: Validate monitoring config file syntax
         run: |
           python3 -m pip install pyyaml
@@ -159,3 +309,23 @@ jobs:
               json.load(open(f))
               print(f, 'OK')
           "
+      - name: Validate Prometheus config and rules with promtool
+        run: |
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$PWD/infra/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.13.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            --entrypoint /bin/promtool \
+            -v "$PWD/infra/prometheus:/etc/prometheus:ro" \
+            -w /etc/prometheus \
+            prom/prometheus:v3.13.0 \
+            test rules alerts.test.yml
+      - name: Validate k6 load-test script
+        run: >-
+          docker run --rm
+          -v "$PWD:/workspace:ro"
+          -w /workspace/scripts/load-test
+          grafana/k6:2.1.0
+          inspect upload-analyze.js

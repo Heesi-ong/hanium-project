@@ -1,3 +1,5 @@
+import { formatGenerationModeLabel } from "./resultDetailFormatters";
+
 function getVisualGenerationModeLabel(mode) {
     if (mode === "REAL") {
         return "실제 Video LLM";
@@ -204,14 +206,26 @@ function VisualAnalysisBox({ visualAnalysis, onSeekToTime }) {
 }
 
 function FeedbackSection({ feedback, visualAnalysis, onSeekToTime }) {
+    const generationMode = feedback?.generationMode || "UNKNOWN";
+
     return (
         <div className="detail-grid">
             <article className="detail-card wide">
                 <h2>종합 피드백</h2>
 
-                <div className="feedback-block">
-                    <h3>전체 평가</h3>
-                    <p>{feedback?.overall || "표시할 종합 피드백이 없습니다."}</p>
+                <div className="feedback-block llm-raw-text-block">
+                    <h3>
+                        AI 응답 원문
+                        <span className="mini-badge muted">
+                            {formatGenerationModeLabel(generationMode)}
+                        </span>
+                    </h3>
+                    <p className="muted-text">
+                        AI가 실제로 생성해 전달한 텍스트를 가공 없이 그대로 보여줍니다.
+                    </p>
+                    <pre className="llm-raw-text">
+                        {feedback?.overall || "표시할 종합 피드백이 없습니다."}
+                    </pre>
                 </div>
 
                 <div className="feedback-columns">

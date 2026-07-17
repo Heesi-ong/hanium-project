@@ -1,3 +1,4 @@
+import CollapsibleDetails from "../CollapsibleDetails";
 import {
     formatAnalysisMethod,
     formatBoolean,
@@ -77,47 +78,47 @@ function GestureAnalysisSection({
             )}
 
             {Array.isArray(gestureFrameResults) && gestureFrameResults.length > 0 ? (
-                <div className="pose-frame-table-wrap">
-                    <h3>프레임별 제스처 분석</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>순서</th>
-                            <th>시간</th>
-                            <th>제스처</th>
-                            <th>왼손 보임</th>
-                            <th>오른손 보임</th>
-                            <th>왼손 활성</th>
-                            <th>오른손 활성</th>
-                            <th>왼손 이동</th>
-                            <th>오른손 이동</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {gestureFrameResults.map((frameResult, index) => (
-                            <tr key={`${frameResult.sequence}-${index}`}>
-                                <td>{frameResult.sequence ?? index + 1}</td>
-                                <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                <td>
-                                    {frameResult.gestureDetected ? (
-                                        <span className="mini-badge success">감지</span>
-                                    ) : (
-                                        <span className="mini-badge muted">없음</span>
-                                    )}
-                                </td>
-                                <td>{formatBoolean(frameResult.leftHandVisible)}</td>
-                                <td>{formatBoolean(frameResult.rightHandVisible)}</td>
-                                <td>{formatBoolean(frameResult.leftHandActive)}</td>
-                                <td>{formatBoolean(frameResult.rightHandActive)}</td>
-                                <td>{formatNumber(frameResult.leftWristMovement, 4)}</td>
-                                <td>{formatNumber(frameResult.rightWristMovement, 4)}</td>
+                <CollapsibleDetails summary={`프레임별 제스처 분석 (${gestureFrameResults.length}개 프레임) — 자세히 보기`}>
+                    <div className="pose-frame-table-wrap">
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>제스처</th>
+                                <th>왼손 보임</th>
+                                <th>오른손 보임</th>
+                                <th>왼손 활성</th>
+                                <th>오른손 활성</th>
+                                <th>왼손 이동</th>
+                                <th>오른손 이동</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+
+                            <tbody>
+                            {gestureFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.gestureDetected ? (
+                                            <span className="mini-badge success">감지</span>
+                                        ) : (
+                                            <span className="mini-badge muted">없음</span>
+                                        )}
+                                    </td>
+                                    <td>{formatBoolean(frameResult.leftHandVisible)}</td>
+                                    <td>{formatBoolean(frameResult.rightHandVisible)}</td>
+                                    <td>{formatBoolean(frameResult.leftHandActive)}</td>
+                                    <td>{formatBoolean(frameResult.rightHandActive)}</td>
+                                    <td>{formatNumber(frameResult.leftWristMovement, 4)}</td>
+                                    <td>{formatNumber(frameResult.rightWristMovement, 4)}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CollapsibleDetails>
             ) : (
                 <p className="muted-text">표시할 프레임별 제스처 분석 결과가 없습니다.</p>
             )}

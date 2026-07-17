@@ -3,6 +3,7 @@ import {
     formatPercent,
     formatSttSuccess,
 } from "./resultDetailFormatters";
+import CollapsibleDetails from "../CollapsibleDetails";
 import StateMessage from "../StateMessage";
 
 function SttSection({
@@ -71,33 +72,33 @@ function SttSection({
             </div>
 
             {Array.isArray(sttSegments) && sttSegments.length > 0 ? (
-                <div className="pose-frame-table-wrap">
-                    <h3>STT Segment</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>순서</th>
-                            <th>시작</th>
-                            <th>끝</th>
-                            <th>길이</th>
-                            <th>텍스트</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {sttSegments.map((segment, index) => (
-                            <tr key={`${segment.start}-${segment.end}-${index}`}>
-                                <td>{index + 1}</td>
-                                <td>{formatNumber(segment.start)}초</td>
-                                <td>{formatNumber(segment.end)}초</td>
-                                <td>{formatNumber(segment.duration)}초</td>
-                                <td>{segment.text || "-"}</td>
+                <CollapsibleDetails summary={`STT Segment (${sttSegments.length}개 구간) — 자세히 보기`}>
+                    <div className="pose-frame-table-wrap">
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시작</th>
+                                <th>끝</th>
+                                <th>길이</th>
+                                <th>텍스트</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+
+                            <tbody>
+                            {sttSegments.map((segment, index) => (
+                                <tr key={`${segment.start}-${segment.end}-${index}`}>
+                                    <td>{index + 1}</td>
+                                    <td>{formatNumber(segment.start)}초</td>
+                                    <td>{formatNumber(segment.end)}초</td>
+                                    <td>{formatNumber(segment.duration)}초</td>
+                                    <td>{segment.text || "-"}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CollapsibleDetails>
             ) : (
                 <p className="muted-text">표시할 STT segment가 없습니다.</p>
             )}

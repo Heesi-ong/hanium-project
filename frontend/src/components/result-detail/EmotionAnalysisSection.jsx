@@ -1,3 +1,4 @@
+import CollapsibleDetails from "../CollapsibleDetails";
 import {
     formatAnalysisMethod,
     formatEmotionLabel,
@@ -88,45 +89,45 @@ function EmotionAnalysisSection({
             </div>
 
             {Array.isArray(emotionFrameResults) && emotionFrameResults.length > 0 ? (
-                <div className="pose-frame-table-wrap">
-                    <h3>프레임별 표정/감정 분석</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>순서</th>
-                            <th>시간</th>
-                            <th>얼굴 검출</th>
-                            <th>표정 상태</th>
-                            <th>표현 점수</th>
-                            <th>입 벌림</th>
-                            <th>눈 뜸</th>
-                            <th>시선 점수</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {emotionFrameResults.map((frameResult, index) => (
-                            <tr key={`${frameResult.sequence}-${index}`}>
-                                <td>{frameResult.sequence ?? index + 1}</td>
-                                <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                <td>
-                                    {frameResult.faceDetected ? (
-                                        <span className="mini-badge success">검출</span>
-                                    ) : (
-                                        <span className="mini-badge muted">미검출</span>
-                                    )}
-                                </td>
-                                <td>{formatEmotionLabel(frameResult.emotionLabel)}</td>
-                                <td>{frameResult.expressionScore ?? 0}</td>
-                                <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
-                                <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
-                                <td>{frameResult.gazeScore ?? 0}</td>
+                <CollapsibleDetails summary={`프레임별 표정/감정 분석 (${emotionFrameResults.length}개 프레임) — 자세히 보기`}>
+                    <div className="pose-frame-table-wrap">
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>얼굴 검출</th>
+                                <th>표정 상태</th>
+                                <th>표현 점수</th>
+                                <th>입 벌림</th>
+                                <th>눈 뜸</th>
+                                <th>시선 점수</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+
+                            <tbody>
+                            {emotionFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.faceDetected ? (
+                                            <span className="mini-badge success">검출</span>
+                                        ) : (
+                                            <span className="mini-badge muted">미검출</span>
+                                        )}
+                                    </td>
+                                    <td>{formatEmotionLabel(frameResult.emotionLabel)}</td>
+                                    <td>{frameResult.expressionScore ?? 0}</td>
+                                    <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
+                                    <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
+                                    <td>{frameResult.gazeScore ?? 0}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CollapsibleDetails>
             ) : (
                 <p className="muted-text">표시할 프레임별 표정/감정 분석 결과가 없습니다.</p>
             )}

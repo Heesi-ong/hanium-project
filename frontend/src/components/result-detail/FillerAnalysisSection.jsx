@@ -1,3 +1,4 @@
+import CollapsibleDetails from "../CollapsibleDetails";
 import {
     formatAnalysisMethod,
     formatPercent,
@@ -41,29 +42,29 @@ function FillerAnalysisSection({
             {fillerInfo?.note && <p className="muted-text">{fillerInfo.note}</p>}
 
             {Array.isArray(fillerWords) && fillerWords.length > 0 ? (
-                <div className="pose-frame-table-wrap">
-                    <h3>감지된 필러 표현</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>순서</th>
-                            <th>필러 표현</th>
-                            <th>횟수</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {fillerWords.map((item, index) => (
-                            <tr key={`${item.word}-${index}`}>
-                                <td>{index + 1}</td>
-                                <td>{item.word}</td>
-                                <td>{item.count}</td>
+                <CollapsibleDetails summary={`감지된 필러 표현 (${fillerWords.length}종) — 자세히 보기`}>
+                    <div className="pose-frame-table-wrap">
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>필러 표현</th>
+                                <th>횟수</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+
+                            <tbody>
+                            {fillerWords.map((item, index) => (
+                                <tr key={`${item.word}-${index}`}>
+                                    <td>{index + 1}</td>
+                                    <td>{item.word}</td>
+                                    <td>{item.count}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CollapsibleDetails>
             ) : (
                 <p className="muted-text">감지된 필러 표현이 없습니다.</p>
             )}

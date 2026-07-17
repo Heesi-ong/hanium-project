@@ -1004,6 +1004,54 @@ pre {
   border-bottom: 0;
 }
 
+.collapsible-details {
+  margin-top: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px;
+  background: #17130F;
+  overflow: hidden;
+}
+
+.collapsible-details summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 18px;
+  color: #F5EFE8;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.collapsible-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-details summary::before {
+  content: "▸";
+  color: #B7ADA4;
+  font-size: 12px;
+  transition: transform 0.18s ease;
+}
+
+.collapsible-details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.collapsible-details summary:hover {
+  background: #211A14;
+}
+
+.collapsible-details-content {
+  padding: 0 18px 18px;
+}
+
+.collapsible-details .pose-frame-table-wrap {
+  margin-top: 0;
+}
+
 .mini-badge {
   display: inline-flex;
   align-items: center;
@@ -1140,6 +1188,36 @@ pre {
   padding-left: 18px;
   color: #F5EFE8;
   line-height: 1.7;
+}
+
+.llm-raw-text-block {
+  border: 1px solid rgba(242, 116, 36, 0.35);
+}
+
+.llm-raw-text-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.llm-raw-text-block > p.muted-text {
+  margin-bottom: 12px;
+}
+
+.llm-raw-text {
+  margin: 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: #17130F;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #F5EFE8;
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .key-value-list {

@@ -1,3 +1,4 @@
+import CollapsibleDetails from "../CollapsibleDetails";
 import {
     formatAnalysisMethod,
     formatEyeContactLevel,
@@ -55,53 +56,53 @@ function FaceAnalysisSection({
             </div>
 
             {Array.isArray(faceFrameResults) && faceFrameResults.length > 0 ? (
-                <div className="pose-frame-table-wrap">
-                    <h3>프레임별 얼굴/시선 분석</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                        <tr>
-                            <th>순서</th>
-                            <th>시간</th>
-                            <th>검출</th>
-                            <th>카메라 응시</th>
-                            <th>눈동자 위치(가로/세로)</th>
-                            <th>시선 점수</th>
-                            <th>입 벌림</th>
-                            <th>눈 뜸</th>
-                        </tr>
-                        </thead>
-
-                        <tbody>
-                        {faceFrameResults.map((frameResult, index) => (
-                            <tr key={`${frameResult.sequence}-${index}`}>
-                                <td>{frameResult.sequence ?? index + 1}</td>
-                                <td>{formatNumber(frameResult.timestampSec)}초</td>
-                                <td>
-                                    {frameResult.faceDetected ? (
-                                        <span className="mini-badge success">검출</span>
-                                    ) : (
-                                        <span className="mini-badge muted">미검출</span>
-                                    )}
-                                </td>
-                                <td>
-                                    {frameResult.gazingAtCamera ? (
-                                        <span className="mini-badge success">응시</span>
-                                    ) : (
-                                        <span className="mini-badge muted">이탈</span>
-                                    )}
-                                </td>
-                                <td>
-                                    {formatNumber(frameResult.irisHorizontalRatio, 2)} / {formatNumber(frameResult.irisVerticalRatio, 2)}
-                                </td>
-                                <td>{frameResult.gazeScore ?? 0}</td>
-                                <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
-                                <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
+                <CollapsibleDetails summary={`프레임별 얼굴/시선 분석 (${faceFrameResults.length}개 프레임) — 자세히 보기`}>
+                    <div className="pose-frame-table-wrap">
+                        <table className="pose-frame-table">
+                            <thead>
+                            <tr>
+                                <th>순서</th>
+                                <th>시간</th>
+                                <th>검출</th>
+                                <th>카메라 응시</th>
+                                <th>눈동자 위치(가로/세로)</th>
+                                <th>시선 점수</th>
+                                <th>입 벌림</th>
+                                <th>눈 뜸</th>
                             </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+
+                            <tbody>
+                            {faceFrameResults.map((frameResult, index) => (
+                                <tr key={`${frameResult.sequence}-${index}`}>
+                                    <td>{frameResult.sequence ?? index + 1}</td>
+                                    <td>{formatNumber(frameResult.timestampSec)}초</td>
+                                    <td>
+                                        {frameResult.faceDetected ? (
+                                            <span className="mini-badge success">검출</span>
+                                        ) : (
+                                            <span className="mini-badge muted">미검출</span>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {frameResult.gazingAtCamera ? (
+                                            <span className="mini-badge success">응시</span>
+                                        ) : (
+                                            <span className="mini-badge muted">이탈</span>
+                                        )}
+                                    </td>
+                                    <td>
+                                        {formatNumber(frameResult.irisHorizontalRatio, 2)} / {formatNumber(frameResult.irisVerticalRatio, 2)}
+                                    </td>
+                                    <td>{frameResult.gazeScore ?? 0}</td>
+                                    <td>{formatNumber(frameResult.mouthOpenness, 4)}</td>
+                                    <td>{formatNumber(frameResult.eyeOpenness, 4)}</td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </CollapsibleDetails>
             ) : (
                 <p className="muted-text">표시할 프레임별 얼굴/시선 분석 결과가 없습니다.</p>
             )}

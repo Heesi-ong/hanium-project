@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { activateAdminUser, forceWithdrawAdminUser, getAdminStats, getAdminUsers, suspendAdminUser } from "../api/adminApi";
+import {
+    activateAdminUser,
+    forceWithdrawAdminUser,
+    getAdminDeadLetterJobs,
+    getAdminStats,
+    getAdminUsers,
+    requeueAdminDeadLetterJob,
+    suspendAdminUser,
+} from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
@@ -20,16 +28,26 @@ function AdminDashboardPage() {
     const [actionUserId, setActionUserId] = useState("");
     const [error, setError] = useState("");
 
+    const [deadLetterJobs, setDeadLetterJobs] = useState([]);
+    const [deadLetterPage, setDeadLetterPage] = useState(0);
+    const [deadLetterHasMore, setDeadLetterHasMore] = useState(false);
+    const [deadLetterLoadingMore, setDeadLetterLoadingMore] = useState(false);
+    const [requeueingJobId, setRequeueingJobId] = useState("");
+    const [deadLetterError, setDeadLetterError] = useState("");
+
     const loadDashboard = useCallback(async () => {
         try {
-            const [statsResponse, usersResponse] = await Promise.all([
+            const [statsResponse, usersResponse, deadLetterResponse] = await Promise.all([
                 getAdminStats(),
                 getAdminUsers({ page: 0 }),
+                getAdminDeadLetterJobs({ page: 0 }),
             ]);
 
             setStats(statsResponse.data);
             setUsers(usersResponse.data?.content || []);
             setHasMore(usersResponse.data?.last === false);
+            setDeadLetterJobs(deadLetterResponse.data?.content || []);
+            setDeadLetterHasMore(deadLetterResponse.data?.last === false);
         } catch (requestError) {
             setError(getErrorMessage(
                 requestError,
@@ -99,6 +117,52 @@ function AdminDashboardPage() {
             ));
         } finally {
             setActionUserId("");
+        }
+    }
+
+    async function loadMoreDeadLetterJobs() {
+        try {
+            setDeadLetterLoadingMore(true);
+            setDeadLetterError("");
+
+            const nextPage = deadLetterPage + 1;
+            const deadLetterResponse = await getAdminDeadLetterJobs({ page: nextPage });
+
+            setDeadLetterJobs((prevJobs) => [...prevJobs, ...(deadLetterResponse.data?.content || [])]);
+            setDeadLetterPage(nextPage);
+            setDeadLetterHasMore(deadLetterResponse.data?.last === false);
+        } catch (requestError) {
+            setDeadLetterError(getErrorMessage(
+                requestError,
+                "재시도 소진 작업 목록을 더 불러오는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setDeadLetterLoadingMore(false);
+        }
+    }
+
+    async function handleRequeueDeadLetterJob(job) {
+        const confirmed = await confirm(
+            `작업 ${job.jobId}을(를) 다시 큐에 넣으시겠습니까? 재시도 횟수가 초기화되어 처음부터 다시 실행됩니다.`
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setRequeueingJobId(job.jobId);
+            setDeadLetterError("");
+
+            await requeueAdminDeadLetterJob(job.jobId);
+
+            setDeadLetterJobs((prevJobs) => prevJobs.filter((item) => item.jobId !== job.jobId));
+        } catch (requestError) {
+            setDeadLetterError(getErrorMessage(
+                requestError,
+                "작업을 다시 큐에 넣는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setRequeueingJobId("");
         }
     }
 
@@ -288,6 +352,67 @@ function AdminDashboardPage() {
                         disabled={loadingMore}
                     >
                         {loadingMore ? "불러오는 중..." : "더 보기"}
+                    </button>
+                </div>
+            )}
+
+            <h3>재시도 소진 작업 (DLQ)</h3>
+            <p>재시도 가능 횟수를 모두 소진한 채로 다시 실패한 분석 작업입니다. 검토 후 다시 큐에 넣을 수 있습니다.</p>
+
+            <StateMessage type="error">{deadLetterError}</StateMessage>
+
+            {deadLetterJobs.length === 0 ? (
+                <EmptyState
+                    title="재시도 소진 작업이 없습니다."
+                    description="반복 실패로 재시도 한도를 넘긴 작업이 없습니다."
+                />
+            ) : (
+                <div className="pose-frame-table-wrap">
+                    <table className="pose-frame-table">
+                        <thead>
+                            <tr>
+                                <th>작업 ID</th>
+                                <th>사용자 ID</th>
+                                <th>실패 사유</th>
+                                <th>재시도 횟수</th>
+                                <th>마지막 실패 시각</th>
+                                <th>관리</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {deadLetterJobs.map((job) => (
+                                <tr key={job.jobId}>
+                                    <td>{job.jobId}</td>
+                                    <td>{job.ownerId}</td>
+                                    <td>{job.failReason || "-"}</td>
+                                    <td>{job.retryCount}</td>
+                                    <td>{formatDateTime(job.completedAt)}</td>
+                                    <td>
+                                        <button
+                                            type="button"
+                                            className="secondary-button"
+                                            onClick={() => handleRequeueDeadLetterJob(job)}
+                                            disabled={requeueingJobId === job.jobId}
+                                        >
+                                            {requeueingJobId === job.jobId ? "처리 중..." : "다시 큐에 넣기"}
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {deadLetterHasMore && (
+                <div className="button-row">
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={loadMoreDeadLetterJobs}
+                        disabled={deadLetterLoadingMore}
+                    >
+                        {deadLetterLoadingMore ? "불러오는 중..." : "더 보기"}
                     </button>
                 </div>
             )}

@@ -10,6 +10,8 @@ const apiMock = vi.hoisted(() => ({
     suspendAdminUser: vi.fn(),
     activateAdminUser: vi.fn(),
     forceWithdrawAdminUser: vi.fn(),
+    getAdminDeadLetterJobs: vi.fn(),
+    requeueAdminDeadLetterJob: vi.fn(),
 }));
 
 const authMock = vi.hoisted(() => ({
@@ -26,6 +28,8 @@ vi.mock("../api/adminApi", () => ({
     suspendAdminUser: apiMock.suspendAdminUser,
     activateAdminUser: apiMock.activateAdminUser,
     forceWithdrawAdminUser: apiMock.forceWithdrawAdminUser,
+    getAdminDeadLetterJobs: apiMock.getAdminDeadLetterJobs,
+    requeueAdminDeadLetterJob: apiMock.requeueAdminDeadLetterJob,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -87,6 +91,43 @@ const statsResponse = {
     },
 };
 
+const emptyDeadLetterResponse = {
+    data: {
+        content: [],
+        totalElements: 0,
+        totalPages: 0,
+        number: 0,
+        size: 20,
+        numberOfElements: 0,
+        first: true,
+        last: true,
+    },
+};
+
+const deadLetterResponse = {
+    data: {
+        content: [
+            {
+                jobId: "20260717090000-dead0001",
+                ownerId: 2,
+                status: "DEAD_LETTER",
+                statusDescription: "재시도 소진(관리자 재처리 필요)",
+                failReason: "엔진 반복 실패",
+                retryCount: 3,
+                createdAt: "2026-07-17T09:00:00",
+                completedAt: "2026-07-17T09:10:00",
+            },
+        ],
+        totalElements: 1,
+        totalPages: 1,
+        number: 0,
+        size: 20,
+        numberOfElements: 1,
+        first: true,
+        last: true,
+    },
+};
+
 describe("AdminDashboardPage", () => {
     beforeEach(() => {
         apiMock.getAdminStats.mockReset();
@@ -94,6 +135,9 @@ describe("AdminDashboardPage", () => {
         apiMock.suspendAdminUser.mockReset();
         apiMock.activateAdminUser.mockReset();
         apiMock.forceWithdrawAdminUser.mockReset();
+        apiMock.getAdminDeadLetterJobs.mockReset();
+        apiMock.requeueAdminDeadLetterJob.mockReset();
+        apiMock.getAdminDeadLetterJobs.mockResolvedValue(emptyDeadLetterResponse);
         confirmMock.confirm.mockReset();
         confirmMock.confirm.mockResolvedValue(true);
     });
@@ -172,5 +216,63 @@ describe("AdminDashboardPage", () => {
         await waitFor(() => {
             expect(screen.queryByText("member@example.com")).not.toBeInTheDocument();
         });
+    });
+
+    it("renders the dead-letter queue table when there are exhausted jobs", async () => {
+        apiMock.getAdminStats.mockResolvedValue(statsResponse);
+        apiMock.getAdminUsers.mockResolvedValue(usersResponse);
+        apiMock.getAdminDeadLetterJobs.mockResolvedValue(deadLetterResponse);
+
+        renderAdminDashboardPage();
+
+        expect(await screen.findByText("20260717090000-dead0001")).toBeInTheDocument();
+        expect(screen.getByText("엔진 반복 실패")).toBeInTheDocument();
+    });
+
+    it("shows an empty state when there are no dead-letter jobs", async () => {
+        apiMock.getAdminStats.mockResolvedValue(statsResponse);
+        apiMock.getAdminUsers.mockResolvedValue(usersResponse);
+        apiMock.getAdminDeadLetterJobs.mockResolvedValue(emptyDeadLetterResponse);
+
+        renderAdminDashboardPage();
+
+        expect(await screen.findByText("재시도 소진 작업이 없습니다.")).toBeInTheDocument();
+    });
+
+    it("requeues a dead-letter job after confirmation and removes it from the list", async () => {
+        apiMock.getAdminStats.mockResolvedValue(statsResponse);
+        apiMock.getAdminUsers.mockResolvedValue(usersResponse);
+        apiMock.getAdminDeadLetterJobs.mockResolvedValue(deadLetterResponse);
+        apiMock.requeueAdminDeadLetterJob.mockResolvedValue({ success: true });
+
+        renderAdminDashboardPage();
+
+        await screen.findByText("20260717090000-dead0001");
+
+        fireEvent.click(screen.getByRole("button", { name: "다시 큐에 넣기" }));
+
+        await waitFor(() => {
+            expect(apiMock.requeueAdminDeadLetterJob).toHaveBeenCalledWith("20260717090000-dead0001");
+        });
+        await waitFor(() => {
+            expect(screen.queryByText("20260717090000-dead0001")).not.toBeInTheDocument();
+        });
+        expect(await screen.findByText("재시도 소진 작업이 없습니다.")).toBeInTheDocument();
+    });
+
+    it("shows an error message when requeue fails", async () => {
+        apiMock.getAdminStats.mockResolvedValue(statsResponse);
+        apiMock.getAdminUsers.mockResolvedValue(usersResponse);
+        apiMock.getAdminDeadLetterJobs.mockResolvedValue(deadLetterResponse);
+        apiMock.requeueAdminDeadLetterJob.mockRejectedValue({ message: "재시도 소진(DEAD_LETTER) 상태의 분석 작업만 재처리할 수 있습니다." });
+
+        renderAdminDashboardPage();
+
+        await screen.findByText("20260717090000-dead0001");
+
+        fireEvent.click(screen.getByRole("button", { name: "다시 큐에 넣기" }));
+
+        expect(await screen.findByText("재시도 소진(DEAD_LETTER) 상태의 분석 작업만 재처리할 수 있습니다.")).toBeInTheDocument();
+        expect(screen.getByText("20260717090000-dead0001")).toBeInTheDocument();
     });
 });

@@ -26,6 +26,27 @@ export function formatFileSize(fileSize) {
     return `${(fileSize / 1024 / 1024).toFixed(2)}MB`;
 }
 
+export function formatDateTime(value) {
+    if (!value) {
+        return "-";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return date.toLocaleString("ko-KR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
 export function formatTimestamp(seconds) {
     if (
         seconds === null ||

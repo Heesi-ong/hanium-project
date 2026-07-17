@@ -1746,6 +1746,17 @@ button.observation-seek::before {
   font-size: 13px;
 }
 
+.result-data-issue {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(231, 104, 90, 0.35);
+  background: rgba(231, 104, 90, 0.1);
+  color: #E7685A;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .result-score-row {
   display: grid;
   grid-template-columns: repeat(1, minmax(0, 1fr));

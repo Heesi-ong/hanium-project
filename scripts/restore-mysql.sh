@@ -6,17 +6,26 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RESTORE_LOG_PATH="${RESTORE_LOG_PATH:-${BACKUP_LOG_PATH:-$PROJECT_ROOT/storage/logs/restore.log}}"
 MYSQL_BIN="${MYSQL_BIN:-mysql}"
+# 암호화 백업(.sql.gz.enc)을 복구할 때 필요한 값. backup-mysql.sh와 같은 값이어야 합니다.
+BACKUP_ENCRYPTION_PASSPHRASE="${BACKUP_ENCRYPTION_PASSPHRASE:-}"
+BACKUP_ENCRYPTION_PBKDF2_ITER="${BACKUP_ENCRYPTION_PBKDF2_ITER:-200000}"
+OPENSSL_BIN="${OPENSSL_BIN:-openssl}"
 FORCE_RESTORE=false
 BACKUP_FILE="${RESTORE_BACKUP_FILE:-}"
 
 usage() {
     cat <<'USAGE'
-Usage: scripts/restore-mysql.sh [--force] [backup-file.sql.gz]
+Usage: scripts/restore-mysql.sh [--force] [backup-file.sql.gz|.sql.gz.enc]
 
 Restores one gzip-compressed MySQL dump into the DB_NAME target.
+If the file ends with .enc it is decrypted first with openssl (AES-256/PBKDF2).
 
 Required environment:
   DB_HOST DB_PORT DB_NAME DB_USERNAME DB_PASSWORD
+
+Optional environment (for .enc encrypted backups):
+  BACKUP_ENCRYPTION_PASSPHRASE   Must match the value used at backup time.
+  BACKUP_ENCRYPTION_PBKDF2_ITER  PBKDF2 iterations (default 200000).
 
 Options:
   --force    Allow restore when the target database already has tables.
@@ -91,8 +100,38 @@ if ! command -v "$MYSQL_BIN" >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! gzip -t "$BACKUP_FILE"; then
-    log "ERROR: backup integrity check failed (corrupt gzip): $BACKUP_FILE"
+# .enc 확장자면 암호화 백업으로 보고 복호화 스트림을 사용합니다.
+IS_ENCRYPTED=false
+case "$BACKUP_FILE" in
+    *.enc)
+        IS_ENCRYPTED=true
+        ;;
+esac
+
+if [[ "$IS_ENCRYPTED" == true ]]; then
+    if [[ -z "$BACKUP_ENCRYPTION_PASSPHRASE" ]]; then
+        log "ERROR: 암호화 백업(.enc)인데 BACKUP_ENCRYPTION_PASSPHRASE가 비어 있습니다: $BACKUP_FILE"
+        exit 1
+    fi
+    if ! command -v "$OPENSSL_BIN" >/dev/null 2>&1; then
+        log "ERROR: 암호화 백업 복구에 필요한 openssl을 찾을 수 없습니다: $OPENSSL_BIN"
+        exit 1
+    fi
+fi
+
+# 백업 파일을 평문 SQL 스트림으로 풀어 stdout에 씁니다(암호화면 복호화 후 gunzip).
+sql_stream() {
+    if [[ "$IS_ENCRYPTED" == true ]]; then
+        "$OPENSSL_BIN" enc -d -aes-256-cbc -pbkdf2 -iter "$BACKUP_ENCRYPTION_PBKDF2_ITER" \
+            -in "$BACKUP_FILE" -pass env:BACKUP_ENCRYPTION_PASSPHRASE | gzip -dc
+    else
+        gzip -dc "$BACKUP_FILE"
+    fi
+}
+
+# 무결성 검증: 복호화+gunzip이 끝까지 성공하는지 확인합니다(잘못된 키면 여기서 실패).
+if ! sql_stream >/dev/null; then
+    log "ERROR: backup integrity check failed (복호화/gzip 실패): $BACKUP_FILE"
     exit 1
 fi
 
@@ -120,7 +159,7 @@ fi
 
 log "restore started: db=$DB_NAME host=$DB_HOST port=$DB_PORT backup=$BACKUP_FILE force=$FORCE_RESTORE existingTables=$target_table_count"
 
-if gzip -dc "$BACKUP_FILE" | MYSQL_PWD="$DB_PASSWORD" "$MYSQL_BIN" \
+if sql_stream | MYSQL_PWD="$DB_PASSWORD" "$MYSQL_BIN" \
     --host="$DB_HOST" \
     --port="$DB_PORT" \
     --user="$DB_USERNAME" \

@@ -98,6 +98,26 @@ groups:
           summary: "MySQL 백업이 오랫동안 성공하지 못했습니다"
           description: "가장 최근 성공한 MySQL 백업으로부터 26시간 이상 경과했습니다. backup 컨테이너가 살아있는지, mysqldump가 계속 실패하고 있는지 확인하세요."
 
+      - alert: MysqlBackupRemoteExportFailed
+        expr: mysql_backup_remote_export_last_run_status == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL 백업의 MinIO 원격 반출이 실패했습니다"
+          description: "로컬 MySQL 백업은 생성됐지만 가장 최근 MinIO 원격 반출이 실패했습니다. backup 컨테이너의 MinIO 자격 증명, 버킷, 네트워크와 로그를 확인하세요."
+
+      - alert: MysqlBackupRemoteExportStale
+        # 원격 반출이 설정된 경우 마지막 성공 이후 26시간이 지나면 로컬 백업 성공 여부와
+        # 별개로 발동합니다. 재해복구 사본이 장시간 갱신되지 않는 상황을 탐지합니다.
+        expr: mysql_backup_remote_export_configured == 1 and time() - mysql_backup_remote_export_last_success_timestamp_seconds > 93600
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL 원격 백업 사본이 오랫동안 갱신되지 않았습니다"
+          description: "MinIO 원격 반출의 마지막 성공으로부터 26시간 이상 경과했습니다. 로컬 백업만 갱신되고 원격 재해복구 사본이 멈춘 것은 아닌지 확인하세요."
+
   - name: host-alerts
     rules:
       - alert: HostDiskSpaceLow

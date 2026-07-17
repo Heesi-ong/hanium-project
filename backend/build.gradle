@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '3.5.3'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'jacoco'
 }
 
 group = 'com.hanium'
@@ -59,4 +60,18 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 테스트가 끝나면 커버리지 리포트를 자동 생성합니다.
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+jacoco {
+    toolVersion = '0.8.12'
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true   // CI 업로드/뱃지용
+        html.required = true  // build/reports/jacoco/test/html/index.html
+    }
 }

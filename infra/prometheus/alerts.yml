@@ -44,6 +44,37 @@ groups:
           summary: "Video LLM 월간 호출 한도 소진 임박"
           description: "이번 달 NVIDIA Video LLM 실제 API 호출량이 설정된 한도의 90%를 초과한 상태가 5분 이상 지속되고 있습니다. 한도 상향 또는 비용을 확인하세요."
 
+      - alert: VideoLlmFallbackRateHigh
+        # 최근 30분간 REAL이 아닌(FALLBACK/MOCK) 응답 비율이 50%를 초과하면 발동합니다.
+        # VIDEO_LLM_ENABLED=true인데 실제 모델 호출이 계속 실패해 mock으로 새는 상황을 잡습니다.
+        # (VIDEO_LLM_ENABLED=false로 의도적으로 mock만 쓰는 동안에도 발동하므로, 실서비스
+        #  활성화 이후에만 의미가 있습니다. 활성화 전이라면 이 알림을 잠시 무시하세요.)
+        expr: |
+          sum(increase(video_llm_generation_total{mode=~"FALLBACK|MOCK"}[30m]))
+          / clamp_min(sum(increase(video_llm_generation_total[30m])), 1) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Video LLM이 실제 모델 대신 mock으로 응답하는 비율이 높습니다"
+          description: "최근 30분간 Video LLM 응답의 절반 이상이 FALLBACK/MOCK입니다. NVIDIA_API_KEY 설정, 서킷브레이커 상태, video-llm-engine 로그를 확인하세요. 실제 모델을 켠 상태라면 사용자에게 품질이 낮은 결과가 나가고 있을 수 있습니다."
+
+  - name: video-processing-alerts
+    rules:
+      - alert: VideoDurationProbeFailOpenHigh
+        # ffprobe로 영상 길이를 확인하지 못해 길이 제한을 fail-open(무조건 통과)시키는 비율이
+        # 최근 30분간 30%를 넘으면 발동합니다. ffprobe 바이너리 누락/권한/코덱 문제일 수 있고,
+        # 이 상태가 지속되면 VIDEO_MAX_DURATION_MINUTES(기본 30분) 제한이 사실상 무력화됩니다.
+        expr: |
+          sum(increase(video_duration_probe_result_total{outcome="fail_open"}[30m]))
+          / clamp_min(sum(increase(video_duration_probe_result_total[30m])), 1) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ffprobe 영상 길이 확인 실패(fail-open) 비율이 높습니다"
+          description: "최근 30분간 영상 길이 확인이 30% 이상 fail-open으로 통과됐습니다. backend 컨테이너에 ffprobe가 정상 설치돼 있는지, 업로드 파일이 손상되지 않았는지 확인하세요. 지속되면 영상 길이 제한이 무력화됩니다."
+
   - name: backup-alerts
     rules:
       - alert: MysqlBackupFailed

@@ -1,6 +1,7 @@
 package com.hanium.presentation.infrastructure.client.videollm;
 
 import com.hanium.presentation.global.properties.VideoLlmEngineProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -76,7 +77,7 @@ class VideoLlmEngineClientReadinessTest {
 
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties);
+        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, new SimpleMeterRegistry());
 
         return new Fixture(client, server);
     }

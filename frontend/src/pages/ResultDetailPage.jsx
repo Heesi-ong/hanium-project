@@ -5,6 +5,7 @@ import EmotionDoughnutChart from "../components/chart/EmotionDoughnutChart";
 import ResultScoreChart from "../components/chart/ResultScoreChart";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
+import AnimatedSection from "../components/motion/AnimatedSection";
 import AudioAnalysisSection from "../components/result-detail/AudioAnalysisSection";
 import CoachChatSection from "../components/result-detail/CoachChatSection";
 import EmotionAnalysisSection from "../components/result-detail/EmotionAnalysisSection";
@@ -598,7 +599,7 @@ function ResultDetailPage() {
                 <p>생성일: {new Date().toLocaleString("ko-KR")} · jobId: {jobId}</p>
             </div>
 
-            <div className="detail-header-card">
+            <AnimatedSection className="detail-header-card">
                 <div>
                     <p className="eyebrow">Result Detail</p>
                     <h1>분석 결과 상세</h1>
@@ -655,7 +656,7 @@ function ResultDetailPage() {
                         {deleting ? "삭제 중..." : "삭제"}
                     </button>
                 </div>
-            </div>
+            </AnimatedSection>
 
             <StateMessage type="error">{error}</StateMessage>
 
@@ -681,7 +682,7 @@ function ResultDetailPage() {
                     : ""}
             </StateMessage>
 
-            <div className="score-panel">
+            <AnimatedSection className="score-panel">
                 <div className="score-panel-main">
                     <span className="score-panel-label">종합 등급</span>
                     <strong>{scoreSummary.level || "-"}</strong>
@@ -704,22 +705,26 @@ function ResultDetailPage() {
                         </article>
                     ))}
                 </div>
-            </div>
+            </AnimatedSection>
 
-            <ResultSummaryOverview
-                scoreSummary={scoreSummary}
-                videoInfo={videoInfo}
-                audioInfo={audioInfo}
-                fillerInfo={fillerInfo}
-                poseInfo={poseInfo}
-                faceInfo={faceInfo}
-                gestureInfo={gestureInfo}
-                emotionInfo={emotionInfo}
-            />
+            <AnimatedSection>
+                <ResultSummaryOverview
+                    scoreSummary={scoreSummary}
+                    videoInfo={videoInfo}
+                    audioInfo={audioInfo}
+                    fillerInfo={fillerInfo}
+                    poseInfo={poseInfo}
+                    faceInfo={faceInfo}
+                    gestureInfo={gestureInfo}
+                    emotionInfo={emotionInfo}
+                />
+            </AnimatedSection>
 
-            <ResultScoreChart scoreSummary={scoreSummary} />
+            <AnimatedSection>
+                <ResultScoreChart scoreSummary={scoreSummary} />
+            </AnimatedSection>
 
-            <div className="detail-grid">
+            <AnimatedSection className="detail-grid">
                 <AnalysisMetricBarChart
                     poseInfo={poseInfo}
                     faceInfo={faceInfo}
@@ -728,77 +733,103 @@ function ResultDetailPage() {
                 />
 
                 <EmotionDoughnutChart emotionCounts={emotionCounts} />
-            </div>
+            </AnimatedSection>
 
-            <div className="no-print">
+            <AnimatedSection className="no-print">
                 <VideoPlayerSection
                     jobId={jobId}
                     notableMoments={notableMoments}
                     seekControllerRef={videoSeekControllerRef}
                 />
-            </div>
+            </AnimatedSection>
 
-            <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
+            <AnimatedSection>
+                <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
+            </AnimatedSection>
 
-            <OpenAiFeedbackStatusSection feedback={feedback} />
+            <AnimatedSection>
+                <OpenAiFeedbackStatusSection feedback={feedback} />
+            </AnimatedSection>
 
-            <FeedbackSection
-                feedback={feedback}
-                visualAnalysis={visualAnalysis}
-                onSeekToTime={handleSeekToObservation}
-            />
+            <AnimatedSection>
+                <FeedbackSection
+                    feedback={feedback}
+                    visualAnalysis={visualAnalysis}
+                    onSeekToTime={handleSeekToObservation}
+                />
+            </AnimatedSection>
 
-            <div className="no-print">
+            <AnimatedSection className="no-print">
                 <CoachChatSection jobId={jobId} isCompleted={isCompleted} />
-            </div>
+            </AnimatedSection>
 
-            <PracticePlanSection practicePlan={practicePlan} />
+            <AnimatedSection>
+                <PracticePlanSection practicePlan={practicePlan} />
+            </AnimatedSection>
 
-            <TimelineFeedbackSection timelineFeedback={timelineFeedback} />
+            <AnimatedSection>
+                <TimelineFeedbackSection timelineFeedback={timelineFeedback} />
+            </AnimatedSection>
 
-            <AudioAnalysisSection
-                audioInfo={audioInfo}
-                renderMetricCard={renderMetricCard}
-            />
+            <AnimatedSection>
+                <AudioAnalysisSection
+                    audioInfo={audioInfo}
+                    renderMetricCard={renderMetricCard}
+                />
+            </AnimatedSection>
 
-            <SttSection
-                sttInfo={sttInfo}
-                audioExtractionInfo={audioExtractionInfo}
-                sttSegments={sttSegments}
-            />
+            <AnimatedSection>
+                <SttSection
+                    sttInfo={sttInfo}
+                    audioExtractionInfo={audioExtractionInfo}
+                    sttSegments={sttSegments}
+                />
+            </AnimatedSection>
 
-            <FillerAnalysisSection
-                fillerInfo={fillerInfo}
-                fillerWords={fillerWords}
-                renderMetricCard={renderMetricCard}
-            />
+            <AnimatedSection>
+                <FillerAnalysisSection
+                    fillerInfo={fillerInfo}
+                    fillerWords={fillerWords}
+                    renderMetricCard={renderMetricCard}
+                />
+            </AnimatedSection>
 
-            <PoseAnalysisSection
-                poseInfo={poseInfo}
-                poseFrameResults={poseFrameResults}
-                renderMetricCard={renderMetricCard}
-            />
+            <AnimatedSection>
+                <PoseAnalysisSection
+                    poseInfo={poseInfo}
+                    poseFrameResults={poseFrameResults}
+                    renderMetricCard={renderMetricCard}
+                />
+            </AnimatedSection>
 
-            <GestureAnalysisSection
-                gestureInfo={gestureInfo}
-                gestureFrameResults={gestureFrameResults}
-                renderMetricCard={renderMetricCard}
-            />
+            <AnimatedSection>
+                <GestureAnalysisSection
+                    gestureInfo={gestureInfo}
+                    gestureFrameResults={gestureFrameResults}
+                    renderMetricCard={renderMetricCard}
+                />
+            </AnimatedSection>
 
-            <FaceAnalysisSection
-                faceInfo={faceInfo}
-                faceFrameResults={faceFrameResults}
-                renderMetricCard={renderMetricCard}
-            />
+            <AnimatedSection>
+                <FaceAnalysisSection
+                    faceInfo={faceInfo}
+                    faceFrameResults={faceFrameResults}
+                    renderMetricCard={renderMetricCard}
+                />
+            </AnimatedSection>
 
-            <EmotionAnalysisSection
-                emotionInfo={emotionInfo}
-                emotionCounts={emotionCounts}
-                emotionFrameResults={emotionFrameResults}
-                renderMetricCard={renderMetricCard}
-            />
+            <AnimatedSection>
+                <EmotionAnalysisSection
+                    emotionInfo={emotionInfo}
+                    emotionCounts={emotionCounts}
+                    emotionFrameResults={emotionFrameResults}
+                    renderMetricCard={renderMetricCard}
+                />
+            </AnimatedSection>
 
-            <PipelineSection pipeline={pipeline} />
+            <AnimatedSection>
+                <PipelineSection pipeline={pipeline} />
+            </AnimatedSection>
         </section>
     );
 }

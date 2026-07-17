@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { deleteResult, getResults } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
+import AnimatedSection from "../components/motion/AnimatedSection";
 import EmptyState from "../components/EmptyState";
 import ScoreTrendChart from "../components/chart/ScoreTrendChart";
 import PageHeader from "../components/PageHeader";
@@ -369,7 +370,7 @@ function ResultListPage() {
 
             <StateMessage type="error">{error}</StateMessage>
 
-            <div className="result-summary-grid">
+            <AnimatedSection className="result-summary-grid">
                 <article className="summary-card">
                     <span>전체 결과</span>
                     <strong>{results.length}</strong>
@@ -405,9 +406,11 @@ function ResultListPage() {
                     <strong>{fallbackCount}</strong>
                     <p>OpenAI 호출 실패 후 Mock으로 대체된 결과입니다.</p>
                 </article>
-            </div>
+            </AnimatedSection>
 
-            <ScoreTrendChart results={results} />
+            <AnimatedSection>
+                <ScoreTrendChart results={results} />
+            </AnimatedSection>
 
             <div className="result-control-grid">
                 <div className="filter-button-group">
@@ -473,6 +476,7 @@ function ResultListPage() {
                 </button>
             </div>
 
+            <AnimatedSection>
             {filteredResults.length === 0 ? (
                 <EmptyState
                     title="표시할 분석 결과가 없습니다."
@@ -557,6 +561,7 @@ function ResultListPage() {
                     })}
                 </div>
             )}
+            </AnimatedSection>
 
             {hasMore && (
                 <div className="button-row">

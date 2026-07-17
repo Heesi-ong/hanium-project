@@ -168,6 +168,7 @@ Video LLM 호출을 운영에서 켜려면 아래 값을 운영 환경에 명시
 | `NVIDIA_API_BASE_URL` | video-llm-engine 실행 환경 | 기본값은 `https://integrate.api.nvidia.com/v1`입니다. |
 | `NVIDIA_ASSET_API_BASE_URL` | video-llm-engine 실행 환경 | 180KB 초과 영상을 업로드하는 NVCF Asset API base URL입니다. 기본값은 `https://api.nvcf.nvidia.com/v2/nvcf`입니다. |
 | `NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS` | video-llm-engine 실행 환경 | 외부 영상 분석 호출 timeout입니다. 기본값은 `120`초입니다. |
+| `VIDEO_LLM_MAX_VIDEO_SIZE_MB` | video-llm-engine 실행 환경 | 다운로드·로컬 파일·NVIDIA Asset 업로드에 허용할 단일 영상 최대 크기입니다. backend 업로드 상한과 같은 `500`MB가 기본입니다. |
 | `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY` | backend 실행 환경 또는 루트 `.env` | NVIDIA 실제 호출 월간 예산 가드입니다. 기본값은 `500`회입니다. 정확한 NVIDIA 무료 한도가 아직 확인되지 않아 OpenAI 기본값보다 보수적으로 둔 추정값입니다. |
 | `VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES` | backend 실행 환경 또는 루트 `.env` | 월간 카운터 refill 주기입니다. 기본값은 `44640`분입니다. |
 
@@ -751,7 +752,7 @@ pip install -r requirements.txt
 pytest
 ```
 
-video-llm-engine의 mock 엔드포인트 테스트는 requirements-test.txt(=requirements-base.txt + pytest)만
+video-llm-engine의 mock 엔드포인트 테스트는 requirements-test.txt(=requirements-base.txt + pytest + HTTPX2)만
 설치하면 되며, torch/transformers 등 무거운 real-model 의존성은 필요 없습니다.
 
 ```bash

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
 import EmotionDoughnutChart from "../components/chart/EmotionDoughnutChart";
@@ -37,6 +37,8 @@ const POLLING_INTERVAL_MS = 1500;
 const POLLING_TIMEOUT_MS = 35 * 60 * 1000;
 const RATE_LIMIT_COOLDOWN_MS = 12000;
 const MAX_CONSECUTIVE_POLL_FAILURES = 5;
+const EMPTY_OBJECT = {};
+const EMPTY_ARRAY = [];
 
 const RUNNING_STATUSES = [
     "QUEUED",
@@ -56,6 +58,12 @@ function ResultDetailPage() {
     const pollingStartedAtRef = useRef(null);
     const cooldownTimerRef = useRef(null);
     const pollingFailureCountRef = useRef(0);
+    // VideoPlayerSection이 등록하는 영상 시크 함수. 시각 분석 관찰 항목을 클릭하면
+    // 이 함수를 통해 영상을 해당 구간(startSec)으로 이동시킵니다.
+    const videoSeekControllerRef = useRef(null);
+    const handleSeekToObservation = useCallback((timestampSec) => {
+        videoSeekControllerRef.current?.(timestampSec);
+    }, []);
 
     const [resultData, setResultData] = useState(null);
     const [analysisStatus, setAnalysisStatus] = useState(null);
@@ -67,55 +75,56 @@ function ResultDetailPage() {
     const [error, setError] = useState("");
     const [loadErrorCode, setLoadErrorCode] = useState("");
     const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
+    const [clockTick, setClockTick] = useState(() => Date.now());
 
-    const result = resultData?.result || {};
+    const result = resultData?.result || EMPTY_OBJECT;
 
-    const scoreSummary = result.scoreSummary || {};
-    const basicAnalysis = result.basicAnalysis || {};
-    const visualAnalysis = result.visualAnalysis || {};
-    const feedback = result.feedback || {};
-    const practicePlan = result.practicePlan || [];
-    const timelineFeedback = result.timelineFeedback || [];
-    const notableMoments = result.notableMoments || [];
-    const pipeline = result.pipeline || {};
+    const scoreSummary = result.scoreSummary || EMPTY_OBJECT;
+    const basicAnalysis = result.basicAnalysis || EMPTY_OBJECT;
+    const visualAnalysis = result.visualAnalysis || EMPTY_OBJECT;
+    const feedback = result.feedback || EMPTY_OBJECT;
+    const practicePlan = result.practicePlan || EMPTY_ARRAY;
+    const timelineFeedback = result.timelineFeedback || EMPTY_ARRAY;
+    const notableMoments = result.notableMoments || EMPTY_ARRAY;
+    const pipeline = result.pipeline || EMPTY_OBJECT;
 
-    const videoInfo = basicAnalysis.videoInfo || {};
-    const frameInfo = basicAnalysis.frame || {};
-    const poseInfo = basicAnalysis.pose || {};
-    const gestureInfo = basicAnalysis.gesture || {};
-    const audioInfo = basicAnalysis.audio || {};
-    const fillerInfo = basicAnalysis.filler || {};
-    const faceInfo = basicAnalysis.face || {};
-    const emotionInfo = basicAnalysis.emotion || {};
+    const videoInfo = basicAnalysis.videoInfo || EMPTY_OBJECT;
+    const frameInfo = basicAnalysis.frame || EMPTY_OBJECT;
+    const poseInfo = basicAnalysis.pose || EMPTY_OBJECT;
+    const gestureInfo = basicAnalysis.gesture || EMPTY_OBJECT;
+    const audioInfo = basicAnalysis.audio || EMPTY_OBJECT;
+    const fillerInfo = basicAnalysis.filler || EMPTY_OBJECT;
+    const faceInfo = basicAnalysis.face || EMPTY_OBJECT;
+    const emotionInfo = basicAnalysis.emotion || EMPTY_OBJECT;
 
-    const sttInfo = audioInfo.stt || {};
-    const audioExtractionInfo = audioInfo.audioExtraction || {};
+    const sttInfo = audioInfo.stt || EMPTY_OBJECT;
+    const audioExtractionInfo = audioInfo.audioExtraction || EMPTY_OBJECT;
 
     const sttSegments = Array.isArray(sttInfo.segments)
         ? sttInfo.segments
-        : [];
+        : EMPTY_ARRAY;
 
     const fillerWords = Array.isArray(fillerInfo.fillerWords)
         ? fillerInfo.fillerWords
-        : [];
+        : EMPTY_ARRAY;
 
     const poseFrameResults = Array.isArray(poseInfo.frameResults)
         ? poseInfo.frameResults
-        : [];
+        : EMPTY_ARRAY;
 
     const gestureFrameResults = Array.isArray(gestureInfo.frameResults)
         ? gestureInfo.frameResults
-        : [];
+        : EMPTY_ARRAY;
 
     const faceFrameResults = Array.isArray(faceInfo.frameResults)
         ? faceInfo.frameResults
-        : [];
+        : EMPTY_ARRAY;
 
     const emotionFrameResults = Array.isArray(emotionInfo.frameResults)
         ? emotionInfo.frameResults
-        : [];
+        : EMPTY_ARRAY;
 
-    const emotionCounts = emotionInfo.emotionState?.emotionCounts || {};
+    const emotionCounts = emotionInfo.emotionState?.emotionCounts || EMPTY_OBJECT;
 
     const currentStatus = analysisStatus?.status || result.status || null;
     const currentStatusDescription =
@@ -126,7 +135,7 @@ function ResultDetailPage() {
     const isCompleted = currentStatus === "COMPLETED";
     const isQueued = currentStatus === "QUEUED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
-    const isRateLimited = rateLimitedUntil > Date.now();
+    const isRateLimited = rateLimitedUntil > clockTick;
 
     const scoreItems = useMemo(
         () => [
@@ -158,16 +167,25 @@ function ResultDetailPage() {
         [scoreSummary]
     );
 
-    useEffect(() => {
-        loadResult();
+    const stopPolling = useCallback(() => {
+        if (pollingTimerRef.current) {
+            clearInterval(pollingTimerRef.current);
+            pollingTimerRef.current = null;
+        }
 
-        return () => {
-            stopPolling();
-            stopRateLimitCooldown();
-        };
-    }, [jobId]);
+        pollingStartedAtRef.current = null;
+        pollingFailureCountRef.current = 0;
+        setPolling(false);
+    }, []);
 
-    async function loadResult() {
+    const stopRateLimitCooldown = useCallback(() => {
+        if (cooldownTimerRef.current) {
+            clearTimeout(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+        }
+    }, []);
+
+    const loadResult = useCallback(async () => {
         if (!jobId) {
             setError("조회할 jobId가 없습니다.");
             setLoading(false);
@@ -212,7 +230,19 @@ function ResultDetailPage() {
         } finally {
             setLoading(false);
         }
-    }
+    }, [jobId]);
+
+    useEffect(() => {
+        const loadTimer = window.setTimeout(() => {
+            loadResult();
+        }, 0);
+
+        return () => {
+            window.clearTimeout(loadTimer);
+            stopPolling();
+            stopRateLimitCooldown();
+        };
+    }, [loadResult, stopPolling, stopRateLimitCooldown]);
 
     async function fetchStatusOnce(targetJobId) {
         const response = await getAnalysisStatus(targetJobId);
@@ -273,32 +303,17 @@ function ResultDetailPage() {
         }, POLLING_INTERVAL_MS);
     }
 
-    function stopPolling() {
-        if (pollingTimerRef.current) {
-            clearInterval(pollingTimerRef.current);
-            pollingTimerRef.current = null;
-        }
-
-        pollingStartedAtRef.current = null;
-        pollingFailureCountRef.current = 0;
-        setPolling(false);
-    }
-
     function startRateLimitCooldown() {
         stopRateLimitCooldown();
-        setRateLimitedUntil(Date.now() + RATE_LIMIT_COOLDOWN_MS);
+        const now = Date.now();
+        setClockTick(now);
+        setRateLimitedUntil(now + RATE_LIMIT_COOLDOWN_MS);
 
         cooldownTimerRef.current = setTimeout(() => {
+            setClockTick(Date.now());
             setRateLimitedUntil(0);
             cooldownTimerRef.current = null;
         }, RATE_LIMIT_COOLDOWN_MS);
-    }
-
-    function stopRateLimitCooldown() {
-        if (cooldownTimerRef.current) {
-            clearTimeout(cooldownTimerRef.current);
-            cooldownTimerRef.current = null;
-        }
     }
 
     function applyRateLimitMessage(requestError) {
@@ -719,6 +734,7 @@ function ResultDetailPage() {
                 <VideoPlayerSection
                     jobId={jobId}
                     notableMoments={notableMoments}
+                    seekControllerRef={videoSeekControllerRef}
                 />
             </div>
 
@@ -729,6 +745,7 @@ function ResultDetailPage() {
             <FeedbackSection
                 feedback={feedback}
                 visualAnalysis={visualAnalysis}
+                onSeekToTime={handleSeekToObservation}
             />
 
             <div className="no-print">

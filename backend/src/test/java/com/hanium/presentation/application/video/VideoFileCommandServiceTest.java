@@ -6,6 +6,7 @@ import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.StorageProperties;
+import com.hanium.presentation.global.properties.ObjectStoragePolicyProperties;
 import com.hanium.presentation.global.properties.VideoProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
@@ -53,6 +54,14 @@ class VideoFileCommandServiceTest {
     }
 
     private VideoFileCommandService createService(Long minFreeSpaceMb, VideoDurationProbe videoDurationProbe) {
+        return createService(minFreeSpaceMb, videoDurationProbe, false);
+    }
+
+    private VideoFileCommandService createService(
+            Long minFreeSpaceMb,
+            VideoDurationProbe videoDurationProbe,
+            boolean objectStorageWriteRequired
+    ) {
         StorageProperties storageProperties = new StorageProperties(
                 tempDir.toString(),
                 tempDir.resolve("uploads").toString(),
@@ -69,7 +78,8 @@ class VideoFileCommandServiceTest {
                 storageProperties,
                 videoDurationProbe,
                 videoProperties,
-                objectStorage
+                objectStorage,
+                new ObjectStoragePolicyProperties(objectStorageWriteRequired, false)
         );
     }
 
@@ -185,7 +195,34 @@ class VideoFileCommandServiceTest {
     }
 
     @Test
+    void storeFailsAndDeletesLocalFileWhenObjectStorageWriteIsRequired() {
+        videoFileCommandService = createService(
+                0L,
+                videoPath -> Optional.of(Duration.ofMinutes(1)),
+                true
+        );
+        doThrow(new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "minio down"))
+                .when(objectStorage)
+                .putObject(any(), any(), anyLong(), any());
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                "video/mp4",
+                mp4Header()
+        );
+
+        assertThatThrownBy(() -> videoFileCommandService.store(new VideoUploadCommand("job-strict", file)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FILE_UPLOAD_FAILED);
+
+        assertThat(Files.exists(tempDir.resolve("uploads/job-strict/original.mp4"))).isFalse();
+    }
+
+    @Test
     void resolveDownloadUrlReturnsPresignedUrlFromObjectStorage() {
+        when(objectStorage.exists("uploads/job-download/original.mp4")).thenReturn(true);
         when(objectStorage.generatePresignedUrl(eq("uploads/job-download/original.mp4"), any()))
                 .thenReturn("https://minio.local/hanium-storage/uploads/job-download/original.mp4?X-Amz-Signature=abc");
 
@@ -198,7 +235,21 @@ class VideoFileCommandServiceTest {
     }
 
     @Test
+    void resolveDownloadUrlReturnsNullWithoutGeneratingUrlWhenObjectDoesNotExist() {
+        when(objectStorage.exists("uploads/job-download-missing/original.mp4")).thenReturn(false);
+
+        String url = videoFileCommandService.resolveDownloadUrl(
+                "job-download-missing",
+                tempDir.resolve("uploads").resolve("job-download-missing").resolve("original.mp4").toString()
+        );
+
+        assertThat(url).isNull();
+        verify(objectStorage, never()).generatePresignedUrl(any(), any());
+    }
+
+    @Test
     void resolveDownloadUrlReturnsNullWhenObjectStorageFails() {
+        when(objectStorage.exists("uploads/job-download-fail/original.mp4")).thenReturn(true);
         when(objectStorage.generatePresignedUrl(any(), any()))
                 .thenThrow(new RuntimeException("minio down"));
 

@@ -56,7 +56,10 @@ function FaceAnalysisSection({
             </div>
 
             {Array.isArray(faceFrameResults) && faceFrameResults.length > 0 ? (
-                <CollapsibleDetails summary={`프레임별 얼굴/시선 분석 (${faceFrameResults.length}개 프레임) — 자세히 보기`}>
+                <CollapsibleDetails
+                    headingLevel={3}
+                    summary={`프레임별 얼굴/시선 분석 (${faceFrameResults.length}개 프레임) — 자세히 보기`}
+                >
                     <div className="pose-frame-table-wrap">
                         <table className="pose-frame-table">
                             <thead>

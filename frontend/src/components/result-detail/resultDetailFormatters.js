@@ -162,6 +162,10 @@ export function formatGenerationModeLabel(mode) {
         return "Mock 응답(AI 미호출)";
     }
 
+    if (mode === "FAILED") {
+        return "생성 실패";
+    }
+
     return "알 수 없음";
 }
 

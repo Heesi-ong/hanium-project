@@ -661,7 +661,7 @@ function ResultDetailPage() {
 
             <StateMessage type="error">{error}</StateMessage>
 
-            <StateMessage type="polling">
+            <StateMessage type="polling" messageKey={currentStatus}>
                 {retrying || polling || cancelling || isRunning ? (
                     <>
                         분석 상태를 자동으로 확인하는 중입니다. 현재 상태:{" "}

@@ -42,7 +42,10 @@ function FillerAnalysisSection({
             {fillerInfo?.note && <p className="muted-text">{fillerInfo.note}</p>}
 
             {Array.isArray(fillerWords) && fillerWords.length > 0 ? (
-                <CollapsibleDetails summary={`감지된 필러 표현 (${fillerWords.length}종) — 자세히 보기`}>
+                <CollapsibleDetails
+                    headingLevel={3}
+                    summary={`감지된 필러 표현 (${fillerWords.length}종) — 자세히 보기`}
+                >
                     <div className="pose-frame-table-wrap">
                         <table className="pose-frame-table">
                             <thead>

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useState } from "react";
 import { requestPasswordReset } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
+import PageFadeIn from "../components/motion/PageFadeIn";
 
 function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
@@ -28,7 +29,7 @@ function ForgotPasswordPage() {
 
     return (
         <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <section className="page-section">
+            <PageFadeIn className="page-section">
                 <article className="upload-card">
                     <p className="eyebrow">Password reset</p>
                     <h2>비밀번호 재설정</h2>
@@ -75,7 +76,7 @@ function ForgotPasswordPage() {
                         <Link to="/terms">이용약관</Link>
                     </p>
                 </article>
-            </section>
+            </PageFadeIn>
         </main>
     );
 }

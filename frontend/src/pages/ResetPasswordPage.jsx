@@ -3,6 +3,7 @@ import { useState } from "react";
 import { confirmPasswordReset } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
+import PageFadeIn from "../components/motion/PageFadeIn";
 
 const hintStyle = {
     display: "block",
@@ -49,7 +50,7 @@ function ResetPasswordPage() {
 
     return (
         <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <section className="page-section">
+            <PageFadeIn className="page-section">
                 <article className="upload-card">
                     <p className="eyebrow">New password</p>
                     <h2>새 비밀번호 설정</h2>
@@ -100,7 +101,7 @@ function ResetPasswordPage() {
                         </div>
                     </form>
                 </article>
-            </section>
+            </PageFadeIn>
         </main>
     );
 }

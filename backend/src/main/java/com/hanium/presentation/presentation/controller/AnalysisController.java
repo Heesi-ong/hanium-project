@@ -128,6 +128,7 @@ public class AnalysisController {
                     case COMPLETED -> 100;
                     case FAILED -> 0;
                     case CANCELLED -> 0;
+                    case DEAD_LETTER -> 0;
                 }
         );
         fallback.put("message", "Redis 진행률 캐시가 없어 DB에 저장된 상태 기준으로 표시합니다.");

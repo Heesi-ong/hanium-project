@@ -1,13 +1,16 @@
 package com.hanium.presentation.presentation.controller;
 
+import com.hanium.presentation.application.admin.AdminAnalysisJobActionService;
 import com.hanium.presentation.application.admin.AdminAuditLogService;
 import com.hanium.presentation.application.admin.AdminDashboardService;
 import com.hanium.presentation.application.admin.AdminResultActionService;
 import com.hanium.presentation.application.admin.AdminUserActionService;
 import com.hanium.presentation.global.response.ApiResponse;
+import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
 import com.hanium.presentation.presentation.dto.response.AdminUserSummaryResponse;
+import com.hanium.presentation.presentation.dto.response.PagedAdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedAdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.PagedAdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
@@ -39,17 +42,20 @@ public class AdminController {
     private final AdminAuditLogService adminAuditLogService;
     private final AdminUserActionService adminUserActionService;
     private final AdminResultActionService adminResultActionService;
+    private final AdminAnalysisJobActionService adminAnalysisJobActionService;
 
     public AdminController(
             AdminDashboardService adminDashboardService,
             AdminAuditLogService adminAuditLogService,
             AdminUserActionService adminUserActionService,
-            AdminResultActionService adminResultActionService
+            AdminResultActionService adminResultActionService,
+            AdminAnalysisJobActionService adminAnalysisJobActionService
     ) {
         this.adminDashboardService = adminDashboardService;
         this.adminAuditLogService = adminAuditLogService;
         this.adminUserActionService = adminUserActionService;
         this.adminResultActionService = adminResultActionService;
+        this.adminAnalysisJobActionService = adminAnalysisJobActionService;
     }
 
     @GetMapping("/ping")
@@ -136,6 +142,35 @@ public class AdminController {
         adminUserActionService.forceWithdrawUser(getCurrentUserId(authentication), authentication.getName(), userId);
 
         return ApiResponse.success("사용자를 강제 탈퇴시켰습니다.");
+    }
+
+    @GetMapping("/analysis-jobs/dead-letter")
+    public ApiResponse<PagedAdminAnalysisJobSummaryResponse> getDeadLetterJobs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Page<AdminAnalysisJobSummaryResponse> jobs = adminDashboardService.getDeadLetterJobs(
+                createPageable(page, size)
+        );
+
+        return ApiResponse.success(
+                "재시도 소진 작업 목록 조회가 완료되었습니다.",
+                PagedAdminAnalysisJobSummaryResponse.from(jobs)
+        );
+    }
+
+    @PostMapping("/analysis-jobs/{jobId}/requeue")
+    public ApiResponse<Void> requeueDeadLetterJob(
+            @PathVariable String jobId,
+            Authentication authentication
+    ) {
+        adminAnalysisJobActionService.requeueDeadLetterJob(
+                getCurrentUserId(authentication),
+                authentication.getName(),
+                jobId
+        );
+
+        return ApiResponse.success("분석 작업을 다시 큐에 넣었습니다.");
     }
 
     @DeleteMapping("/results/{jobId}")

@@ -4,5 +4,6 @@ public enum AdminAuditAction {
     SUSPEND_USER,
     ACTIVATE_USER,
     FORCE_WITHDRAW_USER,
-    DELETE_RESULT
+    DELETE_RESULT,
+    REQUEUE_DEAD_LETTER_JOB
 }

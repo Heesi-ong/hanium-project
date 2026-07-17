@@ -181,6 +181,15 @@ public class AnalysisJob {
         this.completedAt = LocalDateTime.now();
     }
 
+    // 재시도 가능 횟수를 이미 소진한 상태에서 다시 실패했을 때 호출합니다. FAILED와 달리
+    // 사용자의 /retry 경로(canRetry())에서 제외되어, 관리자가 검토 후 requeueFromDeadLetter()로만
+    // 재처리할 수 있습니다.
+    public void deadLetter(String failReason) {
+        this.status = AnalysisStatus.DEAD_LETTER;
+        this.failReason = failReason;
+        this.completedAt = LocalDateTime.now();
+    }
+
     public boolean requestCancel() {
         if (!isRunning()) {
             return false;
@@ -217,6 +226,18 @@ public class AnalysisJob {
         this.cancelRequested = false;
     }
 
+    // 관리자가 DEAD_LETTER 작업을 검토 후 다시 실행 대기열에 올릴 때 호출합니다. 사용자
+    // 재시도(resetForRetry)와 달리 retryCount를 0으로 되돌려, 관리자의 재처리 판단이
+    // 기존 재시도 한도에 다시 걸리지 않고 온전한 재시도 기회를 새로 받게 합니다.
+    public void requeueFromDeadLetter() {
+        this.retryCount = 0;
+        this.status = AnalysisStatus.UPLOADED;
+        this.failReason = null;
+        this.startedAt = null;
+        this.completedAt = null;
+        this.cancelRequested = false;
+    }
+
     public boolean isQueued() {
         return this.status == AnalysisStatus.QUEUED;
     }
@@ -235,6 +256,10 @@ public class AnalysisJob {
 
     public boolean isFailed() {
         return this.status == AnalysisStatus.FAILED;
+    }
+
+    public boolean isDeadLetter() {
+        return this.status == AnalysisStatus.DEAD_LETTER;
     }
 
     public boolean canRun() {

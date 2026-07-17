@@ -9,30 +9,9 @@ import {
 } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { buttonVariantClassName } from "../components/ui/Button";
+import AnimatedSection from "../components/motion/AnimatedSection";
+import { EASE_OUT, fadeUp } from "../components/motion/animationVariants";
 import "./HomePage.css";
-
-const SECTION_VIEWPORT = { once: true, amount: 0.28 };
-const EASE_OUT = [0.16, 1, 0.3, 1];
-
-const fadeUp = {
-    hidden: { opacity: 0, y: 28, filter: "blur(12px)" },
-    visible: {
-        opacity: 1,
-        y: 0,
-        filter: "blur(0px)",
-        transition: { duration: 0.72, ease: EASE_OUT },
-    },
-};
-
-const staggerGroup = {
-    hidden: {},
-    visible: {
-        transition: {
-            staggerChildren: 0.08,
-            delayChildren: 0.06,
-        },
-    },
-};
 
 const FEATURE_ITEMS = [
     {
@@ -263,21 +242,6 @@ function HeroIllustration({ prefersReducedMotion }) {
                 </linearGradient>
             </defs>
         </motion.svg>
-    );
-}
-
-function AnimatedSection({ children, className = "", id }) {
-    return (
-        <motion.section
-            id={id}
-            className={className}
-            variants={staggerGroup}
-            initial="hidden"
-            whileInView="visible"
-            viewport={SECTION_VIEWPORT}
-        >
-            {children}
-        </motion.section>
     );
 }
 

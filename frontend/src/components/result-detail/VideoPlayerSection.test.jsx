@@ -39,7 +39,9 @@ describe("VideoPlayerSection", () => {
         const video = container.querySelector("video");
 
         expect(video).toBeInTheDocument();
-        expect(video.getAttribute("src")).toBe(
+        // VITE_API_BASE_URL이 로컬 .env로 설정된 환경에서는 절대경로(예: http://localhost:8080/...)로
+        // 렌더링되므로, 오리진 유무와 무관하게 경로+쿼리만 검증합니다.
+        expect(video.getAttribute("src")).toContain(
             `/api/results/${jobId}/video?access=${encodeURIComponent(token)}`
         );
     });

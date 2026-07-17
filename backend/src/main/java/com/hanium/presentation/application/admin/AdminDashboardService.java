@@ -8,6 +8,7 @@ import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
 import com.hanium.presentation.presentation.dto.response.AdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
@@ -63,5 +64,14 @@ public class AdminDashboardService {
         }
 
         return resultQueryService.getResultSummaries(userId, pageable);
+    }
+
+    // 재시도 소진(DEAD_LETTER) 작업을 한곳에서 모아 보여줍니다. 반복 실패한 작업을 FAILED
+    // 목록 속에 묻어두지 않고, 관리자가 검토·재처리 대상만 따로 확인할 수 있게 합니다.
+    @Transactional(readOnly = true)
+    public Page<AdminAnalysisJobSummaryResponse> getDeadLetterJobs(Pageable pageable) {
+        return analysisJobRepository
+                .findByStatusOrderByCreatedAtDesc(AnalysisStatus.DEAD_LETTER, pageable)
+                .map(AdminAnalysisJobSummaryResponse::from);
     }
 }

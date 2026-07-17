@@ -82,7 +82,10 @@ class AnalysisRetryLimitIntegrationTest {
         AnalysisJob retriedJob = analysisJobRepository.findByJobId(RETRY_LIMIT_JOB_ID)
                 .orElseThrow();
         assertThat(retriedJob.getRetryCount()).isEqualTo(1);
-        assertThat(retriedJob.canRetry()).isTrue();
+        // 재시도 한도(1)를 이미 소진한 채로 다시 실패했으므로 FAILED가 아니라 DEAD_LETTER로
+        // 전이되어 canRetry()가 false를 반환합니다(관리자 재처리 대상).
+        assertThat(retriedJob.isDeadLetter()).isTrue();
+        assertThat(retriedJob.canRetry()).isFalse();
 
         ResponseEntity<String> rejectedResponse = retry(token, RETRY_LIMIT_JOB_ID);
 

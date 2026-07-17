@@ -213,6 +213,29 @@ public class AnalysisCommandService {
         return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi, "retry");
     }
 
+    // 관리자 전용 재처리입니다. DEAD_LETTER(재시도 소진) 작업만 대상이며, 소유권 검사는 하지
+    // 않습니다(관리자는 모든 사용자의 작업을 다룰 수 있음). 업로드 당시 선택했던 옵션
+    // (useVideoLlm/useOpenAi)을 그대로 유지해 재실행합니다.
+    @Transactional
+    public AnalysisStatusResponse requeueDeadLetterJob(String jobId) {
+        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        if (!analysisJob.isDeadLetter()) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    "재시도 소진(DEAD_LETTER) 상태의 분석 작업만 재처리할 수 있습니다. status="
+                            + analysisJob.getStatus()
+            );
+        }
+
+        boolean useVideoLlm = analysisJob.isUseVideoLlm();
+        boolean useOpenAi = analysisJob.isUseOpenAi();
+        analysisJob.requeueFromDeadLetter();
+
+        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi, "admin-requeue");
+    }
+
     @Transactional
     public AnalysisStatusResponse cancelAnalysis(String jobId, Long ownerId) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
@@ -771,6 +794,18 @@ public class AnalysisCommandService {
             throw new BusinessException(
                     ErrorCode.ANALYSIS_ALREADY_COMPLETED,
                     "이미 완료된 분석 작업입니다. jobId=" + analysisJob.getJobId()
+            );
+        }
+
+        // DEAD_LETTER는 canRetry()에서 이미 제외되지만, 아래의 일반 "실패/취소 상태만
+        // 재시도 가능" 메시지 대신 기존과 동일한 ANALYSIS_RETRY_LIMIT_EXCEEDED(409)를
+        // 반환합니다. DEAD_LETTER는 정의상 재시도 한도를 소진한 상태이므로, 사용자에게는
+        // 이 API 계약을 유지하면서 관리자 재처리가 필요하다는 것만 안내하면 충분합니다.
+        if (analysisJob.isDeadLetter()) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_RETRY_LIMIT_EXCEEDED,
+                    "재시도 가능 횟수를 모두 소진했습니다. 관리자 재처리가 필요합니다. jobId="
+                            + analysisJob.getJobId()
             );
         }
 

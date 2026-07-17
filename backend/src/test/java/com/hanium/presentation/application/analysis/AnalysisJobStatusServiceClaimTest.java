@@ -3,6 +3,7 @@ package com.hanium.presentation.application.analysis;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -26,7 +27,7 @@ class AnalysisJobStatusServiceClaimTest {
 
     private final AnalysisJobRepository analysisJobRepository = mock(AnalysisJobRepository.class);
     private final AnalysisJobStatusService analysisJobStatusService =
-            new AnalysisJobStatusService(analysisJobRepository);
+            new AnalysisJobStatusService(analysisJobRepository, new AnalysisRetryProperties(3));
 
     @Test
     void returnsEmptyListWithoutQueryingWhenLimitIsZeroOrNegative() {

@@ -74,4 +74,7 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
 
     // 관리자 대시보드: 사용자별 전체 분석 작업 수(상태 무관)를 보여줄 때 사용합니다.
     long countByOwnerId(Long ownerId);
+
+    // 관리자 대시보드: 재시도 소진(DEAD_LETTER) 작업 목록을 최신 순으로 페이지네이션 조회합니다.
+    Page<AnalysisJob> findByStatusOrderByCreatedAtDesc(AnalysisStatus status, Pageable pageable);
 }

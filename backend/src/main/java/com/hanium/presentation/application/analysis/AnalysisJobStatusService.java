@@ -3,6 +3,7 @@ package com.hanium.presentation.application.analysis;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -32,9 +33,14 @@ public class AnalysisJobStatusService {
     private static final Logger log = LoggerFactory.getLogger(AnalysisJobStatusService.class);
 
     private final AnalysisJobRepository analysisJobRepository;
+    private final AnalysisRetryProperties analysisRetryProperties;
 
-    public AnalysisJobStatusService(AnalysisJobRepository analysisJobRepository) {
+    public AnalysisJobStatusService(
+            AnalysisJobRepository analysisJobRepository,
+            AnalysisRetryProperties analysisRetryProperties
+    ) {
         this.analysisJobRepository = analysisJobRepository;
+        this.analysisRetryProperties = analysisRetryProperties;
     }
 
     /**
@@ -131,10 +137,24 @@ public class AnalysisJobStatusService {
         );
     }
 
+    // 재시도 가능 횟수를 이미 소진한 상태(retryCount >= maxCount)에서 다시 실패하면 FAILED
+    // 대신 DEAD_LETTER로 전이합니다. 이 시점은 사용자가 /retry를 시도해도 동일한 한도 검사로
+    // 막히는 시점과 정확히 일치하므로, "더 이상 사용자가 스스로 재시도할 수 없는 실패"를
+    // 관리자가 한곳에서 모아 보고 검토 후 재처리할 수 있게 합니다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void failStatus(String jobId, String failReason) {
         analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
                 analysisJob -> {
+                    if (analysisJob.getRetryCount() >= analysisRetryProperties.maxCount()) {
+                        analysisJob.deadLetter(failReason);
+                        analysisJobRepository.save(analysisJob);
+                        log.info(
+                                "[{}] 상태 즉시 반영: DEAD_LETTER (재시도 {}회 소진, {})",
+                                jobId, analysisJob.getRetryCount(), failReason
+                        );
+                        return;
+                    }
+
                     analysisJob.fail(failReason);
                     analysisJobRepository.save(analysisJob);
                     log.info("[{}] 상태 즉시 반영: FAILED ({})", jobId, failReason);

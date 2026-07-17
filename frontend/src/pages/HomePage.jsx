@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
     motion,
@@ -104,9 +104,9 @@ const HOW_IT_WORKS_STEPS = [
 ];
 
 const HERO_METRICS = [
-    { label: "총점", value: "82", accent: "#F27424" },
-    { label: "응시율", value: "71%", accent: "#4FC78A" },
-    { label: "WPM", value: "128", accent: "#72A5FF" },
+    { label: "총점", target: 82, suffix: "", accent: "#F27424" },
+    { label: "응시율", target: 71, suffix: "%", accent: "#4FC78A" },
+    { label: "WPM", target: 128, suffix: "", accent: "#72A5FF" },
 ];
 
 const FAQ_ITEMS = [
@@ -130,6 +130,70 @@ const FAQ_ITEMS = [
         answer: "탈퇴하면 계정과 함께 그동안 업로드한 영상, 분석 결과가 모두 삭제됩니다.",
     },
 ];
+
+// 0에서 target까지 이징을 넣어 세어 올라가는 숫자를 만듭니다. 페이지에 처음 들어왔을 때
+// "이 화면은 정적인 이미지가 아니라 실제로 움직인다"는 것을 가장 직관적으로 보여주는
+// 효과라, 히어로 지표(총점/응시율/WPM)에 사용합니다. start가 true가 되기 전에는 0에
+// 머물러 있다가, delay 이후 카운트업을 시작합니다.
+function useCountUp(target, { durationMs = 1400, start = false } = {}) {
+    const [value, setValue] = useState(0);
+    const prefersReducedMotion = useReducedMotion();
+
+    useEffect(() => {
+        if (!start || prefersReducedMotion) {
+            return undefined;
+        }
+
+        let animationFrameId;
+        const startTime = performance.now();
+
+        function tick(now) {
+            const progress = Math.min((now - startTime) / durationMs, 1);
+            const eased = 1 - (1 - progress) ** 3;
+            setValue(target * eased);
+
+            if (progress < 1) {
+                animationFrameId = requestAnimationFrame(tick);
+            }
+        }
+
+        animationFrameId = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [target, durationMs, start, prefersReducedMotion]);
+
+    if (prefersReducedMotion) {
+        return target;
+    }
+
+    return value;
+}
+
+function HeroMetric({ label, target, suffix, accent, delay }) {
+    const prefersReducedMotion = useReducedMotion();
+    const [started, setStarted] = useState(false);
+    const displayValue = useCountUp(target, { start: started });
+
+    useEffect(() => {
+        const timer = window.setTimeout(() => setStarted(true), delay);
+        return () => window.clearTimeout(timer);
+    }, [delay]);
+
+    return (
+        <motion.div
+            className="hero-metric"
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: delay / 1000, ease: EASE_OUT }}
+            style={{ "--metric-accent": accent }}
+        >
+            <span>{label}</span>
+            <strong>
+                {Math.round(displayValue)}
+                {suffix}
+            </strong>
+        </motion.div>
+    );
+}
 
 function HeroIllustration({ prefersReducedMotion }) {
     return (
@@ -285,7 +349,7 @@ function HomePage() {
                         className="hero-copy"
                         style={prefersReducedMotion ? undefined : { y: heroTextY, opacity: heroOpacity }}
                         initial={prefersReducedMotion ? false : { opacity: 0, y: 18, filter: "blur(10px)" }}
-                        animate={{ opacity: 1, y: 0 }}
+                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                         transition={{ duration: 0.7, ease: EASE_OUT }}
                     >
                         <motion.p
@@ -306,17 +370,14 @@ function HomePage() {
                         </p>
                         <div className="hero-metric-strip" aria-label="샘플 분석 지표">
                             {HERO_METRICS.map((metric, index) => (
-                                <motion.div
-                                    className="hero-metric"
+                                <HeroMetric
                                     key={metric.label}
-                                    initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.45, delay: 0.36 + index * 0.08, ease: EASE_OUT }}
-                                    style={{ "--metric-accent": metric.accent }}
-                                >
-                                    <span>{metric.label}</span>
-                                    <strong>{metric.value}</strong>
-                                </motion.div>
+                                    label={metric.label}
+                                    target={metric.target}
+                                    suffix={metric.suffix}
+                                    accent={metric.accent}
+                                    delay={560 + index * 160}
+                                />
                             ))}
                         </div>
                         <div className="hero-actions">
@@ -366,6 +427,29 @@ function HomePage() {
                         </motion.div>
                     </motion.div>
                 </div>
+
+                <motion.a
+                    href="#features"
+                    className="hero-scroll-hint"
+                    initial={prefersReducedMotion ? false : { opacity: 0 }}
+                    animate={
+                        prefersReducedMotion
+                            ? { opacity: 1 }
+                            : { opacity: 1, y: [0, 10, 0] }
+                    }
+                    transition={
+                        prefersReducedMotion
+                            ? { duration: 0.5, delay: 1 }
+                            : { opacity: { duration: 0.5, delay: 1 }, y: { duration: 1.8, repeat: Infinity, ease: "easeInOut", delay: 1 } }
+                    }
+                    aria-label="아래로 스크롤해서 더 알아보기"
+                >
+                    <span>스크롤해서 더 보기</span>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 4v15" />
+                        <path d="M5 12l7 7 7-7" />
+                    </svg>
+                </motion.a>
             </section>
 
             <AnimatedSection className="motion-section bg-background-primary px-6 py-24 text-text-primary sm:px-10 lg:px-16" id="features">

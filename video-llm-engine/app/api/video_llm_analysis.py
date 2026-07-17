@@ -1,10 +1,13 @@
 import base64
+from contextlib import contextmanager
 import json
 import logging
 import mimetypes
 import os
+from pathlib import Path
+import tempfile
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Iterator
 
 import httpx
 from fastapi import APIRouter, Depends
@@ -47,6 +50,8 @@ NVIDIA_DEFAULT_API_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_DEFAULT_ASSET_BASE_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
 NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES = 180 * 1024
+VIDEO_STREAM_CHUNK_SIZE_BYTES = 1024 * 1024
+DEFAULT_VIDEO_MAX_SIZE_MB = 500
 NVIDIA_STATUS_POLL_MAX_ATTEMPTS = 10
 NVIDIA_STATUS_POLL_INTERVAL_SECONDS = 1
 OBSERVATION_CATEGORIES = (
@@ -60,6 +65,19 @@ SUMMARY_FIELDS = (
     "mainStrength",
     "mainWeakness",
 )
+
+
+def resolve_video_max_size_bytes() -> int:
+    raw_value = os.getenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", str(DEFAULT_VIDEO_MAX_SIZE_MB)).strip()
+    try:
+        max_size_mb = int(raw_value)
+    except ValueError as exception:
+        raise RuntimeError("VIDEO_LLM_MAX_VIDEO_SIZE_MB must be a positive integer.") from exception
+
+    if max_size_mb <= 0:
+        raise RuntimeError("VIDEO_LLM_MAX_VIDEO_SIZE_MB must be a positive integer.")
+
+    return max_size_mb * 1024 * 1024
 
 
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
@@ -240,34 +258,42 @@ def prepare_nvidia_video_input(
     asset_base_url: str,
     request: VideoLlmAnalysisRequest,
 ) -> Dict[str, str | None]:
-    video_bytes, content_type = resolve_video_bytes(request)
-    if len(video_bytes) <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
-        encoded = base64.b64encode(video_bytes).decode("ascii")
+    with resolve_video_file(request) as (video_path, content_type):
+        video_size = video_path.stat().st_size
+        max_size = resolve_video_max_size_bytes()
+        if video_size > max_size:
+            raise ValueError(
+                "Video file exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
+                f"({video_size} bytes > {max_size} bytes)."
+            )
+
+        if video_size <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
+            encoded = base64.b64encode(video_path.read_bytes()).decode("ascii")
+            return {
+                "url": f"data:{content_type};base64,{encoded}",
+                "asset_id": None,
+                "content_type": content_type,
+            }
+
+        description = f"video-llm-analysis jobId={request.jobId}"
+        asset_id, upload_url = create_nvidia_asset(
+            client,
+            api_key,
+            asset_base_url,
+            content_type,
+            description,
+        )
+        try:
+            upload_video_to_asset(client, upload_url, video_path, content_type, description)
+        except Exception:
+            delete_nvidia_asset(client, api_key, asset_base_url, asset_id)
+            raise
+
         return {
-            "url": f"data:{content_type};base64,{encoded}",
-            "asset_id": None,
+            "url": f"data:{content_type};asset_id,{asset_id}",
+            "asset_id": asset_id,
             "content_type": content_type,
         }
-
-    description = f"video-llm-analysis jobId={request.jobId}"
-    asset_id, upload_url = create_nvidia_asset(
-        client,
-        api_key,
-        asset_base_url,
-        content_type,
-        description,
-    )
-    try:
-        upload_video_to_asset(client, upload_url, video_bytes, content_type, description)
-    except Exception:
-        delete_nvidia_asset(client, api_key, asset_base_url, asset_id)
-        raise
-
-    return {
-        "url": f"data:{content_type};asset_id,{asset_id}",
-        "asset_id": asset_id,
-        "content_type": content_type,
-    }
 
 
 def build_duration_prompt(duration_sec: float | None) -> str:
@@ -293,29 +319,82 @@ def build_duration_prompt(duration_sec: float | None) -> str:
 VIDEO_DOWNLOAD_TIMEOUT_SECONDS = 60.0
 
 
-def resolve_video_bytes(request: VideoLlmAnalysisRequest) -> tuple[bytes, str]:
-    """videoDownloadUrl(MinIO presigned URL)이 있으면 먼저 그 영상을 내려받아 사용하고,
-    없거나 다운로드에 실패하면 기존처럼 로컬 videoPath 파일을 읽습니다.
+@contextmanager
+def resolve_video_file(request: VideoLlmAnalysisRequest) -> Iterator[tuple[Path, str]]:
+    """MinIO 영상은 임시 파일로 스트리밍하고 사용 직후 삭제합니다.
+
+    URL 다운로드가 실패하면 공유 스토리지의 기존 로컬 경로를 사용합니다.
     """
+    downloaded = None
     if request.videoDownloadUrl:
-        downloaded = download_video_bytes(request.jobId, request.videoDownloadUrl)
+        downloaded = download_video_to_temp_file(
+            request.jobId,
+            request.videoDownloadUrl,
+            request.videoPath,
+        )
 
-        if downloaded is not None:
-            return downloaded
+    if downloaded is None:
+        local_path = Path(request.videoPath)
+        content_type = mimetypes.guess_type(local_path.name)[0] or "video/mp4"
+        yield local_path, content_type
+        return
 
-    return read_video_bytes(request.videoPath)
-
-
-def download_video_bytes(job_id: str, video_download_url: str) -> tuple[bytes, str] | None:
+    downloaded_path, content_type = downloaded
     try:
-        with httpx.Client(timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS) as client:
-            response = client.get(video_download_url)
-            response.raise_for_status()
+        yield downloaded_path, content_type
+    finally:
+        downloaded_path.unlink(missing_ok=True)
 
-        content_type = response.headers.get("content-type") or "video/mp4"
-        return response.content, content_type
+
+def download_video_to_temp_file(
+    job_id: str,
+    video_download_url: str,
+    original_video_path: str,
+) -> tuple[Path, str] | None:
+    suffix = Path(original_video_path).suffix or ".mp4"
+    temp_path: Path | None = None
+    max_size = resolve_video_max_size_bytes()
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"video-llm-{job_id}-",
+            suffix=suffix,
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+
+            with httpx.Client(timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS) as client:
+                with client.stream("GET", video_download_url) as response:
+                    response.raise_for_status()
+                    content_length = response.headers.get("content-length")
+                    if content_length is not None and int(content_length) > max_size:
+                        raise ValueError(
+                            "Downloaded video exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
+                            f"({content_length} bytes > {max_size} bytes)."
+                        )
+
+                    downloaded_size = 0
+                    for chunk in response.iter_bytes(chunk_size=VIDEO_STREAM_CHUNK_SIZE_BYTES):
+                        if not chunk:
+                            continue
+                        downloaded_size += len(chunk)
+                        if downloaded_size > max_size:
+                            raise ValueError(
+                                "Downloaded video exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
+                                f"({downloaded_size} bytes > {max_size} bytes)."
+                            )
+                        temp_file.write(chunk)
+
+                    if downloaded_size == 0:
+                        raise ValueError("Downloaded video is empty.")
+
+                    content_type = response.headers.get("content-type") or "video/mp4"
+
+        return temp_path, content_type
 
     except Exception as exception:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
         logger.warning(
             "(%s) MinIO 다운로드 URL 요청 실패, 로컬 경로로 폴백합니다: %s",
             job_id,
@@ -329,8 +408,16 @@ def read_video_bytes(video_path: str) -> tuple[bytes, str]:
     if not mime_type:
         mime_type = "video/mp4"
 
-    with open(video_path, "rb") as video_file:
-        video_bytes = video_file.read()
+    path = Path(video_path)
+    max_size = resolve_video_max_size_bytes()
+    video_size = path.stat().st_size
+    if video_size > max_size:
+        raise ValueError(
+            "Video file exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
+            f"({video_size} bytes > {max_size} bytes)."
+        )
+
+    video_bytes = path.read_bytes()
 
     return video_bytes, mime_type
 
@@ -382,19 +469,27 @@ def create_nvidia_asset(
 def upload_video_to_asset(
     client: httpx.Client,
     upload_url: str,
-    video_bytes: bytes,
+    video_path: Path,
     content_type: str,
     description: str,
 ) -> None:
+    video_size = video_path.stat().st_size
     response = client.put(
         upload_url,
         headers={
             "Content-Type": content_type,
+            "Content-Length": str(video_size),
             "x-amz-meta-nvcf-asset-description": description,
         },
-        content=video_bytes,
+        content=iter_file_chunks(video_path),
     )
     response.raise_for_status()
+
+
+def iter_file_chunks(video_path: Path) -> Iterator[bytes]:
+    with video_path.open("rb") as video_file:
+        while chunk := video_file.read(VIDEO_STREAM_CHUNK_SIZE_BYTES):
+            yield chunk
 
 
 def delete_nvidia_asset(

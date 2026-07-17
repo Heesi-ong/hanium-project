@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -119,11 +120,16 @@ class FakeNvidiaClient:
         )
 
     def put(self, url, headers, content):
+        uploaded_content = (
+            bytes(content)
+            if isinstance(content, (bytes, bytearray))
+            else b"".join(content)
+        )
         self.requests.append({
             "method": "PUT",
             "url": url,
             "headers": headers,
-            "content": content,
+            "content": uploaded_content,
         })
         return httpx.Response(
             FakeNvidiaClient.upload_status,
@@ -439,6 +445,12 @@ def test_call_real_video_llm_model_uses_nvcf_asset_for_large_video(
     assert upload_request["headers"]["x-amz-meta-nvcf-asset-description"] == (
         "video-llm-analysis jobId=large-video-job"
     )
+    assert upload_request["headers"]["Content-Length"] == str(
+        video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1
+    )
+    assert len(upload_request["content"]) == (
+        video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1
+    )
     chat_request = main_client.requests[2]
     assert chat_request["headers"]["NVCF-INPUT-ASSET-REFERENCES"] == "asset-123"
     assert '<video src="data:video/mp4;asset_id,asset-123" />' in (
@@ -453,6 +465,62 @@ def test_call_real_video_llm_model_uses_nvcf_asset_for_large_video(
             "headers": {"Authorization": "Bearer nvapi-test-key"},
         }
     ]
+
+
+def test_prepare_nvidia_video_input_rejects_oversized_local_video(monkeypatch, tmp_path):
+    video_path = tmp_path / "oversized.mp4"
+    video_path.write_bytes(b"x" * (1024 * 1024 + 1))
+    monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "1")
+    client = FakeNvidiaClient(timeout=120)
+
+    with pytest.raises(ValueError, match="exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB"):
+        video_llm_analysis.prepare_nvidia_video_input(
+            client=client,
+            api_key="nvapi-test-key",
+            asset_base_url="https://api.nvcf.nvidia.com/v2/nvcf",
+            request=VideoLlmAnalysisRequest(
+                jobId="oversized-local-video",
+                videoPath=str(video_path),
+            ),
+        )
+
+    assert client.requests == []
+
+
+def test_iter_file_chunks_uses_bounded_chunks(tmp_path):
+    video_path = tmp_path / "chunked.mp4"
+    video_path.write_bytes(
+        b"x" * (video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES * 2 + 123)
+    )
+
+    chunks = list(video_llm_analysis.iter_file_chunks(video_path))
+
+    assert [len(chunk) for chunk in chunks] == [
+        video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES,
+        video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES,
+        123,
+    ]
+
+
+def test_upload_video_to_asset_streams_through_httpx_with_content_length(tmp_path):
+    video_path = tmp_path / "httpx-stream.mp4"
+    video_content = b"z" * (video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES + 321)
+    video_path.write_bytes(video_content)
+
+    def handle_upload(request: httpx.Request) -> httpx.Response:
+        assert request.headers["content-length"] == str(len(video_content))
+        assert request.headers["content-type"] == "video/mp4"
+        assert request.read() == video_content
+        return httpx.Response(200)
+
+    with httpx.Client(transport=httpx.MockTransport(handle_upload)) as client:
+        video_llm_analysis.upload_video_to_asset(
+            client,
+            "https://upload.example.test/asset",
+            video_path,
+            "video/mp4",
+            "stream-test",
+        )
 
 
 def test_call_real_video_llm_model_raises_when_nvcf_asset_create_fails(
@@ -681,19 +749,32 @@ class FakeDownloadClient:
     def __exit__(self, exc_type, exc_value, traceback):
         return False
 
-    def get(self, url):
+    def stream(self, method, url):
         if FakeDownloadClient.raised_exception:
             raise FakeDownloadClient.raised_exception
 
-        return httpx.Response(
+        response = httpx.Response(
             FakeDownloadClient.response_status,
             content=FakeDownloadClient.response_content,
             headers=FakeDownloadClient.response_headers or {"content-type": "video/mp4"},
-            request=httpx.Request("GET", url),
+            request=httpx.Request(method, url),
         )
+        return FakeDownloadResponseContext(response)
 
 
-def test_resolve_video_bytes_downloads_when_video_download_url_present(monkeypatch, tmp_path):
+class FakeDownloadResponseContext:
+    def __init__(self, response):
+        self.response = response
+
+    def __enter__(self):
+        return self.response
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.response.close()
+        return False
+
+
+def test_resolve_video_file_streams_download_and_removes_temp_file(monkeypatch, tmp_path):
     FakeDownloadClient.response_status = 200
     FakeDownloadClient.response_content = b"downloaded-bytes"
     FakeDownloadClient.response_headers = {"content-type": "video/mp4"}
@@ -706,13 +787,16 @@ def test_resolve_video_bytes_downloads_when_video_download_url_present(monkeypat
         videoDownloadUrl="https://minio.local/uploads/video-llm-download-1/original.mp4",
     )
 
-    video_bytes, content_type = video_llm_analysis.resolve_video_bytes(request)
+    with video_llm_analysis.resolve_video_file(request) as (video_path, content_type):
+        assert video_path.read_bytes() == b"downloaded-bytes"
+        assert video_path != Path(request.videoPath)
+        assert video_path.exists()
 
-    assert video_bytes == b"downloaded-bytes"
     assert content_type == "video/mp4"
+    assert video_path.exists() is False
 
 
-def test_resolve_video_bytes_falls_back_to_local_path_when_download_fails(monkeypatch, tmp_path):
+def test_resolve_video_file_falls_back_to_local_path_when_download_fails(monkeypatch, tmp_path):
     FakeDownloadClient.raised_exception = httpx.ConnectError("connection failed")
     monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
 
@@ -723,20 +807,59 @@ def test_resolve_video_bytes_falls_back_to_local_path_when_download_fails(monkey
         videoDownloadUrl="https://minio.local/uploads/video-llm-download-2/original.mp4",
     )
 
-    video_bytes, content_type = video_llm_analysis.resolve_video_bytes(request)
+    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(video_path)
+        assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
-    assert video_bytes == b"fake mp4 bytes"
     assert content_type == "video/mp4"
 
 
-def test_resolve_video_bytes_uses_local_path_when_no_download_url(tmp_path):
+def test_resolve_video_file_uses_local_path_when_no_download_url(tmp_path):
     video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(
         jobId="video-llm-no-url",
         videoPath=video_path,
     )
 
-    video_bytes, content_type = video_llm_analysis.resolve_video_bytes(request)
+    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(video_path)
+        assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
-    assert video_bytes == b"fake mp4 bytes"
     assert content_type == "video/mp4"
+
+
+def test_resolve_video_file_rejects_oversized_download_and_removes_partial_file(
+    monkeypatch,
+    tmp_path,
+):
+    oversized_content = b"x" * (1024 * 1024 + 1)
+    FakeDownloadClient.response_status = 200
+    FakeDownloadClient.response_content = oversized_content
+    FakeDownloadClient.response_headers = {
+        "content-type": "video/mp4",
+        "content-length": str(len(oversized_content)),
+    }
+    FakeDownloadClient.raised_exception = None
+    monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "1")
+    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+
+    local_video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-oversized-download",
+        videoPath=local_video_path,
+        videoDownloadUrl="https://minio.local/uploads/oversized/original.mp4",
+    )
+
+    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(local_video_path)
+        assert resolved_path.read_bytes() == b"fake mp4 bytes"
+
+    assert content_type == "video/mp4"
+
+
+@pytest.mark.parametrize("configured_value", ["0", "-1", "not-a-number"])
+def test_resolve_video_max_size_rejects_invalid_values(monkeypatch, configured_value):
+    monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", configured_value)
+
+    with pytest.raises(RuntimeError, match="must be a positive integer"):
+        video_llm_analysis.resolve_video_max_size_bytes()

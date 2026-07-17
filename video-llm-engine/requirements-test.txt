@@ -1,7 +1,10 @@
 # pytest 실행에 필요한 최소 설치 목록입니다. CI/로컬에서 이 파일 하나만 설치하면 됩니다.
 # (이전에는 README/CI에 "pytest, fastapi, httpx, pydantic"을 손으로 나열해 두는
 # 방식이었는데, requirements-base.txt가 이미 그 목록과 사실상 같아 여기서는 그냥
-# base를 포함하고 pytest만 추가합니다.)
+# base를 포함하고 pytest와 Starlette TestClient용 HTTPX2만 추가합니다.)
 -r requirements-base.txt
 
+httpcore2==2.7.0
+httpx2==2.7.0
 pytest==9.0.3
+truststore==0.10.4

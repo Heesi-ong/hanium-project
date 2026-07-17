@@ -1,0 +1,20 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: remote backup export failure becomes critical
+    interval: 1m
+    input_series:
+      - series: mysql_backup_remote_export_last_run_status
+        values: 0x10
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MysqlBackupRemoteExportFailed
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "MySQL 백업의 MinIO 원격 반출이 실패했습니다"
+              description: "로컬 MySQL 백업은 생성됐지만 가장 최근 MinIO 원격 반출이 실패했습니다. backup 컨테이너의 MinIO 자격 증명, 버킷, 네트워크와 로그를 확인하세요."

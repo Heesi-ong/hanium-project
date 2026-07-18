@@ -846,6 +846,35 @@ backend(8080)가 아니라 frontend 자기 자신(5173)으로 보냅니다. 홈 
 12. 상세 보기 확인
 13. 삭제 기능 확인
 
+### 12.3 E2E 자동화 테스트(Playwright)
+
+위 12.2의 수동 확인 항목 중 로그인·라우팅·명암비·콘솔 오류 부분은
+`frontend/e2e/*.spec.js`로 자동화되어 있습니다.
+
+- `public-flow.spec.js`: 로그인 불필요한 공개 페이지(홈/요금제/로그인/회원가입/약관 등)의
+  라우팅과 렌더링, 그리고 2026-07-16 P0 명암비 회귀(제목이 배경과 구분 안 되는 버그) 같은
+  유형을 잡습니다. 프론트 dev 서버만 있으면 되고 백엔드는 필요 없습니다. CI의 `frontend`
+  job에서 매 push/PR마다 자동 실행됩니다.
+- `auth-api.spec.js`, `protected-pages.spec.js`: 실제 회원가입→로그인→쿠키 인증으로
+  `/onboarding`, `/upload`, `/results`, `/account`, `/status`가 로그인으로 튕기지 않고
+  정상 렌더링되는지 확인합니다. 실제 backend/DB가 필요하고, **앱과 /api가 같은 출처**여야
+  로그인 쿠키가 페이지 탐색 요청에 붙습니다(`localhost`와 `127.0.0.1`은 쿠키 스코프상
+  다른 호스트로 취급되니 반드시 `localhost`를 쓰세요). CI의 `frontend-e2e-full-stack`
+  job에서 실제 docker compose 스택(MySQL/Redis/MinIO/backend/frontend, `--no-deps`라
+  analysis-engine/video-llm-engine은 제외) 앞에서 자동 실행됩니다.
+
+로컬에서 직접 돌리려면:
+
+```bash
+# 공개 페이지만(백엔드 불필요, 프론트가 자체 dev 서버를 띄웁니다)
+cd ~/Desktop/hanium\ project/frontend
+npm run test:e2e -- e2e/public-flow.spec.js
+
+# 로그인 필요 흐름까지(백엔드/DB가 이미 http://localhost:8080, 프론트가 http://localhost:5173에 떠 있어야 함)
+E2E_FULL_STACK=true BASE_URL=http://localhost:5173 API_BASE_URL=http://localhost:8080 \
+  npm run test:e2e -- e2e/auth-api.spec.js e2e/protected-pages.spec.js
+```
+
 ## 13. Git에 올리지 않는 항목
 
 아래 항목은 .gitignore에 의해 Git에 포함하지 않습니다.

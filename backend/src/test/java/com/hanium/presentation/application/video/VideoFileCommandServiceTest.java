@@ -70,7 +70,7 @@ class VideoFileCommandServiceTest {
                 tempDir.resolve("logs").toString(),
                 minFreeSpaceMb
         );
-        VideoProperties videoProperties = new VideoProperties(30L);
+        VideoProperties videoProperties = new VideoProperties(30L, false);
 
         return new VideoFileCommandService(
                 new LocalFileStorage(),
@@ -156,6 +156,41 @@ class VideoFileCommandServiceTest {
         videoFileCommandService = createService(0L, videoPath -> Optional.empty());
 
         assertValidUpload("job-probe-failed", "video.mp4", VideoFileType.MP4, mp4Header());
+    }
+
+    @Test
+    void storeRejectsUploadWhenDurationProbeIsRequiredAndFails() {
+        StorageProperties storageProperties = new StorageProperties(
+                tempDir.toString(),
+                tempDir.resolve("uploads").toString(),
+                tempDir.resolve("results").toString(),
+                tempDir.resolve("temp").toString(),
+                tempDir.resolve("logs").toString(),
+                0L
+        );
+        videoFileCommandService = new VideoFileCommandService(
+                new LocalFileStorage(),
+                new FilePathGenerator(storageProperties),
+                storageProperties,
+                videoPath -> Optional.empty(),
+                new VideoProperties(30L, true),
+                objectStorage,
+                new ObjectStoragePolicyProperties(false, false)
+        );
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "video.mp4",
+                "video/mp4",
+                mp4Header()
+        );
+
+        assertThatThrownBy(() -> videoFileCommandService.store(new VideoUploadCommand("job-probe-required", file)))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FILE_UPLOAD_FAILED);
+
+        assertThat(Files.exists(tempDir.resolve("uploads/job-probe-required/original.mp4"))).isFalse();
+        verify(objectStorage, never()).putObject(any(), any(), anyLong(), any());
     }
 
     @Test

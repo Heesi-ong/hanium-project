@@ -428,6 +428,111 @@ class ResultQueryServiceTest {
     }
 
     @Test
+    void getFinalResultMarksCompletedJobWithMissingResultFileAsUnavailable() {
+        Long ownerId = 1L;
+        AnalysisJob completedJob = AnalysisJob.create("20260703090014-oooooooo", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findByJobId(completedJob.getJobId()))
+                .thenReturn(java.util.Optional.of(completedJob));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenThrow(new com.hanium.presentation.global.exception.BusinessException(
+                        com.hanium.presentation.global.exception.ErrorCode.FILE_NOT_FOUND
+                ));
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
+
+        assertThat(response.dataIssue()).isEqualTo("RESULT_DATA_UNAVAILABLE");
+        assertThat(response.dataIssueDescription()).contains("결과 파일");
+        assertThat(response.result()).containsKeys("scoreSummary", "feedback", "visualAnalysis", "pipeline");
+        assertThat(dataIssueCount("detail", "RESULT_DATA_UNAVAILABLE")).isEqualTo(1.0);
+    }
+
+    @Test
+    void getFinalResultMarksCompletedJobWithEmptyResultAsUnavailable() {
+        Long ownerId = 1L;
+        AnalysisJob completedJob = AnalysisJob.create("20260703090015-pppppppp", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findByJobId(completedJob.getJobId()))
+                .thenReturn(java.util.Optional.of(completedJob));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of());
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
+
+        assertThat(response.dataIssue()).isEqualTo("RESULT_DATA_UNAVAILABLE");
+        assertThat(response.dataIssueDescription()).contains("결과 파일");
+        assertThat(dataIssueCount("detail", "RESULT_DATA_UNAVAILABLE")).isEqualTo(1.0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void getFinalResultNormalizesGenerationMetadataWithPipelineFallbacks() {
+        Long ownerId = 1L;
+        AnalysisJob completedJob = AnalysisJob.create("20260703090013-nnnnnnnn", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findByJobId(completedJob.getJobId()))
+                .thenReturn(java.util.Optional.of(completedJob));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "status", "COMPLETED",
+                        "scoreSummary", Map.of(
+                                "totalScore", 88,
+                                "level", "A"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "UNKNOWN",
+                                "model", "-",
+                                "realApiUsed", false,
+                                "fallbackReason", "-",
+                                "overall", "피드백"
+                        ),
+                        "visualAnalysis", Map.of(
+                                "model", Map.of(
+                                        "name", "-",
+                                        "generationMode", "UNKNOWN"
+                                ),
+                                "observations", Map.of(
+                                        "eyeContact", List.of(Map.of("label", "sample"))
+                                )
+                        ),
+                        "pipeline", Map.of(
+                                "openAiGenerationMode", "REAL",
+                                "openAiModel", "gpt-4.1-mini",
+                                "openAiRealApiUsed", true,
+                                "openAiFallbackReason", "-",
+                                "videoLlmAnalysis", "video-llm-engine fallback mock",
+                                "videoLlmGenerationMode", "FALLBACK"
+                        )
+                ));
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
+
+        Map<String, Object> feedback = (Map<String, Object>) response.result().get("feedback");
+        Map<String, Object> visualAnalysis = (Map<String, Object>) response.result().get("visualAnalysis");
+        Map<String, Object> visualModel = (Map<String, Object>) visualAnalysis.get("model");
+
+        assertThat(feedback)
+                .containsEntry("generationMode", "REAL")
+                .containsEntry("model", "gpt-4.1-mini")
+                .containsEntry("realApiUsed", true)
+                .containsEntry("overall", "피드백");
+        assertThat(visualModel)
+                .containsEntry("name", "video-llm-engine fallback mock")
+                .containsEntry("generationMode", "FALLBACK");
+        assertThat(visualAnalysis).containsKey("observations");
+        assertThat(response.dataIssue()).isNull();
+    }
+
+    @Test
     void getFinalResultDoesNotExposeDataIssueForHealthyStoredResult() {
         Long ownerId = 1L;
         AnalysisJob completedJob = AnalysisJob.create("20260703090008-iiiiiiii", ownerId);

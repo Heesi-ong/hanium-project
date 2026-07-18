@@ -9,9 +9,13 @@ const baseFeedback = {
     improvements: ["개선점 1"],
 };
 
-function renderFeedbackSection(visualAnalysis) {
+function renderFeedbackSection(visualAnalysis, options = {}) {
     return render(
-        <FeedbackSection feedback={baseFeedback} visualAnalysis={visualAnalysis} />
+        <FeedbackSection
+            feedback={options.feedback || baseFeedback}
+            visualAnalysis={visualAnalysis}
+            pipeline={options.pipeline}
+        />
     );
 }
 
@@ -245,5 +249,40 @@ describe("FeedbackSection", () => {
 
         expect(screen.getByText("영상 분석 데이터가 아직 없습니다.")).toBeInTheDocument();
         expect(screen.queryByText("생성 방식")).not.toBeInTheDocument();
+    });
+
+    it("uses pipeline generation metadata when feedback and visual metadata are placeholders", () => {
+        renderFeedbackSection(
+            {
+                model: {
+                    generationMode: "UNKNOWN",
+                },
+                globalSummary: {
+                    visualDelivery: "전체 인상",
+                    mainStrength: "강점",
+                    mainWeakness: "개선점",
+                },
+            },
+            {
+                feedback: {
+                    ...baseFeedback,
+                    generationMode: "UNKNOWN",
+                },
+                pipeline: {
+                    openAiGenerationMode: "REAL",
+                    videoLlmGenerationMode: "FALLBACK",
+                },
+            }
+        );
+
+        expect(screen.getByText("실제 AI 응답")).toBeInTheDocument();
+
+        const visualAnalysisCard = getVisualAnalysisCard();
+        expect(
+            within(visualAnalysisCard).getByText("Video LLM 실패 후 Mock 대체")
+        ).toBeInTheDocument();
+        expect(
+            within(visualAnalysisCard).getByText(/예시\(샘플\) 데이터/)
+        ).toBeInTheDocument();
     });
 });

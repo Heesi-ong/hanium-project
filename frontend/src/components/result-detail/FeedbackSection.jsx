@@ -1,4 +1,7 @@
-import { formatGenerationModeLabel } from "./resultDetailFormatters";
+import {
+    firstMeaningfulResultValue,
+    formatGenerationModeLabel,
+} from "./resultDetailFormatters";
 
 function getVisualGenerationModeLabel(mode) {
     if (mode === "REAL") {
@@ -96,9 +99,13 @@ function getObservationGroups(observations) {
     }).filter(([, items]) => items.length > 0);
 }
 
-function VisualAnalysisBox({ visualAnalysis, onSeekToTime }) {
+function VisualAnalysisBox({ visualAnalysis, pipeline, onSeekToTime }) {
     const globalSummary = visualAnalysis?.globalSummary || {};
-    const generationMode = visualAnalysis?.model?.generationMode || "UNKNOWN";
+    const generationMode = firstMeaningfulResultValue(
+        visualAnalysis?.model?.generationMode,
+        pipeline?.videoLlmGenerationMode,
+        "UNKNOWN"
+    );
     const sampleWarning = getSampleWarning(generationMode);
     const summaryItems = [
         ["전체 인상", globalSummary.visualDelivery],
@@ -205,8 +212,12 @@ function VisualAnalysisBox({ visualAnalysis, onSeekToTime }) {
     );
 }
 
-function FeedbackSection({ feedback, visualAnalysis, onSeekToTime }) {
-    const generationMode = feedback?.generationMode || "UNKNOWN";
+function FeedbackSection({ feedback, visualAnalysis, pipeline, onSeekToTime }) {
+    const generationMode = firstMeaningfulResultValue(
+        feedback?.generationMode,
+        pipeline?.openAiGenerationMode,
+        "UNKNOWN"
+    );
 
     return (
         <div className="detail-grid">
@@ -261,6 +272,7 @@ function FeedbackSection({ feedback, visualAnalysis, onSeekToTime }) {
 
             <VisualAnalysisBox
                 visualAnalysis={visualAnalysis}
+                pipeline={pipeline}
                 onSeekToTime={onSeekToTime}
             />
         </div>

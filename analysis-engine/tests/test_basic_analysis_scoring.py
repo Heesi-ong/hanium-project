@@ -1,3 +1,5 @@
+import wave
+from array import array
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +10,20 @@ from app.api import basic_analysis as basic
 
 def point(x: float, y: float) -> SimpleNamespace:
     return SimpleNamespace(x=x, y=y)
+
+
+def write_pcm16_wav(path: Path, amplitudes: list[int], sample_rate: int = 16000) -> None:
+    samples = array("h")
+    window_sample_count = int(sample_rate * basic.VOLUME_ANALYSIS_WINDOW_SEC)
+
+    for amplitude in amplitudes:
+        samples.extend([amplitude] * window_sample_count)
+
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(samples.tobytes())
 
 
 @pytest.mark.parametrize(
@@ -98,6 +114,7 @@ def test_finalize_speech_score_blends_documented_weights():
         "speechSpeedScore": 100,
         "silenceScore": 80,
         "volumeStabilityScore": basic.VOLUME_STABILITY_BASELINE_SCORE,
+        "volumeStabilityImplemented": True,
         "speechScore": 0,
     }
     filler_result = {"fillerScore": 60}
@@ -108,7 +125,45 @@ def test_finalize_speech_score_blends_documented_weights():
     assert finalized["speechScore"] == 82
     assert finalized["fillerScore"] == 60
     assert finalized["volumeStabilityScore"] == basic.VOLUME_STABILITY_BASELINE_SCORE
-    assert finalized["volumeStabilityImplemented"] is False
+    assert finalized["volumeStabilityImplemented"] is True
+
+
+def test_analyze_volume_stability_scores_consistent_non_silent_audio(tmp_path):
+    audio_path = tmp_path / "steady.wav"
+    write_pcm16_wav(audio_path, [8000, 8000, 8000, 8000])
+
+    result = basic.calculate_volume_stability_from_wav(audio_path)
+
+    assert result["volumeStabilityScore"] == 100
+    assert result["volumeStabilityImplemented"] is True
+    assert result["volumeStabilityFallbackReason"] == ""
+    assert result["volumeRmsDbStdDev"] == 0
+    assert result["volumeAnalyzedWindowCount"] == 4
+    assert result["volumeSilentWindowCount"] == 0
+
+
+def test_analyze_volume_stability_penalizes_large_volume_swings(tmp_path):
+    audio_path = tmp_path / "swing.wav"
+    write_pcm16_wav(audio_path, [1000, 20000, 1000, 20000])
+
+    result = basic.calculate_volume_stability_from_wav(audio_path)
+
+    assert result["volumeStabilityScore"] == 40
+    assert result["volumeStabilityImplemented"] is True
+    assert result["volumeRmsDbStdDev"] > 10
+
+
+def test_analyze_volume_stability_falls_back_when_audio_is_missing():
+    result = basic.analyze_volume_stability({"success": False, "audioPath": ""})
+
+    assert result == {
+        "volumeStabilityScore": basic.VOLUME_STABILITY_BASELINE_SCORE,
+        "volumeStabilityImplemented": False,
+        "volumeStabilityFallbackReason": "audio_unavailable",
+        "volumeRmsDbStdDev": None,
+        "volumeAnalyzedWindowCount": 0,
+        "volumeSilentWindowCount": 0,
+    }
 
 
 def test_blend_speech_score_clamps_to_valid_range():

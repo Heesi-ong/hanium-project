@@ -13,6 +13,7 @@ import com.hanium.presentation.global.config.SecurityConfig.JwtTokenProvider;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.AdminProperties;
 import com.hanium.presentation.global.response.ApiResponse;
+import com.hanium.presentation.global.security.ClientIpResolver;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -56,6 +57,7 @@ public class AuthController {
     private final JwtCookieSupport jwtCookieSupport;
     private final PasswordResetService passwordResetService;
     private final AdminProperties adminProperties;
+    private final ClientIpResolver clientIpResolver;
 
     public AuthController(
             UserRepository userRepository,
@@ -65,7 +67,8 @@ public class AuthController {
             UserRateLimiter userRateLimiter,
             JwtCookieSupport jwtCookieSupport,
             PasswordResetService passwordResetService,
-            AdminProperties adminProperties
+            AdminProperties adminProperties,
+            ClientIpResolver clientIpResolver
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -75,6 +78,7 @@ public class AuthController {
         this.jwtCookieSupport = jwtCookieSupport;
         this.passwordResetService = passwordResetService;
         this.adminProperties = adminProperties;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/signup")
@@ -82,7 +86,7 @@ public class AuthController {
             @Valid @RequestBody SignupRequest request,
             HttpServletRequest servletRequest
     ) {
-        String clientIp = resolveClientIp(servletRequest);
+        String clientIp = clientIpResolver.resolve(servletRequest);
         if (!userRateLimiter.tryConsume("signup", clientIp)) {
             ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
             return ResponseEntity
@@ -125,7 +129,7 @@ public class AuthController {
             @Valid @RequestBody AuthRequest request,
             HttpServletRequest servletRequest
     ) {
-        String clientIp = resolveClientIp(servletRequest);
+        String clientIp = clientIpResolver.resolve(servletRequest);
         if (!userRateLimiter.tryConsume("login-ip", clientIp)) {
             ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
             return ResponseEntity
@@ -194,7 +198,7 @@ public class AuthController {
             HttpServletRequest servletRequest
     ) {
         String email = normalizeEmail(request.email());
-        String rateLimitKey = resolveClientIp(servletRequest) + ":" + email;
+        String rateLimitKey = clientIpResolver.resolve(servletRequest) + ":" + email;
         if (!userRateLimiter.tryConsume("password-reset-request", rateLimitKey)) {
             ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
             return ResponseEntity
@@ -237,15 +241,6 @@ public class AuthController {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase();
-    }
-
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-
-        return request.getRemoteAddr();
     }
 
     private Long getCurrentUserId(Authentication authentication) {

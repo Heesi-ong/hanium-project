@@ -1,0 +1,13 @@
+# Root build context is used by infra/backup/Dockerfile so it can copy
+# scripts/backup-mysql.sh and infra/backup/backup-loop.sh. Keep the context
+# allowlisted to avoid sending local .env files, runtime DB data, node_modules,
+# and other host-only artifacts to Docker or a remote builder.
+**
+
+!.dockerignore
+!infra/
+!infra/backup/
+!infra/backup/Dockerfile
+!infra/backup/backup-loop.sh
+!scripts/
+!scripts/backup-mysql.sh

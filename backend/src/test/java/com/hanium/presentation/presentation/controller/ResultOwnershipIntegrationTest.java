@@ -9,6 +9,7 @@ import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.domain.video.type.VideoFileType;
+import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +37,8 @@ class ResultOwnershipIntegrationTest {
     private static final String OTHER_JOB_ID = "20260702180001-bbbbbbbb";
     private static final String OWNER_SECOND_JOB_ID = "20260702180002-cccccccc";
     private static final String OWNER_THIRD_JOB_ID = "20260702180003-dddddddd";
+    private static final String OWNER_PIPELINE_FALLBACK_JOB_ID = "20260702180004-eeeeeeee";
+    private static final String OWNER_MISSING_RESULT_JOB_ID = "20260702180005-ffffffff";
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -58,11 +61,15 @@ class ResultOwnershipIntegrationTest {
     @Autowired
     private JsonFileStorage jsonFileStorage;
 
+    @Autowired
+    private UserRateLimiter userRateLimiter;
+
     @BeforeEach
     void setUp() {
         uploadedVideoRepository.deleteAll();
         analysisJobRepository.deleteAll();
         userRepository.deleteAll();
+        userRateLimiter.resetForTest();
     }
 
     @Test
@@ -173,6 +180,64 @@ class ResultOwnershipIntegrationTest {
         assertThat(data.path("size").asInt()).isEqualTo(2);
     }
 
+    @Test
+    void resultDetailNormalizesGenerationMetadataWithPipelineFallbacks() throws Exception {
+        String ownerToken = signupAndLogin("detail-owner@example.com");
+        Long ownerId = userRepository.findByEmail("detail-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createPipelineFallbackFixture(OWNER_PIPELINE_FALLBACK_JOB_ID, ownerId);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/results/" + OWNER_PIPELINE_FALLBACK_JOB_ID,
+                HttpMethod.GET,
+                createAuthorizedEntity(ownerToken),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode body = objectMapper.readTree(response.getBody());
+        JsonNode result = body.path("data").path("result");
+
+        assertThat(result.path("feedback").path("generationMode").asText()).isEqualTo("REAL");
+        assertThat(result.path("feedback").path("model").asText()).isEqualTo("gpt-4.1-mini");
+        assertThat(result.path("feedback").path("realApiUsed").asBoolean()).isTrue();
+        assertThat(result.path("visualAnalysis").path("model").path("generationMode").asText())
+                .isEqualTo("FALLBACK");
+        assertThat(result.path("visualAnalysis").path("model").path("name").asText())
+                .isEqualTo("video-llm-engine fallback mock");
+        assertThat(result.path("visualAnalysis").has("observations")).isTrue();
+        assertThat(body.path("data").path("dataIssue").isNull()).isTrue();
+    }
+
+    @Test
+    void resultDetailReturnsDataIssueForCompletedJobWithoutResultFile() throws Exception {
+        String ownerToken = signupAndLogin("missing-result-owner@example.com");
+        Long ownerId = userRepository.findByEmail("missing-result-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createCompletedJobWithoutResultFile(OWNER_MISSING_RESULT_JOB_ID, ownerId);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/results/" + OWNER_MISSING_RESULT_JOB_ID,
+                HttpMethod.GET,
+                createAuthorizedEntity(ownerToken),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode body = objectMapper.readTree(response.getBody());
+
+        assertThat(body.path("data").path("dataIssue").asText())
+                .isEqualTo("RESULT_DATA_UNAVAILABLE");
+        assertThat(body.path("data").path("dataIssueDescription").asText())
+                .contains("결과 파일");
+        assertThat(body.path("data").path("result").path("feedback").path("generationMode").asText())
+                .isEqualTo("UNKNOWN");
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -245,5 +310,71 @@ class ResultOwnershipIntegrationTest {
                         )
                 )
         );
+    }
+
+    private void createPipelineFallbackFixture(
+            String jobId,
+            Long ownerId
+    ) {
+        AnalysisJob job = AnalysisJob.create(jobId, ownerId);
+        job.complete();
+        analysisJobRepository.save(job);
+        uploadedVideoRepository.save(UploadedVideo.create(
+                jobId,
+                "pipeline-fallback.mp4",
+                Path.of("storage", "uploads", jobId, "original.mp4").toString(),
+                VideoFileType.MP4,
+                1024L
+        ));
+        jsonFileStorage.saveJson(
+                filePathGenerator.generateFinalResultPath(jobId),
+                Map.of(
+                        "jobId", jobId,
+                        "scoreSummary", Map.of(
+                                "totalScore", 88,
+                                "level", "A"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "UNKNOWN",
+                                "model", "-",
+                                "realApiUsed", false,
+                                "fallbackReason", "-",
+                                "overall", "pipeline metadata recovered feedback"
+                        ),
+                        "visualAnalysis", Map.of(
+                                "model", Map.of(
+                                        "name", "-",
+                                        "generationMode", "UNKNOWN"
+                                ),
+                                "observations", Map.of(
+                                        "eyeContact", List.of(Map.of("label", "sample"))
+                                )
+                        ),
+                        "pipeline", Map.of(
+                                "openAiGenerationMode", "REAL",
+                                "openAiModel", "gpt-4.1-mini",
+                                "openAiRealApiUsed", true,
+                                "openAiFallbackReason", "-",
+                                "videoLlmAnalysis", "video-llm-engine fallback mock",
+                                "videoLlmGenerationMode", "FALLBACK"
+                        )
+                )
+        );
+    }
+
+    private void createCompletedJobWithoutResultFile(
+            String jobId,
+            Long ownerId
+    ) {
+        AnalysisJob job = AnalysisJob.create(jobId, ownerId);
+        job.complete();
+        analysisJobRepository.save(job);
+        uploadedVideoRepository.save(UploadedVideo.create(
+                jobId,
+                "missing-result.mp4",
+                Path.of("storage", "uploads", jobId, "original.mp4").toString(),
+                VideoFileType.MP4,
+                1024L
+        ));
     }
 }

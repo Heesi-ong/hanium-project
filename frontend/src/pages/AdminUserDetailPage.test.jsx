@@ -106,6 +106,35 @@ describe("AdminUserDetailPage", () => {
         expect(await screen.findByRole("alert")).toHaveTextContent("불완전");
     });
 
+    it("uses pipeline OpenAI metadata when result feedback metadata is a placeholder", async () => {
+        apiMock.getAdminUserResults.mockResolvedValue({
+            data: {
+                content: [
+                    {
+                        ...singleResultResponse.data.content[0],
+                        feedback: {
+                            generationMode: "UNKNOWN",
+                            model: "-",
+                            realApiUsed: false,
+                        },
+                        pipeline: {
+                            openAiGenerationMode: "REAL",
+                            openAiModel: "gpt-4.1-mini",
+                            openAiRealApiUsed: true,
+                        },
+                    },
+                ],
+                last: true,
+            },
+        });
+
+        renderAdminUserDetailPage("1");
+
+        expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
+        expect(screen.getByText("실제 OpenAI")).toBeInTheDocument();
+        expect(screen.getByText("gpt-4.1-mini · API 사용")).toBeInTheDocument();
+    });
+
     it("deletes a result after confirmation and removes it from the list", async () => {
         apiMock.getAdminUserResults.mockResolvedValue(singleResultResponse);
         apiMock.deleteAdminResult.mockResolvedValue({ success: true });

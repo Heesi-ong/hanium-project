@@ -1,3 +1,8 @@
+import {
+    firstMeaningfulResultValue,
+    isMeaningfulResultValue,
+} from "./resultDetailFormatters";
+
 function getGenerationModeLabel(mode) {
     if (mode === "REAL") {
         return "실제 OpenAI API";
@@ -46,11 +51,31 @@ function getGenerationModeClassName(mode) {
     return "mini-badge muted";
 }
 
-function OpenAiFeedbackStatusSection({ feedback }) {
-    const generationMode = feedback?.generationMode || "UNKNOWN";
-    const model = feedback?.model || "-";
-    const realApiUsed = feedback?.realApiUsed === true;
-    const fallbackReason = feedback?.fallbackReason || "-";
+function resolveRealApiUsed(feedback, pipeline) {
+    if (isMeaningfulResultValue(feedback?.generationMode)) {
+        return feedback?.realApiUsed === true;
+    }
+
+    if (typeof pipeline?.openAiRealApiUsed === "boolean") {
+        return pipeline.openAiRealApiUsed;
+    }
+
+    return feedback?.realApiUsed === true;
+}
+
+function OpenAiFeedbackStatusSection({ feedback, pipeline }) {
+    const generationMode = firstMeaningfulResultValue(
+        feedback?.generationMode,
+        pipeline?.openAiGenerationMode,
+        "UNKNOWN"
+    );
+    const model = firstMeaningfulResultValue(feedback?.model, pipeline?.openAiModel, "-");
+    const realApiUsed = resolveRealApiUsed(feedback, pipeline);
+    const fallbackReason = firstMeaningfulResultValue(
+        feedback?.fallbackReason,
+        pipeline?.openAiFallbackReason,
+        "-"
+    );
 
     return (
         <article className="detail-card wide">

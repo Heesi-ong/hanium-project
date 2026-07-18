@@ -9,6 +9,16 @@ const apiClient = axios.create({
     withCredentials: true,
 });
 
+function createApiClientError({ status = 0, error, message }) {
+    return {
+        success: false,
+        status,
+        error,
+        message,
+        timestamp: new Date().toISOString(),
+    };
+}
+
 apiClient.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -22,21 +32,26 @@ apiClient.interceptors.response.use(
 
         const responseData = error.response?.data;
 
-        if (responseData) {
+        if (responseData && typeof responseData === "object" && !Array.isArray(responseData)) {
             return Promise.reject(responseData);
+        }
+
+        if (error.response) {
+            return Promise.reject(createApiClientError({
+                status: error.response.status,
+                error: "HTTP_ERROR",
+                message: "서버 요청을 처리하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            }));
         }
 
         const isTimeout = error.code === "ECONNABORTED";
 
-        return Promise.reject({
-            success: false,
-            status: 500,
+        return Promise.reject(createApiClientError({
             error: isTimeout ? "REQUEST_TIMEOUT" : "NETWORK_ERROR",
             message: isTimeout
                 ? "요청 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요."
                 : "서버와 통신할 수 없습니다. 네트워크 연결을 확인해주세요.",
-            timestamp: new Date().toISOString(),
-        });
+        }));
     }
 );
 

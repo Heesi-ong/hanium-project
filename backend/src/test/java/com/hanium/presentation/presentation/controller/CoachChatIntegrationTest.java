@@ -37,6 +37,7 @@ class CoachChatIntegrationTest {
     private static final String COMPLETED_JOB_ID = "20260715090000-aaaaaaaa";
     private static final String OTHER_OWNER_JOB_ID = "20260715090001-bbbbbbbb";
     private static final String NOT_COMPLETED_JOB_ID = "20260715090002-cccccccc";
+    private static final String MISSING_COMPACT_JOB_ID = "20260715090003-dddddddd";
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -146,6 +147,21 @@ class CoachChatIntegrationTest {
     }
 
     @Test
+    void sendingMessageOnCompletedJobWithoutCompactAnalysisIsRejectedWithoutCreatingConversation() throws Exception {
+        String token = signupAndLogin("coach-missing-compact@example.com");
+        Long ownerId = userRepository.findByEmail("coach-missing-compact@example.com")
+                .map(User::getId)
+                .orElseThrow();
+        createCompletedJobWithoutCompactAnalysis(MISSING_COMPACT_JOB_ID, ownerId);
+
+        ResponseEntity<String> response = sendMessage(token, MISSING_COMPACT_JOB_ID, "질문입니다.");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).contains("AI 코치에 필요한 분석 요약 데이터");
+        assertThat(coachConversationRepository.findByJobId(MISSING_COMPACT_JOB_ID)).isEmpty();
+    }
+
+    @Test
     void dailyMessageLimitIsEnforcedPerUser() throws Exception {
         String token = signupAndLogin("coach-limit@example.com");
         Long ownerId = userRepository.findByEmail("coach-limit@example.com")
@@ -184,6 +200,12 @@ class CoachChatIntegrationTest {
                         )
                 )
         );
+    }
+
+    private void createCompletedJobWithoutCompactAnalysis(String jobId, Long ownerId) {
+        AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
+        analysisJob.complete();
+        analysisJobRepository.save(analysisJob);
     }
 
     private String signupAndLogin(String email) throws Exception {

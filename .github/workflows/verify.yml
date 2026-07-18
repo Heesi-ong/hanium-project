@@ -149,6 +149,19 @@ jobs:
           else
             docker build -t "hanium-${{ matrix.image }}:ci" "${{ matrix.image }}"
           fi
+      - name: Verify service Docker contexts exclude env files
+        if: matrix.image == 'backend' || matrix.image == 'frontend' || matrix.image == 'analysis-engine' || matrix.image == 'video-llm-engine'
+        run: grep -qx '.env\*' "${{ matrix.image }}/.dockerignore"
+      - name: Verify root Docker context allowlist
+        if: matrix.image == 'backup'
+        run: |
+          grep -qx '\*\*' .dockerignore
+          grep -qx '!infra/backup/Dockerfile' .dockerignore
+          grep -qx '!infra/backup/backup-loop.sh' .dockerignore
+          grep -qx '!scripts/backup-mysql.sh' .dockerignore
+          ! grep -qx '!.env' .dockerignore
+          ! grep -qx '!.runtime/' .dockerignore
+          ! grep -qx '!frontend/node_modules/' .dockerignore
       - name: Verify backup image tools
         if: matrix.image == 'backup'
         run: >-
@@ -173,7 +186,7 @@ jobs:
           --add-host frontend:127.0.0.1
           -v "$PWD/infra/nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro"
           hanium-nginx:ci
-          -c 'command -v openssl && cert_dir="/etc/letsencrypt/live/${DOMAIN}" && mkdir -p "${cert_dir}" && openssl req -x509 -nodes -newkey rsa:2048 -days 1 -keyout "${cert_dir}/privkey.pem" -out "${cert_dir}/fullchain.pem" -subj "/CN=${DOMAIN}" >/tmp/openssl.out 2>&1 && touch "${cert_dir}/.bootstrap-self-signed" && test -f "${cert_dir}/fullchain.pem" && test -f "${cert_dir}/privkey.pem" && test -f "${cert_dir}/.bootstrap-self-signed" && /docker-entrypoint.sh nginx -t && grep -q "server_name example.com" /etc/nginx/conf.d/default.conf && grep -q "proxy_pass http://backend:8080" /etc/nginx/conf.d/default.conf'
+          -c 'command -v openssl && cert_dir="/etc/letsencrypt/live/${DOMAIN}" && mkdir -p "${cert_dir}" && openssl req -x509 -nodes -newkey rsa:2048 -days 1 -keyout "${cert_dir}/privkey.pem" -out "${cert_dir}/fullchain.pem" -subj "/CN=${DOMAIN}" >/tmp/openssl.out 2>&1 && touch "${cert_dir}/.bootstrap-self-signed" && test -f "${cert_dir}/fullchain.pem" && test -f "${cert_dir}/privkey.pem" && test -f "${cert_dir}/.bootstrap-self-signed" && /docker-entrypoint.sh nginx -t && grep -q "server_name example.com" /etc/nginx/conf.d/default.conf && grep -q "proxy_pass http://backend:8080" /etc/nginx/conf.d/default.conf && grep -q "proxy_set_header X-Forwarded-For \\$remote_addr" /etc/nginx/conf.d/default.conf'
       - name: Test backup local and remote status handling
         if: matrix.image == 'backup'
         run: bash scripts/tests/test-backup-mysql.sh
@@ -191,7 +204,7 @@ jobs:
           docker run --rm
           --entrypoint python
           hanium-video-llm-engine:ci
-          -c 'from app.main import app; from app.api.video_llm_analysis import resolve_video_max_size_bytes; assert resolve_video_max_size_bytes() == 500 * 1024 * 1024; print(app.title)'
+          -c 'import logging, tempfile; from logging.handlers import TimedRotatingFileHandler; from app.main import app; from app.api.video_llm_analysis import resolve_video_max_size_bytes; from app.core.logging_config import configure_logging; assert resolve_video_max_size_bytes() == 500 * 1024 * 1024; logger = logging.getLogger("video-llm-engine"); logger.handlers.clear(); import os; os.environ["LOG_DIR"] = tempfile.mkdtemp(); configure_logging(); handlers = [handler for handler in logger.handlers if isinstance(handler, TimedRotatingFileHandler)]; assert len(handlers) == 1; assert handlers[0].when == "MIDNIGHT"; assert handlers[0].backupCount == 30; print(app.title)'
       - name: Verify Python runtime image dependencies
         if: matrix.image == 'analysis-engine' || matrix.image == 'video-llm-engine'
         run: >-
@@ -357,6 +370,22 @@ jobs:
               'prod frontend must use same-origin /api routing behind nginx, '
               f'got VITE_API_BASE_URL={vite_api_base_url!r}'
           )
+
+          expected_backend_flags = {
+              'SECURITY_JWT_COOKIE_SECURE': 'true',
+              'SECURITY_API_DOCS_PUBLIC_ENABLED': 'false',
+              'SECURITY_CLIENT_IP_TRUST_FORWARDED_HEADERS': 'true',
+              'VIDEO_DURATION_PROBE_REQUIRED': 'true',
+              'STORAGE_OBJECT_WRITE_REQUIRED': 'true',
+              'STORAGE_OBJECT_READ_PREFERRED': 'true',
+          }
+          for service_name in ('backend', 'analysis-worker'):
+              environment = services[service_name].get('environment', {})
+              for key, expected_value in expected_backend_flags.items():
+                  actual_value = environment.get(key)
+                  assert actual_value == expected_value, (
+                      f'{service_name} prod env {key} must be {expected_value!r}, got {actual_value!r}'
+                  )
 
           print('Production edge startup contract OK')
           PY

@@ -57,14 +57,14 @@ describe("PrivacyPage", () => {
             .toBeInTheDocument();
     });
 
-    it("discloses log retention differences between backend and analysis engines", () => {
+    it("discloses backend and analysis engine log retention periods", () => {
         renderPrivacyPage();
 
         expect(screen.getByRole("heading", { name: "로그 보관" }))
             .toBeInTheDocument();
         expect(screen.getByText(/최대 30일 또는 총 1GB/))
             .toBeInTheDocument();
-        expect(screen.getByText(/30일보다 더 오래 남아 있을 수 있습니다/))
+        expect(screen.getByText(/파일 로그도 일 단위로 순환되며 최대 30일 동안 보관/))
             .toBeInTheDocument();
     });
 });

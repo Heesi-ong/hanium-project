@@ -54,11 +54,36 @@ public class ResultQueryService {
 
     @Transactional(readOnly = true)
     public AnalysisResultResponse getFinalResult(String jobId, Long ownerId) {
-        validateOwnership(jobId, ownerId);
+        AnalysisJob analysisJob = validateOwnership(jobId, ownerId);
 
         Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
 
-        Map<String, Object> result = jsonFileStorage.readJson(finalResultPath, Map.class);
+        Map<String, Object> result;
+        try {
+            result = jsonFileStorage.readJson(finalResultPath, Map.class);
+        } catch (RuntimeException exception) {
+            if (analysisJob.getStatus() == AnalysisStatus.COMPLETED) {
+                recordDataIssue("detail", "RESULT_DATA_UNAVAILABLE");
+                log.warn(
+                        "[{}] 완료된 작업의 결과 상세 파일을 읽지 못해 손상 응답으로 반환합니다. reason={}",
+                        jobId,
+                        exception.toString()
+                );
+                return AnalysisResultResponse.resultDataUnavailable(jobId);
+            }
+
+            throw exception;
+        }
+
+        if (analysisJob.getStatus() == AnalysisStatus.COMPLETED && (result == null || result.isEmpty())) {
+            recordDataIssue("detail", "RESULT_DATA_UNAVAILABLE");
+            log.warn(
+                    "[{}] 완료된 작업의 결과 상세 파일이 비어 있어 손상 응답으로 반환합니다.",
+                    jobId
+            );
+            return AnalysisResultResponse.resultDataUnavailable(jobId);
+        }
+
         AnalysisResultResponse response = AnalysisResultResponse.of(jobId, result);
 
         if (response.dataIssue() != null) {
@@ -111,7 +136,7 @@ public class ResultQueryService {
     // 점수/피드백이 placeholder인 작업은 RESULT_DATA_INCOMPLETE로 표시해 나머지와 함께 반환하고,
     // 운영자가 원인을 조사할 수 있도록 jobId와 dataIssue를 로그로 남깁니다.
     // QUEUED/RUNNING 상태는 아직 결과 파일이 없는 게 정상이므로 이 검사 대상이 아닙니다.
-    // 명확한 오류가 필요한 경우는 개별 상세 조회(getFinalResult)에서만 던집니다.
+    // 개별 상세 조회(getFinalResult)도 COMPLETED 작업의 결과 파일 손상은 dataIssue로 반환합니다.
     private ResultSummaryResponse toSummaryResponse(
             AnalysisJob analysisJob,
             Map<String, UploadedVideo> uploadedVideosByJobId
@@ -182,12 +207,14 @@ public class ResultQueryService {
                 .increment();
     }
 
-    private void validateOwnership(String jobId, Long ownerId) {
+    private AnalysisJob validateOwnership(String jobId, Long ownerId) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
         if (!ownerId.equals(analysisJob.getOwnerId())) {
             throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
         }
+
+        return analysisJob;
     }
 }

@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import { engineHealthCheck, healthCheck } from "../api/analysisApi";
+import { API_BASE_URL } from "../api/apiClient";
+import { resolveBackendBaseUrl } from "./statusPageUtils";
+
+function getBackendBaseUrl() {
+    return resolveBackendBaseUrl(API_BASE_URL, window.location.origin);
+}
 
 function StatusPage() {
     const [backendHealth, setBackendHealth] = useState(null);
@@ -214,7 +220,7 @@ function StatusPage() {
                         title: "Spring Boot Backend",
                         description: "업로드, 분석 상태 관리, 결과 저장/조회 API를 담당합니다.",
                         status: getBackendStatus(),
-                        baseUrl: "http://localhost:8080",
+                        baseUrl: getBackendBaseUrl(),
                         reachable: getBackendStatus() === "ok",
                     })}
 

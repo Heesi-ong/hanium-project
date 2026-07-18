@@ -185,7 +185,7 @@ encrypt_backup_file() {
         -in "$file" -out "$enc_file" -pass env:BACKUP_ENCRYPTION_PASSPHRASE; then
         log "ERROR: 백업 암호화 실패: $file"
         rm -f "$enc_file"
-        write_metric 0
+        write_metrics
         exit 1
     fi
 
@@ -194,7 +194,7 @@ encrypt_backup_file() {
         -in "$enc_file" -pass env:BACKUP_ENCRYPTION_PASSPHRASE | gzip -t; then
         log "ERROR: 암호화 백업 복호화 검증 실패(키/무결성): $enc_file"
         rm -f "$enc_file"
-        write_metric 0
+        write_metrics
         exit 1
     fi
 

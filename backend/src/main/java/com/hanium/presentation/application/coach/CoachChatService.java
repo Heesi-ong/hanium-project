@@ -75,6 +75,8 @@ public class CoachChatService {
             );
         }
 
+        Map<String, Object> compactAnalysis = loadCompactAnalysis(jobId);
+
         // 코치 채팅 자체의 사용자별 일일 한도. openai-monthly(전역 예산, OpenAiCoachClient 내부에서
         // 별도 체크)와는 다른 계층의 방어선으로, OpenAI를 호출하기 전에 먼저 통과해야 하는
         // 사용자별 남용 방지 게이트다.
@@ -89,7 +91,6 @@ public class CoachChatService {
                 .orElseGet(() -> coachConversationRepository.save(CoachConversation.create(jobId, ownerId)));
 
         List<OpenAiCoachChatRequest.ChatTurn> history = loadRecentHistory(conversation.getId());
-        Map<String, Object> compactAnalysis = loadCompactAnalysis(jobId);
 
         coachMessageRepository.save(CoachMessage.userMessage(conversation.getId(), content));
 
@@ -137,6 +138,26 @@ public class CoachChatService {
 
     private Map<String, Object> loadCompactAnalysis(String jobId) {
         Path compactAnalysisPath = filePathGenerator.generateCompactAnalysisPath(jobId);
-        return jsonFileStorage.readJson(compactAnalysisPath, Map.class);
+        try {
+            Map<String, Object> compactAnalysis = jsonFileStorage.readJson(compactAnalysisPath, Map.class);
+
+            if (compactAnalysis == null || compactAnalysis.isEmpty()) {
+                throw new BusinessException(
+                        ErrorCode.INVALID_INPUT_VALUE,
+                        "AI 코치에 필요한 분석 요약 데이터를 찾을 수 없습니다. 재분석이 필요할 수 있습니다."
+                );
+            }
+
+            return compactAnalysis;
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() == ErrorCode.INVALID_INPUT_VALUE) {
+                throw exception;
+            }
+
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    "AI 코치에 필요한 분석 요약 데이터를 찾을 수 없습니다. 재분석이 필요할 수 있습니다."
+            );
+        }
     }
 }

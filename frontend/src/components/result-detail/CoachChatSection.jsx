@@ -15,7 +15,7 @@ function getGenerationModeLabel(mode) {
     return "";
 }
 
-function CoachChatSection({ jobId, isCompleted }) {
+function CoachChatSection({ jobId, isCompleted, disabledReason }) {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
@@ -41,14 +41,16 @@ function CoachChatSection({ jobId, isCompleted }) {
     }, [jobId]);
 
     useEffect(() => {
-        if (isCompleted) {
+        if (isCompleted && !disabledReason) {
             // eslint-disable-next-line react-hooks/set-state-in-effect -- jobId/isCompleted 변화에 맞춰 서버 대화 이력을 동기화하는 effect입니다.
             loadMessages();
         }
-    }, [isCompleted, loadMessages]);
+    }, [disabledReason, isCompleted, loadMessages]);
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ block: "nearest" });
+        if (typeof messagesEndRef.current?.scrollIntoView === "function") {
+            messagesEndRef.current.scrollIntoView({ block: "nearest" });
+        }
     }, [messages]);
 
     async function handleSubmit(event) {
@@ -82,6 +84,15 @@ function CoachChatSection({ jobId, isCompleted }) {
             <article className="detail-card">
                 <h2>AI 코치에게 물어보기</h2>
                 <p className="muted-text">분석이 완료된 후 이용할 수 있습니다.</p>
+            </article>
+        );
+    }
+
+    if (disabledReason) {
+        return (
+            <article className="detail-card">
+                <h2>AI 코치에게 물어보기</h2>
+                <p className="muted-text">{disabledReason}</p>
             </article>
         );
     }

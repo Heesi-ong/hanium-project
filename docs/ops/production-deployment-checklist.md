@@ -33,6 +33,8 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 | `MINIO_PUBLIC_ENDPOINT` | `http://localhost:9000` | 브라우저가 영상 스트리밍 리다이렉트를 따라갈 때 접속하는 주소. 실제 공개 도메인/포트로 변경하지 않으면 운영 사용자는 영상을 재생할 수 없음 |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | 실제 프론트엔드 배포 도메인으로 변경하지 않으면 브라우저가 API 호출을 CORS로 차단함 |
 | `VITE_API_BASE_URL` | `http://localhost:8080` | `docker-compose.prod.yml`은 nginx 동일 origin `/api` 프록시를 쓰도록 이미 빈 문자열로 오버라이드하므로, `docker-compose.prod.yml`을 함께 쓰면 별도 조치 불필요. 프론트를 독립 배포한다면 직접 확인 |
+| `SECURITY_JWT_COOKIE_SECURE` | `false` | `application-prod.yml`과 `docker-compose.prod.yml`이 `true`로 기본 적용해 인증 쿠키가 HTTPS에서만 전송되도록 함 |
+| `SECURITY_API_DOCS_PUBLIC_ENABLED` | `true` | `application-prod.yml`과 `docker-compose.prod.yml`이 `false`로 기본 차단해 `/v3/api-docs`와 `/swagger-ui/**` 공개 노출을 막음 |
 
 첫 기동 때 nginx는 인증서 파일이 없으면 1일짜리 임시 self-signed 인증서를 만들어 먼저 뜬다.
 이후 `certbot` 서비스가 webroot 방식으로 실제 인증서를 발급한다. 최초 발급 직후에는 nginx가
@@ -73,6 +75,9 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 - Redis도 비밀번호 인증을 포함한 healthcheck가 `healthy`가 된 뒤 backend와 analysis-worker가
   시작되어야 한다. `unhealthy`이면 `REDIS_PASSWORD`가 Redis 컨테이너와 두 Spring 서비스에
   동일하게 전달됐는지 먼저 확인한다.
+- 운영 nginx는 backend가 rate limit용으로 신뢰하는 `X-Forwarded-For`를 `$remote_addr`로
+  덮어쓴다. 별도 로드밸런서/CDN을 nginx 앞에 둘 경우 nginx real-ip 설정을 먼저 확정하지 않으면
+  모든 사용자가 로드밸런서 IP로 집계될 수 있다.
 - `minio-init`이 종료 코드 0으로 끝나 사용자 파일 버킷과 백업 버킷을 만든 뒤에만 backup,
   backend, analysis-worker가 시작되어야 한다. 세 서비스가 대기 상태라면
   `docker compose logs minio-init`에서 MinIO 계정·버킷 이름·네트워크 오류를 확인한다.

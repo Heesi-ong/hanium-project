@@ -3,6 +3,7 @@ package com.hanium.presentation.global.config;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.filter.UserRateLimitFilter;
+import com.hanium.presentation.global.properties.ApiDocsProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -48,7 +49,8 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            UserRateLimitFilter userRateLimitFilter
+            UserRateLimitFilter userRateLimitFilter,
+            ApiDocsProperties apiDocsProperties
     ) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -61,24 +63,34 @@ public class SecurityConfig {
                                 (request, response, authException) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)
                         )
                 )
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
-                        .requestMatchers(
-                                HttpMethod.POST,
-                                "/api/auth/signup",
-                                "/api/auth/login",
-                                "/api/auth/logout",
-                                "/api/auth/password-reset/request",
-                                "/api/auth/password-reset/confirm"
-                        ).permitAll()
-                        .requestMatchers("/api/health", "/api/health/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll()
-                        .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**").permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().permitAll()
-                )
+                .authorizeHttpRequests(auth -> {
+                    auth
+                            .requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
+                            .requestMatchers(
+                                    HttpMethod.POST,
+                                    "/api/auth/signup",
+                                    "/api/auth/login",
+                                    "/api/auth/logout",
+                                    "/api/auth/password-reset/request",
+                                    "/api/auth/password-reset/confirm"
+                            ).permitAll()
+                            .requestMatchers("/api/health", "/api/health/**").permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll();
+
+                    if (apiDocsProperties.publicEnabled()) {
+                        auth.requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**")
+                                .permitAll();
+                    } else {
+                        auth.requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**")
+                                .denyAll();
+                    }
+
+                    auth
+                            .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                            .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                            .requestMatchers("/api/**").authenticated()
+                            .anyRequest().permitAll();
+                })
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(userRateLimitFilter, JwtAuthenticationFilter.class)
                 .build();

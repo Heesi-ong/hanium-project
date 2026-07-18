@@ -84,6 +84,28 @@ class OpenAiClientTest {
         fixture.server.verify();
     }
 
+    @Test
+    void generateMockFeedbackSuggestsStructureMarkersWhenTranscriptNeedsStructure() {
+        OpenAiClient client = createDisabledClient();
+
+        OpenAiFeedbackResponse response = client.generateFeedback(
+                new OpenAiFeedbackRequest(
+                        "content-structure-job",
+                        compactAnalysisWithUnstructuredTranscript()
+                )
+        );
+
+        assertThat(response.generationMode()).isEqualTo("MOCK");
+        assertThat(response.improvements())
+                .anySatisfy(improvement -> assertThat(improvement)
+                        .contains("구조 표지")
+                        .contains("먼저")
+                        .contains("다음으로")
+                        .contains("결론적으로")
+                        .contains("문장 수: 4")
+                        .contains("구조 표지: 0"));
+    }
+
     private OpenAiClientFixture createFixture() {
         OpenAiProperties properties = new OpenAiProperties();
         properties.setEnabled(true);
@@ -105,6 +127,50 @@ class OpenAiClientTest {
         );
 
         return new OpenAiClientFixture(client, server);
+    }
+
+    private OpenAiClient createDisabledClient() {
+        OpenAiProperties properties = new OpenAiProperties();
+        properties.setEnabled(false);
+        properties.setModel("gpt-test");
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        return new OpenAiClient(
+                properties,
+                new OpenAiPromptBuilder(objectMapper),
+                RestClient.builder().build(),
+                objectMapper,
+                mock(UserRateLimiter.class)
+        );
+    }
+
+    private Map<String, Object> compactAnalysisWithUnstructuredTranscript() {
+        return Map.of(
+                "modelInputs", Map.of(
+                        "scoreSummary", Map.of(
+                                "totalScore", 82,
+                                "postureScore", 82,
+                                "gazeScore", 82,
+                                "speechScore", 82,
+                                "gestureScore", 82,
+                                "expressionScore", 82
+                        ),
+                        "speechSummary", Map.of(
+                                "fillerScore", 100,
+                                "fillerCount", 0
+                        ),
+                        "visualSummary", Map.of(),
+                        "transcriptSummary", Map.of(
+                                "sttSuccess", true,
+                                "contentStructure", Map.of(
+                                        "structureHint", "needs_structure_markers",
+                                        "sentenceCount", 4,
+                                        "transitionMarkerCount", 0
+                                )
+                        ),
+                        "feedbackFocus", Map.of()
+                )
+        );
     }
 
     private ListAppender<ILoggingEvent> attachListAppender() {

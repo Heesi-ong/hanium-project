@@ -7,6 +7,7 @@ import EmptyState from "../components/EmptyState";
 import ScoreTrendChart from "../components/chart/ScoreTrendChart";
 import PageHeader from "../components/PageHeader";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
+import { firstMeaningfulResultValue } from "../components/result-detail/resultDetailFormatters";
 import VideoLlmGenerationBadge from "../components/result-detail/VideoLlmGenerationBadge";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
@@ -140,6 +141,9 @@ function ResultListPage() {
                     result.feedback?.generationMode,
                     result.feedback?.model,
                     result.feedback?.fallbackReason,
+                    result.pipeline?.openAiGenerationMode,
+                    result.pipeline?.openAiModel,
+                    result.pipeline?.openAiFallbackReason,
                     result.visualAnalysis?.model?.generationMode,
                     result.visualAnalysis?.model?.name,
                     result.visualAnalysis?.model?.version,
@@ -278,7 +282,11 @@ function ResultListPage() {
     }
 
     function getGenerationMode(result) {
-        return result?.feedback?.generationMode || "UNKNOWN";
+        return firstMeaningfulResultValue(
+            result?.feedback?.generationMode,
+            result?.pipeline?.openAiGenerationMode,
+            "UNKNOWN"
+        );
     }
 
     function getTotalScore(result) {
@@ -516,7 +524,10 @@ function ResultListPage() {
                                     </p>
                                 )}
 
-                                <OpenAiGenerationBadge feedback={result.feedback} />
+                                <OpenAiGenerationBadge
+                                    feedback={result.feedback}
+                                    pipeline={result.pipeline}
+                                />
                                 <VideoLlmGenerationBadge result={result} />
 
                                 <div className="result-score-row">

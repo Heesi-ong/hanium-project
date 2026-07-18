@@ -32,7 +32,16 @@ fi
 exit 0
 SCRIPT
 
-chmod +x "$TEST_ROOT/bin/fake-mysqldump" "$TEST_ROOT/bin/mc"
+cat > "$TEST_ROOT/bin/fake-openssl" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${OPENSSL_TEST_FAIL:-false}" == "true" ]]; then
+    exit 23
+fi
+exec openssl "$@"
+SCRIPT
+
+chmod +x "$TEST_ROOT/bin/fake-mysqldump" "$TEST_ROOT/bin/mc" "$TEST_ROOT/bin/fake-openssl"
 
 metric_value() {
     local metrics_file="$1"
@@ -96,5 +105,17 @@ run_backup "$best_effort_root" BACKUP_REMOTE_REQUIRED=false MC_TEST_FAIL=true
 best_effort_metrics="$best_effort_root/metrics/mysql_backup.prom"
 [[ "$(metric_value "$best_effort_metrics" mysql_backup_last_run_status)" == "1" ]]
 [[ "$(metric_value "$best_effort_metrics" mysql_backup_remote_export_last_run_status)" == "0" ]]
+
+encryption_failure_root="$TEST_ROOT/encryption-failure"
+if run_backup "$encryption_failure_root" \
+    BACKUP_ENCRYPTION_PASSPHRASE=test-passphrase \
+    OPENSSL_BIN=fake-openssl \
+    OPENSSL_TEST_FAIL=true; then
+    echo "expected encryption failure" >&2
+    exit 1
+fi
+encryption_failure_metrics="$encryption_failure_root/metrics/mysql_backup.prom"
+[[ "$(metric_value "$encryption_failure_metrics" mysql_backup_last_run_status)" == "0" ]]
+grep -q "백업 암호화 실패" "$encryption_failure_root/logs/backup.log"
 
 echo "backup-mysql regression tests passed"

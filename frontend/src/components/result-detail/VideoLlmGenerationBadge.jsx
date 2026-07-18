@@ -1,3 +1,5 @@
+import { firstMeaningfulResultValue } from "./resultDetailFormatters";
+
 function getVideoLlmGenerationModeLabel(mode) {
     if (mode === "REAL") {
         return "REAL";
@@ -59,7 +61,7 @@ function getVideoLlmGenerationModeClassName(mode) {
 }
 
 function resolveVideoLlmGenerationMode(result) {
-    return getFirstMeaningful(
+    return firstMeaningfulResultValue(
         result?.visualAnalysis?.model?.generationMode,
         result?.pipeline?.videoLlmGenerationMode,
         "UNKNOWN"
@@ -67,32 +69,11 @@ function resolveVideoLlmGenerationMode(result) {
 }
 
 function resolveVideoLlmModelText(result) {
-    return getFirstMeaningful(
+    return firstMeaningfulResultValue(
         result?.visualAnalysis?.model?.name,
         result?.pipeline?.videoLlmAnalysis,
         "-"
     );
-}
-
-function getFirstMeaningful(primaryValue, fallbackValue, defaultValue) {
-    if (isMeaningfulValue(primaryValue)) {
-        return primaryValue;
-    }
-
-    if (isMeaningfulValue(fallbackValue)) {
-        return fallbackValue;
-    }
-
-    return defaultValue;
-}
-
-function isMeaningfulValue(value) {
-    if (value === null || value === undefined) {
-        return false;
-    }
-
-    const text = String(value).trim();
-    return text.length > 0 && text !== "-" && text !== "UNKNOWN";
 }
 
 function VideoLlmGenerationBadge({ result }) {

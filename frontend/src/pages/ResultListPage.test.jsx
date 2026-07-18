@@ -82,6 +82,28 @@ describe("ResultListPage", () => {
                             overall: "데모 피드백",
                         },
                     },
+                    {
+                        jobId: "job-list-pipeline-openai",
+                        status: "COMPLETED",
+                        statusDescription: "분석 완료",
+                        fileName: "pipeline-openai.mp4",
+                        createdAt: "2026-07-15T11:00:00",
+                        scoreSummary: {
+                            totalScore: 88,
+                            level: "A",
+                        },
+                        pipeline: {
+                            openAiGenerationMode: "REAL",
+                            openAiModel: "pipeline-openai-model",
+                            openAiRealApiUsed: true,
+                        },
+                        feedback: {
+                            generationMode: "UNKNOWN",
+                            model: "-",
+                            realApiUsed: false,
+                            overall: "파이프라인 메타데이터 복구 피드백",
+                        },
+                    },
                 ],
                 last: true,
             },
@@ -92,7 +114,7 @@ describe("ResultListPage", () => {
         renderResultListPage();
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
-        expect(screen.getByText("실제 OpenAI")).toBeInTheDocument();
+        expect(screen.getAllByText("실제 OpenAI").length).toBeGreaterThanOrEqual(1);
         expect(screen.getByText("샘플 시각 분석")).toBeInTheDocument();
         expect(screen.getByText("Video LLM · video-llm-engine mock")).toBeInTheDocument();
     });
@@ -117,6 +139,36 @@ describe("ResultListPage", () => {
 
         await waitFor(() => {
             expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
+            expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
+        });
+    });
+
+    it("filters OpenAI modes with pipeline metadata when feedback metadata is a placeholder", async () => {
+        renderResultListPage();
+
+        expect(await screen.findByText("pipeline-openai.mp4")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "REAL" }));
+
+        await waitFor(() => {
+            expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
+            expect(screen.getByText("pipeline-openai.mp4")).toBeInTheDocument();
+            expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "OpenAI 전체" }));
+        fireEvent.change(
+            screen.getByPlaceholderText("파일명, jobId, OpenAI/Video LLM 방식 검색"),
+            {
+                target: {
+                    value: "pipeline-openai-model",
+                },
+            }
+        );
+
+        await waitFor(() => {
+            expect(screen.getByText("pipeline-openai.mp4")).toBeInTheDocument();
+            expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
             expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
         });
     });

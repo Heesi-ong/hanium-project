@@ -24,5 +24,12 @@ RUN if [ "$VIDEO_LLM_BACKEND" = "local-model" ]; then \
 
 COPY . .
 
+# 사용자가 업로드한 신뢰할 수 없는 영상을 다루는 서비스라, analysis-engine과 동일하게
+# 파서 취약점이 나오더라도 컨테이너 안에서 root 권한을 얻지 못하도록 권한을 낮춥니다.
+RUN useradd --system --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /storage \
+    && chown -R appuser:appuser /app /storage
+USER appuser
+
 EXPOSE 8002
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

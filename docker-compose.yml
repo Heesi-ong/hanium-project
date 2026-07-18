@@ -168,6 +168,14 @@ services:
       - "127.0.0.1:${ANALYSIS_ENGINE_PORT:-8001}:8001"
     volumes:
       - ./storage:/storage
+    # 사용자가 업로드한 영상을 ffmpeg/OpenCV/MediaPipe로 직접 처리하는 서비스라, 파서
+    # 취약점이 나오더라도 컨테이너가 추가 권한을 얻지 못하도록 Linux capability를 전부
+    # 제거합니다. non-privileged 포트(8001)만 쓰고 파일 소유권 변경 등도 필요 없어 추가로
+    # 되돌려줄 capability가 없습니다.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"]
       interval: 10s
@@ -207,6 +215,11 @@ services:
       - "127.0.0.1:${VIDEO_LLM_ENGINE_PORT:-8002}:8002"
     volumes:
       - ./storage:/storage
+    # analysis-engine과 같은 이유(신뢰할 수 없는 영상 처리)로 capability를 전부 제거합니다.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=3).read()"]
       interval: 10s
@@ -306,6 +319,11 @@ services:
       - "8080:8080"
     volumes:
       - ./storage:/storage
+    # non-root(appuser)로 실행되고 non-privileged 포트만 쓰므로 capability가 필요 없습니다.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -400,6 +418,11 @@ services:
       ANALYSIS_EXECUTOR_QUEUE_CAPACITY: ${ANALYSIS_EXECUTOR_QUEUE_CAPACITY:-20}
     volumes:
       - ./storage:/storage
+    # backend와 같은 이유(non-root, non-privileged 포트)로 capability를 전부 제거합니다.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -428,6 +451,28 @@ services:
       - backend
     ports:
       - "5173:80"
+    # nginx는 이미지를 통째로 root로 재빌드하지 않는 한 conf.d 템플릿 치환(envsubst)과
+    # 캐시/pid 파일 쓰기 때문에 완전한 non-root 전환(리스닝 포트 변경까지 필요)은 별도
+    # 작업으로 미뤄뒀습니다. 대신 루트 파일시스템 자체를 읽기 전용으로 만들고, 실제로
+    # 쓰기가 필요한 세 경로만 tmpfs로 열어 컨테이너 탈취 시 영구 변조를 막습니다.
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /etc/nginx/conf.d
+    # master 프로세스가 root로 80번 포트를 바인딩하고, 워커 프로세스에 넘겨줄 tmpfs 캐시
+    # 디렉터리 소유권을 nginx 워커 계정으로 바꿔야 해서(chown) 이 세 가지만 되돌려줍니다.
+    # NET_BIND_SERVICE 없이는 포트 바인딩이, CHOWN/SETUID/SETGID 없이는 워커 프로세스로의
+    # 권한 하향(master→nginx 워커 계정) 자체가 실패합니다(실제로 재현 후 확인).
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   mysql-data:

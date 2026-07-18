@@ -10,10 +10,10 @@ import time
 from typing import Any, Dict, Iterator
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
 
-from app.core.logging_config import bind_job_id
+from app.core.logging_config import bind_job_id, bind_request_id
 from app.core.security import verify_internal_api_key
 
 logger = logging.getLogger("video-llm-engine")
@@ -800,8 +800,11 @@ def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) 
 
 
 @router.post("/analyze")
-def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
-    with bind_job_id(request.jobId):
+def analyze_video(
+        request: VideoLlmAnalysisRequest,
+        x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+) -> Dict[str, Any]:
+    with bind_job_id(request.jobId), bind_request_id(x_request_id):
         if resolve_video_llm_enabled():
             try:
                 return call_real_video_llm_model(request)

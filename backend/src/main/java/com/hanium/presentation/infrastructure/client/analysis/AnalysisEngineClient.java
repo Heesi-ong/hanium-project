@@ -2,11 +2,13 @@ package com.hanium.presentation.infrastructure.client.analysis;
 
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.logging.RequestIdFilter;
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -94,9 +96,20 @@ public class AnalysisEngineClient {
     @CircuitBreaker(name = "analysis-engine", fallbackMethod = "analyzeFallback")
     public AnalysisEngineResponse analyze(AnalysisEngineRequest request) {
         try {
-            return restClient.post()
+            RestClient.RequestBodySpec requestSpec = restClient.post()
                     .uri("/api/basic-analysis")
-                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey())
+                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey());
+
+            // analysis-engine 로그에서도 같은 값으로 추적할 수 있도록, 이 호출을 시작한 backend
+            // HTTP 요청의 requestId를 그대로 전달합니다. 비동기 파이프라인이 AsyncConfig에서
+            // MDC를 복사해오므로 이 시점에도 값이 남아 있지만, 혹시 없더라도(예: 스케줄러 등
+            // 요청 맥락 밖에서 호출) 헤더를 생략할 뿐 호출 자체는 그대로 진행합니다.
+            String requestId = MDC.get(RequestIdFilter.REQUEST_ID_MDC_KEY);
+            if (requestId != null && !requestId.isBlank()) {
+                requestSpec = requestSpec.header(RequestIdFilter.REQUEST_ID_HEADER, requestId);
+            }
+
+            return requestSpec
                     .body(request)
                     .retrieve()
                     .body(AnalysisEngineResponse.class);

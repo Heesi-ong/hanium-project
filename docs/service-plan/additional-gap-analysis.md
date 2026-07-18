@@ -463,7 +463,13 @@
 - **N6 해결**: backend의 `X-Request-Id` 헤더 전달과 두 Python 엔진의 `bind_job_id`/`bind_request_id`/`CorrelationLogFilter`에 대한 자동화 테스트를 추가했다(`MockRestServiceServer` 기반 헤더 검증, contextvar 설정·복원 단위 테스트, `TestClient` 기반 종단 검증).
 - **검증**: 모든 항목에서 backend 전체 테스트, analysis-engine pytest(97), video-llm-engine pytest(66), frontend lint/test(124)/build가 통과했고, N4/N5는 추가로 실제 Docker 컨테이너·브라우저 조작으로 확인했다.
 
-N7(개인정보처리방침 미고지)·N8(nginx rate limit/server_tokens)는 Low 우선순위로 아직 착수하지 않았다.
+### 같은 날(2026-07-18) 추가 후속 조치: N7·N8 수정 완료
+
+- **N7 해결**: `PrivacyPage.jsx`에 "백업 보관"(`BACKUP_RETENTION_DAYS` 기본 14일, AES-256 암호화, 오브젝트 스토리지 반출 가능성, 삭제 이후에도 백업에는 남을 수 있음)과 "로그 보관"(백엔드 30일/1GB 롤링 vs. 두 Python 엔진의 시간 만료 없는 용량 기준 순환) 절을 추가했다. "보관 기간과 삭제" 절도 N1에서 고친 실제 동작(로컬+오브젝트 스토리지 사본 모두 삭제)에 맞춰 갱신했다.
+- **N8 해결**: `infra/nginx/nginx.conf`에 `server_tokens off`와 IP 기준 `limit_req_zone`(30r/s, burst 60)/`limit_conn_zone`(20개)을 `/api/`와 `/` 위치에 적용했다. 모니터링 헬스체크(`/actuator/health`)는 제외했다. 실제 docker-compose 네트워크 안에서 `nginx -t` 통과, 실제 컨테이너를 띄워 정상 요청 200·`Server` 헤더 버전 없음·150개 동시 요청 중 56개가 실제로 503으로 차단되는 것까지 확인했다.
+- **검증**: frontend lint/test(126)/build 통과, `docker-compose.yml + docker-compose.prod.yml` 오버레이 설정 검증 통과.
+
+이로써 2026-07-18에 발견한 N1~N9 전 항목(N1~N6, N9는 이전 절에서 완료 기록, N7·N8은 위)이 모두 수정·검증됐다.
 
 - **N1 해결**: `ResultCommandService.deleteResult()`가 이제 로컬 삭제와 함께 `objectStorage.deleteObjectsWithPrefix("uploads/{jobId}/")`, `deleteObjectsWithPrefix("results/{jobId}/")`를 호출한다(`StorageCleanupService`/`OriginalVideoRetentionService`와 동일한 best-effort 패턴 — MinIO 호출이 실패해도 로컬 삭제·DB 삭제는 막지 않음). MinIO 실패 시에도 삭제가 정상 진행되는지, 정상 시 두 prefix가 정확히 호출되는지 각각 단위 테스트로 고정했다.
 - **N2 해결**: `analysis-engine/requirements.txt`와 `video-llm-engine/requirements-real-model.txt`의 `pillow`를 `12.2.0`→`12.3.0`으로, `requirements-real-model.txt`의 `setuptools`를 `81.0.0`→`83.0.0`, `torch`를 `2.12.1`→`2.13.0`으로 올려 발견된 CVE 8+1+1건을 전부 해소했다(`pip-audit` 재실행으로 클린 확인). `requirements-real-model.txt`가 CI 감사 사각지대였던 부가 발견도 함께 닫았다 — `.github/workflows/verify.yml`의 `python-engines` 잡에 `pip-audit --no-deps --disable-pip -r requirements-real-model.txt` 스텝을 추가했다(무거운 torch 설치 없이 핀 고정 버전만 감사하므로 CI 비용 증가가 거의 없음). 로컬에서 동일 명령으로 실제 클린 통과를 확인했다.

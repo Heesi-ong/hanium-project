@@ -13,6 +13,7 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from app.core.logging_config import bind_job_id
 from app.core.security import verify_internal_api_key
 
 logger = logging.getLogger("video-llm-engine")
@@ -800,15 +801,16 @@ def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) 
 
 @router.post("/analyze")
 def analyze_video(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
-    if resolve_video_llm_enabled():
-        try:
-            return call_real_video_llm_model(request)
-        except Exception:
-            logger.exception(
-                "(%s) 실제 Video LLM 호출 실패, mock 응답으로 폴백합니다.",
-                request.jobId,
-            )
-            return build_mock_response(request, "FALLBACK")
+    with bind_job_id(request.jobId):
+        if resolve_video_llm_enabled():
+            try:
+                return call_real_video_llm_model(request)
+            except Exception:
+                logger.exception(
+                    "(%s) 실제 Video LLM 호출 실패, mock 응답으로 폴백합니다.",
+                    request.jobId,
+                )
+                return build_mock_response(request, "FALLBACK")
 
-    logger.info("(%s) Mock 영상 관찰 결과를 생성하는 중...", request.jobId)
-    return build_mock_response(request, "MOCK")
+        logger.info("(%s) Mock 영상 관찰 결과를 생성하는 중...", request.jobId)
+        return build_mock_response(request, "MOCK")

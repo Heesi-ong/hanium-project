@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.core import model_registry
+from app.core.logging_config import bind_job_id
 from app.core.security import verify_internal_api_key
 
 logger = logging.getLogger("analysis-engine")
@@ -141,6 +142,11 @@ def cleanup_temp_directory(job_id: str) -> None:
 
 @router.post("/basic-analysis")
 def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
+    with bind_job_id(request.jobId):
+        return _run_basic_analysis(request)
+
+
+def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
     job_id = request.jobId
 
     try:
@@ -526,6 +532,9 @@ def calculate_sample_frame_indexes(
     return sorted(set(frame_indexes))
 
 
+FFMPEG_AUDIO_EXTRACTION_TIMEOUT_SECONDS = 120
+
+
 def extract_audio_from_video(
         job_id: str,
         video_path: Path,
@@ -560,6 +569,7 @@ def extract_audio_from_video(
             stderr=subprocess.PIPE,
             text=True,
             check=False,
+            timeout=FFMPEG_AUDIO_EXTRACTION_TIMEOUT_SECONDS,
         )
 
         if completed_process.returncode != 0:

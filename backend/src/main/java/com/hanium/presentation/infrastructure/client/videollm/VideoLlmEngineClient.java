@@ -2,6 +2,7 @@ package com.hanium.presentation.infrastructure.client.videollm;
 
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.logging.RequestIdFilter;
 import com.hanium.presentation.global.properties.VideoLlmEngineProperties;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineRequest;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
@@ -9,6 +10,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -123,9 +125,19 @@ public class VideoLlmEngineClient {
     @CircuitBreaker(name = "video-llm-engine", fallbackMethod = "analyzeFallback")
     public VideoLlmEngineResponse analyze(VideoLlmEngineRequest request) {
         try {
-            VideoLlmEngineResponse response = restClient.post()
+            RestClient.RequestBodySpec requestSpec = restClient.post()
                     .uri("/api/video-llm/analyze")
-                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey())
+                    .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey());
+
+            // video-llm-engine 로그에서도 같은 값으로 추적할 수 있도록, 이 호출을 시작한 backend
+            // HTTP 요청의 requestId를 그대로 전달합니다. 값이 없으면(요청 맥락 밖 호출) 헤더를
+            // 생략할 뿐 호출 자체는 그대로 진행합니다.
+            String requestId = MDC.get(RequestIdFilter.REQUEST_ID_MDC_KEY);
+            if (requestId != null && !requestId.isBlank()) {
+                requestSpec = requestSpec.header(RequestIdFilter.REQUEST_ID_HEADER, requestId);
+            }
+
+            VideoLlmEngineResponse response = requestSpec
                     .body(request)
                     .retrieve()
                     .body(VideoLlmEngineResponse.class);

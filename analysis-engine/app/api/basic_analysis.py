@@ -9,11 +9,11 @@ import cv2
 import imageio_ffmpeg
 import mediapipe as mp
 import requests
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
 
 from app.core import model_registry
-from app.core.logging_config import bind_job_id
+from app.core.logging_config import bind_job_id, bind_request_id
 from app.core.security import verify_internal_api_key
 
 logger = logging.getLogger("analysis-engine")
@@ -141,8 +141,11 @@ def cleanup_temp_directory(job_id: str) -> None:
 
 
 @router.post("/basic-analysis")
-def basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
-    with bind_job_id(request.jobId):
+def basic_analysis(
+        request: BasicAnalysisRequest,
+        x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+) -> Dict[str, Any]:
+    with bind_job_id(request.jobId), bind_request_id(x_request_id):
         return _run_basic_analysis(request)
 
 

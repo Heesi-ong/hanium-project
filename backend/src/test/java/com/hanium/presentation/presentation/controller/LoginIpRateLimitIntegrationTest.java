@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.TestPropertySource;
 
@@ -52,6 +54,21 @@ class LoginIpRateLimitIntegrationTest {
         assertThat(limitedResponse.getBody()).contains("요청이 너무 많습니다");
     }
 
+    @Test
+    void loginIpRateLimitIgnoresSpoofedForwardedForByDefault() {
+        signup("login-ip-spoof-1@example.com");
+        signup("login-ip-spoof-2@example.com");
+        signup("login-ip-spoof-3@example.com");
+
+        assertThat(login("login-ip-spoof-1@example.com", "203.0.113.1").getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(login("login-ip-spoof-2@example.com", "203.0.113.2").getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> limitedResponse = login("login-ip-spoof-3@example.com", "203.0.113.3");
+
+        assertThat(limitedResponse.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(limitedResponse.getBody()).contains("요청이 너무 많습니다");
+    }
+
     private void signup(String email) {
         ResponseEntity<String> response = restTemplate.postForEntity(
                 "/api/auth/signup",
@@ -66,6 +83,17 @@ class LoginIpRateLimitIntegrationTest {
         return restTemplate.postForEntity(
                 "/api/auth/login",
                 createAuthRequest(email),
+                String.class
+        );
+    }
+
+    private ResponseEntity<String> login(String email, String forwardedFor) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("X-Forwarded-For", forwardedFor);
+
+        return restTemplate.postForEntity(
+                "/api/auth/login",
+                new HttpEntity<>(createAuthRequest(email), headers),
                 String.class
         );
     }

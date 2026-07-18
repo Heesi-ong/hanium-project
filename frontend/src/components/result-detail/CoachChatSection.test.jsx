@@ -27,6 +27,24 @@ describe("CoachChatSection", () => {
         expect(coachApiMock.getCoachMessages).not.toHaveBeenCalled();
     });
 
+    it("does not fetch messages when the completed result has a data issue", () => {
+        render(
+            <CoachChatSection
+                jobId="job-1"
+                isCompleted
+                disabledReason="분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요."
+            />
+        );
+
+        expect(
+            screen.getByText("분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요.")
+        ).toBeInTheDocument();
+        expect(coachApiMock.getCoachMessages).not.toHaveBeenCalled();
+        expect(
+            screen.queryByPlaceholderText("예: 말이 너무 빠른가요? 어떻게 개선할 수 있을까요?")
+        ).not.toBeInTheDocument();
+    });
+
     it("loads and displays existing conversation history", async () => {
         coachApiMock.getCoachMessages.mockResolvedValue({
             data: {

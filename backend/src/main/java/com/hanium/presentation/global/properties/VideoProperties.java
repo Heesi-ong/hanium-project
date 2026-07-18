@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "video")
 public record VideoProperties(
-        Long maxDurationMinutes
+        Long maxDurationMinutes,
+        boolean durationProbeRequired
 ) {
 }

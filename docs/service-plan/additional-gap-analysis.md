@@ -465,7 +465,7 @@
 
 ### 같은 날(2026-07-18) 추가 후속 조치: N7·N8 수정 완료
 
-- **N7 해결**: `PrivacyPage.jsx`에 "백업 보관"(`BACKUP_RETENTION_DAYS` 기본 14일, AES-256 암호화, 오브젝트 스토리지 반출 가능성, 삭제 이후에도 백업에는 남을 수 있음)과 "로그 보관"(백엔드 30일/1GB 롤링 vs. 두 Python 엔진의 시간 만료 없는 용량 기준 순환) 절을 추가했다. "보관 기간과 삭제" 절도 N1에서 고친 실제 동작(로컬+오브젝트 스토리지 사본 모두 삭제)에 맞춰 갱신했다.
+- **N7 해결**: `PrivacyPage.jsx`에 "백업 보관"(`BACKUP_RETENTION_DAYS` 기본 14일, AES-256 암호화, 오브젝트 스토리지 반출 가능성, 삭제 이후에도 백업에는 남을 수 있음)과 "로그 보관" 절을 추가했다. 이후 두 Python 엔진 로그도 일 단위 순환 + 30일 보관으로 맞춰, 백엔드와 엔진 모두 시간 기준 로그 보관 상한을 갖게 했다. "보관 기간과 삭제" 절도 N1에서 고친 실제 동작(로컬+오브젝트 스토리지 사본 모두 삭제)에 맞춰 갱신했다.
 - **N8 해결**: `infra/nginx/nginx.conf`에 `server_tokens off`와 IP 기준 `limit_req_zone`(30r/s, burst 60)/`limit_conn_zone`(20개)을 `/api/`와 `/` 위치에 적용했다. 모니터링 헬스체크(`/actuator/health`)는 제외했다. 실제 docker-compose 네트워크 안에서 `nginx -t` 통과, 실제 컨테이너를 띄워 정상 요청 200·`Server` 헤더 버전 없음·150개 동시 요청 중 56개가 실제로 503으로 차단되는 것까지 확인했다.
 - **검증**: frontend lint/test(126)/build 통과, `docker-compose.yml + docker-compose.prod.yml` 오버레이 설정 검증 통과.
 

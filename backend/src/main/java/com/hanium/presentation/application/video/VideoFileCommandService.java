@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 
 @Service
 public class VideoFileCommandService {
@@ -204,7 +205,21 @@ public class VideoFileCommandService {
     }
 
     private void validateVideoDuration(Path storedPath) {
-        videoDurationProbe.probe(storedPath).ifPresent(duration -> {
+        Optional<Duration> probedDuration = videoDurationProbe.probe(storedPath);
+
+        if (probedDuration.isEmpty()) {
+            if (videoProperties.durationProbeRequired()) {
+                localFileStorage.deleteFileIfExists(storedPath);
+                throw new BusinessException(
+                        ErrorCode.FILE_UPLOAD_FAILED,
+                        "영상 재생 시간을 확인할 수 없어 업로드를 중단했습니다."
+                );
+            }
+
+            return;
+        }
+
+        probedDuration.ifPresent(duration -> {
             long maxDurationSeconds = videoProperties.maxDurationMinutes() * 60L;
 
             if (duration.toSeconds() > maxDurationSeconds) {

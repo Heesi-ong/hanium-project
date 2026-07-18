@@ -354,6 +354,8 @@ JVM/HTTP 기본 메트릭 외에 분석 작업과 외부 연동 상태를 확인
 | `video_llm.generation` | Counter | `mode` = `REAL` \| `FALLBACK` \| `MOCK` \| `UNKNOWN` | Video LLM 결과가 실제 모델/폴백/mock 중 어떤 경로로 생성됐는지 |
 | `video_duration_probe.result` | Counter | `outcome`, `reason` | ffprobe 영상 길이 확인 성공/실패 및 fail-open 사유 |
 
+기본값은 기존 호환을 위해 ffprobe 실패 시 업로드를 허용합니다. 운영에서 영상 길이 제한 우회를 허용하지 않으려면 `VIDEO_DURATION_PROBE_REQUIRED=true`로 설정해 재생 시간 확인 실패를 업로드 실패로 처리하세요.
+
 메트릭 수집이 필요할 때는 모니터링 오버레이로 Prometheus 컨테이너를 함께 띄웁니다. (기본 `docker compose up`에는 포함되지 않습니다.)
 
 ```bash
@@ -607,7 +609,9 @@ Request Body:
 로그인 성공 시 `data.accessToken`이 반환되고, 동시에 `access_token` HttpOnly 쿠키가 설정됩니다.
 프론트엔드는 토큰을 `localStorage`에 저장하지 않고 쿠키 기반 세션을 사용합니다.
 
-- 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일 기준과 IP 기준을 모두 적용해 rate limit이 걸립니다. 한도를 초과하면 429 응답을 반환합니다.
+- 인증 쿠키는 `HttpOnly`, `SameSite=Lax`, `Path=/`로 설정됩니다. local/dev HTTP 환경에서는 `SECURITY_JWT_COOKIE_SECURE=false`를 쓰고, prod 프로필과 `docker-compose.prod.yml` 운영 오버레이는 `SECURITY_JWT_COOKIE_SECURE=true`를 기본 적용합니다.
+- 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일 기준과 IP 기준을 모두 적용해 rate limit이 걸립니다. 한도를 초과하면 429 응답을 반환합니다. 기본적으로 클라이언트 IP는 `request.getRemoteAddr()`를 사용하며, 신뢰 가능한 reverse proxy가 `X-Forwarded-For`를 덮어쓰는 배포에서만 `SECURITY_CLIENT_IP_TRUST_FORWARDED_HEADERS=true`로 forwarded header를 신뢰하세요. 운영 nginx는 기존 XFF 체인을 보존하지 않고 `$remote_addr`로 덮어써 스푸핑을 막습니다.
+- Swagger UI와 OpenAPI JSON은 local/dev 계약 확인 호환을 위해 기본 공개입니다. prod 프로필과 `docker-compose.prod.yml` 운영 오버레이는 `SECURITY_API_DOCS_PUBLIC_ENABLED=false`를 기본 적용해 `/v3/api-docs`와 `/swagger-ui/**`를 차단합니다.
 - 회원가입 비밀번호는 8~72자이면서 영문자와 숫자를 각각 1자 이상 포함해야 합니다(400 응답으로 거부됩니다). 이 복잡도 규칙은 회원가입에만 적용되며, 로그인 요청의 비밀번호 필드에는 적용되지 않습니다.
 
 ### 9.3 영상 업로드
@@ -1220,9 +1224,9 @@ OpenAI 피드백 결과에 생성 방식을 구분하는 상태 필드를 추가
 
 기존에는 결과 상세 화면에 들어가야 AI 피드백이 Mock인지, 실제 OpenAI 응답인지 확인할 수 있었습니다. 이제 목록 카드에서도 OpenAI 생성 방식 배지와 Video LLM 생성 방식 배지가 별도로 표시됩니다.
 
-OpenAI 생성 방식 필터는 OpenAI 피드백의 `generationMode`만 대상으로 합니다. 검색 입력은 파일명/jobId뿐 아니라 OpenAI 메타데이터와 Video LLM 메타데이터(`visualAnalysis.model.*`, `pipeline.videoLlmGenerationMode`, `pipeline.videoLlmAnalysis`)까지 포함합니다.
+OpenAI 생성 방식 필터는 OpenAI 피드백의 `generationMode`를 기본으로 보되, 기존 결과 파일처럼 값이 `UNKNOWN`/`-`/빈 값이면 `pipeline.openAiGenerationMode`를 사용합니다. 검색 입력은 파일명/jobId뿐 아니라 OpenAI 메타데이터(`feedback.*`, `pipeline.openAiGenerationMode/openAiModel/openAiFallbackReason`)와 Video LLM 메타데이터(`visualAnalysis.model.*`, `pipeline.videoLlmGenerationMode`, `pipeline.videoLlmAnalysis`)까지 포함합니다.
 
-목록 API(`GET /api/results`)의 각 content 항목은 상세 분석 전체를 싣지 않고, 목록 표시와 검색에 필요한 최소 메타데이터만 포함합니다.
+목록 API(`GET /api/results`)의 각 content 항목은 상세 분석 전체를 싣지 않고, 목록 표시와 검색에 필요한 최소 메타데이터만 포함합니다. 상세 API(`GET /api/results/{jobId}`)도 같은 기준으로 `feedback`, `visualAnalysis.model`, `pipeline`을 정규화해 목록과 상세 화면의 생성 방식 표시가 어긋나지 않도록 합니다. 단, 상세 API의 `visualAnalysis.observations` 같은 세부 관찰 데이터는 보존됩니다. 완료된 작업의 결과 파일이 없거나 비어 있으면 상세 API도 500으로 끊지 않고 `dataIssue=RESULT_DATA_UNAVAILABLE`과 기본 결과 구조를 반환합니다.
 
 - `feedback.generationMode/model/realApiUsed/fallbackReason/overall`
 - `visualAnalysis.model.name/version/generationMode`
@@ -1280,6 +1284,10 @@ UNKNOWN
 - 기존 결과 파일에 Video LLM 생성 메타데이터가 없는 경우
 
 ```
+
+## AI 코치 대화 제약
+
+AI 코치 대화(`POST /api/results/{jobId}/coach/messages`)는 완료된 분석 작업에서만 사용할 수 있습니다. 또한 OpenAI 호출에 필요한 `compact-analysis.json` 요약 데이터가 있어야 하며, 이 파일이 없거나 비어 있으면 대화 이력 생성, 일일 한도 차감, OpenAI 호출을 수행하지 않고 400 응답으로 중단합니다. 이 경우 결과 상세의 손상 안내를 확인한 뒤 재분석이 필요할 수 있습니다.
 
 ### 아직 실제 구현이 필요한 범위:
 

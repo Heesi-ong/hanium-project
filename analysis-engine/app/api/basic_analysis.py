@@ -1,7 +1,10 @@
 import logging
+import math
 import os
 import shutil
 import subprocess
+import wave
+from array import array
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -70,10 +73,13 @@ SILENCE_WEIGHT = 0.25
 FILLER_WEIGHT = 0.25
 VOLUME_STABILITY_WEIGHT = 0.15
 
-# 음량(RMS/dB) 분석은 아직 구현되지 않았습니다. 구현 전까지 15% 자리를 흔들지 않도록
-# 중립 기본값(80점)을 사용합니다. 실제 음량 분석이 들어오면 이 상수를 계산값으로 교체합니다.
+# 음량 안정성은 추출된 WAV를 0.5초 단위로 나누고, 비침묵 구간의 RMS dBFS 표준편차로 계산합니다.
+# STT 실패 시에도 오디오 추출만 성공하면 같은 계산값을 사용하고, 오디오가 없거나 너무 짧으면
+# 기존 중립 기본값(80점)으로 fallback합니다.
 VOLUME_STABILITY_BASELINE_SCORE = 80
-VOLUME_STABILITY_IMPLEMENTED = False
+VOLUME_STABILITY_IMPLEMENTED = True
+VOLUME_ANALYSIS_WINDOW_SEC = 0.5
+VOLUME_SILENCE_DBFS_THRESHOLD = -55.0
 
 # 전체 패널티(신뢰도) 기준입니다. 탐지율이 낮거나 영상이 너무 짧으면 총점에서 감점합니다.
 POSE_LOW_DETECTION_THRESHOLD = 0.5
@@ -1449,6 +1455,7 @@ def analyze_speech_from_stt(
 
     speech_speed_score = calculate_speech_speed_score(speech_speed_wpm)
     silence_score = calculate_silence_score(pause_analysis["silenceRatio"])
+    volume_analysis = analyze_volume_stability(audio_extraction_result)
 
     return {
         "analysisMethod": "stt_based_analysis",
@@ -1464,7 +1471,7 @@ def analyze_speech_from_stt(
         "totalSilenceTime": pause_analysis["totalSilenceTime"],
         "silenceRatio": pause_analysis["silenceRatio"],
         "silenceScore": silence_score,
-        "volumeStabilityScore": VOLUME_STABILITY_BASELINE_SCORE,
+        **volume_analysis,
         # speechScore는 finalize_speech_score()에서 말속도/침묵/필러/음량을 합쳐 확정합니다.
         "speechScore": 0,
         "note": "faster-whisper STT 결과를 기반으로 말하기 속도와 침묵 구간을 계산했습니다.",
@@ -1499,6 +1506,7 @@ def analyze_speech_from_video_duration(
 
     speech_speed_score = calculate_speech_speed_score(speech_speed_wpm)
     silence_score = calculate_silence_score(silence_ratio)
+    volume_analysis = analyze_volume_stability(audio_extraction_result)
 
     return {
         "analysisMethod": "audio_extracted_duration_based_estimation",
@@ -1514,11 +1522,133 @@ def analyze_speech_from_video_duration(
         "totalSilenceTime": estimated_pause_duration_sec,
         "silenceRatio": silence_ratio,
         "silenceScore": silence_score,
-        "volumeStabilityScore": VOLUME_STABILITY_BASELINE_SCORE,
+        **volume_analysis,
         # speechScore는 finalize_speech_score()에서 말속도/침묵/필러/음량을 합쳐 확정합니다.
         "speechScore": 0,
         "note": "오디오는 추출했지만 STT에 실패하여 영상 길이 기반 추정값을 사용했습니다.",
     }
+
+
+def analyze_volume_stability(audio_extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    audio_path = audio_extraction_result.get("audioPath")
+
+    if not audio_extraction_result.get("success") or not audio_path:
+        return create_volume_stability_fallback("audio_unavailable")
+
+    try:
+        return calculate_volume_stability_from_wav(Path(audio_path))
+    except Exception as exception:
+        logger.warning(
+            "음량 안정성 분석에 실패해 중립 기본값을 사용합니다. audioPath=%s",
+            audio_path,
+            exc_info=True,
+        )
+        return create_volume_stability_fallback("analysis_failed")
+
+
+def create_volume_stability_fallback(reason: str) -> Dict[str, Any]:
+    return {
+        "volumeStabilityScore": VOLUME_STABILITY_BASELINE_SCORE,
+        "volumeStabilityImplemented": False,
+        "volumeStabilityFallbackReason": reason,
+        "volumeRmsDbStdDev": None,
+        "volumeAnalyzedWindowCount": 0,
+        "volumeSilentWindowCount": 0,
+    }
+
+
+def calculate_volume_stability_from_wav(audio_path: Path) -> Dict[str, Any]:
+    if not audio_path.exists() or audio_path.stat().st_size == 0:
+        return create_volume_stability_fallback("audio_file_missing")
+
+    non_silent_dbfs_values: List[float] = []
+    silent_window_count = 0
+    total_window_count = 0
+
+    with wave.open(str(audio_path), "rb") as wav_file:
+        sample_width = wav_file.getsampwidth()
+        channel_count = wav_file.getnchannels()
+        frame_rate = wav_file.getframerate()
+        window_frame_count = max(int(frame_rate * VOLUME_ANALYSIS_WINDOW_SEC), 1)
+
+        if sample_width != 2:
+            return create_volume_stability_fallback("unsupported_sample_width")
+
+        while True:
+            frames = wav_file.readframes(window_frame_count)
+            if not frames:
+                break
+
+            total_window_count += 1
+            rms = calculate_pcm16_rms(frames, channel_count)
+            dbfs = calculate_dbfs(rms)
+
+            if dbfs <= VOLUME_SILENCE_DBFS_THRESHOLD:
+                silent_window_count += 1
+                continue
+
+            non_silent_dbfs_values.append(dbfs)
+
+    if len(non_silent_dbfs_values) < 2:
+        fallback = create_volume_stability_fallback("insufficient_non_silent_audio")
+        fallback["volumeSilentWindowCount"] = silent_window_count
+        fallback["volumeAnalyzedWindowCount"] = total_window_count
+        return fallback
+
+    std_dev = calculate_population_std_dev(non_silent_dbfs_values)
+    score = calculate_volume_stability_score(std_dev)
+
+    return {
+        "volumeStabilityScore": score,
+        "volumeStabilityImplemented": True,
+        "volumeStabilityFallbackReason": "",
+        "volumeRmsDbStdDev": round(std_dev, 2),
+        "volumeAnalyzedWindowCount": total_window_count,
+        "volumeSilentWindowCount": silent_window_count,
+    }
+
+
+def calculate_pcm16_rms(frames: bytes, channel_count: int) -> float:
+    if not frames:
+        return 0.0
+
+    samples = array("h")
+    samples.frombytes(frames)
+
+    if channel_count > 1:
+        samples = array("h", samples[::channel_count])
+
+    if not samples:
+        return 0.0
+
+    square_sum = sum(sample * sample for sample in samples)
+    return math.sqrt(square_sum / len(samples))
+
+
+def calculate_dbfs(rms: float) -> float:
+    if rms <= 0:
+        return -120.0
+
+    return 20 * math.log10(rms / 32768.0)
+
+
+def calculate_population_std_dev(values: List[float]) -> float:
+    average = sum(values) / len(values)
+    variance = sum((value - average) ** 2 for value in values) / len(values)
+    return math.sqrt(variance)
+
+
+def calculate_volume_stability_score(dbfs_std_dev: float) -> int:
+    if dbfs_std_dev <= 3:
+        return 100
+
+    if dbfs_std_dev <= 6:
+        return 80
+
+    if dbfs_std_dev <= 10:
+        return 60
+
+    return 40
 
 
 def blend_speech_score(
@@ -1548,8 +1678,8 @@ def finalize_speech_score(
     """필러 분석이 끝난 뒤 음성 점수를 최종 확정합니다.
 
     필러 점수는 필러 분석 이후에야 알 수 있어, 자세/시선처럼 즉시 계산하지 않고
-    이 함수에서 마지막으로 합칩니다. 음량 안정성은 아직 미구현이라 중립 기본값을 씁니다.
-    audio_result 딕셔너리를 직접 수정하고 그대로 반환합니다.
+    이 함수에서 마지막으로 합칩니다. 음량 안정성은 오디오 추출이 성공하면 WAV RMS 변동성으로
+    이미 계산되어 있고, 오디오가 부족하면 중립 기본값으로 fallback됩니다.
     """
     speech_speed_score = int(audio_result.get("speechSpeedScore", 0))
     silence_score = int(audio_result.get("silenceScore", 0))
@@ -1567,7 +1697,9 @@ def finalize_speech_score(
 
     audio_result["fillerScore"] = filler_score
     audio_result["volumeStabilityScore"] = volume_stability_score
-    audio_result["volumeStabilityImplemented"] = VOLUME_STABILITY_IMPLEMENTED
+    audio_result["volumeStabilityImplemented"] = bool(
+        audio_result.get("volumeStabilityImplemented", VOLUME_STABILITY_IMPLEMENTED)
+    )
     audio_result["speechScore"] = speech_score
     audio_result["speechScoreWeights"] = {
         "speechSpeed": SPEECH_SPEED_WEIGHT,
@@ -2161,6 +2293,11 @@ def create_empty_audio_result() -> Dict[str, Any]:
         "silenceRatio": 0,
         "silenceScore": 0,
         "volumeStabilityScore": 0,
+        "volumeStabilityImplemented": False,
+        "volumeStabilityFallbackReason": "audio_unavailable",
+        "volumeRmsDbStdDev": None,
+        "volumeAnalyzedWindowCount": 0,
+        "volumeSilentWindowCount": 0,
         "fillerScore": 0,
         "speechScore": 0,
         "note": "영상 정보를 읽지 못해 음성 분석을 수행하지 못했습니다.",

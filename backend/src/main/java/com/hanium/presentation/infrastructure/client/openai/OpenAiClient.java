@@ -323,7 +323,7 @@ public class OpenAiClient {
         }
 
         if (speechScore >= 75) {
-            strengths.add("말하기 속도와 침묵 흐름이 비교적 안정적이어서 내용 전달이 자연스럽습니다.");
+            strengths.add("말하기 속도, 침묵 흐름, 음량 안정성이 비교적 안정적이어서 내용 전달이 자연스럽습니다.");
         }
 
         if (gestureScore >= 75) {
@@ -375,6 +375,16 @@ public class OpenAiClient {
                             + createOptionalNumberText(" WPM", getInt(speechSummary, "speechSpeedWpm"))
                             + createOptionalNumberText(" 침묵 횟수", getInt(speechSummary, "silenceCount"))
                             + createOptionalMetricText(" 침묵 비율", getDouble(speechSummary, "silenceRatio"), true)
+                            + createOptionalNumberText(" 음량 안정성", getInt(speechSummary, "volumeStabilityScore"))
+            );
+        }
+
+        if (getInt(speechSummary, "volumeStabilityScore") < 70
+                && Boolean.TRUE.equals(speechSummary.get("volumeStabilityImplemented"))) {
+            improvements.add(
+                    "음량 변화 폭이 커서 문장별 전달력이 고르지 않게 들릴 수 있습니다. 마이크와의 거리를 일정하게 유지하고, 강조 구간에서도 갑자기 크게 말하기보다 속도와 호흡으로 강약을 조절하세요."
+                            + createOptionalNumberText(" 음량 안정성", getInt(speechSummary, "volumeStabilityScore"))
+                            + createOptionalMetricText(" RMS dB 표준편차", getDouble(speechSummary, "volumeRmsDbStdDev"), false)
             );
         }
 
@@ -402,8 +412,14 @@ public class OpenAiClient {
             );
         }
 
-        if (getBoolean(transcriptSummary, "sttSuccess")) {
-            improvements.add("STT transcript는 현재 LLM 입력용 원문 데이터로만 사용됩니다. 발표 내용 구조 분석은 추후 LLM 또는 별도 분석 단계에서 처리하는 것이 좋습니다.");
+        Map<String, Object> contentStructure = nullSafeMap(transcriptSummary.get("contentStructure"));
+        if (getBoolean(transcriptSummary, "sttSuccess")
+                && "needs_structure_markers".equals(contentStructure.get("structureHint"))) {
+            improvements.add(
+                    "발표 내용의 구조 표지가 부족하게 감지되었습니다. '먼저', '다음으로', '결론적으로'처럼 흐름을 알려주는 표현을 넣으면 청중이 핵심 메시지를 따라가기 쉬워집니다."
+                            + createOptionalNumberText(" 문장 수", getInt(contentStructure, "sentenceCount"))
+                            + " 구조 표지: " + getInt(contentStructure, "transitionMarkerCount") + "."
+            );
         }
 
         if (improvements.isEmpty()) {
@@ -540,7 +556,9 @@ public class OpenAiClient {
                         + getInt(speechSummary, "silenceCount")
                         + "회, 필러 수 "
                         + getInt(speechSummary, "fillerCount")
-                        + "개가 확인되었습니다.",
+                        + "개, 음량 안정성 "
+                        + getInt(speechSummary, "volumeStabilityScore")
+                        + "점이 확인되었습니다.",
                 "발표 초반에는 속도를 안정적으로 잡고, 중간 이후에는 문장 사이 호흡을 일정하게 유지하세요."
         ));
 

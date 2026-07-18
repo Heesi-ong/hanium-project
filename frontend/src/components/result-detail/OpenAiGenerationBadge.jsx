@@ -1,3 +1,8 @@
+import {
+    firstMeaningfulResultValue,
+    isMeaningfulResultValue,
+} from "./resultDetailFormatters";
+
 function getGenerationModeLabel(mode) {
     if (mode === "REAL") {
         return "REAL";
@@ -58,10 +63,26 @@ function getGenerationModeClassName(mode) {
     return "ai-mode-badge unknown";
 }
 
-function OpenAiGenerationBadge({ feedback }) {
-    const generationMode = feedback?.generationMode || "UNKNOWN";
-    const model = feedback?.model || "-";
-    const realApiUsed = feedback?.realApiUsed === true;
+function resolveRealApiUsed(feedback, pipeline) {
+    if (isMeaningfulResultValue(feedback?.generationMode)) {
+        return feedback?.realApiUsed === true;
+    }
+
+    if (typeof pipeline?.openAiRealApiUsed === "boolean") {
+        return pipeline.openAiRealApiUsed;
+    }
+
+    return feedback?.realApiUsed === true;
+}
+
+function OpenAiGenerationBadge({ feedback, pipeline }) {
+    const generationMode = firstMeaningfulResultValue(
+        feedback?.generationMode,
+        pipeline?.openAiGenerationMode,
+        "UNKNOWN"
+    );
+    const model = firstMeaningfulResultValue(feedback?.model, pipeline?.openAiModel, "-");
+    const realApiUsed = resolveRealApiUsed(feedback, pipeline);
 
     return (
         <div className="ai-mode-wrap">

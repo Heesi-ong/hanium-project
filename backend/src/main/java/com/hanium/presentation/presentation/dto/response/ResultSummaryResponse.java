@@ -121,6 +121,22 @@ public record ResultSummaryResponse(
         );
     }
 
+    public static Map<String, Object> normalizeFinalResult(
+            Map<String, Object> finalResult
+    ) {
+        Map<String, Object> normalizedResult = finalResult == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(finalResult);
+        Map<String, Object> pipeline = extractPipeline(finalResult);
+
+        normalizedResult.put("scoreSummary", extractScoreSummary(finalResult));
+        normalizedResult.put("feedback", extractFeedback(finalResult, pipeline));
+        normalizedResult.put("visualAnalysis", extractVisualAnalysisDetail(finalResult, pipeline));
+        normalizedResult.put("pipeline", pipeline);
+
+        return normalizedResult;
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> extractScoreSummary(
             Map<String, Object> finalResult
@@ -222,6 +238,52 @@ public record ResultSummaryResponse(
 
                 return normalizedVisualAnalysis;
             }
+        }
+
+        return createVisualAnalysisFromPipeline(pipeline);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractVisualAnalysisDetail(
+            Map<String, Object> finalResult,
+            Map<String, Object> pipeline
+    ) {
+        if (finalResult == null) {
+            return createVisualAnalysisFromPipeline(pipeline);
+        }
+
+        Object visualAnalysis = finalResult.get("visualAnalysis");
+
+        if (visualAnalysis instanceof Map<?, ?> map) {
+            Map<String, Object> source = (Map<String, Object>) map;
+            Map<String, Object> normalizedVisualAnalysis = new LinkedHashMap<>(source);
+            Object model = source.get("model");
+            Object pipelineGenerationMode = pipeline.get("videoLlmGenerationMode");
+            Object pipelineAnalysis = pipeline.get("videoLlmAnalysis");
+
+            if (model instanceof Map<?, ?> modelMap) {
+                Map<String, Object> modelSource = (Map<String, Object>) modelMap;
+                Map<String, Object> normalizedModel = new LinkedHashMap<>(modelSource);
+
+                normalizedModel.put("name", getFirstMeaningful(
+                        getOrDefault(modelSource, "name", "-"),
+                        pipelineAnalysis,
+                        "-"
+                ));
+                normalizedModel.put("version", getOrDefault(modelSource, "version", "-"));
+                normalizedModel.put("generationMode", getFirstMeaningful(
+                        getOrDefault(modelSource, "generationMode", "UNKNOWN"),
+                        pipelineGenerationMode,
+                        "UNKNOWN"
+                ));
+                normalizedVisualAnalysis.put("model", normalizedModel);
+
+                return normalizedVisualAnalysis;
+            }
+
+            normalizedVisualAnalysis.put("model", createVisualAnalysisFromPipeline(pipeline).get("model"));
+
+            return normalizedVisualAnalysis;
         }
 
         return createVisualAnalysisFromPipeline(pipeline);
@@ -380,6 +442,14 @@ public record ResultSummaryResponse(
     public static String resolveDataIssueDescription(String dataIssue) {
         if ("RESULT_DATA_INCOMPLETE".equals(dataIssue)) {
             return "분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다. 재분석이 필요할 수 있습니다.";
+        }
+
+        if ("RESULT_DATA_UNAVAILABLE".equals(dataIssue)) {
+            return "분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요.";
+        }
+
+        if ("MISSING_VIDEO".equals(dataIssue)) {
+            return "업로드된 영상 정보를 찾을 수 없습니다. 관리자에게 문의하세요.";
         }
 
         return null;

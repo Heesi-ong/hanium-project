@@ -10,7 +10,12 @@ import java.time.LocalDateTime;
 
 @Getter
 @Entity
-@Table(name = "uploaded_videos")
+@Table(
+        name = "uploaded_videos",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_uploaded_videos_job_id", columnNames = "job_id")
+        }
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UploadedVideo {
 
@@ -18,7 +23,7 @@ public class UploadedVideo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 50)
+    @Column(nullable = false, unique = true, length = 50)
     private String jobId;
 
     @Column(nullable = false, length = 255)

@@ -85,6 +85,9 @@ function ResultDetailPage() {
         resultData?.dataIssueDescription ||
         result.dataIssueDescription ||
         "";
+    const coachDisabledReason = dataIssue
+        ? dataIssueDescription || "이 결과의 일부 데이터에 문제가 있어 AI 코치를 사용할 수 없습니다. 재분석이 필요할 수 있습니다."
+        : "";
 
     const scoreSummary = result.scoreSummary || EMPTY_OBJECT;
     const basicAnalysis = result.basicAnalysis || EMPTY_OBJECT;
@@ -239,25 +242,13 @@ function ResultDetailPage() {
         }
     }, [jobId]);
 
-    useEffect(() => {
-        const loadTimer = window.setTimeout(() => {
-            loadResult();
-        }, 0);
-
-        return () => {
-            window.clearTimeout(loadTimer);
-            stopPolling();
-            stopRateLimitCooldown();
-        };
-    }, [loadResult, stopPolling, stopRateLimitCooldown]);
-
-    async function fetchStatusOnce(targetJobId) {
+    const fetchStatusOnce = useCallback(async (targetJobId) => {
         const response = await getAnalysisStatus(targetJobId);
         setAnalysisStatus(response.data);
         return response.data;
-    }
+    }, []);
 
-    function startStatusPolling(targetJobId) {
+    const startStatusPolling = useCallback((targetJobId) => {
         stopPolling();
 
         pollingStartedAtRef.current = Date.now();
@@ -308,7 +299,29 @@ function ResultDetailPage() {
                 // MAX_CONSECUTIVE_POLL_FAILURES 미만이면 다음 폴링 주기에 자동 재시도합니다.
             }
         }, POLLING_INTERVAL_MS);
-    }
+    }, [fetchStatusOnce, loadResult, stopPolling]);
+
+    useEffect(() => {
+        const loadTimer = window.setTimeout(() => {
+            loadResult();
+        }, 0);
+
+        return () => {
+            window.clearTimeout(loadTimer);
+            stopPolling();
+            stopRateLimitCooldown();
+        };
+    }, [loadResult, stopPolling, stopRateLimitCooldown]);
+
+    useEffect(() => {
+        if (jobId && isRunning && !polling) {
+            const pollingStartTimer = window.setTimeout(() => {
+                startStatusPolling(jobId);
+            }, 0);
+
+            return () => window.clearTimeout(pollingStartTimer);
+        }
+    }, [isRunning, jobId, polling, startStatusPolling]);
 
     function startRateLimitCooldown() {
         stopRateLimitCooldown();
@@ -773,12 +786,17 @@ function ResultDetailPage() {
                 <FeedbackSection
                     feedback={feedback}
                     visualAnalysis={visualAnalysis}
+                    pipeline={pipeline}
                     onSeekToTime={handleSeekToObservation}
                 />
             </AnimatedSection>
 
             <AnimatedSection className="no-print">
-                <CoachChatSection jobId={jobId} isCompleted={isCompleted} />
+                <CoachChatSection
+                    jobId={jobId}
+                    isCompleted={isCompleted}
+                    disabledReason={coachDisabledReason}
+                />
             </AnimatedSection>
 
             <AnimatedSection>

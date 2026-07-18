@@ -4,6 +4,8 @@ import com.hanium.presentation.global.properties.AdminProperties;
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
+import com.hanium.presentation.global.properties.ApiDocsProperties;
+import com.hanium.presentation.global.properties.ClientIpProperties;
 import com.hanium.presentation.global.properties.MinioProperties;
 import com.hanium.presentation.global.properties.ObjectStoragePolicyProperties;
 import com.hanium.presentation.global.properties.OpenAiProperties;
@@ -25,6 +27,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         AnalysisQueueProperties.class,
         VideoProperties.class,
         AdminProperties.class,
+        ApiDocsProperties.class,
+        ClientIpProperties.class,
         MinioProperties.class,
         ObjectStoragePolicyProperties.class
 })

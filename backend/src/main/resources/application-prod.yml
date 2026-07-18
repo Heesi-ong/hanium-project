@@ -19,9 +19,21 @@ spring:
   flyway:
     enabled: true
 
+security:
+  jwt:
+    # 운영 프로필은 Compose 없이 직접 실행해도 인증 쿠키가 HTTPS에서만 전송되도록 둡니다.
+    cookie-secure: ${SECURITY_JWT_COOKIE_SECURE:true}
+  api-docs:
+    # 운영 프로필은 Compose를 거치지 않고 띄워도 API 스펙을 기본 비공개로 둡니다.
+    public-enabled: ${SECURITY_API_DOCS_PUBLIC_ENABLED:false}
+
 storage:
   object-storage:
     # 운영 다중 인스턴스에서는 새 파일이 인스턴스 로컬에만 남는 성공을 허용하지 않습니다.
     write-required: ${STORAGE_OBJECT_WRITE_REQUIRED:true}
     # API/워커가 서로 다른 로컬 디스크를 써도 결과를 조회할 수 있도록 MinIO를 먼저 읽습니다.
     read-preferred: ${STORAGE_OBJECT_READ_PREFERRED:true}
+
+video:
+  # 운영에서는 ffprobe 실패를 길이 제한 우회로 허용하지 않습니다.
+  duration-probe-required: ${VIDEO_DURATION_PROBE_REQUIRED:true}

@@ -188,7 +188,10 @@ function AdminUserDetailPage() {
                                     </p>
                                 )}
 
-                                <OpenAiGenerationBadge feedback={result.feedback} />
+                                <OpenAiGenerationBadge
+                                    feedback={result.feedback}
+                                    pipeline={result.pipeline}
+                                />
                                 <VideoLlmGenerationBadge result={result} />
 
                                 <div className="result-score-row">

@@ -2,7 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { engineHealthCheck, healthCheck } from "../api/analysisApi";
+import { API_BASE_URL } from "../api/apiClient";
 import StatusPage from "./StatusPage";
+import { resolveBackendBaseUrl } from "./statusPageUtils";
 
 vi.mock("../api/analysisApi", () => ({
     healthCheck: vi.fn(),
@@ -64,7 +66,7 @@ describe("StatusPage", () => {
         expect(await screen.findByText("Spring Boot Backend")).toBeInTheDocument();
         expect(screen.getByText("Analysis Engine")).toBeInTheDocument();
         expect(screen.getByText("Video LLM Engine")).toBeInTheDocument();
-        expect(screen.getByText("http://localhost:8080")).toBeInTheDocument();
+        expect(screen.getByText(API_BASE_URL || window.location.origin)).toBeInTheDocument();
         expect(screen.getByText("http://analysis-engine:8001")).toBeInTheDocument();
         expect(screen.getByText("http://video-llm-engine:8002")).toBeInTheDocument();
         await screen.findByText("Analysis 엔진 내부 API 키 인증에 실패했습니다.");
@@ -79,5 +81,10 @@ describe("StatusPage", () => {
             expect(healthCheck).toHaveBeenCalledTimes(1);
             expect(engineHealthCheck).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it("resolves the backend base URL from config and falls back to the current origin", () => {
+        expect(resolveBackendBaseUrl("https://api.example.com", "https://app.example.com")).toBe("https://api.example.com");
+        expect(resolveBackendBaseUrl("", "https://app.example.com")).toBe("https://app.example.com");
     });
 });

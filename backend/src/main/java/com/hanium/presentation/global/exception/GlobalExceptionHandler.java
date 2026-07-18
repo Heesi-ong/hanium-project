@@ -1,6 +1,8 @@
 package com.hanium.presentation.global.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
@@ -15,6 +17,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
@@ -108,6 +112,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception exception) {
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
+
+        log.error("UNHANDLED_EXCEPTION type={} message={}",
+                exception.getClass().getName(),
+                exception.getMessage(),
+                exception
+        );
 
         return ResponseEntity
                 .status(errorCode.getStatus())

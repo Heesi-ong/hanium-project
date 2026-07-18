@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import ResultDetailPage from "./ResultDetailPage";
@@ -12,12 +12,22 @@ const analysisApiMock = vi.hoisted(() => ({
     retryAnalysis: vi.fn(),
 }));
 
+const coachApiMock = vi.hoisted(() => ({
+    getCoachMessages: vi.fn(),
+    sendCoachMessage: vi.fn(),
+}));
+
 vi.mock("../api/analysisApi", () => ({
     cancelAnalysis: analysisApiMock.cancelAnalysis,
     deleteResult: analysisApiMock.deleteResult,
     getAnalysisStatus: analysisApiMock.getAnalysisStatus,
     getResult: analysisApiMock.getResult,
     retryAnalysis: analysisApiMock.retryAnalysis,
+}));
+
+vi.mock("../api/coachApi", () => ({
+    getCoachMessages: coachApiMock.getCoachMessages,
+    sendCoachMessage: coachApiMock.sendCoachMessage,
 }));
 
 vi.mock("../components/chart/AnalysisMetricBarChart", () => ({
@@ -88,17 +98,25 @@ function createCompletedResult() {
 
 describe("ResultDetailPage", () => {
     beforeEach(() => {
+        vi.useRealTimers();
         analysisApiMock.cancelAnalysis.mockReset();
         analysisApiMock.deleteResult.mockReset();
         analysisApiMock.getAnalysisStatus.mockReset();
         analysisApiMock.getResult.mockReset();
         analysisApiMock.retryAnalysis.mockReset();
+        coachApiMock.getCoachMessages.mockReset();
+        coachApiMock.sendCoachMessage.mockReset();
         analysisApiMock.getResult.mockResolvedValue(createCompletedResult());
+        coachApiMock.getCoachMessages.mockResolvedValue({ data: { messages: [] } });
 
         Object.defineProperty(window, "print", {
             configurable: true,
             value: vi.fn(),
         });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it("calls window.print when the print button is clicked", async () => {
@@ -143,5 +161,51 @@ describe("ResultDetailPage", () => {
         renderResultDetailPage();
 
         expect(await screen.findByRole("alert")).toHaveTextContent("불완전");
+        expect(
+            screen.getByText("분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다.")
+        ).toBeInTheDocument();
+        expect(coachApiMock.getCoachMessages).not.toHaveBeenCalled();
+    });
+
+    it("polls status when an in-progress result is opened and reloads on completion", async () => {
+        vi.useFakeTimers();
+
+        const runningResult = createCompletedResult();
+        runningResult.data.result.status = "QUEUED";
+        runningResult.data.result.scoreSummary = {
+            level: "-",
+            totalScore: null,
+        };
+
+        analysisApiMock.getResult
+            .mockResolvedValueOnce(runningResult)
+            .mockResolvedValueOnce(createCompletedResult());
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId: "job-print-test",
+                status: "COMPLETED",
+                statusDescription: "분석 완료",
+                failReason: null,
+            },
+        });
+
+        renderResultDetailPage();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+
+        expect(screen.getAllByText("QUEUED").length).toBeGreaterThan(0);
+
+        expect(screen.getByText(/분석 상태를 자동으로 확인하는 중입니다/)).toBeInTheDocument();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1500);
+        });
+
+        expect(analysisApiMock.getAnalysisStatus).toHaveBeenCalledWith("job-print-test");
+        expect(analysisApiMock.getResult).toHaveBeenCalledTimes(2);
+
+        expect(screen.getByText("분석이 완료되었습니다. 최신 결과가 화면에 반영되었습니다.")).toBeInTheDocument();
     });
 });

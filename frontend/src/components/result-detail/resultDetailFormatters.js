@@ -77,6 +77,27 @@ export function formatBoolean(value) {
     return "-";
 }
 
+export function isMeaningfulResultValue(value) {
+    if (value === null || value === undefined) {
+        return false;
+    }
+
+    const text = String(value).trim();
+    return text.length > 0 && text !== "-" && text !== "UNKNOWN";
+}
+
+export function firstMeaningfulResultValue(primaryValue, fallbackValue, defaultValue) {
+    if (isMeaningfulResultValue(primaryValue)) {
+        return primaryValue;
+    }
+
+    if (isMeaningfulResultValue(fallbackValue)) {
+        return fallbackValue;
+    }
+
+    return defaultValue;
+}
+
 export function formatEmotionLabel(label) {
     if (label === "neutral") {
         return "중립";

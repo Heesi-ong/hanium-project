@@ -137,7 +137,7 @@ class MinioObjectStorageIntegrationTest {
                 new FilePathGenerator(storageProperties),
                 storageProperties,
                 videoPath -> java.util.Optional.empty(),
-                new VideoProperties(30L),
+                new VideoProperties(30L, false),
                 objectStorage,
                 new ObjectStoragePolicyProperties(true, true)
         );

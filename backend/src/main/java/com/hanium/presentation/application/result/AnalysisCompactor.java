@@ -42,7 +42,7 @@ public class AnalysisCompactor {
         dataPolicy.put("rawMetrics", "analysis-engine에서 생성한 원시 분석 지표입니다.");
         dataPolicy.put("modelInputs", "LLM 또는 Mock 피드백 생성기가 우선 참고할 요약 입력입니다.");
         dataPolicy.put("ruleBasedInterpretation", "현재 단계에서는 생성하지 않습니다.");
-        dataPolicy.put("contentAnalysis", "STT transcript 기반 내용 분석은 아직 수행하지 않습니다.");
+        dataPolicy.put("contentAnalysis", "STT transcript 기반 발표 내용 구조 지표를 룰 기반으로 요약합니다.");
         dataPolicy.put("videoLlmAnalysis", resolveVideoLlmDataPolicy(videoLlmGenerationMode));
         dataPolicy.put("videoLlmGenerationMode", videoLlmGenerationMode);
         dataPolicy.put("openAiFeedback", "OpenAI 피드백은 런타임 설정과 API 호출 결과에 따라 REAL, MOCK, FALLBACK 중 하나로 생성됩니다.");
@@ -139,6 +139,12 @@ public class AnalysisCompactor {
         speechSummary.put("totalSilenceTime", getOrDefault(audio, "totalSilenceTime", 0));
         speechSummary.put("silenceRatio", getOrDefault(audio, "silenceRatio", 0));
         speechSummary.put("silenceScore", getOrDefault(audio, "silenceScore", 0));
+        speechSummary.put("volumeStabilityScore", getOrDefault(audio, "volumeStabilityScore", 0));
+        speechSummary.put("volumeStabilityImplemented", getOrDefault(audio, "volumeStabilityImplemented", false));
+        speechSummary.put("volumeStabilityFallbackReason", getOrDefault(audio, "volumeStabilityFallbackReason", ""));
+        speechSummary.put("volumeRmsDbStdDev", getOrDefault(audio, "volumeRmsDbStdDev", null));
+        speechSummary.put("volumeAnalyzedWindowCount", getOrDefault(audio, "volumeAnalyzedWindowCount", 0));
+        speechSummary.put("volumeSilentWindowCount", getOrDefault(audio, "volumeSilentWindowCount", 0));
         speechSummary.put("estimatedWordCount", getOrDefault(audio, "estimatedWordCount", 0));
         speechSummary.put("fillerScore", getOrDefault(filler, "fillerScore", 0));
         speechSummary.put("fillerCount", getOrDefault(filler, "fillerCount", 0));
@@ -203,9 +209,112 @@ public class AnalysisCompactor {
         transcriptSummary.put("segmentCount", getOrDefault(stt, "segmentCount", 0));
         transcriptSummary.put("wordCount", getOrDefault(stt, "wordCount", 0));
         transcriptSummary.put("transcript", getOrDefault(stt, "transcript", ""));
-        transcriptSummary.put("note", "현재 transcript는 LLM 입력용으로만 전달하며, 룰 기반 발표 내용 분석은 아직 수행하지 않습니다.");
+        transcriptSummary.put("contentStructure", createContentStructureSummary(
+                getOrDefault(stt, "transcript", "").toString()
+        ));
+        transcriptSummary.put("note", "STT transcript와 룰 기반 발표 내용 구조 지표를 함께 제공합니다. 주제 적합성이나 사실성 판단은 LLM 피드백 단계에서만 다룹니다.");
 
         return transcriptSummary;
+    }
+
+    private Map<String, Object> createContentStructureSummary(String transcript) {
+        String normalizedTranscript = normalizeTranscript(transcript);
+        java.util.List<String> sentences = splitSentences(normalizedTranscript);
+        java.util.List<String> words = splitWords(normalizedTranscript);
+
+        int sentenceCount = sentences.size();
+        int wordCount = words.size();
+        int questionSentenceCount = countQuestionSentences(transcript);
+        int transitionMarkerCount = countTransitionMarkers(words);
+
+        Map<String, Object> contentStructure = new LinkedHashMap<>();
+        contentStructure.put("available", !normalizedTranscript.isBlank());
+        contentStructure.put("sentenceCount", sentenceCount);
+        contentStructure.put("wordCount", wordCount);
+        contentStructure.put("averageWordsPerSentence", sentenceCount == 0
+                ? 0
+                : Math.round((wordCount * 10.0) / sentenceCount) / 10.0);
+        contentStructure.put("questionSentenceCount", questionSentenceCount);
+        contentStructure.put("transitionMarkerCount", transitionMarkerCount);
+        contentStructure.put("structureHint", resolveStructureHint(sentenceCount, transitionMarkerCount));
+
+        return contentStructure;
+    }
+
+    private String normalizeTranscript(String transcript) {
+        if (transcript == null) {
+            return "";
+        }
+
+        return transcript.trim().replaceAll("\\s+", " ");
+    }
+
+    private java.util.List<String> splitSentences(String transcript) {
+        if (transcript.isBlank()) {
+            return java.util.List.of();
+        }
+
+        return java.util.Arrays.stream(transcript.split("[.!?。？！]+|\\n+"))
+                .map(String::trim)
+                .filter(sentence -> !sentence.isBlank())
+                .toList();
+    }
+
+    private java.util.List<String> splitWords(String transcript) {
+        if (transcript.isBlank()) {
+            return java.util.List.of();
+        }
+
+        return java.util.Arrays.stream(transcript.split("\\s+"))
+                .map(String::trim)
+                .filter(word -> !word.isBlank())
+                .toList();
+    }
+
+    private int countQuestionSentences(String transcript) {
+        if (transcript == null || transcript.isBlank()) {
+            return 0;
+        }
+
+        int count = 0;
+        for (char character : transcript.toCharArray()) {
+            if (character == '?' || character == '？') {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countTransitionMarkers(java.util.List<String> words) {
+        java.util.Set<String> transitionMarkers = java.util.Set.of(
+                "첫째", "둘째", "셋째", "마지막으로", "결론적으로", "따라서", "그러므로",
+                "또한", "반면", "하지만", "그리고", "먼저", "다음으로", "요약하면"
+        );
+
+        int count = 0;
+        for (String word : words) {
+            String normalizedWord = word.replaceAll("[,.;:!?。？！]", "");
+            if (transitionMarkers.contains(normalizedWord)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String resolveStructureHint(int sentenceCount, int transitionMarkerCount) {
+        if (sentenceCount == 0) {
+            return "transcript_unavailable";
+        }
+
+        if (transitionMarkerCount >= 3) {
+            return "structured";
+        }
+
+        if (sentenceCount >= 3 && transitionMarkerCount >= 1) {
+            return "partially_structured";
+        }
+
+        return "needs_structure_markers";
     }
 
     private Map<String, Object> createFeedbackFocus(

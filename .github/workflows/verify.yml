@@ -85,6 +85,12 @@ jobs:
       - run: npm run test
       - run: npm run build
       - run: npm audit --audit-level=high
+      # 공개(로그인 불필요) 페이지의 라우팅/렌더 회귀와 2026-07-16 P0 명암비 버그
+      # 같은 유형을 잡는 E2E다. 백엔드 없이 프론트 dev 서버만으로 실행 가능한
+      # public-flow.spec.js만 CI에서 돈다(E2E_FULL_STACK 미설정이면 로그인 필요
+      # 스펙은 자체적으로 skip된다) — 전체 스택 E2E는 아직 CI에 없다.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e -- e2e/public-flow.spec.js
 
   python-engines:
     runs-on: ubuntu-latest

@@ -86,7 +86,18 @@ test.describe("public pages", () => {
     test("no uncaught console errors on the landing page", async ({ page }) => {
         const errors = [];
         page.on("console", (msg) => {
-            if (msg.type() === "error") errors.push(msg.text());
+            if (msg.type() !== "error") return;
+
+            // 로그인하지 않은 방문자가 랜딩 페이지를 열면 AuthContext가 세션 복구를
+            // 시도하며 GET /api/auth/me를 호출합니다. 로그인 전이므로 401이 정상
+            // 응답이고(skipAuthRedirect로 애플리케이션 코드가 이미 조용히 처리),
+            // 브라우저가 실패한 리소스 로드를 자동으로 콘솔에 남기는 것뿐이라
+            // 실제 애플리케이션 오류가 아닙니다. 이 항목만 걸러내고 그 외 오류는
+            // 그대로 실패시킵니다(백엔드가 없는 격리 모드에서는 애초에 401 자체가
+            // 발생하지 않아 이 필터가 아무 영향도 주지 않습니다).
+            if (/status of 401/.test(msg.text())) return;
+
+            errors.push(msg.text());
         });
         await page.goto("/");
         await page.waitForLoadState("networkidle");

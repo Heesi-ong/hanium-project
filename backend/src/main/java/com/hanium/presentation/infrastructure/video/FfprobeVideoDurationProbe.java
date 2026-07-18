@@ -33,6 +33,7 @@ public class FfprobeVideoDurationProbe implements VideoDurationProbe {
         this.successCounter = Counter.builder("video_duration_probe.result")
                 .description("ffprobe 영상 길이 확인 결과 건수")
                 .tag("outcome", "success")
+                .tag("reason", "none")
                 .register(meterRegistry);
         this.failOpenTimeoutCounter = failOpenCounter(meterRegistry, "timeout");
         this.failOpenExitNonZeroCounter = failOpenCounter(meterRegistry, "exit_nonzero");

@@ -3,6 +3,7 @@ package com.hanium.presentation.infrastructure.client.analysis;
 import com.hanium.presentation.global.logging.RequestIdFilter;
 import com.hanium.presentation.global.properties.AnalysisEngineProperties;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -62,7 +63,7 @@ class AnalysisEngineClientRequestIdTest {
 
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        AnalysisEngineClient client = new AnalysisEngineClient(builder, properties);
+        AnalysisEngineClient client = new AnalysisEngineClient(builder, properties, new SimpleMeterRegistry());
 
         return new Fixture(client, server);
     }

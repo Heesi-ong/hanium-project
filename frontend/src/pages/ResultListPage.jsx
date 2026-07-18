@@ -7,6 +7,7 @@ import EmptyState from "../components/EmptyState";
 import ScoreTrendChart from "../components/chart/ScoreTrendChart";
 import PageHeader from "../components/PageHeader";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
+import VideoLlmGenerationBadge from "../components/result-detail/VideoLlmGenerationBadge";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import { useConfirm } from "../context/ConfirmContext";
@@ -28,7 +29,7 @@ const FILTER_OPTIONS = [
 
 const GENERATION_MODE_FILTER_OPTIONS = [
     {
-        label: "AI 전체",
+        label: "OpenAI 전체",
         value: "ALL",
     },
     {
@@ -139,6 +140,11 @@ function ResultListPage() {
                     result.feedback?.generationMode,
                     result.feedback?.model,
                     result.feedback?.fallbackReason,
+                    result.visualAnalysis?.model?.generationMode,
+                    result.visualAnalysis?.model?.name,
+                    result.visualAnalysis?.model?.version,
+                    result.pipeline?.videoLlmGenerationMode,
+                    result.pipeline?.videoLlmAnalysis,
                 ]
                     .filter(Boolean)
                     .join(" ")
@@ -390,19 +396,19 @@ function ResultListPage() {
                 </article>
 
                 <article className="summary-card">
-                    <span>Mock</span>
+                    <span>OpenAI Mock</span>
                     <strong>{mockCount}</strong>
                     <p>내부 Mock 피드백으로 생성된 결과입니다.</p>
                 </article>
 
                 <article className="summary-card">
-                    <span>Real</span>
+                    <span>OpenAI Real</span>
                     <strong>{realCount}</strong>
                     <p>실제 OpenAI API로 생성된 결과입니다.</p>
                 </article>
 
                 <article className="summary-card">
-                    <span>Fallback</span>
+                    <span>OpenAI Fallback</span>
                     <strong>{fallbackCount}</strong>
                     <p>OpenAI 호출 실패 후 Mock으로 대체된 결과입니다.</p>
                 </article>
@@ -450,7 +456,7 @@ function ResultListPage() {
                 <input
                     type="search"
                     className="search-input"
-                    placeholder="파일명, jobId, 생성 방식 검색"
+                    placeholder="파일명, jobId, OpenAI/Video LLM 방식 검색"
                     value={keyword}
                     onChange={(event) => setKeyword(event.target.value)}
                 />
@@ -511,6 +517,7 @@ function ResultListPage() {
                                 )}
 
                                 <OpenAiGenerationBadge feedback={result.feedback} />
+                                <VideoLlmGenerationBadge result={result} />
 
                                 <div className="result-score-row">
                                     <div>

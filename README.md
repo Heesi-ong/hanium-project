@@ -162,8 +162,8 @@ Video LLM 호출을 운영에서 켜려면 아래 값을 운영 환경에 명시
 
 | 환경변수 | 위치 | 의미 |
 | --- | --- | --- |
-| `VIDEO_LLM_ENABLED=true` | 루트 `.env` 또는 video-llm-engine 실행 환경 | 실제 NVIDIA hosted API 호출 경로를 켭니다. 실패하면 video-llm-engine 내부에서 mock으로 폴백합니다. |
-| `NVIDIA_API_KEY` | video-llm-engine 실행 환경 | NVIDIA API Catalog(build.nvidia.com)에서 발급받은 `nvapi-` 키입니다. 비어 있으면 실제 호출은 실패하고 `FALLBACK` mock으로 처리됩니다. |
+| `VIDEO_LLM_ENABLED=true` | 루트 `.env` 또는 video-llm-engine 실행 환경 | 실제 NVIDIA hosted API 호출 경로를 켭니다. 필수 설정이 빠지면 readiness는 `ready=false`, `mode=FALLBACK`으로 노출되고 분석 호출은 mock으로 폴백합니다. |
+| `NVIDIA_API_KEY` | video-llm-engine 실행 환경 | NVIDIA API Catalog(build.nvidia.com)에서 발급받은 `nvapi-` 키입니다. 비어 있으면 `/api/internal/readiness`의 `reason`에 누락 사유가 표시됩니다. |
 | `NVIDIA_VIDEO_LLM_MODEL` | video-llm-engine 실행 환경 | 기본값은 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`입니다. API Catalog의 모델 ID가 바뀐 경우에만 덮어씁니다. |
 | `NVIDIA_API_BASE_URL` | video-llm-engine 실행 환경 | 기본값은 `https://integrate.api.nvidia.com/v1`입니다. |
 | `NVIDIA_ASSET_API_BASE_URL` | video-llm-engine 실행 환경 | 180KB 초과 영상을 업로드하는 NVCF Asset API base URL입니다. 기본값은 `https://api.nvcf.nvidia.com/v2/nvcf`입니다. |
@@ -200,6 +200,9 @@ Docker Compose 운영 배포는 `docker-compose.yml`과 `docker-compose.prod.yml
 compose 기반 운영에서 실제 모델을 켜려면 루트 `.env`에 `VIDEO_LLM_ENABLED=true`,
 `NVIDIA_API_KEY`, 필요한 `NVIDIA_*` override, `VIDEO_LLM_MONTHLY_RATE_LIMIT_*` 값을 채운 뒤
 배포하세요. 키 값은 저장소에 커밋하지 말고 운영 환경변수 또는 시크릿으로 관리해야 합니다.
+배포 후에는 백엔드의 `GET /api/health/engines` 또는 프론트엔드 `/status`에서 Video LLM
+readiness가 `ready=true`, `mode=REAL`, `realModelReady=true`인지 확인하세요. `health`가 `up`이어도
+readiness가 `ready=false`이면 실제 모델 설정은 아직 완료되지 않은 상태입니다.
 
 비용과 한도 측면에서는 backend가 실제 Video LLM 호출 전에 월간 카운터를 확인합니다.
 `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`를 초과하면 NVIDIA 호출을 보내지 않고 Video LLM 분석을
@@ -337,7 +340,7 @@ Actuator와 Prometheus 메트릭은 메인 API 포트(기본 8080)가 아니라 
 
 `docker-compose.yml`에서는 관리 포트 8081을 호스트 `ports`에 등록하지 않습니다. 같은 Docker 네트워크 내부의 nginx 또는 향후 Prometheus 컨테이너에서만 `http://backend:8081/actuator/prometheus`로 스크레이핑하도록 구성합니다.
 
-JVM/HTTP 기본 메트릭 외에 분석 작업 커스텀 메트릭 5개가 노출됩니다.
+JVM/HTTP 기본 메트릭 외에 분석 작업과 외부 연동 상태를 확인하는 커스텀 메트릭이 노출됩니다.
 
 | 메트릭 | 종류 | 태그 | 의미 |
 |---|---|---|---|
@@ -346,6 +349,10 @@ JVM/HTTP 기본 메트릭 외에 분석 작업 커스텀 메트릭 5개가 노�
 | `analysis.job.failed` | Counter | `reason` = `upload-not-found` \| `business` \| `unexpected` | 분석이 실패로 끝난 횟수(사유별) |
 | `analysis.job.cancelled` | Counter | 없음 | 사용자 취소 요청으로 중단된 횟수 |
 | `analysis.job.duration` | Timer | `outcome` = `completed` \| `failed` \| `cancelled` | 분석 파이프라인 소요 시간(종료 결과별) |
+| `engine.readiness.check` | Counter | `engine` = `analysis` \| `video_llm`, `outcome` = `ready` \| `not_ready` \| `unauthenticated` \| `unreachable` | `/api/health/engines`가 authenticated readiness를 확인한 결과 |
+| `result.data_issue` | Counter | `source` = `list` \| `detail`, `issue` | 결과 조회 중 감지된 누락 영상/누락 결과 파일/placeholder 결과 건수 |
+| `video_llm.generation` | Counter | `mode` = `REAL` \| `FALLBACK` \| `MOCK` \| `UNKNOWN` | Video LLM 결과가 실제 모델/폴백/mock 중 어떤 경로로 생성됐는지 |
+| `video_duration_probe.result` | Counter | `outcome`, `reason` | ffprobe 영상 길이 확인 성공/실패 및 fail-open 사유 |
 
 메트릭 수집이 필요할 때는 모니터링 오버레이로 Prometheus 컨테이너를 함께 띄웁니다. (기본 `docker compose up`에는 포함되지 않습니다.)
 
@@ -353,10 +360,16 @@ JVM/HTTP 기본 메트릭 외에 분석 작업 커스텀 메트릭 5개가 노�
 docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus
 ```
 
-Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합니다. 기본 알림 규칙 2개가 정의되어 있습니다.
+Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합니다. 주요 알림 규칙은 다음과 같습니다.
 
 - `BackendDown` (critical): backend 스크레이핑이 2분 이상 실패하면 발동
 - `AnalysisJobFailureRateHigh` (warning): 최근 15분간 분석 작업 실패 비율이 시작 대비 30%를 초과한 상태가 5분 이상 지속되면 발동
+- `EngineReadinessDegraded` (warning): authenticated readiness가 `not_ready`, `unauthenticated`, `unreachable` 상태로 10분 이상 관측되면 발동
+- `ResultDataIssueDetected` (warning): 조회된 결과에서 누락 영상, 누락 결과 파일, placeholder 결과가 감지되면 발동
+- `OpenAiMonthlyBudgetNearExhaustion`, `VideoLlmMonthlyBudgetNearExhaustion` (warning): 월간 실제 API 호출량이 설정 한도의 90%를 초과하면 발동
+- `VideoLlmFallbackRateHigh` (warning): Video LLM 결과가 `FALLBACK`/`MOCK`으로 생성되는 비율이 높으면 발동
+- `VideoDurationProbeFailOpenHigh` (warning): ffprobe 실패로 영상 길이 제한이 fail-open되는 비율이 높으면 발동
+- `MysqlBackup*`, `Host*` 계열 알림: 백업 실패/원격 반출 지연, 호스트 디스크/CPU/메모리 위험을 감시
 
 알림은 Alertmanager를 통해 이메일로 발송됩니다. 실제 발송을 위해 배포 전 두 가지를 준비해야 합니다.
 
@@ -557,8 +570,10 @@ frontend가 `/api`를 호출하는 경로는 배포 구성에 따라 다르며, 
 
 ## 9. 백엔드 주요 API
 
-`/api/auth/**`, `/api/health`, `/api/health/**`를 제외한 `/api/**` 요청은
-로그인 후 받은 토큰을 아래 헤더로 보내야 합니다.
+`/api/auth/**`, `/api/health`, `/api/health/**`를 제외한 `/api/**` 요청은 인증이 필요합니다.
+브라우저 프론트엔드는 로그인 응답의 `Set-Cookie: access_token=...` HttpOnly 쿠키를 사용하며,
+`withCredentials` 요청으로 세션을 복구합니다. 수동 API 호출이나 비브라우저 클라이언트는
+호환 경로로 아래 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -589,7 +604,8 @@ Request Body:
 }
 ```
 
-로그인 성공 시 `data.accessToken`이 반환됩니다.
+로그인 성공 시 `data.accessToken`이 반환되고, 동시에 `access_token` HttpOnly 쿠키가 설정됩니다.
+프론트엔드는 토큰을 `localStorage`에 저장하지 않고 쿠키 기반 세션을 사용합니다.
 
 - 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일 기준과 IP 기준을 모두 적용해 rate limit이 걸립니다. 한도를 초과하면 429 응답을 반환합니다.
 - 회원가입 비밀번호는 8~72자이면서 영문자와 숫자를 각각 1자 이상 포함해야 합니다(400 응답으로 거부됩니다). 이 복잡도 규칙은 회원가입에만 적용되며, 로그인 요청의 비밀번호 필드에는 적용되지 않습니다.
@@ -600,7 +616,7 @@ Request Body:
 POST /api/analysis/upload
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -618,7 +634,7 @@ file: 영상 파일
 POST /api/analysis/{jobId}/run
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -639,7 +655,7 @@ Request Body:
 POST /api/analysis/{jobId}/retry
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -660,7 +676,7 @@ Request Body:
 GET /api/analysis/{jobId}/status
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -673,7 +689,7 @@ GET /api/results
 GET /api/results?page=0&size=50
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -692,7 +708,7 @@ size: 페이지 크기 (기본값 50, 최대 100)
 GET /api/results/{jobId}
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -704,7 +720,7 @@ Authorization: Bearer {accessToken}
 DELETE /api/results/{jobId}
 ```
 
-인증 필요:
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
 
 ```http
 Authorization: Bearer {accessToken}
@@ -915,7 +931,7 @@ docker compose run --rm -e STORAGE_BACKFILL_ENABLED=true backend
 
 Dependabot은 매주 backend(Gradle), frontend(npm), analysis-engine/video-llm-engine(pip), 4개 Dockerfile, GitHub Actions 의존성을 확인해 업데이트 PR을 자동으로 생성합니다. 이는 CI를 즉시 실패시키는 게이트가 아니라 PR 생성 방식이므로, 실제 병합 여부는 변경 내용과 CI 결과를 사람이 검토해 결정해야 합니다.
 
-CI의 `docker-build` job은 4개 서비스 이미지(`backend`, `frontend`, `analysis-engine`, `video-llm-engine`)를 빌드한 뒤 Trivy로 컨테이너 OS 패키지 취약점을 스캔합니다. 현재는 `CRITICAL,HIGH` 결과를 로그에 표로 남기는 보고 전용 단계이며, `exit-code: 0`이라 취약점 발견만으로 빌드를 실패시키지 않습니다. 실제 CI에서 나온 CVE 목록을 확인한 뒤, 베이스 이미지 업데이트로 해결 가능한 항목과 예외 처리할 항목을 분류하고 차후 실패 기준을 정해야 합니다.
+CI의 `docker-build` job은 서비스/운영 보조 이미지(`backend`, `frontend`, `analysis-engine`, `video-llm-engine`, `backup`, `nginx`)를 빌드한 뒤 Trivy로 컨테이너 OS 패키지 취약점을 스캔합니다. 현재는 `CRITICAL,HIGH` 결과를 로그에 표로 남기는 보고 전용 단계이며, `exit-code: 0`이라 취약점 발견만으로 빌드를 실패시키지 않습니다. 실제 CI에서 나온 CVE 목록을 확인한 뒤, 베이스 이미지 업데이트로 해결 가능한 항목과 예외 처리할 항목을 분류하고 차후 실패 기준을 정해야 합니다.
 
 ## 16. 현재 구현 범위
 
@@ -1198,15 +1214,22 @@ OpenAI 피드백 결과에 생성 방식을 구분하는 상태 필드를 추가
 - 실패한 분석 작업 재시도는 `analysis.retry.max-count`(`ANALYSIS_RETRY_MAX_COUNT`, 기본 3회)까지만 허용됩니다. 초과 시 `/api/analysis/{jobId}/retry`는 `ANALYSIS_RETRY_LIMIT_EXCEEDED` 409 응답을 반환합니다.
 - 이번 달 실제 API 호출 횟수가 `rate-limit.openai-monthly.capacity`(`OPENAI_MONTHLY_RATE_LIMIT_CAPACITY`, 기본 1000회)를 초과하면 API를 호출하지 않고 즉시 Mock 피드백으로 전환됩니다(호출 자체가 발생하지 않으므로 실패가 아닙니다). 현재 사용량은 `openai.monthly.usage`, 설정된 한도는 `openai.monthly.budget.capacity` Prometheus 메트릭으로 확인할 수 있고, 사용률이 90%를 5분 이상 초과하면 `OpenAiMonthlyBudgetNearExhaustion` 알림이 발동합니다.
 
-## 결과 목록 AI 피드백 생성 상태 표시 및 필터
+## 결과 목록 생성 상태 표시 및 필터
 
-결과 목록 화면에서 각 분석 결과의 AI 피드백 생성 방식을 바로 확인할 수 있도록 개선했습니다.
+결과 목록 화면에서 각 분석 결과의 OpenAI 피드백 생성 방식과 Video LLM 시각 분석 생성 방식을 함께 확인할 수 있도록 개선했습니다.
 
-기존에는 결과 상세 화면에 들어가야 AI 피드백이 Mock인지, 실제 OpenAI 응답인지 확인할 수 있었습니다.
+기존에는 결과 상세 화면에 들어가야 AI 피드백이 Mock인지, 실제 OpenAI 응답인지 확인할 수 있었습니다. 이제 목록 카드에서도 OpenAI 생성 방식 배지와 Video LLM 생성 방식 배지가 별도로 표시됩니다.
 
-현재는 결과 목록 카드에서도 `MOCK`, `REAL`, `FALLBACK`, `UNKNOWN`, `FAILED` 상태를 확인할 수 있습니다.
+OpenAI 생성 방식 필터는 OpenAI 피드백의 `generationMode`만 대상으로 합니다. 검색 입력은 파일명/jobId뿐 아니라 OpenAI 메타데이터와 Video LLM 메타데이터(`visualAnalysis.model.*`, `pipeline.videoLlmGenerationMode`, `pipeline.videoLlmAnalysis`)까지 포함합니다.
 
-### 표시되는 생성 상태
+목록 API(`GET /api/results`)의 각 content 항목은 상세 분석 전체를 싣지 않고, 목록 표시와 검색에 필요한 최소 메타데이터만 포함합니다.
+
+- `feedback.generationMode/model/realApiUsed/fallbackReason/overall`
+- `visualAnalysis.model.name/version/generationMode`
+- `pipeline.videoLlmAnalysis/videoLlmGenerationMode/openAiGenerationMode/openAiModel/openAiRealApiUsed/openAiFallbackReason`
+- `visualAnalysis.observations` 같은 세부 관찰 배열은 payload 크기를 줄이기 위해 목록 응답에 포함하지 않습니다.
+
+### OpenAI 피드백 생성 상태
 
 ```text
 
@@ -1232,15 +1255,37 @@ FAILED
 
 ```
 
+### Video LLM 시각 분석 생성 상태
+
+```text
+
+REAL
+
+- 실제 Video LLM 호출에 성공하여 업로드 영상 기반 시각 분석을 생성한 결과
+
+FALLBACK
+
+- 실제 Video LLM 호출을 시도했지만 실패하여 샘플 시각 분석으로 대체된 결과
+
+MOCK
+
+- 실제 Video LLM을 호출하지 않고 샘플 시각 분석으로 생성된 결과
+
+SKIPPED
+
+- 월간 호출 한도 등 정책상 Video LLM 호출을 생략한 결과
+
+UNKNOWN
+
+- 기존 결과 파일에 Video LLM 생성 메타데이터가 없는 경우
+
+```
 
 ### 아직 실제 구현이 필요한 범위:
 
-- 실제 Video LLM 모델 연결
-- 실제 OpenAI API 호출
-- 발표 내용 의미 분석
-- 사용자 인증
-- DB 영속화 운영 설정
-- 배포 설정
+- 운영 환경에서 실제 Video LLM 활성화와 비용/개인정보 정책 확정
+- 실제 OpenAI API 운영 키 활성화와 비용 모니터링
+- 발표 내용 의미 분석 품질 보정
 - 점수 기준 보정은 추후 진행 예정
 
 ## 16. 기본 실행 체크리스트

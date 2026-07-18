@@ -4,6 +4,7 @@ import { deleteAdminResult, getAdminUserResults } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
 import EmptyState from "../components/EmptyState";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
+import VideoLlmGenerationBadge from "../components/result-detail/VideoLlmGenerationBadge";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
@@ -181,7 +182,14 @@ function AdminUserDetailPage() {
                                     />
                                 </div>
 
+                                {result.dataIssue && (
+                                    <p className="result-data-issue" role="alert">
+                                        ⚠ {result.dataIssueDescription || "이 결과의 일부 데이터에 문제가 있습니다."}
+                                    </p>
+                                )}
+
                                 <OpenAiGenerationBadge feedback={result.feedback} />
+                                <VideoLlmGenerationBadge result={result} />
 
                                 <div className="result-score-row">
                                     <div>

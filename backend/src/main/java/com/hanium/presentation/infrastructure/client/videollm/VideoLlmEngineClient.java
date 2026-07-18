@@ -28,6 +28,7 @@ public class VideoLlmEngineClient {
     // generationMode(REAL/FALLBACK/MOCK)별 응답 건수 카운터. FALLBACK/MOCK 비율이 조용히
     // 올라가면 "실제 모델은 꺼져 있는데 사용자에겐 결과가 나가는" 품질 저하를 뜻하므로 감시합니다.
     private final Map<String, Counter> generationModeCounters;
+    private final Map<String, Counter> readinessCounters;
 
     public VideoLlmEngineClient(
             RestClient.Builder restClientBuilder,
@@ -49,6 +50,26 @@ public class VideoLlmEngineClient {
                             .register(meterRegistry)
             );
         }
+        this.readinessCounters = createReadinessCounters(meterRegistry);
+    }
+
+    private static Map<String, Counter> createReadinessCounters(MeterRegistry meterRegistry) {
+        Map<String, Counter> counters = new LinkedHashMap<>();
+        for (String outcome : new String[] {"ready", "not_ready", "unauthenticated", "unreachable"}) {
+            counters.put(
+                    outcome,
+                    Counter.builder("engine.readiness.check")
+                            .description("엔진 authenticated readiness 조회 결과")
+                            .tag("engine", "video_llm")
+                            .tag("outcome", outcome)
+                            .register(meterRegistry)
+            );
+        }
+        return counters;
+    }
+
+    private void recordReadinessOutcome(String outcome) {
+        readinessCounters.get(outcome).increment();
     }
 
     private void recordGenerationMode(VideoLlmEngineResponse response) {
@@ -96,6 +117,7 @@ public class VideoLlmEngineClient {
                     .body(Map.class);
 
             boolean ready = response != null && Boolean.TRUE.equals(response.get("ready"));
+            recordReadinessOutcome(ready ? "ready" : "not_ready");
 
             return Map.of(
                     "reachable", true,
@@ -104,6 +126,7 @@ public class VideoLlmEngineClient {
                     "response", response == null ? Map.of() : response
             );
         } catch (HttpClientErrorException.Unauthorized e) {
+            recordReadinessOutcome("unauthenticated");
             return Map.of(
                     "reachable", true,
                     "authenticated", false,
@@ -112,6 +135,7 @@ public class VideoLlmEngineClient {
                     "message", "Video LLM 엔진 내부 API 키 인증에 실패했습니다."
             );
         } catch (Exception e) {
+            recordReadinessOutcome("unreachable");
             return Map.of(
                     "reachable", false,
                     "authenticated", false,

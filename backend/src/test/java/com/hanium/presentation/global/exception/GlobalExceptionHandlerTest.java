@@ -23,4 +23,13 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
+
+    @Test
+    void returnsBadRequestForRequestBindingErrors() {
+        ResponseEntity<ErrorResponse> response = handler.handleRequestBindingException();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().error()).isEqualTo("INVALID_INPUT_VALUE");
+    }
 }

@@ -16,7 +16,7 @@
 - `analysis-engine/`: FastAPI 기반 정량 분석 엔진. 음성/자세/표정 등 기본 분석 담당.
 - `video-llm-engine/`: FastAPI 기반 Video LLM 경계 서비스. 현재는 mock 응답 중심.
 - `docs/`: 설계/운영/서비스화 문서 (`analysis-criteria/`, `api/`, `architecture/`, `database/`, `llm/`, `presentation/`, `service-plan/`).
-- `infra/`: Docker, nginx, MySQL, env, 모니터링(Prometheus/Alertmanager/Grafana) 등 배포 보조 설정 (`docker/`, `env/`, `mysql/`, `nginx/`, `prometheus/`, `alertmanager/`, `grafana/`).
+- `infra/`: Docker, nginx, MySQL, env, 모니터링(Prometheus/Alertmanager/Grafana) 등 배포 보조 설정 (`docker/`, `env/`, `mysql/`, `nginx/`, `prometheus/`, `alertmanager/`, `grafana/`). `infra/nginx/Dockerfile`은 운영 TLS 부트스트랩에 필요한 `openssl` 포함 nginx 이미지를 만든다.
 - `scripts/`: 운영/백업 스크립트 (현재 `backup-mysql.sh`).
 - `storage/`: 업로드, 결과, 로그, temp, 백업, 모델 등 런타임 데이터. 소스 구조가 아니라 운영 데이터로 취급.
 - `Project/`: 기획/발표/회의 자료. 애플리케이션 런타임 코드는 아님.

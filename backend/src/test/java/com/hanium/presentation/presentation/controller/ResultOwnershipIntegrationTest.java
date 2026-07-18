@@ -24,6 +24,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,8 +90,16 @@ class ResultOwnershipIntegrationTest {
         assertThat(otherListResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode otherListBody = objectMapper.readTree(otherListResponse.getBody());
         assertThat(otherListBody.path("data").path("content")).hasSize(1);
-        assertThat(otherListBody.path("data").path("content").get(0).path("jobId").asText())
+        JsonNode otherSummary = otherListBody.path("data").path("content").get(0);
+        assertThat(otherSummary.path("jobId").asText())
                 .isEqualTo(OTHER_JOB_ID);
+        assertThat(otherSummary.path("visualAnalysis").path("model").path("generationMode").asText())
+                .isEqualTo("MOCK");
+        assertThat(otherSummary.path("pipeline").path("videoLlmGenerationMode").asText())
+                .isEqualTo("MOCK");
+        assertThat(otherSummary.path("pipeline").path("videoLlmAnalysis").asText())
+                .isEqualTo("video-llm-engine mock");
+        assertThat(otherSummary.path("visualAnalysis").has("observations")).isFalse();
 
         ResponseEntity<String> deniedGetResponse = restTemplate.exchange(
                 "/api/results/" + OWNER_JOB_ID,
@@ -212,7 +221,28 @@ class ResultOwnershipIntegrationTest {
                         "jobId", jobId,
                         "originalFileName", originalFileName,
                         "scoreSummary", Map.of("totalScore", 90),
-                        "feedback", Map.of("overall", "owner scoped feedback")
+                        "feedback", Map.of(
+                                "generationMode", "MOCK",
+                                "overall", "owner scoped feedback"
+                        ),
+                        "visualAnalysis", Map.of(
+                                "model", Map.of(
+                                        "name", "mock-video-llm",
+                                        "version", "local-mock",
+                                        "generationMode", "MOCK"
+                                ),
+                                "observations", Map.of(
+                                        "eyeContact", List.of(Map.of("label", "sample"))
+                                )
+                        ),
+                        "pipeline", Map.of(
+                                "videoLlmAnalysis", "video-llm-engine mock",
+                                "videoLlmGenerationMode", "MOCK",
+                                "openAiGenerationMode", "MOCK",
+                                "openAiModel", "-",
+                                "openAiRealApiUsed", false,
+                                "openAiFallbackReason", "-"
+                        )
                 )
         );
     }

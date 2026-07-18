@@ -79,6 +79,9 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 - 전체 기동 후 `GET /api/health/engines`에서 두 엔진의 `health`뿐 아니라 내부 API 키를 사용하는
   authenticated readiness 경로도 성공하는지 확인한다. 단순 `/health` 성공만으로 분석 API 인증까지
   검증됐다고 판단하면 안 된다.
+- `VIDEO_LLM_ENABLED=true`로 배포했다면 `videoLlmEngine.readiness.response.mode=REAL`,
+  `realModelReady=true`인지 확인한다. `health`가 `up`이어도 readiness가 `ready=false` 또는
+  `mode=FALLBACK`이면 API 키, timeout, 영상 크기 상한, NVIDIA base URL 설정을 먼저 수정한다.
 - MySQL 백업/복구가 실제로 동작하는지: `docs/ops/backup-restore-runbook.md`의 리허설 절차를 운영
   DB 인스턴스 기준으로 최소 1회 재현한다.
 - `backup` 서비스는 전용 멀티 아키텍처 이미지를 빌드해 `mysqldump`, `openssl`, `mc`를 포함한다.

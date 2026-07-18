@@ -15,9 +15,16 @@ router = APIRouter(
 @router.get("/readiness")
 def readiness() -> Dict[str, Any]:
     models = model_registry.model_status()
+    missing_models = [name for name, loaded in models.items() if not loaded]
+    ready = not missing_models
+    reason = "All analysis models are loaded."
+
+    if missing_models:
+        reason = "Analysis models are not loaded: " + ", ".join(missing_models)
 
     return {
         "service": "analysis-engine",
-        "ready": all(models.values()),
+        "ready": ready,
         "models": models,
+        "reason": reason,
     }

@@ -1494,6 +1494,11 @@ button.observation-seek::before {
   color: #4FC78A;
 }
 
+.engine-status-badge.warning {
+  background: rgba(239, 180, 82, 0.18);
+  color: #EFB452;
+}
+
 .engine-status-badge.down {
   background: rgba(231, 104, 90, 0.16);
   color: #E7685A;
@@ -1532,6 +1537,13 @@ button.observation-seek::before {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.engine-meta strong.engine-meta-reason {
+  overflow: visible;
+  line-height: 1.55;
+  text-overflow: initial;
+  white-space: normal;
 }
 
 @media (max-width: 1100px) {
@@ -1885,6 +1897,11 @@ button.observation-seek::before {
 .ai-mode-badge.failed {
   color: #E7685A;
   background: rgba(231, 104, 90, 0.16);
+}
+
+.ai-mode-badge.skipped {
+  color: #72A5FF;
+  background: rgba(114, 165, 255, 0.16);
 }
 
 .ai-mode-badge.unknown {

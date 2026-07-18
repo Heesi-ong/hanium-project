@@ -1,5 +1,7 @@
 package com.hanium.presentation.infrastructure.video;
 
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +12,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class FfprobeVideoDurationProbeTest {
+
+    @Test
+    void registersCountersWithConsistentPrometheusTagKeys() {
+        PrometheusMeterRegistry meterRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+
+        new FfprobeVideoDurationProbe(meterRegistry);
+
+        String scrape = meterRegistry.scrape();
+
+        assertThat(scrape).contains("video_duration_probe_result_total{");
+        assertThat(scrape).contains("outcome=\"success\"");
+        assertThat(scrape).contains("reason=\"none\"");
+        assertThat(scrape).contains("outcome=\"fail_open\"");
+        assertThat(scrape).contains("reason=\"timeout\"");
+    }
 
     @Test
     void probeReturnsEmptyWhenFfprobeCannotReadVideo() throws Exception {

@@ -59,6 +59,35 @@ groups:
           summary: "Video LLM이 실제 모델 대신 mock으로 응답하는 비율이 높습니다"
           description: "최근 30분간 Video LLM 응답의 절반 이상이 FALLBACK/MOCK입니다. NVIDIA_API_KEY 설정, 서킷브레이커 상태, video-llm-engine 로그를 확인하세요. 실제 모델을 켠 상태라면 사용자에게 품질이 낮은 결과가 나가고 있을 수 있습니다."
 
+      - alert: EngineReadinessDegraded
+        # /status 또는 운영 점검에서 authenticated readiness가 호출됐을 때 실패 결과가 기록됩니다.
+        # 실패 outcome이 10분 이상 계속 늘면 엔진 프로세스 생존 여부와 별개로 실제 분석 준비가
+        # 깨진 상태일 수 있습니다.
+        expr: |
+          sum by (engine) (
+            increase(engine_readiness_check_total{outcome=~"not_ready|unauthenticated|unreachable"}[10m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "엔진 readiness가 degraded 상태입니다"
+          description: "{{ $labels.engine }} 엔진의 authenticated readiness 점검이 실패했습니다. 내부 API 키, 모델 로딩, 외부 API 설정, 엔진 로그를 확인하세요."
+
+      - alert: ResultDataIssueDetected
+        # 결과 목록/상세 조회 중 누락 영상, 누락 결과 파일, placeholder 결과가 감지되면 발동합니다.
+        # 사용자가 조회하기 전까지 관측되지 않는 지표라서 1건이라도 운영자가 확인해야 합니다.
+        expr: |
+          sum by (issue) (
+            increase(result_data_issue_total[10m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "분석 결과 데이터 정합성 문제가 감지됐습니다"
+          description: "{{ $labels.issue }} 유형의 결과 데이터 문제가 최근 조회 경로에서 감지됐습니다. jobId는 backend 로그에서 dataIssue 경고를 확인하세요."
+
   - name: video-processing-alerts
     rules:
       - alert: VideoDurationProbeFailOpenHigh

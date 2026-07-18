@@ -259,6 +259,60 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  frontend-e2e-full-stack:
+    # public-flow.spec.js(frontend job)는 백엔드 없이 도는 공개 페이지만 다룬다.
+    # 로그인이 필요한 실제 흐름(auth-api.spec.js, protected-pages.spec.js)은 실제
+    # backend+DB 앞에서만 의미가 있어 여기서 별도로 돈다. analysis-engine/
+    # video-llm-engine/analysis-worker는 페이지 렌더링·인증 흐름 검증에는 필요
+    # 없고(모델 프리로드로 기동이 매우 느려짐) backend-boot-smoke와 같은 이유로
+    # --no-deps로 제외한다. backend의 엔진 헬스체크(/api/health/engines)는
+    # 엔진이 없으면 "unreachable"로 우아하게 응답하도록 이미 구현되어 있다.
+    runs-on: ubuntu-latest
+    env:
+      INTERNAL_ENGINE_API_KEY: ci-e2e-internal-key
+      SECURITY_JWT_SECRET: ci-e2e-jwt-secret-not-a-placeholder-value
+      MINIO_ROOT_USER: ci-e2e-minio-admin
+      MINIO_ROOT_PASSWORD: ci-e2e-minio-password12345
+      DB_PASSWORD: ci-e2e-db-password
+      DB_ROOT_PASSWORD: ci-e2e-db-root-password
+      REDIS_PASSWORD: ci-e2e-redis-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Start database/cache/object-storage dependencies
+        run: docker compose up -d --wait mysql redis minio
+      - name: Create MinIO buckets
+        run: docker compose up minio-init
+      - name: Build backend and frontend images
+        run: docker compose build backend frontend
+      - name: Boot backend and frontend and wait for health checks
+        run: docker compose up -d --wait --no-deps backend frontend
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run full-stack E2E specs
+        working-directory: frontend
+        env:
+          E2E_FULL_STACK: "true"
+          BASE_URL: http://localhost:5173
+          API_BASE_URL: http://localhost:8080
+        run: npm run test:e2e -- e2e/auth-api.spec.js e2e/protected-pages.spec.js
+      - name: Dump backend/frontend logs on failure
+        if: failure()
+        run: |
+          docker compose logs backend
+          docker compose logs frontend
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   compose-validate:
     runs-on: ubuntu-latest
     env:

@@ -116,6 +116,15 @@ jobs:
         working-directory: ${{ matrix.engine }}
       - run: pytest
         working-directory: ${{ matrix.engine }}
+      # requirements-real-model.txt(VIDEO_LLM_BACKEND=local-model 전용, torch/transformers 등)는
+      # 무거워서 설치/pytest 대상에는 넣지 않지만, --disable-pip 감사는 패키지를 설치하지 않고
+      # 고정된 버전만 취약점 DB와 대조하므로 여기서는 가볍게 실행할 수 있습니다. 이 파일이
+      # CI 감사 사각지대로 남지 않도록(핀 고정 버전에 취약점이 생겨도 아무도 모르는 상태 방지)
+      # video-llm-engine 레그에서만 추가로 감사합니다.
+      - name: Audit requirements-real-model.txt (설치 없이 핀 고정 버전만 감사)
+        if: matrix.engine == 'video-llm-engine'
+        run: pip-audit --no-deps --disable-pip -r requirements-real-model.txt
+        working-directory: video-llm-engine
 
   docker-build:
     runs-on: ubuntu-latest

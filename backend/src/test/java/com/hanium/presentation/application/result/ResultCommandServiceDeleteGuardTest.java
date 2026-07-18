@@ -9,6 +9,7 @@ import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -32,6 +33,7 @@ class ResultCommandServiceDeleteGuardTest {
     private final FilePathGenerator filePathGenerator = mock(FilePathGenerator.class);
     private final JsonFileStorage jsonFileStorage = mock(JsonFileStorage.class);
     private final LocalFileStorage localFileStorage = mock(LocalFileStorage.class);
+    private final ObjectStorage objectStorage = mock(ObjectStorage.class);
     private final AnalysisJobRepository analysisJobRepository = mock(AnalysisJobRepository.class);
     private final UploadedVideoRepository uploadedVideoRepository = mock(UploadedVideoRepository.class);
 
@@ -41,6 +43,7 @@ class ResultCommandServiceDeleteGuardTest {
             filePathGenerator,
             jsonFileStorage,
             localFileStorage,
+            objectStorage,
             analysisJobRepository,
             uploadedVideoRepository
     );
@@ -76,6 +79,27 @@ class ResultCommandServiceDeleteGuardTest {
 
         verify(localFileStorage, times(1)).deleteDirectoryIfExists(uploadDirectory);
         verify(localFileStorage, times(1)).deleteDirectoryIfExists(resultDirectory);
+        verify(objectStorage, times(1)).deleteObjectsWithPrefix("uploads/" + JOB_ID + "/");
+        verify(objectStorage, times(1)).deleteObjectsWithPrefix("results/" + JOB_ID + "/");
+        verify(analysisJobRepository, times(1)).delete(analysisJob);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AnalysisStatus.class, names = {"COMPLETED"})
+    void stillDeletesJobWhenObjectStorageCleanupFails(AnalysisStatus status) {
+        AnalysisJob analysisJob = createJobWithStatus(status);
+        Path uploadDirectory = Path.of("uploads", JOB_ID);
+        Path resultDirectory = Path.of("results", JOB_ID);
+
+        when(analysisJobRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(analysisJob));
+        when(uploadedVideoRepository.findByJobId(JOB_ID)).thenReturn(Optional.empty());
+        when(filePathGenerator.generateUploadDirectory(JOB_ID)).thenReturn(uploadDirectory);
+        when(filePathGenerator.generateResultDirectory(JOB_ID)).thenReturn(resultDirectory);
+        org.mockito.Mockito.doThrow(new RuntimeException("MinIO down"))
+                .when(objectStorage).deleteObjectsWithPrefix(org.mockito.ArgumentMatchers.anyString());
+
+        resultCommandService.deleteResult(JOB_ID, OWNER_ID);
+
         verify(analysisJobRepository, times(1)).delete(analysisJob);
     }
 

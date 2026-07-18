@@ -116,6 +116,53 @@ class ResultQueryServiceTest {
         assertThat(brokenSummary.dataIssueDescription()).isNotBlank();
     }
 
+    @Test
+    void getResultSummariesMarksCompletedJobWithMissingResultFileAsBroken() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090004-eeeeeeee", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "presentation.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        // final_result.json이 없거나 읽기 실패한 상황을 흉내내, readFinalResultSafely가
+        // 실제로 반환하는 빈 맵을 그대로 재현합니다.
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of());
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.dataIssue()).isEqualTo("RESULT_DATA_UNAVAILABLE");
+        assertThat(summary.dataIssueDescription()).isNotBlank();
+        assertThat(summary.originalFileName()).isEqualTo("presentation.mp4");
+    }
+
+    @Test
+    void getResultSummariesDoesNotFlagQueuedJobWithoutResultFileYet() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob queuedJob = AnalysisJob.create("20260703090005-ffffffff", ownerId);
+        queuedJob.enqueue(true, true);
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(queuedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(queuedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(queuedJob.getJobId(), "queued.mp4")));
+        when(filePathGenerator.generateFinalResultPath(queuedJob.getJobId()))
+                .thenReturn(Path.of("results", queuedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of());
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        assertThat(response.getContent().get(0).dataIssue()).isNull();
+    }
+
     private UploadedVideo createUploadedVideo(String jobId, String originalFileName) {
         return UploadedVideo.create(
                 jobId,

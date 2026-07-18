@@ -12,6 +12,7 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
+import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class ResultCommandService {
     private final FilePathGenerator filePathGenerator;
     private final JsonFileStorage jsonFileStorage;
     private final LocalFileStorage localFileStorage;
+    private final ObjectStorage objectStorage;
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
 
@@ -41,6 +43,7 @@ public class ResultCommandService {
             FilePathGenerator filePathGenerator,
             JsonFileStorage jsonFileStorage,
             LocalFileStorage localFileStorage,
+            ObjectStorage objectStorage,
             AnalysisJobRepository analysisJobRepository,
             UploadedVideoRepository uploadedVideoRepository
     ) {
@@ -49,6 +52,7 @@ public class ResultCommandService {
         this.filePathGenerator = filePathGenerator;
         this.jsonFileStorage = jsonFileStorage;
         this.localFileStorage = localFileStorage;
+        this.objectStorage = objectStorage;
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
     }
@@ -196,11 +200,24 @@ public class ResultCommandService {
 
         localFileStorage.deleteDirectoryIfExists(uploadDirectory);
         localFileStorage.deleteDirectoryIfExists(resultDirectory);
+        deleteObjectStoragePrefixQuietly("uploads/" + jobId + "/");
+        deleteObjectStoragePrefixQuietly("results/" + jobId + "/");
 
         if (uploadedVideo != null) {
             uploadedVideoRepository.delete(uploadedVideo);
         }
 
         analysisJobRepository.delete(analysisJob);
+    }
+
+    // 로컬 삭제와 별개로 MinIO에 미러링된 오브젝트도 정리합니다(StorageCleanupService,
+    // OriginalVideoRetentionService와 동일한 best-effort 패턴). 이 호출이 실패해도 사용자
+    // 요청 삭제/회원탈퇴 자체는 이미 로컬 정리와 DB 삭제가 끝난 뒤이므로 막지 않습니다.
+    private void deleteObjectStoragePrefixQuietly(String prefix) {
+        try {
+            objectStorage.deleteObjectsWithPrefix(prefix);
+        } catch (Exception exception) {
+            log.warn("OBJECT_STORAGE_RESULT_DELETE_FAILED prefix={} reason={}", prefix, exception.toString());
+        }
     }
 }

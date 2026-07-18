@@ -237,6 +237,56 @@ def test_analyze_returns_mock_video_llm_result_with_valid_internal_api_key(monke
     assert "mainWeakness" in body["globalSummary"]
 
 
+def test_analyze_binds_job_id_and_request_id_for_the_duration_of_the_request(monkeypatch, tmp_path):
+    from app.core.logging_config import job_id_var, request_id_var
+
+    client = create_client(monkeypatch, tmp_path)
+    captured = {}
+    original_build_mock_response = video_llm_analysis.build_mock_response
+
+    def spy_build_mock_response(request, mode):
+        captured["job_id"] = job_id_var.get()
+        captured["request_id"] = request_id_var.get()
+        return original_build_mock_response(request, mode)
+
+    monkeypatch.setattr(video_llm_analysis, "build_mock_response", spy_build_mock_response)
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret", "X-Request-Id": "req-corr-1"},
+        json=analysis_payload("job-corr-1"),
+    )
+
+    assert response.status_code == 200
+    assert captured == {"job_id": "job-corr-1", "request_id": "req-corr-1"}
+    # 요청이 끝난 뒤에는 다음 요청 로그에 새지 않도록 기본값으로 되돌아가야 합니다.
+    assert job_id_var.get() == "-"
+    assert request_id_var.get() == "-"
+
+
+def test_analyze_defaults_request_id_to_dash_when_header_is_absent(monkeypatch, tmp_path):
+    from app.core.logging_config import request_id_var
+
+    client = create_client(monkeypatch, tmp_path)
+    captured = {}
+    original_build_mock_response = video_llm_analysis.build_mock_response
+
+    def spy_build_mock_response(request, mode):
+        captured["request_id"] = request_id_var.get()
+        return original_build_mock_response(request, mode)
+
+    monkeypatch.setattr(video_llm_analysis, "build_mock_response", spy_build_mock_response)
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=analysis_payload("job-no-request-id"),
+    )
+
+    assert response.status_code == 200
+    assert captured["request_id"] == "-"
+
+
 def test_analyze_uses_mock_generation_mode_when_video_llm_disabled(monkeypatch, tmp_path):
     monkeypatch.delenv("VIDEO_LLM_ENABLED", raising=False)
     client = create_client(monkeypatch, tmp_path)

@@ -454,9 +454,16 @@
 2. N3(.env가 이미지에 복사될 수 있는 경로)은 `.dockerignore` 세 줄 추가로 끝나는 매우 저비용 고비용-임팩트 수정이라 바로 처리할 만하다.
 3. N4(non-root 컨테이너), N5(모바일 네비게이션), N6(테스트 커버리지)은 각각 별도 규모의 작업이라 우선순위를 사용자와 다시 상의해 순서를 정하는 것이 좋다.
 
-### 같은 날(2026-07-18) 후속 조치: N1·N2·N3·N9 수정 완료
+### 같은 날(2026-07-18) 후속 조치: N1·N2·N3·N4·N5·N6·N9 수정 완료
 
-발견 직후 같은 회차에서 위 1·2순위 네 건을 실제로 수정하고 검증까지 마쳤다. N4~N6는 사용자와 순서를 다시 상의하기로 한 원래 계획대로 아직 착수하지 않았다.
+발견 직후 같은 회차에서 N1·N2·N3·N9(1·2순위)에 이어 N4·N5·N6도 순서대로 실제 수정·검증까지 마쳤다.
+
+- **N4 해결**: `analysis-engine`/`video-llm-engine`/`infra/backup` Dockerfile에 non-root 사용자를 추가하고, `docker-compose.yml`의 backend/analysis-worker/analysis-engine/video-llm-engine에 `cap_drop: [ALL]` + `no-new-privileges`를 적용했다. frontend(nginx)는 포트 변경 없는 완전한 non-root 전환은 별도 과제로 남기고, `read_only: true` + tmpfs(캐시/pid/conf.d) + `cap_drop: [ALL]` + 포트 바인딩·워커 권한 하향에 필요한 `NET_BIND_SERVICE`/`CHOWN`/`SETUID`/`SETGID`만 되돌려주는 방식으로 하드닝했다. 실제 컨테이너 재기동으로 5개 서비스 모두 healthy 유지, 로그인→업로드→분석 실행→완료→삭제까지 전체 파이프라인이 정상 동작함을 확인했다. 이 과정에서 첫 시도 때 frontend가 `chown` 권한 부족으로 재시작 루프에 빠진 것과, backend/analysis-worker 이미지가 N1 커밋 이후 재빌드되지 않아 구버전 코드로 떠 있던 것(재검증 중 N1이 실제로는 반영 안 된 상태였음을 발견)을 실제 로그로 잡아 함께 고쳤다.
+- **N5 해결**: 로그인 상태 헤더에 `lg`(1024px) 미만에서 접히는 햄버거 메뉴를 추가했다. 수정 중 데스크톱(1024~1280px)에서도 라벨이 줄바꿈되던 것을 추가로 발견해 `whitespace-nowrap`을 적용했다. 390/768/1023/1024/1280px 전 구간에서 `scrollWidth === clientWidth`(오버플로우 0)를 실측했고, 실제 클릭으로 메뉴 열기→링크 이동→자동 닫힘까지 확인했다.
+- **N6 해결**: backend의 `X-Request-Id` 헤더 전달과 두 Python 엔진의 `bind_job_id`/`bind_request_id`/`CorrelationLogFilter`에 대한 자동화 테스트를 추가했다(`MockRestServiceServer` 기반 헤더 검증, contextvar 설정·복원 단위 테스트, `TestClient` 기반 종단 검증).
+- **검증**: 모든 항목에서 backend 전체 테스트, analysis-engine pytest(97), video-llm-engine pytest(66), frontend lint/test(124)/build가 통과했고, N4/N5는 추가로 실제 Docker 컨테이너·브라우저 조작으로 확인했다.
+
+N7(개인정보처리방침 미고지)·N8(nginx rate limit/server_tokens)는 Low 우선순위로 아직 착수하지 않았다.
 
 - **N1 해결**: `ResultCommandService.deleteResult()`가 이제 로컬 삭제와 함께 `objectStorage.deleteObjectsWithPrefix("uploads/{jobId}/")`, `deleteObjectsWithPrefix("results/{jobId}/")`를 호출한다(`StorageCleanupService`/`OriginalVideoRetentionService`와 동일한 best-effort 패턴 — MinIO 호출이 실패해도 로컬 삭제·DB 삭제는 막지 않음). MinIO 실패 시에도 삭제가 정상 진행되는지, 정상 시 두 prefix가 정확히 호출되는지 각각 단위 테스트로 고정했다.
 - **N2 해결**: `analysis-engine/requirements.txt`와 `video-llm-engine/requirements-real-model.txt`의 `pillow`를 `12.2.0`→`12.3.0`으로, `requirements-real-model.txt`의 `setuptools`를 `81.0.0`→`83.0.0`, `torch`를 `2.12.1`→`2.13.0`으로 올려 발견된 CVE 8+1+1건을 전부 해소했다(`pip-audit` 재실행으로 클린 확인). `requirements-real-model.txt`가 CI 감사 사각지대였던 부가 발견도 함께 닫았다 — `.github/workflows/verify.yml`의 `python-engines` 잡에 `pip-audit --no-deps --disable-pip -r requirements-real-model.txt` 스텝을 추가했다(무거운 torch 설치 없이 핀 고정 버전만 감사하므로 CI 비용 증가가 거의 없음). 로컬에서 동일 명령으로 실제 클린 통과를 확인했다.

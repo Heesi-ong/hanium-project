@@ -358,3 +358,109 @@
 2. staging MinIO 강제 중단 시 신규 쓰기 실패 동작 확인
 3. 실제 NVIDIA Video LLM 활성화와 비용·국외 이전 정책 확정
 4. 실제 운영 CPU/GPU에서 장시간 부하 측정 후 backend executor와 analysis-engine 모델 풀 크기 조정
+
+---
+
+## 업데이트: 2026-07-18 현재 상태
+
+2026-07-17 업데이트 이후 두 차례 커밋(`a03ddd9` MinIO/OpenAI 자격증명 fail-fast 검증기 + ffmpeg timeout + Python 엔진 job_id 로그 상관관계, `7276cc6` backend↔엔진 requestId 상관관계 연동)이 반영됐다. 이번 회차는 코드 수정 없이 **새 문제점 발굴**만을 목적으로, 지금까지 다루지 않은 네 영역을 병렬로 조사했다: (1) 직전 두 커밋 자체에 대한 회귀 리뷰, (2) 인프라/배포 보안(Docker 이미지, nginx, 시크릿, 실제 의존성 취약점), (3) 로그인 세션이 필요해 이전 QA(`docs/qa-ui-report-2026-07-16.md`)가 점검하지 못했던 보호된 페이지, (4) `PrivacyPage.jsx`가 약속한 데이터 보존/삭제 정책과 실제 백엔드 코드의 일치 여부. 모든 발견은 코드를 직접 읽거나 실제 명령을 실행해 확인했다.
+
+### 신규 발견 — 우선순위 순
+
+#### N1. [Critical·컴플라이언스] 결과 삭제/회원탈퇴 시 MinIO 오브젝트가 지워지지 않음
+
+- **문제**: `ResultCommandService.deleteResult()`(`backend/src/main/java/.../result/ResultCommandService.java:176-205`)는 로컬 디스크의 업로드/결과 디렉터리만 삭제하고, `objectStorage.deleteObjectsWithPrefix(...)`를 전혀 호출하지 않는다. 반면 `OriginalVideoRetentionService`(114-126행)와 `StorageCleanupService`(137-143행)는 같은 정리 작업에서 이미 이 메서드를 호출해 MinIO 프리픽스를 함께 지운다. `UserWithdrawalService.deleteOwnedResults()`도 결국 `deleteResult()`를 호출하므로 같은 결함을 그대로 물려받는다.
+- **왜 중요한가**: MinIO 쓰기가 prod에서 필수로 강제된 지금(07-17 반영), 사용자가 "결과 삭제" 또는 "회원탈퇴"를 눌러도 업로드 영상·결과 파일의 MinIO 사본은 영구히 남는다. `PrivacyPage.jsx:106-110`은 "회원탈퇴가 처리되면... 업로드 영상, 결과 파일 삭제를 시도"한다고 명시하는데 실제로는 시도조차 하지 않는 경로가 존재한다 — 개인정보처리방침과 실제 동작이 어긋난다.
+- **근거**: `backend/src/main/java/com/hanium/presentation/application/result/ResultCommandService.java:176-205`, 대조군 `OriginalVideoRetentionService.java:114-126`, `StorageCleanupService.java:137-143`.
+
+#### N2. [Critical·CI] analysis-engine의 pillow가 실제 미패치 취약점 8건을 갖고 있어 CI가 막혀 있을 가능성
+
+- **문제**: `analysis-engine/requirements.txt:41`이 고정한 `pillow==12.2.0`에 `pip-audit`로 실제 재현 확인한 취약점 8건(PYSEC-2026-2253/2254/2255/2256/2257/3451/3452/3453)이 있다. 전부 `12.3.0`에서 수정됐다.
+- **왜 중요한가**: `.github/workflows/verify.yml:113-115`의 `pip-audit -r requirements.txt` 스텝은 (과거 "취약점 때문에 실패 허용"이었던 것과 달리) 현재 실패를 허용하지 않도록 강제돼 있다(`ca9504a`/`8d93fd6` 계열 커밋에서 강제화). 즉 지금 이 파일 상태로는 `python-engines / analysis-engine` CI job이 실패하고 있을 가능성이 높다.
+- **근거**: `analysis-engine/requirements.txt:41`, 직접 실행한 `pip-audit -r requirements.txt` 결과(8건, 모두 pillow), `.github/workflows/verify.yml:113-115`.
+- **부가 발견**: `video-llm-engine/requirements-real-model.txt`(로컬 모델 빌드 전용, torch/setuptools/pillow)는 CI가 아예 감사하지 않는다(`verify.yml`의 `python-engines` matrix는 `requirements-test.txt`만 사용). 직접 실행한 결과 `pillow==12.2.0`(동일 8건) + `setuptools==81.0.0`(PYSEC-2026-3447) + `torch==2.12.1`(PYSEC-2025-194) 등 3개 패키지에 10건이 잡힌다 — `VIDEO_LLM_BACKEND=local-model`로 빌드하는 경로는 CI에서 완전히 사각지대다.
+
+#### N3. [High·보안] 실제 NVIDIA API 키가 담긴 `.env`가 Docker 빌드 컨텍스트에서 이미지에 그대로 복사될 수 있음
+
+- **문제**: `video-llm-engine/Dockerfile`(과 `analysis-engine/Dockerfile`)이 `COPY . .`로 빌드 컨텍스트 전체를 복사하는데, 각 서비스의 `.dockerignore`는 `.venv/`, `__pycache__/`, `tests/`, `logs/`만 제외하고 **`.env`를 제외하지 않는다**. 루트 `.gitignore`는 `video-llm-engine/.env`를 이미 제외하고 있어 git에는 안전하지만, `.gitignore`는 `docker build`를 막지 못한다.
+- **왜 중요한가**: 실제로 지금 디스크에 `video-llm-engine/.env`가 존재하고 `NVIDIA_API_KEY=nvapi-...`(실제 키로 보이는 값)를 담고 있다. 이 상태에서 누군가 `docker compose build` 또는 `docker build ./video-llm-engine`을 실행하면 이 키가 이미지 레이어에 그대로 박혀, 이후 `.env`를 지워도 `docker history`/이미지 push를 통해 복구 가능한 상태로 남는다.
+- **근거**: `video-llm-engine/Dockerfile:25`(`COPY . .`), `video-llm-engine/.dockerignore`(`.env` 미포함), 디스크상 `video-llm-engine/.env` 실존 확인. `analysis-engine/Dockerfile:15`도 동일 패턴.
+
+#### N4. [High·보안] analysis-engine/video-llm-engine/frontend/backup 컨테이너가 root로 실행됨
+
+- **문제**: 5개 Dockerfile 중 `backend`(및 동일 이미지인 `analysis-worker`)만 `USER appuser`로 권한을 낮춘다. `frontend`(nginx), `analysis-engine`, `video-llm-engine`, `infra/backup`은 `USER` 지시자가 없어 root로 실행된다. `docker-compose.yml`에도 `cap_drop`/`read_only`/`no-new-privileges` 등 컨테이너 권한 하드닝이 어느 서비스에도 없다(의도적으로 `privileged: true`를 쓰는 모니터링용 `cadvisor`는 별개).
+- **왜 중요한가**: analysis-engine과 video-llm-engine은 사용자가 업로드한 신뢰할 수 없는 영상/오디오를 ffmpeg·OpenCV·MediaPipe 같은 네이티브 코덱 라이브러리로 직접 처리한다. 이런 라이브러리는 파서 취약점(RCE) 이력이 꾸준히 있는 영역이라, 컨테이너 브레이크아웃급 취약점이 나오면 root 권한 그대로 노출된다.
+- **근거**: `frontend/Dockerfile`, `analysis-engine/Dockerfile`, `video-llm-engine/Dockerfile`, `infra/backup/Dockerfile` — 4개 파일 모두 `USER` 지시자 없음. `docker-compose.yml` 전체에서 `cap_drop`/`read_only`/`no-new-privileges` grep 결과 0건(모니터링 오버레이의 `cadvisor: privileged: true` 제외).
+
+#### N5. [Medium·UX 회귀] 로그인 상태 모바일(390px) 상단 네비게이션이 실제로 가로 오버플로우를 일으킴
+
+- **문제**: 로그인한 사용자에게 보이는 헤더(홈/요금제/영상업로드/분석결과/시스템상태/계정설정/이메일뱃지/로그아웃)는 햄버거 메뉴로 접히지 않는다. 실제 브라우저에서 390px로 측정한 결과 `document.documentElement.scrollWidth=687` vs `clientWidth=390`으로 **297px 가로 오버플로우**가 발생한다.
+- **왜 중요한가**: 이전 QA(07-16)는 로그인 없이 접근 가능한 공개 페이지만 점검했고 그때 헤더는 문제 없었다("홈/요금제/로그인/회원가입" 4개뿐이라 문제가 안 보였음). 로그인 후 헤더 항목이 늘어나며 새로 생긴, 지금까지 아무 QA에도 잡히지 않았던 회귀성 문제다. 768px 태블릿에서도 오버플로우는 없지만 각 메뉴 라벨이 "영/상/업/로/드"처럼 한 글자씩 세로로 쌓여 헤더 높이가 약 100px까지 부풀어 보인다.
+- **추가 확인(관리자 계정)**: 관리자로 로그인하면 헤더에 "관리자" 링크가 하나 더 붙어 390px에서 `scrollWidth=718` vs `clientWidth=375`로 **343px 오버플로우**로 더 악화된다. 즉 이 문제는 로그인 사용자 전반의 문제이며, 권한이 높을수록(관리자) 더 심해진다.
+- **근거**: 실제 로그인 세션으로 `/upload`, `/results` 등 인증 페이지를 390px/768px에서 렌더링해 `scrollWidth`/`clientWidth`를 JS로 직접 측정. 관리자 계정으로 `/admin`도 동일하게 측정.
+
+#### N6. [Medium] 새로 추가한 requestId/job_id 상관관계 기능에 자동화 테스트가 전혀 없음
+
+- **문제**: 직전 두 커밋(`a03ddd9`, `7276cc6`)이 추가한 backend의 `X-Request-Id` 헤더 전달 로직과 두 Python 엔진의 `CorrelationLogFilter`/`bind_job_id`/`bind_request_id`에 대해 어느 쪽에도 단위/통합 테스트가 없다. 기존 `AnalysisEngineClientReadinessTest`/`CircuitBreakerTest`류는 이 새 코드 경로를 전혀 건드리지 않는다.
+- **왜 중요한가**: 상관관계 기능 자체의 목적(장애 시 세 서비스 로그를 하나의 ID로 추적)이 회귀해도 CI가 잡아주지 못한다.
+- **근거**: 자체 리뷰 에이전트가 `grep -rl "bind_job_id\|bind_request_id\|X-Request-Id" **/tests`로 확인, 0건.
+
+#### N7. [Low·컴플라이언스 문서화] 백업 보존(14일)·엔진 로그 무기한 보관이 개인정보처리방침에 고지되지 않음
+
+- **문제**: `scripts/backup-mysql.sh`는 `BACKUP_RETENTION_DAYS`(기본 14일) 동안 사용자 이메일·비밀번호 해시가 담긴 MySQL 백업을 보관하고 MinIO로 원격 반출도 하지만, `PrivacyPage.jsx`는 백업을 전혀 언급하지 않는다. 또한 `logback-spring.xml`은 백엔드 로그를 30일로 시간 기반 만료시키지만, `analysis-engine`/`video-llm-engine`의 `RotatingFileHandler`는 크기 기반(100MB×10개)만 적용해 **시간 만료가 없다** — 로그 유입량이 적으면 jobId가 포함된 로그가 30일보다 훨씬 오래 남을 수 있는데, 이 역시 페이지에 고지되지 않는다.
+- **왜 중요한가**: `PrivacyPage.jsx` 자체가 "법률 전문가 검토 전 초안"이라고 명시하고 있어 법적 결함은 아니지만, 사용자가 페이지만 읽고 "탈퇴하면 데이터가 완전히 사라진다"고 오해할 여지가 있다.
+- **근거**: `scripts/backup-mysql.sh`(`BACKUP_RETENTION_DAYS=14` 기본값), `backend/src/main/resources/logback-spring.xml:38-45`(30일/1GB), `analysis-engine/app/core/logging_config.py:16-17` 및 동일한 `video-llm-engine` 파일(100MB×10, 시간 만료 없음), `frontend/src/pages/PrivacyPage.jsx` 전체 대조.
+
+#### N8. [Low] nginx 엣지에 요청 속도 제한·server_tokens 은닉이 없음
+
+- **문제**: `infra/nginx/nginx.conf`는 CSP·HSTS·X-Frame-Options 등 보안 헤더는 이미 탄탄하게 갖췄지만(`frame-ancestors 'none'`, `unsafe-inline` 없음 확인), `server_tokens off;`나 `limit_req`/`limit_conn` 존(zone)이 없다. 요청 속도 제한은 현재 backend의 bucket4j에만 있어, nginx 자체는 요청이 Spring까지 도달하기 전에 걸러주는 계층이 없다.
+- **왜 중요한가**: `client_max_body_size 500m`(영상 업로드용, 의도된 값)와 결합하면 동시 대용량 업로드 몇 건만으로 nginx 워커 연결을 소모시키기 쉽다. 심각도는 낮지만 손쉽게 고칠 수 있는 항목이다.
+- **근거**: `infra/nginx/nginx.conf` 전문 검토, `limit_req`/`limit_conn`/`server_tokens` grep 결과 0건.
+
+#### N9. [Critical·데이터 무결성] `COMPLETED` 작업의 결과 JSON이 없거나 못 읽으면 조용히 "총점 0/UNKNOWN"으로 위장되고 이상 신호가 뜨지 않음 — 실제 라이브 데이터에서 재현됨
+
+- **문제**: 관리자 계정으로 실제 서비스 사용자(userId=1)의 결과를 조회한 결과, `2조.MOV`/`4조.MOV`/`5조.MOV` 3건이 모두 `status: COMPLETED`인데 `scoreSummary`는 전 항목 0/`level:"-"`, `feedback`은 `generationMode:"UNKNOWN", overall:""`으로 완전히 비어 있었다. 그런데 프론트가 렌더링하는 `dataIssue`/`dataIssueDescription` 필드는 **둘 다 `null`**이라 사용자·관리자 어느 화면에도 "이 결과는 이상하다"는 신호가 전혀 뜨지 않는다.
+- **근본 원인(코드로 직접 추적)**: `ResultQueryService.readFinalResultSafely()`(`backend/src/main/java/.../result/ResultQueryService.java:119-128`)가 `final_result.json`을 읽다가 어떤 `RuntimeException`이든 잡아서 로그도 안 남기고 조용히 빈 `Map.of()`를 반환한다. 그 빈 맵이 `ResultSummaryResponse.of(...)`에 들어가면 `createEmptyScoreSummary()`(125-137행, 전부 0/`"-"` 하드코딩)와 `createUnknownFeedback()`(139-149행, `"UNKNOWN"`/`""` 하드코딩)로 채워진다. 반면 `dataIssue`를 정하는 `toSummaryResponse()`(96-117행)는 **`UploadedVideo` row가 없는 경우(`MISSING_VIDEO`)만** 검사하고, "result JSON이 없거나 파싱 실패했다"는 케이스는 아예 `dataIssue` 값 자체가 코드에 정의돼 있지 않다(`ResultSummaryResponse.java` 전체에 `MISSING_VIDEO` 외 다른 값이 없음). 즉 저장소 문제로 결과 파일이 사라진 완료 작업이 "정상인데 점수만 낮은 결과"처럼 보이게 된다.
+- **왜 중요한가**: 추측이 아니라 실제 운영 중인 계정의 실제 완료 작업(392MB/480MB/479MB 실제 영상 3건, 2026-07-08~07-14 사이 생성)에서 지금 이 순간 재현된다. 사용자 입장에서는 "분석은 됐는데 왜 다 0점이지"로만 보이고, 관리자 입장에서도 이상 배지가 없어 storage 계층 문제(로컬 fallback ↔ MinIO 이중화 과정에서의 파일 유실 가능성 등, 07-16/07-17 업데이트에서 다룬 이중 저장 구조와 연관 가능)를 알아챌 방법이 없다.
+- **근거**: 관리자 API 실응답(`GET /api/admin/users/1/results?page=0`, 2026-07-18 실행 결과), `ResultQueryService.java:96-128`, `ResultSummaryResponse.java:55-149`, `ResultMergeService.java`(성공 경로는 `level`에 `"-"`를 절대 쓰지 않고 `EXCELLENT/GOOD/NORMAL/NEEDS_IMPROVEMENT`만, 실패 경로는 `"FAILED"`만 씀 — 관찰된 `"-"`는 두 경로 어디에서도 나올 수 없는 값이라 DTO 기본값임이 확정됨).
+- **참고**: 단일 작업 상세 조회 `GET /api/results/{jobId}`(`ResultController`→`ResultQueryService.getFinalResult`)는 같은 상황에서 예외를 삼키지 않고 `BusinessException(FILE_NOT_FOUND)` → 404를 그대로 반환한다. 즉 목록(list) 경로와 상세(detail) 경로가 같은 장애를 서로 다르게 처리하고 있어, 목록에서는 "이상 없음"처럼 보이다가 상세를 열면 갑자기 404가 뜨는 사용자 경험 불일치도 함께 존재한다.
+
+### 확인했지만 문제가 아니었던 것 (오탐 배제)
+
+- `MinioCredentialsStartupValidator`/`OpenAiApiKeyStartupValidator`의 판정 로직 자체는 결함이 없다(정상 케이스 오탐 없음). 다만 docker-compose를 거치지 않고 dev 프로필을 바로 실행하며 `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`를 안 채운 환경은 이제 기동이 막힌다 — 의도된 변경이지만 운영 채널에 공유가 필요하다.
+- ffmpeg 120초 timeout은 backend의 더 긴 상위 timeout(10분 read-timeout, 20분 job soft-timeout, 30분 watchdog)보다 충분히 짧아 실제로 먼저 발동한다 — 무의미한 timeout이 아니다.
+- `/results/:jobId`의 mock 모드 표기(`Mock 피드백`, `openai.enabled=false`, `Mock Video LLM 분석`)는 실사용 확인 결과 실제 결과처럼 위장하지 않고 정직하게 라벨링되어 있다 — 07-17 이전 우려("mock을 진짜로 오해할 위험")가 UI 차원에서는 이미 해소돼 있다.
+- `npm audit --audit-level=high`, `video-llm-engine/requirements-test.txt` 감사는 현재 클린하다(0건).
+- CSP는 `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`를 포함하고 `unsafe-inline`/`unsafe-eval`이 없어 이미 탄탄하다.
+
+### 관리자 페이지 후속 점검 (2026-07-18, 같은 날 추가)
+
+07-18 최초 조사에서 비어 있던 "관리자 테스트 계정 부재" 항목을 직접 채웠다. 절차: 로컬 `.env`(git-ignored, 커밋 안 됨)에 `ADMIN_EMAILS=admin@example.com` 추가 → `docker compose up -d --wait backend`로 재기동 → `POST /api/auth/signup`으로 `admin@example.com`/`admin1234` 계정 생성(응답에 `"admin":true` 확인) → 실제 로그인해 `/admin`, `/admin/users/:userId`, `/admin/audit-logs` 점검.
+
+- **이 절차 자체가 다음 순위 후보다**: 문서화된 시딩 스크립트나 절차가 없어 매번 이렇게 수동으로 `.env`를 고치고 backend를 재기동해야 한다. `docs/ops/`에 "로컬 관리자 계정 만들기" 한 단락을 추가하는 정도의 저비용 개선이다.
+- `/admin` 대시보드·`/admin/users/:userId`(사용자별 결과 목록)·`/admin/audit-logs`는 데스크톱에서 콘솔 에러 없이 정상 렌더링됐다. 감사로그는 이번 세션에서 정지/강제탈퇴 등 파괴적 조치를 의도적으로 실행하지 않아 빈 상태로 확인됐다(정상적인 빈 상태 UI 자체는 문제없이 표시됨).
+- **주의**: 사용자 목록에 실제 서비스 사용자 계정(프로젝트 소유자 본인 계정 포함)이 그대로 노출된다. 정지/강제탈퇴/결과삭제 버튼은 되돌리기 어려운 작업이라 이번 조사에서는 클릭하지 않았다 — 실사용 검증이 필요하면 별도의 격리된 테스트 사용자 계정으로 진행해야 한다.
+- 이 과정에서 **N5(모바일 네비게이션 오버플로우)**가 관리자 계정에서 더 악화된다는 사실과, **N9(결과 데이터 이상 미검출)**가 실제 라이브 데이터에서 재현된다는 사실을 새로 확인해 각각 위에 반영했다.
+
+### 여전히 점검 못 한 항목
+
+- `/results/:jobId`의 실패(FAILED)·취소(CANCELLED) 상태 UI는 이번에도 성공 경로만 점검해 미확인.
+- 실제(mock 아닌) OpenAI/Video LLM 응답 경로의 UI는 두 기능 모두 비활성 상태라 여전히 미점검.
+- 관리자의 정지/강제탈퇴/결과삭제 조치가 실제로 감사로그에 정확히 기록되는지는, 파괴적 조치를 피하기 위해 이번에도 실행 확인을 하지 않았다.
+
+### 다음 우선순위 (권장)
+
+1. **N1(MinIO 삭제 누락)**, **N2(pillow CVE/CI)**, **N9(결과 데이터 이상 미검출)**가 가장 시급하다 — 세 건 모두 지금 실제로 재현되는 데이터/컴플라이언스/CI 문제이며 추측이 아니다.
+2. N3(.env가 이미지에 복사될 수 있는 경로)은 `.dockerignore` 세 줄 추가로 끝나는 매우 저비용 고비용-임팩트 수정이라 바로 처리할 만하다.
+3. N4(non-root 컨테이너), N5(모바일 네비게이션), N6(테스트 커버리지)은 각각 별도 규모의 작업이라 우선순위를 사용자와 다시 상의해 순서를 정하는 것이 좋다.
+
+### 같은 날(2026-07-18) 후속 조치: N1·N2·N3·N9 수정 완료
+
+발견 직후 같은 회차에서 위 1·2순위 네 건을 실제로 수정하고 검증까지 마쳤다. N4~N6는 사용자와 순서를 다시 상의하기로 한 원래 계획대로 아직 착수하지 않았다.
+
+- **N1 해결**: `ResultCommandService.deleteResult()`가 이제 로컬 삭제와 함께 `objectStorage.deleteObjectsWithPrefix("uploads/{jobId}/")`, `deleteObjectsWithPrefix("results/{jobId}/")`를 호출한다(`StorageCleanupService`/`OriginalVideoRetentionService`와 동일한 best-effort 패턴 — MinIO 호출이 실패해도 로컬 삭제·DB 삭제는 막지 않음). MinIO 실패 시에도 삭제가 정상 진행되는지, 정상 시 두 prefix가 정확히 호출되는지 각각 단위 테스트로 고정했다.
+- **N2 해결**: `analysis-engine/requirements.txt`와 `video-llm-engine/requirements-real-model.txt`의 `pillow`를 `12.2.0`→`12.3.0`으로, `requirements-real-model.txt`의 `setuptools`를 `81.0.0`→`83.0.0`, `torch`를 `2.12.1`→`2.13.0`으로 올려 발견된 CVE 8+1+1건을 전부 해소했다(`pip-audit` 재실행으로 클린 확인). `requirements-real-model.txt`가 CI 감사 사각지대였던 부가 발견도 함께 닫았다 — `.github/workflows/verify.yml`의 `python-engines` 잡에 `pip-audit --no-deps --disable-pip -r requirements-real-model.txt` 스텝을 추가했다(무거운 torch 설치 없이 핀 고정 버전만 감사하므로 CI 비용 증가가 거의 없음). 로컬에서 동일 명령으로 실제 클린 통과를 확인했다.
+- **N3 해결**: `analysis-engine/.dockerignore`, `video-llm-engine/.dockerignore`, `frontend/.dockerignore`에 `.env`를 추가했다. `.env.example`은 제외 대상이 아니라 그대로 포함된다(플레이스홀더만 있어 안전). 실제로 `video-llm-engine`을 다시 빌드해 이미지 안에 `.env.example`만 있고 진짜 `.env`(NVIDIA 키 포함)는 전혀 들어가지 않음을 확인했다.
+- **N9 해결**: `ResultQueryService.toSummaryResponse()`가 이제 `analysisJob.getStatus() == COMPLETED && finalResult.isEmpty()`인 경우를 새 손상 유형 `dataIssue=RESULT_DATA_UNAVAILABLE`로 표시한다(`ResultSummaryResponse.missingResultData(...)` 신규 팩토리). QUEUED/RUNNING처럼 아직 결과 파일이 없는 게 정상인 상태는 그대로 두어 오탐을 만들지 않는다. `readFinalResultSafely()`의 예외 삼킴에도 `log.warn`을 추가해 운영 관측성을 확보했다. "완료인데 결과 파일 없음"과 "아직 대기 중이라 결과 없음"을 각각 재현하는 단위 테스트 2건을 추가했다. 프론트는 `dataIssue`/`dataIssueDescription`을 값에 상관없이 그대로 렌더링하는 기존 구조라 별도 프론트 수정이 필요 없었다.
+- **검증**: backend 전체 테스트(`./gradlew test`, `BUILD SUCCESSFUL`), analysis-engine pytest(91) 및 pip-audit(0건), video-llm-engine pytest(58) 및 `requirements-real-model.txt` pip-audit(0건), `analysis-engine`/`video-llm-engine` Docker 이미지 실제 재빌드(pillow 12.3.0 import 확인, `.env` 미포함 확인) 모두 통과.
+- **남은 것**: 이번 수정으로 N1이 향후 발생하는 삭제/탈퇴에는 적용되지만, 07-16/07-17 업데이트에서 지적된 "기존에 이미 유실된 MinIO 오브젝트"나 이번에 N9로 발견한 실제 3건의 손상된 결과(userId=1)에 대한 **소급 정리는 포함하지 않는다** — 별도로 결정·진행할 사안이다.

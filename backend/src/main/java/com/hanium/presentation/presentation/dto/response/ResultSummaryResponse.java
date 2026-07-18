@@ -79,6 +79,30 @@ public record ResultSummaryResponse(
         );
     }
 
+    // 분석 작업 상태는 COMPLETED인데 최종 결과 파일을 찾지 못했거나 읽지 못한(예: 로컬↔MinIO
+    // 이중화 과정에서 파일이 유실된) 작업을 위한 항목입니다. 점수/피드백이 전부 기본값(0/UNKNOWN)
+    // 이라는 것만으로는 사용자·관리자 화면에서 "정상인데 낮은 점수"와 구분되지 않으므로,
+    // MISSING_VIDEO와 마찬가지로 손상 상태를 명시적으로 표시합니다.
+    public static ResultSummaryResponse missingResultData(
+            AnalysisJob analysisJob,
+            UploadedVideo uploadedVideo
+    ) {
+        return new ResultSummaryResponse(
+                analysisJob.getJobId(),
+                analysisJob.getStatus(),
+                analysisJob.getStatus().getDescription(),
+                uploadedVideo.getOriginalFileName(),
+                uploadedVideo.getOriginalFileName(),
+                uploadedVideo.getFileSize(),
+                analysisJob.getCreatedAt(),
+                analysisJob.getCompletedAt(),
+                createEmptyScoreSummary(),
+                createUnknownFeedback(),
+                "RESULT_DATA_UNAVAILABLE",
+                "분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요."
+        );
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> extractScoreSummary(
             Map<String, Object> finalResult

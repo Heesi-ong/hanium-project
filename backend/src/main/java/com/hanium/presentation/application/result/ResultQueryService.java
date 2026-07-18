@@ -2,6 +2,7 @@ package com.hanium.presentation.application.result;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.exception.BusinessException;
@@ -90,9 +91,11 @@ public class ResultQueryService {
     }
 
     // 목록 조회는 한 작업의 데이터 정합성이 깨졌다고 전체를 실패시키지 않습니다. 업로드 영상
-    // 레코드가 없는 작업은 손상 항목(dataIssue=MISSING_VIDEO)으로 표시해 나머지와 함께
-    // 반환하고, 운영자가 원인을 조사할 수 있도록 jobId를 로그로 남깁니다. 명확한 오류가
-    // 필요한 경우는 개별 상세 조회(getFinalResult)에서만 던집니다.
+    // 레코드가 없는 작업은 손상 항목(dataIssue=MISSING_VIDEO)으로, 완료(COMPLETED) 처리됐는데
+    // 결과 파일을 찾지 못하거나 읽지 못한 작업은 손상 항목(dataIssue=RESULT_DATA_UNAVAILABLE)으로
+    // 표시해 나머지와 함께 반환하고, 운영자가 원인을 조사할 수 있도록 jobId를 로그로 남깁니다.
+    // QUEUED/RUNNING 상태는 아직 결과 파일이 없는 게 정상이므로 이 검사 대상이 아닙니다.
+    // 명확한 오류가 필요한 경우는 개별 상세 조회(getFinalResult)에서만 던집니다.
     private ResultSummaryResponse toSummaryResponse(
             AnalysisJob analysisJob,
             Map<String, UploadedVideo> uploadedVideosByJobId
@@ -109,6 +112,15 @@ public class ResultQueryService {
             return ResultSummaryResponse.missingVideo(analysisJob, finalResult);
         }
 
+        if (analysisJob.getStatus() == AnalysisStatus.COMPLETED && finalResult.isEmpty()) {
+            log.warn(
+                    "[{}] 완료된 작업의 결과 파일을 찾지 못하거나 읽지 못해 손상 항목으로 표시합니다.",
+                    analysisJob.getJobId()
+            );
+
+            return ResultSummaryResponse.missingResultData(analysisJob, uploadedVideo);
+        }
+
         return ResultSummaryResponse.of(
                 analysisJob,
                 uploadedVideo,
@@ -123,6 +135,11 @@ public class ResultQueryService {
 
             return finalResult == null ? Map.of() : finalResult;
         } catch (RuntimeException exception) {
+            log.warn(
+                    "[{}] 결과 목록 조회 중 최종 결과 파일을 읽지 못했습니다. reason={}",
+                    jobId,
+                    exception.toString()
+            );
             return Map.of();
         }
     }

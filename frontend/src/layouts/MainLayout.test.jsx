@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -78,5 +78,54 @@ describe("MainLayout", () => {
         expect(screen.getByRole("button", { name: "로그아웃" })).toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "로그인" })).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "회원가입" })).not.toBeInTheDocument();
+    });
+
+    it("mobile menu is closed by default and opens/closes via the toggle button", () => {
+        authMock.isAuthenticated = true;
+        authMock.user = { email: "user@example.com" };
+
+        renderMainLayout();
+
+        const toggleButton = screen.getByRole("button", { name: "메뉴 열기" });
+        expect(toggleButton).toHaveAttribute("aria-expanded", "false");
+        expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
+
+        fireEvent.click(toggleButton);
+
+        expect(screen.getByRole("button", { name: "메뉴 닫기" })).toHaveAttribute("aria-expanded", "true");
+        const mobileNav = screen.getByRole("navigation", { name: "모바일 메뉴" });
+        expect(mobileNav).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "메뉴 닫기" }));
+
+        expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
+    });
+
+    it("closes the mobile menu when a link inside it is clicked", () => {
+        authMock.isAuthenticated = true;
+        authMock.user = { email: "user@example.com" };
+
+        renderMainLayout();
+
+        fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+        const mobileNav = screen.getByRole("navigation", { name: "모바일 메뉴" });
+
+        fireEvent.click(within(mobileNav).getByRole("link", { name: "분석 결과" }));
+
+        expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
+    });
+
+    it("closes the mobile menu on Escape key press", () => {
+        authMock.isAuthenticated = true;
+        authMock.user = { email: "user@example.com" };
+
+        renderMainLayout();
+
+        fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+        expect(screen.getByRole("navigation", { name: "모바일 메뉴" })).toBeInTheDocument();
+
+        fireEvent.keyDown(window, { key: "Escape" });
+
+        expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
     });
 });

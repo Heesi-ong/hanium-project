@@ -45,4 +45,26 @@ describe("PrivacyPage", () => {
         expect(screen.getByText(/NVCF Asset API 업로드/))
             .toBeInTheDocument();
     });
+
+    it("discloses backup retention period and encryption", () => {
+        renderPrivacyPage();
+
+        expect(screen.getByRole("heading", { name: "백업 보관" }))
+            .toBeInTheDocument();
+        expect(screen.getByText(/BACKUP_RETENTION_DAYS/))
+            .toBeInTheDocument();
+        expect(screen.getByText(/AES-256으로/))
+            .toBeInTheDocument();
+    });
+
+    it("discloses log retention differences between backend and analysis engines", () => {
+        renderPrivacyPage();
+
+        expect(screen.getByRole("heading", { name: "로그 보관" }))
+            .toBeInTheDocument();
+        expect(screen.getByText(/최대 30일 또는 총 1GB/))
+            .toBeInTheDocument();
+        expect(screen.getByText(/30일보다 더 오래 남아 있을 수 있습니다/))
+            .toBeInTheDocument();
+    });
 });

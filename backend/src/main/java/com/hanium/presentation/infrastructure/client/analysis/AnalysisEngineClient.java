@@ -8,11 +8,14 @@ import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngine
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
@@ -22,15 +25,37 @@ public class AnalysisEngineClient {
 
     private final RestClient restClient;
     private final AnalysisEngineProperties properties;
+    private final Map<String, Counter> readinessCounters;
 
     public AnalysisEngineClient(
             RestClient.Builder restClientBuilder,
-            AnalysisEngineProperties properties
+            AnalysisEngineProperties properties,
+            MeterRegistry meterRegistry
     ) {
         this.properties = properties;
         this.restClient = restClientBuilder
                 .baseUrl(properties.baseUrl())
                 .build();
+        this.readinessCounters = createReadinessCounters(meterRegistry);
+    }
+
+    private static Map<String, Counter> createReadinessCounters(MeterRegistry meterRegistry) {
+        Map<String, Counter> counters = new LinkedHashMap<>();
+        for (String outcome : new String[] {"ready", "not_ready", "unauthenticated", "unreachable"}) {
+            counters.put(
+                    outcome,
+                    Counter.builder("engine.readiness.check")
+                            .description("엔진 authenticated readiness 조회 결과")
+                            .tag("engine", "analysis")
+                            .tag("outcome", outcome)
+                            .register(meterRegistry)
+            );
+        }
+        return counters;
+    }
+
+    private void recordReadinessOutcome(String outcome) {
+        readinessCounters.get(outcome).increment();
     }
 
     public Map<String, Object> checkHealth() {
@@ -67,6 +92,7 @@ public class AnalysisEngineClient {
                     .body(Map.class);
 
             boolean ready = response != null && Boolean.TRUE.equals(response.get("ready"));
+            recordReadinessOutcome(ready ? "ready" : "not_ready");
 
             return Map.of(
                     "reachable", true,
@@ -75,6 +101,7 @@ public class AnalysisEngineClient {
                     "response", response == null ? Map.of() : response
             );
         } catch (HttpClientErrorException.Unauthorized e) {
+            recordReadinessOutcome("unauthenticated");
             return Map.of(
                     "reachable", true,
                     "authenticated", false,
@@ -83,6 +110,7 @@ public class AnalysisEngineClient {
                     "message", "분석 엔진 내부 API 키 인증에 실패했습니다."
             );
         } catch (Exception e) {
+            recordReadinessOutcome("unreachable");
             return Map.of(
                     "reachable", false,
                     "authenticated", false,

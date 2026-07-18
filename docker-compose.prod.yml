@@ -3,11 +3,15 @@
 
 services:
   nginx:
-    image: nginx:1.27-alpine
+    image: hanium-nginx:prod
+    build:
+      context: ./infra/nginx
     restart: unless-stopped
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN must be set}
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:?MINIO_PUBLIC_ENDPOINT must be set for video playback CSP}
@@ -25,14 +29,17 @@ services:
             -subj "/CN=$${DOMAIN}"
           touch "$${cert_dir}/.bootstrap-self-signed"
         fi
-        nginx -g 'daemon off;'
+        exec /docker-entrypoint.sh nginx -g 'daemon off;'
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro
       - certbot-webroot:/var/www/certbot
-      - letsencrypt:/etc/letsencrypt:ro
+      # 최초 기동 때 nginx가 1일짜리 self-signed 인증서를 /etc/letsencrypt에 만들고,
+      # 이후 certbot이 실제 인증서로 교체합니다. read-only로 마운트하면 빈 볼륨에서
+      # 첫 배포가 실패하므로 이 볼륨은 쓰기 가능해야 합니다.
+      - letsencrypt:/etc/letsencrypt
 
   certbot:
     image: certbot/certbot:latest

@@ -52,7 +52,8 @@ Cross-origin probes:
 - `OPTIONS /api/analysis/{jobId}/run` with `Origin: http://evil.example`, `Access-Control-Request-Method: POST`, and `Access-Control-Request-Headers: content-type` returned `403 Invalid CORS request`.
 - `POST /api/auth/logout` with `Origin: http://evil.example` and `application/x-www-form-urlencoded` returned `403 Invalid CORS request`.
 - `POST /api/analysis/{jobId}/cancel` with `Origin: http://evil.example`, a valid logged-in cookie jar, and `application/x-www-form-urlencoded` returned `403 Invalid CORS request`.
-- `POST /api/auth/login` with no `Origin` and `application/x-www-form-urlencoded` returned `500`. This should be handled as `415 Unsupported Media Type` or `400`, but it does not prove a CSRF path because browser cross-site form POSTs include an `Origin` in modern browsers and were rejected when Origin was present.
+- `POST /api/auth/login` with no `Origin` and `application/x-www-form-urlencoded` is covered by `AuthControllerIntegrationTest` and returns `415 Unsupported Media Type`, not `500`.
+- `POST /api/auth/login` with malformed JSON is covered by `AuthControllerIntegrationTest` and returns `400 Bad Request`, not `500`.
 
 ## Conclusion
 
@@ -67,6 +68,6 @@ The residual risks are:
 
 1. `POST /api/auth/logout` is anonymous and bodyless. If a client or legacy browser sends a cross-site POST without `Origin`, the endpoint can emit an expiring cookie and force logout.
 2. Several authenticated endpoints are form-shaped (`cancel`, `run`, `retry`, `video-access-token`, `upload`). They are currently protected by SameSite/CORS, but they are exactly the endpoints that should receive a CSRF token if SameSite policy, allowed origins, or embedded-client assumptions change.
-3. Wrong content type for JSON auth endpoints currently produced a 500 in local verification. That should be cleaned up separately as API error-hardening.
+3. Wrong content type and malformed JSON for auth endpoints are now covered by integration tests and return 4xx responses. Keep the regression tests when adding new JSON auth endpoints.
 
 Recommended next step before production hardening: keep this unit as analysis-only, then add a dedicated CSRF-token design if the app must support broader allowed origins, cross-site embedding, older browser support, or non-browser clients that do not reliably send `Origin`.

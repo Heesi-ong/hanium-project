@@ -113,6 +113,7 @@ class AnalysisQueuedCancelIntegrationTest {
 
         ResponseEntity<String> runResponse = post(token, "/api/analysis/" + JOB_ID + "/run");
         assertThat(runResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(runResponse.getBody()).contains("분석 실행 요청이 접수되었습니다.");
 
         AnalysisJob queuedJob = analysisJobRepository.findByJobId(JOB_ID).orElseThrow();
         assertThat(queuedJob.getStatus()).isEqualTo(AnalysisStatus.QUEUED);

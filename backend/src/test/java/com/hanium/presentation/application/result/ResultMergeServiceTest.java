@@ -180,6 +180,46 @@ class ResultMergeServiceTest {
         assertThat(visualAnalysis(finalResult)).containsEntry("status", "skipped");
     }
 
+    @Test
+    void createFinalResultReflectsVideoLlmGenerationModeInPipeline() {
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1",
+                analysisResponse(Map.of(), Map.of(), Map.of(), Map.of()),
+                new VideoLlmEngineResponse(
+                        "job-1",
+                        "completed",
+                        Map.of("generationMode", "FALLBACK"),
+                        Map.of(),
+                        Map.of()
+                ),
+                openAiFeedbackResponse()
+        );
+
+        assertThat(pipeline(finalResult))
+                .containsEntry("videoLlmAnalysis", "video-llm-engine fallback mock")
+                .containsEntry("videoLlmGenerationMode", "FALLBACK");
+    }
+
+    @Test
+    void createFinalResultMarksVideoLlmPipelineAsSkippedWhenVideoLlmWasSkipped() {
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1",
+                analysisResponse(Map.of(), Map.of(), Map.of(), Map.of()),
+                new VideoLlmEngineResponse(
+                        "job-1",
+                        "skipped",
+                        Map.of("generationMode", "SKIPPED"),
+                        Map.of(),
+                        Map.of()
+                ),
+                openAiFeedbackResponse()
+        );
+
+        assertThat(pipeline(finalResult))
+                .containsEntry("videoLlmAnalysis", "video-llm-engine skipped")
+                .containsEntry("videoLlmGenerationMode", "SKIPPED");
+    }
+
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> notableMoments(Map<String, Object> finalResult) {
         return (List<Map<String, Object>>) finalResult.get("notableMoments");
@@ -188,6 +228,11 @@ class ResultMergeServiceTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> visualAnalysis(Map<String, Object> finalResult) {
         return (Map<String, Object>) finalResult.get("visualAnalysis");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> pipeline(Map<String, Object> finalResult) {
+        return (Map<String, Object>) finalResult.get("pipeline");
     }
 
     private Map<String, Object> findMoment(

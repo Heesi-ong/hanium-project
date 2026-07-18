@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import apiClient from "./apiClient";
+import apiClient, { DEFAULT_API_TIMEOUT_MS } from "./apiClient";
 
 afterEach(() => {
     localStorage.clear();
@@ -29,6 +29,7 @@ describe("apiClient", () => {
         });
 
         expect(apiClient.defaults.withCredentials).toBe(true);
+        expect(apiClient.defaults.timeout).toBe(DEFAULT_API_TIMEOUT_MS);
         expect(requestConfig.withCredentials).toBe(true);
         expect(requestConfig.headers.Authorization).toBeUndefined();
     });

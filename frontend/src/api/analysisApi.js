@@ -1,5 +1,9 @@
 import apiClient, { unwrapApiResponse } from "./apiClient";
 
+export const UPLOAD_ANALYSIS_TIMEOUT_MS = 20 * 60 * 1000;
+export const ANALYSIS_COMMAND_TIMEOUT_MS = 30 * 1000;
+export const ANALYSIS_POLL_TIMEOUT_MS = 10 * 1000;
+
 export async function healthCheck() {
     const response = await apiClient.get("/api/health");
     return unwrapApiResponse(response);
@@ -18,7 +22,7 @@ export async function uploadAnalysisVideo(file) {
         headers: {
             "Content-Type": "multipart/form-data",
         },
-        timeout: 20 * 60 * 1000,
+        timeout: UPLOAD_ANALYSIS_TIMEOUT_MS,
     });
 
     return unwrapApiResponse(response);
@@ -32,7 +36,8 @@ export async function runAnalysis(jobId, options = {}) {
 
     const response = await apiClient.post(
         `/api/analysis/${jobId}/run`,
-        requestBody
+        requestBody,
+        { timeout: ANALYSIS_COMMAND_TIMEOUT_MS }
     );
 
     return unwrapApiResponse(response);
@@ -46,25 +51,36 @@ export async function retryAnalysis(jobId, options = {}) {
 
     const response = await apiClient.post(
         `/api/analysis/${jobId}/retry`,
-        requestBody
+        requestBody,
+        { timeout: ANALYSIS_COMMAND_TIMEOUT_MS }
     );
 
     return unwrapApiResponse(response);
 }
 
 export async function cancelAnalysis(jobId) {
-    const response = await apiClient.post(`/api/analysis/${jobId}/cancel`);
+    const response = await apiClient.post(
+        `/api/analysis/${jobId}/cancel`,
+        null,
+        { timeout: ANALYSIS_COMMAND_TIMEOUT_MS }
+    );
     return unwrapApiResponse(response);
 }
 
 export async function getAnalysisStatus(jobId) {
-    const response = await apiClient.get(`/api/analysis/${jobId}/status`);
+    const response = await apiClient.get(
+        `/api/analysis/${jobId}/status`,
+        { timeout: ANALYSIS_POLL_TIMEOUT_MS }
+    );
     return unwrapApiResponse(response);
 }
 
 // 분석이 진행되는 동안 몇 %쯤 진행됐는지 확인합니다. (Redis 기반 진행률 캐시)
 export async function getAnalysisProgress(jobId) {
-    const response = await apiClient.get(`/api/analysis/${jobId}/progress`);
+    const response = await apiClient.get(
+        `/api/analysis/${jobId}/progress`,
+        { timeout: ANALYSIS_POLL_TIMEOUT_MS }
+    );
     return unwrapApiResponse(response);
 }
 

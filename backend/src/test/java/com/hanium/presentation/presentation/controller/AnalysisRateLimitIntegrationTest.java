@@ -111,6 +111,17 @@ class AnalysisRateLimitIntegrationTest {
     }
 
     @Test
+    void uploadRejectsMissingFilePartWithoutServerError() throws Exception {
+        String token = signupAndLogin("missing-file@example.com");
+
+        ResponseEntity<String> response = uploadWithoutFile(token);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        JsonNode body = objectMapper.readTree(response.getBody());
+        assertThat(body.path("error").asText()).isEqualTo("INVALID_INPUT_VALUE");
+    }
+
+    @Test
     void runAndRetryApisShareAnalysisRateLimitBucket() throws Exception {
         String token = signupAndLogin("rate-analysis@example.com");
         Long ownerId = userRepository.findByEmail("rate-analysis@example.com")
@@ -151,6 +162,19 @@ class AnalysisRateLimitIntegrationTest {
                 "http://localhost:" + port + "/api/analysis/upload",
                 HttpMethod.POST,
                 new HttpEntity<>(body, headers),
+                String.class
+        );
+    }
+
+    private ResponseEntity<String> uploadWithoutFile(String token) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+
+        return restTemplate.exchange(
+                "http://localhost:" + port + "/api/analysis/upload",
+                HttpMethod.POST,
+                new HttpEntity<>(new LinkedMultiValueMap<String, Object>(), headers),
                 String.class
         );
     }

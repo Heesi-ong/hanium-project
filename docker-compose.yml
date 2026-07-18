@@ -448,7 +448,8 @@ services:
     environment:
       BACKEND_API_UPSTREAM: backend:8080
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "5173:80"
     # nginx는 이미지를 통째로 root로 재빌드하지 않는 한 conf.d 템플릿 치환(envsubst)과
@@ -473,6 +474,12 @@ services:
       - SETGID
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   mysql-data:

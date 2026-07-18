@@ -18,3 +18,35 @@ tests:
             exp_annotations:
               summary: "MySQL 백업의 MinIO 원격 반출이 실패했습니다"
               description: "로컬 MySQL 백업은 생성됐지만 가장 최근 MinIO 원격 반출이 실패했습니다. backup 컨테이너의 MinIO 자격 증명, 버킷, 네트워크와 로그를 확인하세요."
+
+  - name: engine readiness degraded becomes warning
+    interval: 1m
+    input_series:
+      - series: 'engine_readiness_check_total{engine="video_llm",outcome="not_ready"}'
+        values: 0+1x20
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: EngineReadinessDegraded
+        exp_alerts:
+          - exp_labels:
+              engine: video_llm
+              severity: warning
+            exp_annotations:
+              summary: "엔진 readiness가 degraded 상태입니다"
+              description: "video_llm 엔진의 authenticated readiness 점검이 실패했습니다. 내부 API 키, 모델 로딩, 외부 API 설정, 엔진 로그를 확인하세요."
+
+  - name: result data issue becomes warning
+    interval: 1m
+    input_series:
+      - series: 'result_data_issue_total{source="detail",issue="RESULT_DATA_INCOMPLETE"}'
+        values: 0+1x10
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ResultDataIssueDetected
+        exp_alerts:
+          - exp_labels:
+              issue: RESULT_DATA_INCOMPLETE
+              severity: warning
+            exp_annotations:
+              summary: "분석 결과 데이터 정합성 문제가 감지됐습니다"
+              description: "RESULT_DATA_INCOMPLETE 유형의 결과 데이터 문제가 최근 조회 경로에서 감지됐습니다. jobId는 backend 로그에서 dataIssue 경고를 확인하세요."

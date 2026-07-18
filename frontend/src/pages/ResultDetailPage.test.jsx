@@ -120,4 +120,28 @@ describe("ResultDetailPage", () => {
             expect(analysisApiMock.getResult).toHaveBeenCalledWith("job-print-test");
         });
     });
+
+    it("shows a data issue warning when the result payload is incomplete", async () => {
+        analysisApiMock.getResult.mockResolvedValue({
+            data: {
+                dataIssue: "RESULT_DATA_INCOMPLETE",
+                dataIssueDescription: "분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다.",
+                result: {
+                    ...createCompletedResult().data.result,
+                    scoreSummary: {
+                        level: "-",
+                        totalScore: 0,
+                    },
+                    feedback: {
+                        generationMode: "UNKNOWN",
+                        overall: "",
+                    },
+                },
+            },
+        });
+
+        renderResultDetailPage();
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("불완전");
+    });
 });

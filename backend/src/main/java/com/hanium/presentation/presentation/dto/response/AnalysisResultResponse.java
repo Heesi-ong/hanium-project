@@ -4,10 +4,19 @@ import java.util.Map;
 
 public record AnalysisResultResponse(
         String jobId,
-        Map<String, Object> result
+        Map<String, Object> result,
+        String dataIssue,
+        String dataIssueDescription
 ) {
 
     public static AnalysisResultResponse of(String jobId, Map<String, Object> result) {
-        return new AnalysisResultResponse(jobId, result);
+        String dataIssue = ResultSummaryResponse.resolveDataIssue(result);
+
+        return new AnalysisResultResponse(
+                jobId,
+                result,
+                dataIssue,
+                ResultSummaryResponse.resolveDataIssueDescription(dataIssue)
+        );
     }
 }

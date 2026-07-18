@@ -42,6 +42,12 @@ const singleResultResponse = {
                 fileName: "presentation.mp4",
                 createdAt: "2026-07-15T09:00:00",
                 scoreSummary: { totalScore: 88, level: "우수" },
+                visualAnalysis: {
+                    model: {
+                        name: "mock-video-llm",
+                        generationMode: "MOCK",
+                    },
+                },
                 feedback: { generationMode: "MOCK", model: "-", realApiUsed: false },
             },
         ],
@@ -68,6 +74,8 @@ describe("AdminUserDetailPage", () => {
         renderAdminUserDetailPage("1");
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
+        expect(screen.getByText("샘플 시각 분석")).toBeInTheDocument();
+        expect(screen.getByText("Video LLM · mock-video-llm")).toBeInTheDocument();
         expect(apiMock.getAdminUserResults).toHaveBeenCalledWith("1", { page: 0 });
     });
 
@@ -77,6 +85,25 @@ describe("AdminUserDetailPage", () => {
         renderAdminUserDetailPage("2");
 
         expect(await screen.findByText("표시할 분석 결과가 없습니다.")).toBeInTheDocument();
+    });
+
+    it("shows data issue warnings for broken user results", async () => {
+        apiMock.getAdminUserResults.mockResolvedValue({
+            data: {
+                content: [
+                    {
+                        ...singleResultResponse.data.content[0],
+                        dataIssue: "RESULT_DATA_INCOMPLETE",
+                        dataIssueDescription: "분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다.",
+                    },
+                ],
+                last: true,
+            },
+        });
+
+        renderAdminUserDetailPage("1");
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("불완전");
     });
 
     it("deletes a result after confirmation and removes it from the list", async () => {

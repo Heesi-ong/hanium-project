@@ -2,12 +2,14 @@ import base64
 from contextlib import contextmanager
 import json
 import logging
+import math
 import mimetypes
 import os
 from pathlib import Path
 import tempfile
 import time
 from typing import Any, Dict, Iterator
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, Header
@@ -81,6 +83,33 @@ def resolve_video_max_size_bytes() -> int:
     return max_size_mb * 1024 * 1024
 
 
+def resolve_nvidia_timeout_seconds() -> float:
+    raw_value = os.getenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "120").strip()
+    try:
+        timeout_seconds = float(raw_value)
+    except ValueError as exception:
+        raise RuntimeError("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number.") from exception
+
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise RuntimeError("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number.")
+
+    return timeout_seconds
+
+
+def resolve_env_with_default(name: str, default_value: str) -> str:
+    return os.getenv(name, default_value).strip() or default_value
+
+
+def resolve_absolute_http_url(name: str, default_value: str) -> str:
+    value = resolve_env_with_default(name, default_value).rstrip("/")
+    parsed = urlparse(value)
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise RuntimeError(f"{name} must be an absolute http(s) URL.")
+
+    return value
+
+
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
     api_key = os.getenv("NVIDIA_API_KEY", "").strip()
     if not api_key:
@@ -90,15 +119,12 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
         os.getenv("NVIDIA_VIDEO_LLM_MODEL", NVIDIA_DEFAULT_MODEL).strip()
         or NVIDIA_DEFAULT_MODEL
     )
-    base_url = (
-        os.getenv("NVIDIA_API_BASE_URL", NVIDIA_DEFAULT_API_BASE_URL).strip()
-        or NVIDIA_DEFAULT_API_BASE_URL
-    ).rstrip("/")
-    asset_base_url = (
-        os.getenv("NVIDIA_ASSET_API_BASE_URL", NVIDIA_DEFAULT_ASSET_BASE_URL).strip()
-        or NVIDIA_DEFAULT_ASSET_BASE_URL
-    ).rstrip("/")
-    timeout_seconds = float(os.getenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "120"))
+    base_url = resolve_absolute_http_url("NVIDIA_API_BASE_URL", NVIDIA_DEFAULT_API_BASE_URL)
+    asset_base_url = resolve_absolute_http_url(
+        "NVIDIA_ASSET_API_BASE_URL",
+        NVIDIA_DEFAULT_ASSET_BASE_URL,
+    )
+    timeout_seconds = resolve_nvidia_timeout_seconds()
 
     url = f"{base_url}/chat/completions"
     started_at = time.monotonic()

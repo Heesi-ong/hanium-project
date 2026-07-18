@@ -137,12 +137,15 @@ jobs:
           - analysis-engine
           - video-llm-engine
           - backup
+          - nginx
     steps:
       - uses: actions/checkout@v4
       - name: Build image
         run: |
           if [[ "${{ matrix.image }}" == "backup" ]]; then
             docker build -f infra/backup/Dockerfile -t hanium-backup:ci .
+          elif [[ "${{ matrix.image }}" == "nginx" ]]; then
+            docker build -t hanium-nginx:ci infra/nginx
           else
             docker build -t "hanium-${{ matrix.image }}:ci" "${{ matrix.image }}"
           fi
@@ -151,6 +154,26 @@ jobs:
         run: >-
           docker run --rm --entrypoint /bin/bash hanium-backup:ci
           -c 'command -v mysqldump gzip openssl mc && mc --version'
+      - name: Verify frontend runtime healthcheck tools
+        if: matrix.image == 'frontend'
+        run: >-
+          docker run --rm
+          --entrypoint /bin/sh
+          -e BACKEND_API_UPSTREAM=backend:8080
+          hanium-frontend:ci
+          -c 'command -v wget && /docker-entrypoint.sh nginx -t'
+      - name: Verify nginx TLS bootstrap tools
+        if: matrix.image == 'nginx'
+        run: >-
+          docker run --rm
+          --entrypoint /bin/sh
+          -e DOMAIN=example.com
+          -e MINIO_PUBLIC_ENDPOINT=https://storage.example.com
+          --add-host backend:127.0.0.1
+          --add-host frontend:127.0.0.1
+          -v "$PWD/infra/nginx/nginx.conf:/etc/nginx/templates/default.conf.template:ro"
+          hanium-nginx:ci
+          -c 'command -v openssl && cert_dir="/etc/letsencrypt/live/${DOMAIN}" && mkdir -p "${cert_dir}" && openssl req -x509 -nodes -newkey rsa:2048 -days 1 -keyout "${cert_dir}/privkey.pem" -out "${cert_dir}/fullchain.pem" -subj "/CN=${DOMAIN}" >/tmp/openssl.out 2>&1 && touch "${cert_dir}/.bootstrap-self-signed" && test -f "${cert_dir}/fullchain.pem" && test -f "${cert_dir}/privkey.pem" && test -f "${cert_dir}/.bootstrap-self-signed" && /docker-entrypoint.sh nginx -t && grep -q "server_name example.com" /etc/nginx/conf.d/default.conf && grep -q "proxy_pass http://backend:8080" /etc/nginx/conf.d/default.conf'
       - name: Test backup local and remote status handling
         if: matrix.image == 'backup'
         run: bash scripts/tests/test-backup-mysql.sh
@@ -262,6 +285,9 @@ jobs:
               healthcheck = services[dependency].get('healthcheck', {})
               assert healthcheck.get('test'), f'{dependency} healthcheck is missing'
 
+          frontend_healthcheck = services['frontend'].get('healthcheck', {})
+          assert frontend_healthcheck.get('test'), 'frontend healthcheck is missing'
+
           for consumer in ('backend', 'analysis-worker'):
               dependencies = services[consumer].get('depends_on', {})
               for dependency in readiness_dependencies:
@@ -269,6 +295,11 @@ jobs:
                   assert condition == 'service_healthy', (
                       f'{consumer} must wait for {dependency} service_healthy, got {condition!r}'
                   )
+
+          frontend_backend_condition = services['frontend']['depends_on'].get('backend', {}).get('condition')
+          assert frontend_backend_condition == 'service_healthy', (
+              f'frontend must wait for backend service_healthy, got {frontend_backend_condition!r}'
+          )
 
           for dependency in ('mysql', 'minio'):
               condition = services['backup']['depends_on'].get(dependency, {}).get('condition')
@@ -286,6 +317,49 @@ jobs:
           PY
       - name: Validate prod overlay
         run: docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+      - name: Verify prod edge waits for healthy app services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --format json > /tmp/prod-compose.json
+          python3 - <<'PY'
+          import json
+
+          with open('/tmp/prod-compose.json', encoding='utf-8') as compose_file:
+              services = json.load(compose_file)['services']
+
+          nginx_service = services['nginx']
+          nginx_dependencies = services['nginx'].get('depends_on', {})
+          for dependency in ('backend', 'frontend'):
+              condition = nginx_dependencies.get(dependency, {}).get('condition')
+              assert condition == 'service_healthy', (
+                  f'nginx must wait for {dependency} service_healthy, got {condition!r}'
+              )
+
+          nginx_command = '\n'.join(nginx_service.get('command', []))
+          assert '/docker-entrypoint.sh nginx' in nginx_command, (
+              'nginx bootstrap command must re-enter the official entrypoint so envsubst renders templates'
+          )
+
+          letsencrypt_volume = next(
+              (
+                  volume for volume in nginx_service.get('volumes', [])
+                  if volume.get('target') == '/etc/letsencrypt'
+              ),
+              None,
+          )
+          assert letsencrypt_volume is not None, 'nginx must mount the letsencrypt volume'
+          assert not letsencrypt_volume.get('read_only', False), (
+              'nginx letsencrypt volume must be writable for first-boot self-signed bootstrap'
+          )
+
+          frontend_build_args = services['frontend'].get('build', {}).get('args', {})
+          vite_api_base_url = frontend_build_args.get('VITE_API_BASE_URL')
+          assert vite_api_base_url == '', (
+              'prod frontend must use same-origin /api routing behind nginx, '
+              f'got VITE_API_BASE_URL={vite_api_base_url!r}'
+          )
+
+          print('Production edge startup contract OK')
+          PY
       - name: Ensure prod rejects an unencrypted backup configuration
         env:
           BACKUP_ENCRYPTION_PASSPHRASE: ""

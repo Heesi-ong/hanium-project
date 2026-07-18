@@ -21,27 +21,31 @@ public class AnalysisCompactor {
         compactResult.put("jobId", jobId);
         compactResult.put("createdAt", LocalDateTime.now().toString());
         compactResult.put("compactPurpose", "LLM 피드백 생성을 위한 분석 데이터 정리");
-        compactResult.put("dataPolicy", createDataPolicy());
+        compactResult.put("dataPolicy", createDataPolicy(videoLlmEngineResponse));
         compactResult.put("scoringPolicy", createScoringPolicy());
         compactResult.put("rawMetrics", createRawMetrics(analysisEngineResponse));
         compactResult.put("modelInputs", createModelInputs(
                 analysisEngineResponse,
                 videoLlmEngineResponse
         ));
-        compactResult.put("llmInstructionHints", createLlmInstructionHints());
+        compactResult.put("llmInstructionHints", createLlmInstructionHints(videoLlmEngineResponse));
 
         return compactResult;
     }
 
-    private Map<String, Object> createDataPolicy() {
+    private Map<String, Object> createDataPolicy(
+            VideoLlmEngineResponse videoLlmEngineResponse
+    ) {
         Map<String, Object> dataPolicy = new LinkedHashMap<>();
+        String videoLlmGenerationMode = resolveVideoLlmGenerationMode(videoLlmEngineResponse);
 
         dataPolicy.put("rawMetrics", "analysis-engine에서 생성한 원시 분석 지표입니다.");
         dataPolicy.put("modelInputs", "LLM 또는 Mock 피드백 생성기가 우선 참고할 요약 입력입니다.");
         dataPolicy.put("ruleBasedInterpretation", "현재 단계에서는 생성하지 않습니다.");
         dataPolicy.put("contentAnalysis", "STT transcript 기반 내용 분석은 아직 수행하지 않습니다.");
-        dataPolicy.put("videoLlmAnalysis", "현재는 video-llm-engine Mock 결과입니다.");
-        dataPolicy.put("openAiFeedback", "현재는 실제 OpenAI 호출 없이 Mock 피드백을 생성합니다.");
+        dataPolicy.put("videoLlmAnalysis", resolveVideoLlmDataPolicy(videoLlmGenerationMode));
+        dataPolicy.put("videoLlmGenerationMode", videoLlmGenerationMode);
+        dataPolicy.put("openAiFeedback", "OpenAI 피드백은 런타임 설정과 API 호출 결과에 따라 REAL, MOCK, FALLBACK 중 하나로 생성됩니다.");
 
         return dataPolicy;
     }
@@ -242,17 +246,70 @@ public class AnalysisCompactor {
         return feedbackFocus;
     }
 
-    private Map<String, Object> createLlmInstructionHints() {
+    private Map<String, Object> createLlmInstructionHints(
+            VideoLlmEngineResponse videoLlmEngineResponse
+    ) {
         Map<String, Object> hints = new LinkedHashMap<>();
+        String videoLlmGenerationMode = resolveVideoLlmGenerationMode(videoLlmEngineResponse);
 
         hints.put("doNotInvent", "제공된 수치에 없는 내용을 임의로 생성하지 않습니다.");
         hints.put("useRawMetricsFirst", "rawMetrics는 원본 수치 확인용으로 사용합니다.");
         hints.put("useModelInputsFirst", "modelInputs는 피드백 생성 시 우선 참고합니다.");
         hints.put("separateObservationAndJudgement", "검출률, 점수, 비율 같은 관찰값과 개선 조언을 구분합니다.");
         hints.put("avoidOverclaiming", "MediaPipe 기반 추정값은 확정 진단처럼 표현하지 않습니다.");
-        hints.put("currentLimitation", "현재 Video LLM과 OpenAI는 Mock 상태입니다.");
+        hints.put("videoLlmGenerationMode", videoLlmGenerationMode);
+        hints.put("currentLimitation", resolveCurrentLimitation(videoLlmGenerationMode));
 
         return hints;
+    }
+
+    private String resolveVideoLlmGenerationMode(
+            VideoLlmEngineResponse videoLlmEngineResponse
+    ) {
+        Map<String, Object> model = nullSafeMap(videoLlmEngineResponse.model());
+        Object generationMode = model.get("generationMode");
+
+        if (generationMode == null || generationMode.toString().isBlank()) {
+            return "UNKNOWN";
+        }
+
+        return generationMode.toString();
+    }
+
+    private String resolveVideoLlmDataPolicy(String generationMode) {
+        if ("REAL".equals(generationMode)) {
+            return "video-llm-engine 실제 모델 결과입니다.";
+        }
+
+        if ("FALLBACK".equals(generationMode)) {
+            return "video-llm-engine 실제 모델 호출 실패 후 Mock 결과로 대체되었습니다.";
+        }
+
+        if ("MOCK".equals(generationMode)) {
+            return "video-llm-engine Mock 결과입니다.";
+        }
+
+        if ("SKIPPED".equals(generationMode)) {
+            return "Video LLM 분석이 정책 또는 사용자 선택에 의해 생략되었습니다.";
+        }
+
+        return "Video LLM 결과 생성 방식을 확인할 수 없습니다.";
+    }
+
+    private String resolveCurrentLimitation(String videoLlmGenerationMode) {
+        if ("REAL".equals(videoLlmGenerationMode)) {
+            return "Video LLM은 실제 모델 결과이며, OpenAI 피드백은 런타임 설정과 API 호출 결과에 따라 생성됩니다.";
+        }
+
+        if ("FALLBACK".equals(videoLlmGenerationMode) || "MOCK".equals(videoLlmGenerationMode)) {
+            return "Video LLM 시각 분석은 실제 영상 분석 결과가 아닌 예시/대체 데이터일 수 있으며, OpenAI 피드백은 런타임 설정과 API 호출 결과에 따라 생성됩니다.";
+        }
+
+        if ("SKIPPED".equals(videoLlmGenerationMode)) {
+            return "Video LLM 시각 분석은 생략되었으며, OpenAI 피드백은 기본 분석 결과 중심으로 생성됩니다.";
+        }
+
+        return "Video LLM 결과 생성 방식을 확인할 수 없으며, OpenAI 피드백은 런타임 설정과 API 호출 결과에 따라 생성됩니다.";
     }
 
     private java.util.List<String> createPriority(

@@ -11,6 +11,8 @@ import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -34,17 +36,20 @@ public class ResultQueryService {
     private final UploadedVideoRepository uploadedVideoRepository;
     private final FilePathGenerator filePathGenerator;
     private final JsonFileStorage jsonFileStorage;
+    private final MeterRegistry meterRegistry;
 
     public ResultQueryService(
             AnalysisJobRepository analysisJobRepository,
             UploadedVideoRepository uploadedVideoRepository,
             FilePathGenerator filePathGenerator,
-            JsonFileStorage jsonFileStorage
+            JsonFileStorage jsonFileStorage,
+            MeterRegistry meterRegistry
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
         this.filePathGenerator = filePathGenerator;
         this.jsonFileStorage = jsonFileStorage;
+        this.meterRegistry = meterRegistry;
     }
 
     @Transactional(readOnly = true)
@@ -54,8 +59,18 @@ public class ResultQueryService {
         Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
 
         Map<String, Object> result = jsonFileStorage.readJson(finalResultPath, Map.class);
+        AnalysisResultResponse response = AnalysisResultResponse.of(jobId, result);
 
-        return AnalysisResultResponse.of(jobId, result);
+        if (response.dataIssue() != null) {
+            recordDataIssue("detail", response.dataIssue());
+            log.warn(
+                    "[{}] 결과 상세 조회 중 손상 신호를 감지했습니다. dataIssue={}",
+                    jobId,
+                    response.dataIssue()
+            );
+        }
+
+        return response;
     }
 
     @Transactional(readOnly = true)
@@ -92,8 +107,9 @@ public class ResultQueryService {
 
     // 목록 조회는 한 작업의 데이터 정합성이 깨졌다고 전체를 실패시키지 않습니다. 업로드 영상
     // 레코드가 없는 작업은 손상 항목(dataIssue=MISSING_VIDEO)으로, 완료(COMPLETED) 처리됐는데
-    // 결과 파일을 찾지 못하거나 읽지 못한 작업은 손상 항목(dataIssue=RESULT_DATA_UNAVAILABLE)으로
-    // 표시해 나머지와 함께 반환하고, 운영자가 원인을 조사할 수 있도록 jobId를 로그로 남깁니다.
+    // 결과 파일을 찾지 못하거나 읽지 못한 작업은 RESULT_DATA_UNAVAILABLE, 결과 파일은 있지만
+    // 점수/피드백이 placeholder인 작업은 RESULT_DATA_INCOMPLETE로 표시해 나머지와 함께 반환하고,
+    // 운영자가 원인을 조사할 수 있도록 jobId와 dataIssue를 로그로 남깁니다.
     // QUEUED/RUNNING 상태는 아직 결과 파일이 없는 게 정상이므로 이 검사 대상이 아닙니다.
     // 명확한 오류가 필요한 경우는 개별 상세 조회(getFinalResult)에서만 던집니다.
     private ResultSummaryResponse toSummaryResponse(
@@ -104,6 +120,7 @@ public class ResultQueryService {
         Map<String, Object> finalResult = readFinalResultSafely(analysisJob.getJobId());
 
         if (uploadedVideo == null) {
+            recordDataIssue("list", "MISSING_VIDEO");
             log.warn(
                     "[{}] 결과 목록 조회 중 업로드 영상 정보를 찾지 못해 손상 항목으로 표시합니다.",
                     analysisJob.getJobId()
@@ -113,6 +130,7 @@ public class ResultQueryService {
         }
 
         if (analysisJob.getStatus() == AnalysisStatus.COMPLETED && finalResult.isEmpty()) {
+            recordDataIssue("list", "RESULT_DATA_UNAVAILABLE");
             log.warn(
                     "[{}] 완료된 작업의 결과 파일을 찾지 못하거나 읽지 못해 손상 항목으로 표시합니다.",
                     analysisJob.getJobId()
@@ -121,11 +139,22 @@ public class ResultQueryService {
             return ResultSummaryResponse.missingResultData(analysisJob, uploadedVideo);
         }
 
-        return ResultSummaryResponse.of(
+        ResultSummaryResponse response = ResultSummaryResponse.of(
                 analysisJob,
                 uploadedVideo,
                 finalResult
         );
+
+        if (response.dataIssue() != null) {
+            recordDataIssue("list", response.dataIssue());
+            log.warn(
+                    "[{}] 결과 목록 조회 중 손상 신호를 감지했습니다. dataIssue={}",
+                    analysisJob.getJobId(),
+                    response.dataIssue()
+            );
+        }
+
+        return response;
     }
 
     private Map<String, Object> readFinalResultSafely(String jobId) {
@@ -142,6 +171,15 @@ public class ResultQueryService {
             );
             return Map.of();
         }
+    }
+
+    private void recordDataIssue(String source, String issue) {
+        Counter.builder("result.data_issue")
+                .description("결과 조회 중 감지된 데이터 정합성 문제 건수")
+                .tag("source", source)
+                .tag("issue", issue)
+                .register(meterRegistry)
+                .increment();
     }
 
     private void validateOwnership(String jobId, Long ownerId) {

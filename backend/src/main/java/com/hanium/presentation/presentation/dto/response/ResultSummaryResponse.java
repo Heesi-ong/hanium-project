@@ -19,6 +19,8 @@ public record ResultSummaryResponse(
         LocalDateTime completedAt,
         Map<String, Object> scoreSummary,
         Map<String, Object> feedback,
+        Map<String, Object> visualAnalysis,
+        Map<String, Object> pipeline,
         // 정상 항목은 null입니다. UploadedVideo 레코드가 없는 등 데이터 부분 손상이 있을 때만
         // 값이 채워지며, 목록 조회는 이 항목을 실패시키지 않고 손상 사실만 표시한 채 반환합니다.
         String dataIssue,
@@ -41,6 +43,14 @@ public record ResultSummaryResponse(
             UploadedVideo uploadedVideo,
             Map<String, Object> finalResult
     ) {
+        Map<String, Object> scoreSummary = extractScoreSummary(finalResult);
+        Map<String, Object> pipeline = extractPipeline(finalResult);
+        Map<String, Object> feedback = extractFeedback(finalResult, pipeline);
+        Map<String, Object> visualAnalysis = extractVisualAnalysisSummary(finalResult, pipeline);
+        String dataIssue = analysisJob.getStatus() == AnalysisStatus.COMPLETED
+                ? resolveDataIssue(scoreSummary, feedback)
+                : null;
+
         return new ResultSummaryResponse(
                 analysisJob.getJobId(),
                 analysisJob.getStatus(),
@@ -50,10 +60,12 @@ public record ResultSummaryResponse(
                 uploadedVideo.getFileSize(),
                 analysisJob.getCreatedAt(),
                 analysisJob.getCompletedAt(),
-                extractScoreSummary(finalResult),
-                extractFeedback(finalResult),
-                null,
-                null
+                scoreSummary,
+                feedback,
+                visualAnalysis,
+                pipeline,
+                dataIssue,
+                resolveDataIssueDescription(dataIssue)
         );
     }
 
@@ -63,6 +75,8 @@ public record ResultSummaryResponse(
             AnalysisJob analysisJob,
             Map<String, Object> finalResult
     ) {
+        Map<String, Object> pipeline = extractPipeline(finalResult);
+
         return new ResultSummaryResponse(
                 analysisJob.getJobId(),
                 analysisJob.getStatus(),
@@ -73,7 +87,9 @@ public record ResultSummaryResponse(
                 analysisJob.getCreatedAt(),
                 analysisJob.getCompletedAt(),
                 extractScoreSummary(finalResult),
-                extractFeedback(finalResult),
+                extractFeedback(finalResult, pipeline),
+                extractVisualAnalysisSummary(finalResult, pipeline),
+                pipeline,
                 "MISSING_VIDEO",
                 "업로드된 영상 정보를 찾을 수 없습니다. 관리자에게 문의하세요."
         );
@@ -98,6 +114,8 @@ public record ResultSummaryResponse(
                 analysisJob.getCompletedAt(),
                 createEmptyScoreSummary(),
                 createUnknownFeedback(),
+                createUnknownVisualAnalysis(),
+                createUnknownPipeline(),
                 "RESULT_DATA_UNAVAILABLE",
                 "분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요."
         );
@@ -122,10 +140,11 @@ public record ResultSummaryResponse(
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> extractFeedback(
-            Map<String, Object> finalResult
+            Map<String, Object> finalResult,
+            Map<String, Object> pipeline
     ) {
         if (finalResult == null) {
-            return createUnknownFeedback();
+            return createFeedbackFromPipeline(pipeline);
         }
 
         Object feedback = finalResult.get("feedback");
@@ -134,16 +153,105 @@ public record ResultSummaryResponse(
             Map<String, Object> source = (Map<String, Object>) map;
 
             Map<String, Object> normalizedFeedback = new LinkedHashMap<>();
-            normalizedFeedback.put("generationMode", getOrDefault(source, "generationMode", "UNKNOWN"));
-            normalizedFeedback.put("model", getOrDefault(source, "model", "-"));
-            normalizedFeedback.put("realApiUsed", getOrDefault(source, "realApiUsed", false));
-            normalizedFeedback.put("fallbackReason", getOrDefault(source, "fallbackReason", "-"));
+            Object sourceGenerationMode = getOrDefault(source, "generationMode", "UNKNOWN");
+            boolean sourceGenerationModeMeaningful = isMeaningfulValue(sourceGenerationMode);
+
+            normalizedFeedback.put("generationMode", getFirstMeaningful(
+                    sourceGenerationMode,
+                    pipeline.get("openAiGenerationMode"),
+                    "UNKNOWN"
+            ));
+            normalizedFeedback.put("model", getFirstMeaningful(
+                    getOrDefault(source, "model", "-"),
+                    pipeline.get("openAiModel"),
+                    "-"
+            ));
+            normalizedFeedback.put(
+                    "realApiUsed",
+                    sourceGenerationModeMeaningful
+                            ? getOrDefault(source, "realApiUsed", false)
+                            : pipeline.getOrDefault("openAiRealApiUsed", false)
+            );
+            normalizedFeedback.put("fallbackReason", getFirstMeaningful(
+                    getOrDefault(source, "fallbackReason", "-"),
+                    pipeline.get("openAiFallbackReason"),
+                    "-"
+            ));
             normalizedFeedback.put("overall", getOrDefault(source, "overall", ""));
 
             return normalizedFeedback;
         }
 
-        return createUnknownFeedback();
+        return createFeedbackFromPipeline(pipeline);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractVisualAnalysisSummary(
+            Map<String, Object> finalResult,
+            Map<String, Object> pipeline
+    ) {
+        if (finalResult == null) {
+            return createVisualAnalysisFromPipeline(pipeline);
+        }
+
+        Object visualAnalysis = finalResult.get("visualAnalysis");
+
+        if (visualAnalysis instanceof Map<?, ?> map) {
+            Map<String, Object> source = (Map<String, Object>) map;
+            Map<String, Object> normalizedVisualAnalysis = new LinkedHashMap<>();
+            Object model = source.get("model");
+
+            if (model instanceof Map<?, ?> modelMap) {
+                Map<String, Object> modelSource = (Map<String, Object>) modelMap;
+                Map<String, Object> normalizedModel = new LinkedHashMap<>();
+                Object pipelineGenerationMode = pipeline.get("videoLlmGenerationMode");
+                Object pipelineAnalysis = pipeline.get("videoLlmAnalysis");
+
+                normalizedModel.put("name", getFirstMeaningful(
+                        getOrDefault(modelSource, "name", "-"),
+                        pipelineAnalysis,
+                        "-"
+                ));
+                normalizedModel.put("version", getOrDefault(modelSource, "version", "-"));
+                normalizedModel.put("generationMode", getFirstMeaningful(
+                        getOrDefault(modelSource, "generationMode", "UNKNOWN"),
+                        pipelineGenerationMode,
+                        "UNKNOWN"
+                ));
+                normalizedVisualAnalysis.put("model", normalizedModel);
+
+                return normalizedVisualAnalysis;
+            }
+        }
+
+        return createVisualAnalysisFromPipeline(pipeline);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractPipeline(
+            Map<String, Object> finalResult
+    ) {
+        if (finalResult == null) {
+            return createUnknownPipeline();
+        }
+
+        Object pipeline = finalResult.get("pipeline");
+
+        if (pipeline instanceof Map<?, ?> map) {
+            Map<String, Object> source = (Map<String, Object>) map;
+            Map<String, Object> normalizedPipeline = new LinkedHashMap<>();
+
+            normalizedPipeline.put("videoLlmAnalysis", getOrDefault(source, "videoLlmAnalysis", "-"));
+            normalizedPipeline.put("videoLlmGenerationMode", getOrDefault(source, "videoLlmGenerationMode", "UNKNOWN"));
+            normalizedPipeline.put("openAiGenerationMode", getOrDefault(source, "openAiGenerationMode", "UNKNOWN"));
+            normalizedPipeline.put("openAiModel", getOrDefault(source, "openAiModel", "-"));
+            normalizedPipeline.put("openAiRealApiUsed", getOrDefault(source, "openAiRealApiUsed", false));
+            normalizedPipeline.put("openAiFallbackReason", getOrDefault(source, "openAiFallbackReason", "-"));
+
+            return normalizedPipeline;
+        }
+
+        return createUnknownPipeline();
     }
 
     private static Map<String, Object> createEmptyScoreSummary() {
@@ -172,6 +280,115 @@ public record ResultSummaryResponse(
         return feedback;
     }
 
+    private static Map<String, Object> createFeedbackFromPipeline(
+            Map<String, Object> pipeline
+    ) {
+        Map<String, Object> feedback = new LinkedHashMap<>();
+
+        feedback.put("generationMode", getFirstMeaningful(
+                pipeline.get("openAiGenerationMode"),
+                "UNKNOWN",
+                "UNKNOWN"
+        ));
+        feedback.put("model", getFirstMeaningful(
+                pipeline.get("openAiModel"),
+                "-",
+                "-"
+        ));
+        feedback.put("realApiUsed", pipeline.getOrDefault("openAiRealApiUsed", false));
+        feedback.put("fallbackReason", getFirstMeaningful(
+                pipeline.get("openAiFallbackReason"),
+                "-",
+                "-"
+        ));
+        feedback.put("overall", "");
+
+        return feedback;
+    }
+
+    private static Map<String, Object> createUnknownVisualAnalysis() {
+        Map<String, Object> visualAnalysis = new LinkedHashMap<>();
+        Map<String, Object> model = new LinkedHashMap<>();
+
+        model.put("name", "-");
+        model.put("version", "-");
+        model.put("generationMode", "UNKNOWN");
+        visualAnalysis.put("model", model);
+
+        return visualAnalysis;
+    }
+
+    private static Map<String, Object> createVisualAnalysisFromPipeline(
+            Map<String, Object> pipeline
+    ) {
+        Map<String, Object> visualAnalysis = new LinkedHashMap<>();
+        Map<String, Object> model = new LinkedHashMap<>();
+
+        model.put("name", getFirstMeaningful(
+                pipeline.get("videoLlmAnalysis"),
+                "-",
+                "-"
+        ));
+        model.put("version", "-");
+        model.put("generationMode", getFirstMeaningful(
+                pipeline.get("videoLlmGenerationMode"),
+                "UNKNOWN",
+                "UNKNOWN"
+        ));
+        visualAnalysis.put("model", model);
+
+        return visualAnalysis;
+    }
+
+    private static Map<String, Object> createUnknownPipeline() {
+        Map<String, Object> pipeline = new LinkedHashMap<>();
+
+        pipeline.put("videoLlmAnalysis", "-");
+        pipeline.put("videoLlmGenerationMode", "UNKNOWN");
+        pipeline.put("openAiGenerationMode", "UNKNOWN");
+        pipeline.put("openAiModel", "-");
+        pipeline.put("openAiRealApiUsed", false);
+        pipeline.put("openAiFallbackReason", "-");
+
+        return pipeline;
+    }
+
+    public static String resolveDataIssue(Map<String, Object> finalResult) {
+        Map<String, Object> pipeline = extractPipeline(finalResult);
+
+        return resolveDataIssue(
+                extractScoreSummary(finalResult),
+                extractFeedback(finalResult, pipeline)
+        );
+    }
+
+    private static String resolveDataIssue(
+            Map<String, Object> scoreSummary,
+            Map<String, Object> feedback
+    ) {
+        Object level = scoreSummary.get("level");
+        Object generationMode = feedback.get("generationMode");
+        Object overall = feedback.get("overall");
+
+        if ("-".equals(level) || isBlank(overall) || "UNKNOWN".equals(generationMode)) {
+            return "RESULT_DATA_INCOMPLETE";
+        }
+
+        return null;
+    }
+
+    public static String resolveDataIssueDescription(String dataIssue) {
+        if ("RESULT_DATA_INCOMPLETE".equals(dataIssue)) {
+            return "분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다. 재분석이 필요할 수 있습니다.";
+        }
+
+        return null;
+    }
+
+    private static boolean isBlank(Object value) {
+        return value == null || value.toString().isBlank();
+    }
+
     private static Object getOrDefault(
             Map<String, Object> map,
             String key,
@@ -179,5 +396,30 @@ public record ResultSummaryResponse(
     ) {
         Object value = map.get(key);
         return value == null ? defaultValue : value;
+    }
+
+    private static Object getFirstMeaningful(
+            Object primaryValue,
+            Object fallbackValue,
+            Object defaultValue
+    ) {
+        if (isMeaningfulValue(primaryValue)) {
+            return primaryValue;
+        }
+
+        if (isMeaningfulValue(fallbackValue)) {
+            return fallbackValue;
+        }
+
+        return defaultValue;
+    }
+
+    private static boolean isMeaningfulValue(Object value) {
+        if (value == null) {
+            return false;
+        }
+
+        String text = value.toString();
+        return !text.isBlank() && !"-".equals(text) && !"UNKNOWN".equals(text);
     }
 }

@@ -370,6 +370,52 @@ def test_call_real_video_llm_model_normalizes_nvidia_response(monkeypatch, tmp_p
     assert user_content[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
 
 
+@pytest.mark.parametrize("configured_value", ["0", "-1", "nan", "inf", "not-a-number"])
+def test_resolve_nvidia_timeout_rejects_invalid_values(monkeypatch, configured_value):
+    monkeypatch.setenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", configured_value)
+
+    with pytest.raises(RuntimeError, match="must be a positive number"):
+        video_llm_analysis.resolve_nvidia_timeout_seconds()
+
+
+def test_call_real_video_llm_model_rejects_invalid_timeout_before_network(
+    monkeypatch,
+    tmp_path,
+):
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "nan")
+
+    with pytest.raises(RuntimeError, match="NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="invalid-timeout-job",
+                videoPath=create_video_file(tmp_path),
+            )
+        )
+
+    assert FakeNvidiaClient.instances == []
+
+
+def test_call_real_video_llm_model_rejects_invalid_base_url_before_network(
+    monkeypatch,
+    tmp_path,
+):
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("NVIDIA_API_BASE_URL", "not-a-url")
+
+    with pytest.raises(RuntimeError, match="NVIDIA_API_BASE_URL"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="invalid-base-url-job",
+                videoPath=create_video_file(tmp_path),
+            )
+        )
+
+    assert FakeNvidiaClient.instances == []
+
+
 def test_call_real_video_llm_model_includes_duration_hint_in_prompt(monkeypatch, tmp_path):
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))

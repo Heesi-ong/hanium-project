@@ -155,7 +155,7 @@ public class AnalysisController {
         );
 
         return ApiResponse.success(
-                "분석 실행이 완료되었습니다.",
+                "분석 실행 요청이 접수되었습니다.",
                 response
         );
     }

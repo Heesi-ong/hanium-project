@@ -7,7 +7,9 @@ import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
+import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -34,12 +36,14 @@ class ResultQueryServiceTest {
     private final UploadedVideoRepository uploadedVideoRepository = mock(UploadedVideoRepository.class);
     private final FilePathGenerator filePathGenerator = mock(FilePathGenerator.class);
     private final JsonFileStorage jsonFileStorage = mock(JsonFileStorage.class);
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private final ResultQueryService resultQueryService = new ResultQueryService(
             analysisJobRepository,
             uploadedVideoRepository,
             filePathGenerator,
-            jsonFileStorage
+            jsonFileStorage,
+            meterRegistry
     );
 
     @Test
@@ -114,6 +118,7 @@ class ResultQueryServiceTest {
         ResultSummaryResponse brokenSummary = response.getContent().get(1);
         assertThat(brokenSummary.dataIssue()).isEqualTo("MISSING_VIDEO");
         assertThat(brokenSummary.dataIssueDescription()).isNotBlank();
+        assertThat(dataIssueCount("list", "MISSING_VIDEO")).isEqualTo(1.0);
     }
 
     @Test
@@ -140,6 +145,7 @@ class ResultQueryServiceTest {
         assertThat(summary.dataIssue()).isEqualTo("RESULT_DATA_UNAVAILABLE");
         assertThat(summary.dataIssueDescription()).isNotBlank();
         assertThat(summary.originalFileName()).isEqualTo("presentation.mp4");
+        assertThat(dataIssueCount("list", "RESULT_DATA_UNAVAILABLE")).isEqualTo(1.0);
     }
 
     @Test
@@ -161,6 +167,296 @@ class ResultQueryServiceTest {
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
 
         assertThat(response.getContent().get(0).dataIssue()).isNull();
+    }
+
+    @Test
+    void getResultSummariesMarksCompletedJobWithPlaceholderResultAsIncomplete() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090006-gggggggg", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "placeholder.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "scoreSummary", Map.of(
+                                "totalScore", 0,
+                                "postureScore", 0,
+                                "gazeScore", 0,
+                                "speechScore", 0,
+                                "gestureScore", 0,
+                                "expressionScore", 0,
+                                "level", "-"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "UNKNOWN",
+                                "overall", ""
+                        )
+                ));
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.dataIssue()).isEqualTo("RESULT_DATA_INCOMPLETE");
+        assertThat(summary.dataIssueDescription()).contains("불완전");
+        assertThat(dataIssueCount("list", "RESULT_DATA_INCOMPLETE")).isEqualTo(1.0);
+    }
+
+    @Test
+    void getResultSummariesIncludesVideoLlmGenerationMetadataForListCards() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090009-jjjjjjjj", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "video-llm.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "scoreSummary", Map.of(
+                                "totalScore", 91,
+                                "level", "A"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "REAL",
+                                "model", "gpt-4.1-mini",
+                                "realApiUsed", true,
+                                "overall", "피드백"
+                        ),
+                        "visualAnalysis", Map.of(
+                                "model", Map.of(
+                                        "name", "mock-video-llm",
+                                        "version", "local-mock",
+                                        "generationMode", "MOCK"
+                                ),
+                                "observations", Map.of(
+                                        "eyeContact", List.of(Map.of("label", "sample"))
+                                )
+                        ),
+                        "pipeline", Map.of(
+                                "videoLlmAnalysis", "video-llm-engine mock",
+                                "videoLlmGenerationMode", "MOCK",
+                                "openAiGenerationMode", "REAL",
+                                "openAiModel", "gpt-4.1-mini",
+                                "openAiRealApiUsed", true,
+                                "openAiFallbackReason", "-"
+                        )
+                ));
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.dataIssue()).isNull();
+        assertThat(summary.visualAnalysis())
+                .containsEntry("model", Map.of(
+                        "name", "mock-video-llm",
+                        "version", "local-mock",
+                        "generationMode", "MOCK"
+                ));
+        assertThat(summary.visualAnalysis()).doesNotContainKey("observations");
+        assertThat(summary.pipeline())
+                .containsEntry("videoLlmAnalysis", "video-llm-engine mock")
+                .containsEntry("videoLlmGenerationMode", "MOCK")
+                .containsEntry("openAiGenerationMode", "REAL");
+    }
+
+    @Test
+    void getResultSummariesUsesPipelineVideoLlmMetadataWhenVisualModelIsPlaceholder() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090010-kkkkkkkk", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "pipeline-only.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "scoreSummary", Map.of(
+                                "totalScore", 77,
+                                "level", "B"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "MOCK",
+                                "overall", "피드백"
+                        ),
+                        "visualAnalysis", Map.of(
+                                "model", Map.of(
+                                        "name", "-",
+                                        "generationMode", "UNKNOWN"
+                                )
+                        ),
+                        "pipeline", Map.of(
+                                "videoLlmAnalysis", "video-llm-engine fallback mock",
+                                "videoLlmGenerationMode", "FALLBACK"
+                        )
+                ));
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.visualAnalysis())
+                .containsEntry("model", Map.of(
+                        "name", "video-llm-engine fallback mock",
+                        "version", "-",
+                        "generationMode", "FALLBACK"
+                ));
+        assertThat(summary.pipeline())
+                .containsEntry("videoLlmGenerationMode", "FALLBACK");
+    }
+
+    @Test
+    void getResultSummariesUsesPipelineOpenAiMetadataWhenFeedbackIsPlaceholder() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090011-llllllll", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "openai-pipeline.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "scoreSummary", Map.of(
+                                "totalScore", 88,
+                                "level", "A"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "UNKNOWN",
+                                "model", "-",
+                                "realApiUsed", false,
+                                "fallbackReason", "-",
+                                "overall", "피드백"
+                        ),
+                        "pipeline", Map.of(
+                                "openAiGenerationMode", "REAL",
+                                "openAiModel", "gpt-4.1-mini",
+                                "openAiRealApiUsed", true,
+                                "openAiFallbackReason", "-"
+                        )
+                ));
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.feedback())
+                .containsEntry("generationMode", "REAL")
+                .containsEntry("model", "gpt-4.1-mini")
+                .containsEntry("realApiUsed", true)
+                .containsEntry("fallbackReason", "-")
+                .containsEntry("overall", "피드백");
+        assertThat(summary.dataIssue()).isNull();
+    }
+
+    @Test
+    void getResultSummariesStillFlagsMissingFeedbackTextEvenWhenPipelineOpenAiMetadataExists() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090012-mmmmmmmm", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "missing-feedback.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "scoreSummary", Map.of(
+                                "totalScore", 88,
+                                "level", "A"
+                        ),
+                        "feedback", Map.of(
+                                "generationMode", "UNKNOWN",
+                                "overall", ""
+                        ),
+                        "pipeline", Map.of(
+                                "openAiGenerationMode", "REAL",
+                                "openAiModel", "gpt-4.1-mini",
+                                "openAiRealApiUsed", true
+                        )
+                ));
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.feedback())
+                .containsEntry("generationMode", "REAL")
+                .containsEntry("model", "gpt-4.1-mini");
+        assertThat(summary.dataIssue()).isEqualTo("RESULT_DATA_INCOMPLETE");
+        assertThat(dataIssueCount("list", "RESULT_DATA_INCOMPLETE")).isEqualTo(1.0);
+    }
+
+    @Test
+    void getFinalResultIncludesDataIssueWhenStoredResultIsIncomplete() {
+        Long ownerId = 1L;
+        AnalysisJob completedJob = AnalysisJob.create("20260703090007-hhhhhhhh", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findByJobId(completedJob.getJobId()))
+                .thenReturn(java.util.Optional.of(completedJob));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "status", "COMPLETED",
+                        "scoreSummary", Map.of("level", "-"),
+                        "feedback", Map.of("generationMode", "UNKNOWN", "overall", "")
+                ));
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
+
+        assertThat(response.dataIssue()).isEqualTo("RESULT_DATA_INCOMPLETE");
+        assertThat(response.dataIssueDescription()).contains("불완전");
+        assertThat(dataIssueCount("detail", "RESULT_DATA_INCOMPLETE")).isEqualTo(1.0);
+    }
+
+    @Test
+    void getFinalResultDoesNotExposeDataIssueForHealthyStoredResult() {
+        Long ownerId = 1L;
+        AnalysisJob completedJob = AnalysisJob.create("20260703090008-iiiiiiii", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findByJobId(completedJob.getJobId()))
+                .thenReturn(java.util.Optional.of(completedJob));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "status", "COMPLETED",
+                        "scoreSummary", Map.of("level", "GOOD"),
+                        "feedback", Map.of("generationMode", "MOCK", "overall", "피드백")
+                ));
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
+
+        assertThat(response.dataIssue()).isNull();
+        assertThat(response.dataIssueDescription()).isNull();
+        verify(uploadedVideoRepository, never()).findByJobId(any(String.class));
+    }
+
+    private double dataIssueCount(String source, String issue) {
+        return meterRegistry.get("result.data_issue")
+                .tag("source", source)
+                .tag("issue", issue)
+                .counter()
+                .count();
     }
 
     private UploadedVideo createUploadedVideo(String jobId, String originalFileName) {

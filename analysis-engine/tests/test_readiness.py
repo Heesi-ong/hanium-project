@@ -52,6 +52,7 @@ def test_readiness_reports_not_ready_when_models_not_loaded(monkeypatch):
     assert body["service"] == "analysis-engine"
     assert body["ready"] is False
     assert body["models"] == {"whisper": False, "pose": False, "face": False}
+    assert body["reason"] == "Analysis models are not loaded: whisper, pose, face"
 
 
 def test_readiness_reports_ready_when_models_loaded(monkeypatch):
@@ -70,3 +71,4 @@ def test_readiness_reports_ready_when_models_loaded(monkeypatch):
     body = response.json()
     assert body["ready"] is True
     assert body["models"] == {"whisper": True, "pose": True, "face": True}
+    assert body["reason"] == "All analysis models are loaded."

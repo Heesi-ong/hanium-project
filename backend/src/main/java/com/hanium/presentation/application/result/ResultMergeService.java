@@ -32,7 +32,7 @@ public class ResultMergeService {
         finalResult.put("practicePlan", nullSafeList(openAiFeedbackResponse.practicePlan()));
         finalResult.put("timelineFeedback", nullSafeList(openAiFeedbackResponse.timelineFeedback()));
         finalResult.put("notableMoments", createNotableMoments(analysisEngineResponse));
-        finalResult.put("pipeline", createCompletedPipeline(openAiFeedbackResponse));
+        finalResult.put("pipeline", createCompletedPipeline(videoLlmEngineResponse, openAiFeedbackResponse));
 
         return finalResult;
     }
@@ -268,9 +268,11 @@ public class ResultMergeService {
     }
 
     private Map<String, Object> createCompletedPipeline(
+            VideoLlmEngineResponse videoLlmEngineResponse,
             OpenAiFeedbackResponse openAiFeedbackResponse
     ) {
         Map<String, Object> pipeline = new LinkedHashMap<>();
+        String videoLlmGenerationMode = resolveVideoLlmGenerationMode(videoLlmEngineResponse);
 
         pipeline.put("basicAnalysis", "analysis-engine");
         pipeline.put("frameExtraction", "analysis-engine opencv");
@@ -280,7 +282,8 @@ public class ResultMergeService {
         pipeline.put("gestureAnalysis", "analysis-engine mediapipe pose wrist elbow");
         pipeline.put("faceAnalysis", "analysis-engine mediapipe face mesh");
         pipeline.put("emotionAnalysis", "analysis-engine mediapipe face mesh expression");
-        pipeline.put("videoLlmAnalysis", "video-llm-engine mock");
+        pipeline.put("videoLlmAnalysis", resolveVideoLlmPipelineStatus(videoLlmGenerationMode));
+        pipeline.put("videoLlmGenerationMode", videoLlmGenerationMode);
         pipeline.put("compactAnalysis", "spring-boot compact");
         pipeline.put("openAiFeedback", resolveOpenAiPipelineStatus(openAiFeedbackResponse));
         pipeline.put("openAiGenerationMode", nullSafeString(openAiFeedbackResponse.generationMode(), "UNKNOWN"));
@@ -290,6 +293,39 @@ public class ResultMergeService {
         pipeline.put("finalMerge", "spring-boot result merge");
 
         return pipeline;
+    }
+
+    private String resolveVideoLlmGenerationMode(
+            VideoLlmEngineResponse videoLlmEngineResponse
+    ) {
+        Map<String, Object> model = nullSafeMap(videoLlmEngineResponse.model());
+        Object generationMode = model.get("generationMode");
+
+        if (generationMode == null || generationMode.toString().isBlank()) {
+            return "UNKNOWN";
+        }
+
+        return generationMode.toString();
+    }
+
+    private String resolveVideoLlmPipelineStatus(String generationMode) {
+        if ("REAL".equals(generationMode)) {
+            return "video-llm-engine real";
+        }
+
+        if ("FALLBACK".equals(generationMode)) {
+            return "video-llm-engine fallback mock";
+        }
+
+        if ("MOCK".equals(generationMode)) {
+            return "video-llm-engine mock";
+        }
+
+        if ("SKIPPED".equals(generationMode)) {
+            return "video-llm-engine skipped";
+        }
+
+        return "video-llm-engine unknown";
     }
 
     private String resolveOpenAiPipelineStatus(

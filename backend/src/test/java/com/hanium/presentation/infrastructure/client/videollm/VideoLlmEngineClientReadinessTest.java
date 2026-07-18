@@ -19,13 +19,23 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class VideoLlmEngineClientReadinessTest {
 
     @Test
-    void checkReadinessReportsReachableAuthenticatedAndReadyOnSuccess() {
+    void checkReadinessPreservesFallbackReadinessDetailsFromEngine() {
         Fixture fixture = createFixture("correct-key");
 
         fixture.server.expect(requestTo("http://localhost:8002/api/internal/readiness"))
                 .andExpect(header("X-Internal-Api-Key", "correct-key"))
                 .andRespond(withSuccess(
-                        "{\"service\":\"video-llm-engine\",\"ready\":true,\"mode\":\"MOCK\"}",
+                        """
+                                {
+                                  "service":"video-llm-engine",
+                                  "ready":false,
+                                  "mode":"FALLBACK",
+                                  "installedBackend":"mock",
+                                  "realModeRequested":true,
+                                  "realModelReady":false,
+                                  "reason":"VIDEO_LLM_ENABLED=true but NVIDIA_API_KEY is missing; analysis will fall back to mock responses."
+                                }
+                                """,
                         MediaType.APPLICATION_JSON
                 ));
 
@@ -33,7 +43,18 @@ class VideoLlmEngineClientReadinessTest {
 
         assertThat(result.get("reachable")).isEqualTo(true);
         assertThat(result.get("authenticated")).isEqualTo(true);
-        assertThat(result.get("ready")).isEqualTo(true);
+        assertThat(result.get("ready")).isEqualTo(false);
+        assertThat(fixture.registry.get("engine.readiness.check")
+                .tag("engine", "video_llm")
+                .tag("outcome", "not_ready")
+                .counter()
+                .count()).isEqualTo(1.0);
+        assertThat(result.get("response"))
+                .isInstanceOfSatisfying(Map.class, response -> {
+                    assertThat(response.get("mode")).isEqualTo("FALLBACK");
+                    assertThat(response.get("realModelReady")).isEqualTo(false);
+                    assertThat(response.get("reason").toString()).contains("NVIDIA_API_KEY is missing");
+                });
 
         fixture.server.verify();
     }
@@ -50,6 +71,11 @@ class VideoLlmEngineClientReadinessTest {
         assertThat(result.get("reachable")).isEqualTo(true);
         assertThat(result.get("authenticated")).isEqualTo(false);
         assertThat(result.get("ready")).isEqualTo(false);
+        assertThat(fixture.registry.get("engine.readiness.check")
+                .tag("engine", "video_llm")
+                .tag("outcome", "unauthenticated")
+                .counter()
+                .count()).isEqualTo(1.0);
 
         fixture.server.verify();
     }
@@ -68,6 +94,11 @@ class VideoLlmEngineClientReadinessTest {
         assertThat(result.get("reachable")).isEqualTo(false);
         assertThat(result.get("authenticated")).isEqualTo(false);
         assertThat(result.get("ready")).isEqualTo(false);
+        assertThat(fixture.registry.get("engine.readiness.check")
+                .tag("engine", "video_llm")
+                .tag("outcome", "unreachable")
+                .counter()
+                .count()).isEqualTo(1.0);
 
         fixture.server.verify();
     }
@@ -77,14 +108,16 @@ class VideoLlmEngineClientReadinessTest {
 
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, new SimpleMeterRegistry());
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, registry);
 
-        return new Fixture(client, server);
+        return new Fixture(client, server, registry);
     }
 
     private record Fixture(
             VideoLlmEngineClient client,
-            MockRestServiceServer server
+            MockRestServiceServer server,
+            SimpleMeterRegistry registry
     ) {
     }
 }

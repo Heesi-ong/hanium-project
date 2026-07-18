@@ -23,6 +23,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.nio.charset.StandardCharsets;
@@ -201,6 +202,40 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
+    void loginRejectsUnsupportedContentTypeWithoutServerError() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/auth/login",
+                HttpMethod.POST,
+                new HttpEntity<>("email=user@example.com&password=password123", headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        JsonNode body = objectMapper.readTree(response.getBody());
+        assertThat(body.path("error").asText()).isEqualTo("UNSUPPORTED_MEDIA_TYPE_ERROR");
+    }
+
+    @Test
+    void loginRejectsMalformedJsonWithoutServerError() throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/auth/login",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"email\":\"user@example.com\",", headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        JsonNode body = objectMapper.readTree(response.getBody());
+        assertThat(body.path("error").asText()).isEqualTo("INVALID_INPUT_VALUE");
+    }
+
+    @Test
     void logoutAllowsAnonymousRequestAndInvalidatesCurrentTokenWhenProvided() throws Exception {
         Map<String, Object> request = Map.of(
                 "email", "logout@example.com",
@@ -319,6 +354,42 @@ class AuthControllerIntegrationTest {
         assertThat(cookieMeBody.path("data").path("id").asLong())
                 .isEqualTo(bearerMeBody.path("data").path("id").asLong());
         assertThat(cookieMeBody.path("data").path("email").asText()).isEqualTo("me@example.com");
+    }
+
+    @Test
+    void protectedEndpointRejectsInvalidQueryParameterWithoutServerError() throws Exception {
+        Map<String, Object> request = Map.of(
+                "email", "query-error@example.com",
+                "password", "password123",
+                "agreedToTerms", true
+        );
+
+        restTemplate.postForEntity(
+                "/api/auth/signup",
+                request,
+                String.class
+        );
+
+        ResponseEntity<String> loginResponse = restTemplate.postForEntity(
+                "/api/auth/login",
+                request,
+                String.class
+        );
+        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
+        String accessToken = loginBody.path("data").path("accessToken").asText();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/results?page=not-a-number",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        JsonNode body = objectMapper.readTree(response.getBody());
+        assertThat(body.path("error").asText()).isEqualTo("INVALID_INPUT_VALUE");
     }
 
     @Test

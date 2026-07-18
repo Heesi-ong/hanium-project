@@ -80,6 +80,11 @@ function ResultDetailPage() {
     const [clockTick, setClockTick] = useState(() => Date.now());
 
     const result = resultData?.result || EMPTY_OBJECT;
+    const dataIssue = resultData?.dataIssue || result.dataIssue || "";
+    const dataIssueDescription =
+        resultData?.dataIssueDescription ||
+        result.dataIssueDescription ||
+        "";
 
     const scoreSummary = result.scoreSummary || EMPTY_OBJECT;
     const basicAnalysis = result.basicAnalysis || EMPTY_OBJECT;
@@ -661,6 +666,12 @@ function ResultDetailPage() {
 
             <StateMessage type="error">{error}</StateMessage>
 
+            {dataIssue && (
+                <p className="result-data-issue" role="alert">
+                    ⚠ {dataIssueDescription || "이 결과의 일부 데이터에 문제가 있습니다."}
+                </p>
+            )}
+
             <StateMessage type="polling" messageKey={currentStatus}>
                 {retrying || polling || cancelling || isRunning ? (
                     <>
@@ -755,7 +766,7 @@ function ResultDetailPage() {
             </AnimatedSection>
 
             <AnimatedSection>
-                <OpenAiFeedbackStatusSection feedback={feedback} />
+                <OpenAiFeedbackStatusSection feedback={feedback} pipeline={pipeline} />
             </AnimatedSection>
 
             <AnimatedSection>

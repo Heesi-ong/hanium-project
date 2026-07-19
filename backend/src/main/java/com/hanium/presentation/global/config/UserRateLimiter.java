@@ -88,6 +88,7 @@ public class UserRateLimiter {
             case "password-reset-confirm" -> rateLimitProperties.passwordResetConfirm();
             case "openai-monthly" -> rateLimitProperties.openaiMonthly();
             case "video-llm-monthly" -> rateLimitProperties.videoLlmMonthly();
+            case "video-llm-daily" -> rateLimitProperties.videoLlmDaily();
             case "results-query" -> rateLimitProperties.resultsQuery();
             case "video-access-token" -> rateLimitProperties.videoAccessToken();
             case "job-status-poll" -> rateLimitProperties.jobStatusPoll();

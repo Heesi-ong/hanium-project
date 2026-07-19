@@ -13,6 +13,7 @@ public record RateLimitProperties(
         Limit passwordResetConfirm,
         Limit openaiMonthly,
         Limit videoLlmMonthly,
+        Limit videoLlmDaily,
         Limit resultsQuery,
         Limit videoAccessToken,
         Limit jobStatusPoll,

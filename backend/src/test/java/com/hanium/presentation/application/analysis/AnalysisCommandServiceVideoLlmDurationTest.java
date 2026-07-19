@@ -91,6 +91,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenAnswer(invocation -> videoLlmResponse(invocation.getArgument(0, VideoLlmEngineRequest.class).jobId()));
         when(userRateLimiter.tryConsume(eq("video-llm-monthly"), anyString())).thenReturn(true);
+        when(userRateLimiter.tryConsume(eq("video-llm-daily"), any(Long.class))).thenReturn(true);
         when(resultCommandService.saveEngineResultsAndCompact(anyString(), any(), any()))
                 .thenReturn(Map.of());
 
@@ -158,9 +159,31 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     }
 
     @Test
+    void skipsVideoLlmEngineCallWhenDailyBudgetExceeded() {
+        when(userRateLimiter.tryConsume(eq("video-llm-daily"), any(Long.class))).thenReturn(false);
+
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
+        // 일일 한도로 이미 막혔으므로 공용 월간 카운터는 소비하지 않아야 합니다.
+        verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
+
+        ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
+        verify(resultCommandService).saveEngineResultsAndCompact(eq(JOB_ID), any(), captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo("skipped");
+        assertThat(captor.getValue().model()).containsEntry("name", "video-llm-skipped");
+        assertThat(captor.getValue().model()).containsEntry("generationMode", "SKIPPED");
+        assertThat(captor.getValue().globalSummary().get("visualDelivery").toString())
+                .contains("호출 한도");
+        assertThat(captor.getValue().globalSummary().get("mainStrength").toString())
+                .contains("일일 한도");
+    }
+
+    @Test
     void skipsVideoLlmEngineCallWithDisabledReasonWhenUserTurnsOffVideoLlm() {
         analysisCommandService.runAnalysis(JOB_ID, 1L, false, false);
 
+        verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
 
@@ -178,6 +201,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     void consumesMonthlyBudgetAndCallsVideoLlmEngineWhenBudgetAllows() {
         analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
 
+        verify(userRateLimiter).tryConsume(eq("video-llm-daily"), any(Long.class));
         verify(userRateLimiter).tryConsume(eq("video-llm-monthly"), anyString());
         verify(videoLlmEngineClient).analyze(any(VideoLlmEngineRequest.class));
     }

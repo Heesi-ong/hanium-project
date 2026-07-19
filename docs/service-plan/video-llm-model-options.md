@@ -210,7 +210,7 @@ NVIDIA API Catalog(build.nvidia.com)의 `nvidia/nemotron-3-nano-omni-30b-a3b-rea
 
 ### 아직 확인하지 못한 사실
 
-- 무료 API의 정확한 rate limit. 공식 infer/status/createasset 문서에서 분당/일당 수치를 찾지 못했고, 실제 호출에서는 4초 영상 10회 연속 호출까지 429가 발생하지 않았다.
+- 무료 API의 정확한 rate limit. 공식 infer/status/createasset 문서에서 분당/일당 수치를 찾지 못했고, 실제 호출에서는 4초 영상 10회 연속 호출까지 429가 발생하지 않았다. **2026-07-20 웹 조사 추가**: NVIDIA가 공식 문서로 게시한 SLA는 아니지만, NVIDIA Developer Forums 게시물과 다수의 제3자 정리 글이 공통적으로 "API 키당 약 40 RPM(분당 요청 수), 계정 단위로 여러 모델에 걸쳐 공유"를 실무 기준선으로 보고한다. 이전에는 크레딧 기반 한도(개인 1000/기업 5000)가 있었으나 현재는 제거되고 순수 rate-limit 방식으로 보인다. NVIDIA는 요청만으로 한도를 올려주지 않으며, 클라이언트 측 exponential backoff + jitter, `Retry-After` 헤더 준수, 동시 요청 수 제한을 권장한다. 이 수치는 "모델·트래픽 상황에 따라 달라질 수 있다"는 NVIDIA 측 답변이 함께 보고되어 공식 확정치로 취급하면 안 된다. (출처: [decodethefuture.org 정리](https://decodethefuture.org/en/nvidia-nim-api-pricing-limits-guide/), [NVIDIA Developer Forums – rate limit 429 문의](https://forums.developer.nvidia.com/t/i-got-rate-limit-error-every-time-i-use-nvidia-nim-api/373385), [NVIDIA Developer Forums – rate limit 상향 요청](https://forums.developer.nvidia.com/t/request-for-nvidia-nim-api-rate-limit-increase-40-200-rpm/376561))
 - 무료 API의 최대 영상 길이/용량 제한. 실제 호출에서는 120초/1.2MB MP4까지 200 성공했지만, 그 이상의 최대 길이/용량은 공식 문서나 오류 응답으로 확인하지 못했다.
 - hosted API에서 `response_format: {"type":"json_object"}`를 실제 발표 영상과 다양한 입력에서도 안정적으로 따르는지 여부
 - 실제 사람이 등장하는 발표 영상에서 관찰 품질이 충분한지 여부

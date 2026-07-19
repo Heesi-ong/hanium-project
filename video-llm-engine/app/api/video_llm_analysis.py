@@ -7,6 +7,7 @@ import mimetypes
 import os
 from pathlib import Path
 import tempfile
+import threading
 import time
 from typing import Any, Dict, Iterator
 from urllib.parse import urlparse
@@ -57,6 +58,35 @@ VIDEO_STREAM_CHUNK_SIZE_BYTES = 1024 * 1024
 DEFAULT_VIDEO_MAX_SIZE_MB = 500
 NVIDIA_STATUS_POLL_MAX_ATTEMPTS = 10
 NVIDIA_STATUS_POLL_INTERVAL_SECONDS = 1
+
+# NVIDIA hosted API의 공식 SLA 문서는 없지만, 계정당 약 40 RPM을 공유한다는 보고가
+# 있습니다(docs/service-plan/video-llm-model-options.md 참고). 여러 분석 작업이 동시에
+# 겹치면 이 순간 대역에 몰려 429가 날 수 있어, 앱 레벨에서 실제 모델 호출의 동시
+# 실행 수 자체를 낮게 제한합니다. 이 라우트는 sync def라 FastAPI가 스레드풀에서
+# 실행하므로 threading.Semaphore를 씁니다. 세마포어의 초기 permit 수는 객체 생성
+# 시점에 고정되는 값이라(다른 resolve_* 함수들과 달리) 프로세스 기동 시 한 번만
+# 읽습니다. 대기 timeout은 호출마다 다시 읽을 수 있어 resolve 함수로 분리했습니다.
+_REAL_MODEL_SEMAPHORE = threading.Semaphore(
+    max(1, int(os.getenv("VIDEO_LLM_REAL_MODEL_MAX_CONCURRENCY", "3")))
+)
+
+
+def resolve_real_model_semaphore_timeout_seconds() -> float:
+    raw_value = os.getenv("VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS", "30").strip()
+    try:
+        timeout_seconds = float(raw_value)
+    except ValueError as exception:
+        raise RuntimeError(
+            "VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS must be a positive number."
+        ) from exception
+
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise RuntimeError(
+            "VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS must be a positive number."
+        )
+
+    return timeout_seconds
+
 OBSERVATION_CATEGORIES = (
     "eyeContact",
     "facialExpression",
@@ -126,70 +156,85 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
     )
     timeout_seconds = resolve_nvidia_timeout_seconds()
 
-    url = f"{base_url}/chat/completions"
-    started_at = time.monotonic()
-    response_status = "not_sent"
-    asset_id = None
-
-    try:
-        with httpx.Client(timeout=timeout_seconds) as client:
-            video_input = prepare_nvidia_video_input(
-                client=client,
-                api_key=api_key,
-                asset_base_url=asset_base_url,
-                request=request,
-            )
-            asset_id = video_input.get("asset_id")
-            payload = build_nvidia_chat_completion_payload(request, model, video_input)
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            }
-            if asset_id:
-                headers["NVCF-INPUT-ASSET-REFERENCES"] = asset_id
-
-            response = client.post(
-                url,
-                headers=headers,
-                json=payload,
-            )
-            response_status = str(response.status_code)
-            if response.status_code == 202:
-                response = poll_nvidia_chat_completion_result(
-                    client=client,
-                    base_url=base_url,
-                    api_key=api_key,
-                    initial_response=response,
-                )
-                response_status = f"202->{response.status_code}"
-            else:
-                response.raise_for_status()
-    finally:
-        if asset_id:
-            with httpx.Client(timeout=timeout_seconds) as cleanup_client:
-                delete_nvidia_asset(
-                    cleanup_client,
-                    api_key,
-                    asset_base_url,
-                    asset_id,
-                )
-        elapsed_ms = int((time.monotonic() - started_at) * 1000)
-        logger.info(
-            "NVIDIA_VIDEO_LLM_USAGE jobId=%s model=%s generationMode=REAL status=%s elapsedMs=%s",
-            request.jobId,
-            model,
-            response_status,
-            elapsed_ms,
+    # NVIDIA 계정 전체가 공유하는 순간 rate limit(약 40 RPM으로 알려짐)에 여러 분석
+    # 작업이 동시에 부딪히지 않도록, 실제 모델 호출 구간 전체를 세마포어로 감쌉니다.
+    # 순번을 제한 시간 안에 확보하지 못하면 예외를 던져, 호출부(analyze_video)의 기존
+    # FALLBACK 폴백 경로를 그대로 타게 합니다.
+    semaphore_timeout_seconds = resolve_real_model_semaphore_timeout_seconds()
+    acquired = _REAL_MODEL_SEMAPHORE.acquire(timeout=semaphore_timeout_seconds)
+    if not acquired:
+        raise RuntimeError(
+            "Video LLM 실제 모델 동시 호출 제한에 걸려 "
+            f"{semaphore_timeout_seconds}초 안에 순번을 확보하지 못했습니다."
         )
 
-    content = extract_chat_completion_content(response.json())
-    model_json = parse_model_json(content)
-    return normalize_video_llm_response(
-        request.jobId,
-        model,
-        model_json,
-        request.durationSec,
-    )
+    try:
+        url = f"{base_url}/chat/completions"
+        started_at = time.monotonic()
+        response_status = "not_sent"
+        asset_id = None
+
+        try:
+            with httpx.Client(timeout=timeout_seconds) as client:
+                video_input = prepare_nvidia_video_input(
+                    client=client,
+                    api_key=api_key,
+                    asset_base_url=asset_base_url,
+                    request=request,
+                )
+                asset_id = video_input.get("asset_id")
+                payload = build_nvidia_chat_completion_payload(request, model, video_input)
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+                if asset_id:
+                    headers["NVCF-INPUT-ASSET-REFERENCES"] = asset_id
+
+                response = client.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                )
+                response_status = str(response.status_code)
+                if response.status_code == 202:
+                    response = poll_nvidia_chat_completion_result(
+                        client=client,
+                        base_url=base_url,
+                        api_key=api_key,
+                        initial_response=response,
+                    )
+                    response_status = f"202->{response.status_code}"
+                else:
+                    response.raise_for_status()
+        finally:
+            if asset_id:
+                with httpx.Client(timeout=timeout_seconds) as cleanup_client:
+                    delete_nvidia_asset(
+                        cleanup_client,
+                        api_key,
+                        asset_base_url,
+                        asset_id,
+                    )
+            elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            logger.info(
+                "NVIDIA_VIDEO_LLM_USAGE jobId=%s model=%s generationMode=REAL status=%s elapsedMs=%s",
+                request.jobId,
+                model,
+                response_status,
+                elapsed_ms,
+            )
+
+        content = extract_chat_completion_content(response.json())
+        model_json = parse_model_json(content)
+        return normalize_video_llm_response(
+            request.jobId,
+            model,
+            model_json,
+            request.durationSec,
+        )
+    finally:
+        _REAL_MODEL_SEMAPHORE.release()
 
 
 def build_nvidia_chat_completion_payload(

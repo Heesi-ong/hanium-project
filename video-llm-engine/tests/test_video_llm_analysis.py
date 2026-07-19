@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import threading
 
 import httpx
 import pytest
@@ -368,6 +369,81 @@ def test_call_real_video_llm_model_normalizes_nvidia_response(monkeypatch, tmp_p
     user_content = sent_request["json"]["messages"][1]["content"]
     assert user_content[1]["type"] == "video_url"
     assert user_content[1]["video_url"]["url"].startswith("data:video/mp4;base64,")
+
+
+def test_call_real_video_llm_model_raises_when_concurrency_semaphore_is_exhausted(
+    monkeypatch, tmp_path
+):
+    video_path = create_video_file(tmp_path)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS", "0.05")
+
+    exhausted_semaphore = threading.Semaphore(1)
+    exhausted_semaphore.acquire()  # 유일한 permit을 미리 점유해 세마포어를 소진시킵니다.
+    monkeypatch.setattr(video_llm_analysis, "_REAL_MODEL_SEMAPHORE", exhausted_semaphore)
+
+    with pytest.raises(RuntimeError, match="동시 호출"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="concurrency-job",
+                videoPath=video_path,
+                sampleFps=1,
+                maxFrames=90,
+            )
+        )
+
+    # 순번을 못 받았으므로 NVIDIA로의 네트워크 시도 자체가 없어야 합니다.
+    assert FakeNvidiaClient.instances == []
+
+
+def test_call_real_video_llm_model_releases_semaphore_after_success(monkeypatch, tmp_path):
+    video_path = create_video_file(tmp_path)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    single_slot_semaphore = threading.Semaphore(1)
+    monkeypatch.setattr(video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore)
+
+    video_llm_analysis.call_real_video_llm_model(
+        VideoLlmAnalysisRequest(
+            jobId="release-job",
+            videoPath=video_path,
+            sampleFps=1,
+            maxFrames=90,
+        )
+    )
+
+    # 호출이 끝난 뒤 permit이 반납되어 있어야, 대기 없이(timeout=0) 다시 확보할 수 있습니다.
+    assert single_slot_semaphore.acquire(timeout=0) is True
+    single_slot_semaphore.release()
+
+
+def test_call_real_video_llm_model_releases_semaphore_even_when_call_fails(
+    monkeypatch, tmp_path
+):
+    video_path = tmp_path / "large.mp4"
+    video_path.write_bytes(
+        b"x" * (video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+    )
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    FakeNvidiaClient.asset_create_status = 500
+    FakeNvidiaClient.asset_create_json = {"error": "asset create failed"}
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    single_slot_semaphore = threading.Semaphore(1)
+    monkeypatch.setattr(video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="release-on-failure-job",
+                videoPath=str(video_path),
+            )
+        )
+
+    assert single_slot_semaphore.acquire(timeout=0) is True
+    single_slot_semaphore.release()
 
 
 @pytest.mark.parametrize("configured_value", ["0", "-1", "nan", "inf", "not-a-number"])

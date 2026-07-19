@@ -26,6 +26,7 @@ class VideoLlmUsageMetricsTest {
                 null,
                 null,
                 null,
+                null,
                 new RateLimitProperties.Limit(500, 44640),
                 null,
                 null,

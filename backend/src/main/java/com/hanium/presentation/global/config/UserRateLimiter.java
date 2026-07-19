@@ -85,6 +85,7 @@ public class UserRateLimiter {
             case "login-ip" -> rateLimitProperties.loginIp();
             case "signup" -> rateLimitProperties.signup();
             case "password-reset-request" -> rateLimitProperties.passwordResetRequest();
+            case "password-reset-confirm" -> rateLimitProperties.passwordResetConfirm();
             case "openai-monthly" -> rateLimitProperties.openaiMonthly();
             case "video-llm-monthly" -> rateLimitProperties.videoLlmMonthly();
             case "results-query" -> rateLimitProperties.resultsQuery();

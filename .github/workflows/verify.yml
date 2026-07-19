@@ -157,14 +157,32 @@ jobs:
           - nginx
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # backend/frontend는 이 잡 외에도 backend-boot-smoke, frontend-e2e-full-stack
+      # 잡에서 각각 처음부터 다시 빌드되고 있었다(러너가 매번 새로 뜨는 GitHub-hosted
+      # 러너라 로컬 레이어 캐시가 잡 간에 공유되지 않는다). scope를 이미지 이름으로 맞춰
+      # GitHub Actions 캐시(type=gha)를 세 잡이 공유하게 하면, 같은 커밋에서 어느 잡이
+      # 먼저 캐시를 채우든 나머지 잡은 변경되지 않은 레이어를 다시 받지 않는다.
       - name: Build image
         run: |
           if [[ "${{ matrix.image }}" == "backup" ]]; then
-            docker build -f infra/backup/Dockerfile -t hanium-backup:ci .
+            docker buildx build --load \
+              -f infra/backup/Dockerfile -t hanium-backup:ci \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              .
           elif [[ "${{ matrix.image }}" == "nginx" ]]; then
-            docker build -t hanium-nginx:ci infra/nginx
+            docker buildx build --load \
+              -t hanium-nginx:ci \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              infra/nginx
           else
-            docker build -t "hanium-${{ matrix.image }}:ci" "${{ matrix.image }}"
+            docker buildx build --load \
+              -t "hanium-${{ matrix.image }}:ci" \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              "${{ matrix.image }}"
           fi
       - name: Verify service Docker contexts exclude env files
         if: matrix.image == 'backend' || matrix.image == 'frontend' || matrix.image == 'analysis-engine' || matrix.image == 'video-llm-engine'
@@ -253,14 +271,28 @@ jobs:
       DB_PASSWORD: ci-smoke-db-password
       DB_ROOT_PASSWORD: ci-smoke-db-root-password
       REDIS_PASSWORD: ci-smoke-redis-password
+      # 체크아웃 디렉터리 이름에서 파생되는 기본 프로젝트명 대신 고정값을 써서,
+      # 아래 buildx로 미리 태그하는 이미지 이름과 docker compose가 기대하는
+      # 이미지 이름이 항상 일치하도록 한다.
+      COMPOSE_PROJECT_NAME: hanium-ci
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
       - name: Start database/cache/object-storage dependencies
         run: docker compose up -d --wait mysql redis minio
       - name: Create MinIO buckets
         run: docker compose up minio-init
+      # docker-build 잡과 동일한 scope(backend)로 GitHub Actions 캐시를 읽고 써서,
+      # 매 잡마다 처음부터 다시 빌드하지 않는다. docker compose가 기대하는 이미지
+      # 이름(<project>-backend:latest)으로 직접 태그해 두면, 뒤이은
+      # `docker compose up`은 이미지가 이미 있다고 보고 다시 빌드하지 않는다.
       - name: Build backend image
-        run: docker compose build backend
+        run: >-
+          docker buildx build --load
+          -t hanium-ci-backend:latest
+          --cache-from type=gha,scope=backend
+          --cache-to type=gha,mode=max,scope=backend
+          backend
       - name: Boot backend (dev profile) and wait for health check
         run: docker compose up -d --wait --no-deps backend
       - name: Dump backend logs on failure
@@ -287,6 +319,8 @@ jobs:
       DB_PASSWORD: ci-e2e-db-password
       DB_ROOT_PASSWORD: ci-e2e-db-root-password
       REDIS_PASSWORD: ci-e2e-redis-password
+      # docker-build/backend-boot-smoke 잡과 동일한 이유로 프로젝트명을 고정한다.
+      COMPOSE_PROJECT_NAME: hanium-ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -294,12 +328,28 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: docker/setup-buildx-action@v3
       - name: Start database/cache/object-storage dependencies
         run: docker compose up -d --wait mysql redis minio
       - name: Create MinIO buckets
         run: docker compose up minio-init
+      # docker-build/backend-boot-smoke 잡과 동일한 scope로 GitHub Actions 캐시를
+      # 공유해 처음부터 다시 빌드하지 않는다. frontend는 docker-compose.yml의
+      # VITE_API_BASE_URL 기본값(http://localhost:8080, 이 잡의 API_BASE_URL과 동일)을
+      # 그대로 build arg로 넘겨 compose가 빌드했을 때와 동일한 이미지가 되게 한다.
       - name: Build backend and frontend images
-        run: docker compose build backend frontend
+        run: |
+          docker buildx build --load \
+            -t hanium-ci-backend:latest \
+            --cache-from type=gha,scope=backend \
+            --cache-to type=gha,mode=max,scope=backend \
+            backend
+          docker buildx build --load \
+            -t hanium-ci-frontend:latest \
+            --build-arg VITE_API_BASE_URL=http://localhost:8080 \
+            --cache-from type=gha,scope=frontend \
+            --cache-to type=gha,mode=max,scope=frontend \
+            frontend
       - name: Boot backend and frontend and wait for health checks
         run: docker compose up -d --wait --no-deps backend frontend
       - name: Install frontend dependencies

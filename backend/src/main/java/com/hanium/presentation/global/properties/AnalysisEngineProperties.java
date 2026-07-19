@@ -6,5 +6,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AnalysisEngineProperties(
         String baseUrl,
         String apiKey
-) {
+) implements EngineProperties {
 }

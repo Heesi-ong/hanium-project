@@ -6,5 +6,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record VideoLlmEngineProperties(
         String baseUrl,
         String apiKey
-) {
+) implements EngineProperties {
 }

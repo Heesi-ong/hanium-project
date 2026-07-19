@@ -10,6 +10,7 @@ public record RateLimitProperties(
         Limit loginIp,
         Limit signup,
         Limit passwordResetRequest,
+        Limit passwordResetConfirm,
         Limit openaiMonthly,
         Limit videoLlmMonthly,
         Limit resultsQuery,

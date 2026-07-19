@@ -212,8 +212,17 @@ public class AuthController {
 
     @PostMapping("/password-reset/confirm")
     public ResponseEntity<ApiResponse<?>> confirmPasswordReset(
-            @Valid @RequestBody PasswordResetConfirmRequest request
+            @Valid @RequestBody PasswordResetConfirmRequest request,
+            HttpServletRequest servletRequest
     ) {
+        String clientIp = clientIpResolver.resolve(servletRequest);
+        if (!userRateLimiter.tryConsume("password-reset-confirm", clientIp)) {
+            ErrorCode errorCode = ErrorCode.TOO_MANY_REQUESTS;
+            return ResponseEntity
+                    .status(errorCode.getStatus())
+                    .body(ApiResponse.fail(errorCode.getMessage()));
+        }
+
         boolean confirmed = passwordResetService.confirmPasswordReset(
                 request.token().trim(),
                 request.newPassword()

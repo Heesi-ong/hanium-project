@@ -561,6 +561,18 @@ class AuthControllerIntegrationTest {
         assertThat(limitedResponse.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
     }
 
+    @Test
+    void passwordResetConfirmIsRateLimited() {
+        for (int index = 0; index < 10; index++) {
+            ResponseEntity<String> response = confirmPasswordReset("invalid-token-" + index, "newpassword123");
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+
+        ResponseEntity<String> limitedResponse = confirmPasswordReset("invalid-token-final", "newpassword123");
+
+        assertThat(limitedResponse.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     private String findAccessTokenSetCookie(ResponseEntity<String> response) {
         List<String> setCookies = response.getHeaders().get(HttpHeaders.SET_COOKIE);
         assertThat(setCookies).isNotNull();
@@ -586,6 +598,14 @@ class AuthControllerIntegrationTest {
         return restTemplate.postForEntity(
                 "/api/auth/password-reset/request",
                 Map.of("email", email),
+                String.class
+        );
+    }
+
+    private ResponseEntity<String> confirmPasswordReset(String token, String newPassword) {
+        return restTemplate.postForEntity(
+                "/api/auth/password-reset/confirm",
+                Map.of("token", token, "newPassword", newPassword),
                 String.class
         );
     }

@@ -228,6 +228,11 @@ rate-limit:
   password-reset-request:
     capacity: ${PASSWORD_RESET_RATE_LIMIT_CAPACITY:5}
     refill-minutes: ${PASSWORD_RESET_RATE_LIMIT_REFILL_MINUTES:10}
+  password-reset-confirm:
+    # 토큰 자체가 256비트 SecureRandom이라 무차별 대입은 사실상 불가능하지만,
+    # 다른 인증 관련 엔드포인트와의 일관성을 위해 IP 기준으로도 제한합니다.
+    capacity: ${PASSWORD_RESET_CONFIRM_RATE_LIMIT_CAPACITY:10}
+    refill-minutes: ${PASSWORD_RESET_CONFIRM_RATE_LIMIT_REFILL_MINUTES:10}
   openai-monthly:
     capacity: ${OPENAI_MONTHLY_RATE_LIMIT_CAPACITY:1000}
     refill-minutes: ${OPENAI_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}

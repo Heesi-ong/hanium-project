@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useJobStatusPolling } from "../hooks/useJobStatusPolling";
 import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
 import EmotionDoughnutChart from "../components/chart/EmotionDoughnutChart";
 import ResultScoreChart from "../components/chart/ResultScoreChart";
@@ -56,10 +57,7 @@ function ResultDetailPage() {
     const navigate = useNavigate();
     const confirm = useConfirm();
 
-    const pollingTimerRef = useRef(null);
-    const pollingStartedAtRef = useRef(null);
     const cooldownTimerRef = useRef(null);
-    const pollingFailureCountRef = useRef(0);
     // VideoPlayerSection이 등록하는 영상 시크 함수. 시각 분석 관찰 항목을 클릭하면
     // 이 함수를 통해 영상을 해당 구간(startSec)으로 이동시킵니다.
     const videoSeekControllerRef = useRef(null);
@@ -72,7 +70,6 @@ function ResultDetailPage() {
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState(false);
     const [cancelling, setCancelling] = useState(false);
-    const [polling, setPolling] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState("");
     const [loadErrorCode, setLoadErrorCode] = useState("");
@@ -177,17 +174,6 @@ function ResultDetailPage() {
         [scoreSummary]
     );
 
-    const stopPolling = useCallback(() => {
-        if (pollingTimerRef.current) {
-            clearInterval(pollingTimerRef.current);
-            pollingTimerRef.current = null;
-        }
-
-        pollingStartedAtRef.current = null;
-        pollingFailureCountRef.current = 0;
-        setPolling(false);
-    }, []);
-
     const stopRateLimitCooldown = useCallback(() => {
         if (cooldownTimerRef.current) {
             clearTimeout(cooldownTimerRef.current);
@@ -248,58 +234,45 @@ function ResultDetailPage() {
         return response.data;
     }, []);
 
-    const startStatusPolling = useCallback((targetJobId) => {
-        stopPolling();
+    const handlePollCompleted = useCallback(async () => {
+        await loadResult();
+    }, [loadResult]);
 
-        pollingStartedAtRef.current = Date.now();
-        pollingFailureCountRef.current = 0;
-        setPolling(true);
+    const handlePollFailed = useCallback(async (statusData) => {
+        await loadResult();
+        setError(statusData.failReason || "분석 재시도가 실패했습니다.");
+    }, [loadResult]);
 
-        pollingTimerRef.current = setInterval(async () => {
-            try {
-                const elapsedMs = Date.now() - pollingStartedAtRef.current;
+    const handlePollCancelled = useCallback(async () => {
+        await loadResult();
+        setError("");
+    }, [loadResult]);
 
-                if (elapsedMs > POLLING_TIMEOUT_MS) {
-                    stopPolling();
-                    setError("분석 상태 확인 시간이 초과되었습니다. 잠시 후 다시 조회하세요.");
-                    return;
-                }
+    const handlePollTimeout = useCallback(() => {
+        setError("분석 상태 확인 시간이 초과되었습니다. 잠시 후 다시 조회하세요.");
+    }, []);
 
-                const statusData = await fetchStatusOnce(targetJobId);
-                pollingFailureCountRef.current = 0;
+    const handlePollError = useCallback((requestError) => {
+        setError(getErrorMessage(
+            requestError,
+            "분석 상태 확인 중 오류가 발생했습니다."
+        ));
+    }, []);
 
-                if (statusData.status === "COMPLETED") {
-                    stopPolling();
-                    await loadResult();
-                    return;
-                }
-
-                if (statusData.status === "FAILED") {
-                    stopPolling();
-                    await loadResult();
-                    setError(statusData.failReason || "분석 재시도가 실패했습니다.");
-                    return;
-                }
-
-                if (statusData.status === "CANCELLED") {
-                    stopPolling();
-                    await loadResult();
-                    setError("");
-                }
-            } catch (requestError) {
-                pollingFailureCountRef.current += 1;
-
-                if (pollingFailureCountRef.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
-                    stopPolling();
-                    setError(getErrorMessage(
-                        requestError,
-                        "분석 상태 확인 중 오류가 발생했습니다."
-                    ));
-                }
-                // MAX_CONSECUTIVE_POLL_FAILURES 미만이면 다음 폴링 주기에 자동 재시도합니다.
-            }
-        }, POLLING_INTERVAL_MS);
-    }, [fetchStatusOnce, loadResult, stopPolling]);
+    // 이미 결과 상세를 보고 있는 화면이라, UploadPage(접수 직후 즉시 실패로 간주)와
+    // 달리 잠깐의 네트워크 실패는 MAX_CONSECUTIVE_POLL_FAILURES번까지 참고 다음
+    // 폴링 주기에 자동 재시도합니다.
+    const { polling, startPolling: startStatusPolling, stopPolling } = useJobStatusPolling({
+        intervalMs: POLLING_INTERVAL_MS,
+        timeoutMs: POLLING_TIMEOUT_MS,
+        maxConsecutiveFailures: MAX_CONSECUTIVE_POLL_FAILURES,
+        fetchStatus: fetchStatusOnce,
+        onCompleted: handlePollCompleted,
+        onFailed: handlePollFailed,
+        onCancelled: handlePollCancelled,
+        onTimeout: handlePollTimeout,
+        onPollError: handlePollError,
+    });
 
     useEffect(() => {
         const loadTimer = window.setTimeout(() => {

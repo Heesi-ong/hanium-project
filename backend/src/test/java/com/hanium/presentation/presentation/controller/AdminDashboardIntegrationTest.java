@@ -82,6 +82,9 @@ class AdminDashboardIntegrationTest {
 
         JsonNode adminNode = findByEmail(content, "admin@example.com");
         assertThat(adminNode.path("role").asText()).isEqualTo("ADMIN");
+        // 배치 집계(countByOwnerIdIn)는 작업이 없는 사용자는 GROUP BY 결과에 행 자체가
+        // 없으므로, 0으로 채워지는 fallback 경로를 명시적으로 검증합니다.
+        assertThat(adminNode.path("analysisJobCount").asLong()).isEqualTo(0L);
 
         ResponseEntity<String> statsResponse = restTemplate.exchange(
                 "/api/admin/stats",

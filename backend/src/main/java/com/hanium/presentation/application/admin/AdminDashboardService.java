@@ -17,6 +17,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 @Service
 public class AdminDashboardService {
 
@@ -38,9 +42,21 @@ public class AdminDashboardService {
     public Page<AdminUserSummaryResponse> getUsers(Pageable pageable) {
         Page<User> users = userRepository.findAllByOrderByCreatedAtDesc(pageable);
 
+        // 행마다 countByOwnerId를 따로 부르면 페이지 크기만큼 쿼리가 나가므로(N+1),
+        // 이 페이지에 있는 ownerId를 한 번에 모아 배치 집계합니다. 작업이 0건인
+        // 사용자는 집계 결과에 없으므로 getOrDefault로 0을 채웁니다.
+        List<Long> ownerIds = users.getContent().stream()
+                .map(User::getId)
+                .toList();
+        Map<Long, Long> jobCountByOwnerId = analysisJobRepository.countByOwnerIdIn(ownerIds).stream()
+                .collect(Collectors.toMap(
+                        AnalysisJobRepository.OwnerJobCount::getOwnerId,
+                        AnalysisJobRepository.OwnerJobCount::getJobCount
+                ));
+
         return users.map(user -> AdminUserSummaryResponse.of(
                 user,
-                analysisJobRepository.countByOwnerId(user.getId())
+                jobCountByOwnerId.getOrDefault(user.getId(), 0L)
         ));
     }
 

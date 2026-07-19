@@ -7,12 +7,15 @@ from app.core.logging_config import configure_logging
 
 configure_logging()
 
-from app.core import model_registry
-from app.api.basic_analysis import (
+# 다른 애플리케이션 모듈은 로깅 핸들러가 이미 붙은 뒤에 import되도록 의도적으로 여기에
+# 둡니다(파일 맨 위로 옮기지 않음). ruff의 E402(모듈 상단이 아닌 import)는 이 순서를
+# 위한 의도된 예외라 노란색 경고 대신 명시적으로 무시합니다.
+from app.core import model_registry  # noqa: E402
+from app.api.basic_analysis import (  # noqa: E402
     resolve_analysis_engine_max_video_size_bytes,
     router as basic_analysis_router,
 )
-from app.api.readiness import router as readiness_router
+from app.api.readiness import router as readiness_router  # noqa: E402
 
 logger = logging.getLogger("analysis-engine")
 

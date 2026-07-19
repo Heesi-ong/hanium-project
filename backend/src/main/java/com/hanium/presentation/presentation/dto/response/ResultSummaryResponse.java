@@ -415,16 +415,12 @@ public record ResultSummaryResponse(
         return pipeline;
     }
 
-    public static String resolveDataIssue(Map<String, Object> finalResult) {
-        Map<String, Object> pipeline = extractPipeline(finalResult);
-
-        return resolveDataIssue(
-                extractScoreSummary(finalResult),
-                extractFeedback(finalResult, pipeline)
-        );
-    }
-
-    private static String resolveDataIssue(
+    // normalizeFinalResult()가 이미 만들어 둔 scoreSummary/feedback을 그대로 받습니다.
+    // 여기서 다시 extractScoreSummary/extractFeedback을 호출하면(과거에는 그렇게 했습니다)
+    // 이미 정규화된 결과를 놓고 같은 추출 로직을 또 한 번 돌리는 것이라 매 결과 조회마다
+    // 불필요한 이중 작업이 됩니다(값 자체는 정규화가 이미 끝나 있어 멱등이라 틀린 값이
+    // 나오지는 않았지만, 낭비였습니다).
+    static String resolveDataIssue(
             Map<String, Object> scoreSummary,
             Map<String, Object> feedback
     ) {

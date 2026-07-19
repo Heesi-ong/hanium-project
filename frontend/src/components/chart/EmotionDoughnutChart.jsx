@@ -6,6 +6,7 @@ import {
     Tooltip,
 } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
+import { formatEmotionLabel } from "../result-detail/resultDetailFormatters";
 import "./chartStyles.css";
 
 ChartJS.register(
@@ -14,30 +15,6 @@ ChartJS.register(
     Legend,
     Colors
 );
-
-function formatEmotionLabel(label) {
-    if (label === "neutral") {
-        return "중립";
-    }
-
-    if (label === "engaged") {
-        return "몰입/집중";
-    }
-
-    if (label === "speaking") {
-        return "발화 중";
-    }
-
-    if (label === "low_energy") {
-        return "낮은 에너지";
-    }
-
-    if (label === "unknown") {
-        return "알 수 없음";
-    }
-
-    return label || "-";
-}
 
 function EmotionDoughnutChart({ emotionCounts }) {
     const entries = Object.entries(emotionCounts || {});

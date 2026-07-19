@@ -9,9 +9,15 @@ public record AnalysisResultResponse(
         String dataIssueDescription
 ) {
 
+    @SuppressWarnings("unchecked")
     public static AnalysisResultResponse of(String jobId, Map<String, Object> result) {
         Map<String, Object> normalizedResult = ResultSummaryResponse.normalizeFinalResult(result);
-        String dataIssue = ResultSummaryResponse.resolveDataIssue(normalizedResult);
+        // normalizeFinalResult가 이미 만들어 둔 scoreSummary/feedback을 그대로 재사용합니다.
+        // 원본 result를 다시 넘겨 같은 추출 로직을 한 번 더 돌리지 않습니다.
+        String dataIssue = ResultSummaryResponse.resolveDataIssue(
+                (Map<String, Object>) normalizedResult.get("scoreSummary"),
+                (Map<String, Object>) normalizedResult.get("feedback")
+        );
 
         return new AnalysisResultResponse(
                 jobId,

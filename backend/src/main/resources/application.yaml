@@ -241,6 +241,11 @@ rate-limit:
     # 실제 계약/카탈로그 한도가 확인되면 VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY로 조정하세요.
     capacity: ${VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY:500}
     refill-minutes: ${VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}
+  video-llm-daily:
+    # 전역 월간 예산(video-llm-monthly)과 별개로, 사용자 한 명이 그 예산을 독점하지 못하도록
+    # 하루 호출 수를 제한합니다. coach-daily와 같은 계층의 방어선입니다.
+    capacity: ${VIDEO_LLM_DAILY_RATE_LIMIT_CAPACITY:10}
+    refill-minutes: ${VIDEO_LLM_DAILY_RATE_LIMIT_REFILL_MINUTES:1440}
   results-query:
     capacity: ${RESULTS_QUERY_RATE_LIMIT_CAPACITY:120}
     refill-minutes: ${RESULTS_QUERY_RATE_LIMIT_REFILL_MINUTES:1}

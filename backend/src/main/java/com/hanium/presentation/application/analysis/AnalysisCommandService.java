@@ -67,6 +67,11 @@ public class AnalysisCommandService {
                 "이번 달 Video LLM 분석 호출 한도를 초과해 이 작업은 Video LLM 분석 없이 처리되었습니다.",
                 "Video LLM 월간 한도 초과",
                 "월간 호출 한도 초과로 Video LLM 분석이 생략되었습니다."
+        ),
+        DAILY_LIMIT_EXCEEDED(
+                "오늘 계정에서 사용할 수 있는 Video LLM 분석 호출 한도를 초과해 이 작업은 Video LLM 분석 없이 처리되었습니다.",
+                "Video LLM 일일 한도 초과",
+                "사용자별 일일 호출 한도 초과로 Video LLM 분석이 생략되었습니다."
         );
 
         private final String visualDelivery;
@@ -563,6 +568,9 @@ public class AnalysisCommandService {
             if (!useVideoLlm) {
                 log.info("[{}] Video LLM 분석을 건너뜁니다. (useVideoLlm=false)", jobId);
                 videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.DISABLED);
+            } else if (!canUseDailyVideoLlmBudget(jobId)) {
+                log.info("[{}] Video LLM 분석을 건너뜁니다. (사용자별 일일 한도 초과)", jobId);
+                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED);
             } else if (!canUseMonthlyVideoLlmBudget(jobId)) {
                 log.info("[{}] Video LLM 분석을 건너뜁니다. (월간 한도 초과)", jobId);
                 videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED);
@@ -706,6 +714,26 @@ public class AnalysisCommandService {
         boolean allowed = userRateLimiter.tryConsume("video-llm-monthly", currentMonthKey());
         if (!allowed) {
             log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
+        }
+        return allowed;
+    }
+
+    // 전역 월간 예산(video-llm-monthly)과는 별개로, 사용자 한 명이 그 예산을 독점하지 못하도록
+    // 먼저 확인합니다. 이 확인을 월간 확인보다 앞에 두어, 일일 한도로 어차피 막힐 호출이
+    // 공용 월간 카운터까지 소비하지 않게 합니다.
+    private boolean canUseDailyVideoLlmBudget(String jobId) {
+        Long ownerId = analysisJobRepository.findByJobId(jobId)
+                .map(AnalysisJob::getOwnerId)
+                .orElse(null);
+
+        if (ownerId == null) {
+            log.warn("[{}] Video LLM 일일 한도 확인을 위한 소유자 정보를 찾지 못해 한도 확인을 건너뜁니다.", jobId);
+            return true;
+        }
+
+        boolean allowed = userRateLimiter.tryConsume("video-llm-daily", ownerId);
+        if (!allowed) {
+            log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
         }
         return allowed;
     }

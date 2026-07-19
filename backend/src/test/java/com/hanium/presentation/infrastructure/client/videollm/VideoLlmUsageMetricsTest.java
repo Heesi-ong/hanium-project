@@ -31,6 +31,7 @@ class VideoLlmUsageMetricsTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
 

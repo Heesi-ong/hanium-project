@@ -1,34 +1,5 @@
 import "./resultSummaryOverview.css";
-
-function formatNumber(value, digits = 2) {
-    if (value === null || value === undefined || value === "") {
-        return "-";
-    }
-
-    if (typeof value !== "number") {
-        return value;
-    }
-
-    return Number.isInteger(value) ? value : value.toFixed(digits);
-}
-
-function formatPercent(value) {
-    if (typeof value !== "number") {
-        return "-";
-    }
-
-    return `${Math.round(value * 100)}%`;
-}
-
-function formatEmotionLabel(label) {
-    if (label === "neutral") return "중립";
-    if (label === "engaged") return "몰입/집중";
-    if (label === "speaking") return "발화 중";
-    if (label === "low_energy") return "낮은 에너지";
-    if (label === "unknown") return "알 수 없음";
-
-    return label || "-";
-}
+import { formatEmotionLabel, formatNumber, formatPercent } from "./resultDetailFormatters";
 
 function resolveScoreLabel(score) {
     if (typeof score !== "number") {

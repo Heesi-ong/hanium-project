@@ -75,6 +75,19 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
     // 관리자 대시보드: 사용자별 전체 분석 작업 수(상태 무관)를 보여줄 때 사용합니다.
     long countByOwnerId(Long ownerId);
 
+    // 관리자 사용자 목록 페이지용 배치 조회. 목록의 각 행마다 countByOwnerId를 따로
+    // 호출하면 페이지 크기만큼(N+1) 쿼리가 나가므로, 페이지에 담긴 ownerId를 한 번에
+    // 모아 집계합니다. 작업이 0건인 사용자는 GROUP BY 결과에 행 자체가 없으니 호출부에서
+    // 기본값 0을 채워야 합니다.
+    @Query("SELECT j.ownerId AS ownerId, COUNT(j) AS jobCount FROM AnalysisJob j WHERE j.ownerId IN :ownerIds GROUP BY j.ownerId")
+    List<OwnerJobCount> countByOwnerIdIn(@Param("ownerIds") List<Long> ownerIds);
+
+    interface OwnerJobCount {
+        Long getOwnerId();
+
+        Long getJobCount();
+    }
+
     // 관리자 대시보드: 재시도 소진(DEAD_LETTER) 작업 목록을 최신 순으로 페이지네이션 조회합니다.
     Page<AnalysisJob> findByStatusOrderByCreatedAtDesc(AnalysisStatus status, Pageable pageable);
 }

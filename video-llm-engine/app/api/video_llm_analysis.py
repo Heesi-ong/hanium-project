@@ -430,36 +430,6 @@ def download_video_to_temp_file(
         return None
 
 
-def read_video_bytes(video_path: str) -> tuple[bytes, str]:
-    mime_type, _ = mimetypes.guess_type(video_path)
-    if not mime_type:
-        mime_type = "video/mp4"
-
-    path = Path(video_path)
-    max_size = resolve_video_max_size_bytes()
-    video_size = path.stat().st_size
-    if video_size > max_size:
-        raise ValueError(
-            "Video file exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
-            f"({video_size} bytes > {max_size} bytes)."
-        )
-
-    video_bytes = path.read_bytes()
-
-    return video_bytes, mime_type
-
-
-def encode_video_as_data_url(video_path: str) -> str:
-    video_bytes, mime_type = read_video_bytes(video_path)
-    if len(video_bytes) > NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
-        raise ValueError(
-            "Video file is too large for inline NVIDIA payload "
-            f"({len(video_bytes)} bytes > {NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES} bytes). "
-            "Use NVCF Asset API upload for larger files."
-        )
-
-    encoded = base64.b64encode(video_bytes).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
 
 
 def create_nvidia_asset(

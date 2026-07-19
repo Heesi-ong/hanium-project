@@ -1537,7 +1537,8 @@ def analyze_volume_stability(audio_extraction_result: Dict[str, Any]) -> Dict[st
 
     try:
         return calculate_volume_stability_from_wav(Path(audio_path))
-    except Exception as exception:
+    except Exception:
+        # exc_info=True가 현재 예외 정보를 로그에 남기므로 별도 바인딩이 필요 없습니다.
         logger.warning(
             "음량 안정성 분석에 실패해 중립 기본값을 사용합니다. audioPath=%s",
             audio_path,

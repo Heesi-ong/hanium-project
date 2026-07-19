@@ -201,12 +201,15 @@ def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
         log_step(job_id, 4, "음성을 텍스트로 변환(STT)하는 중... (영상 길이에 따라 시간이 걸릴 수 있습니다)")
         stt_result = transcribe_audio(audio_extraction_result)
 
+        sampled_frames = frame_result["sampledFrames"]
+        mp_images = preload_mediapipe_images(sampled_frames)
+
         log_step(job_id, 5, "자세(포즈)를 분석하는 중...")
-        pose_result = analyze_pose_from_frames(frame_result["sampledFrames"])
+        pose_result = analyze_pose_from_frames(sampled_frames, mp_images)
         gesture_result = analyze_gesture_from_pose_result(pose_result)
 
         log_step(job_id, 6, "얼굴/시선/표정을 분석하는 중...")
-        face_result = analyze_face_from_frames(frame_result["sampledFrames"])
+        face_result = analyze_face_from_frames(sampled_frames, mp_images)
         emotion_result = analyze_emotion_from_face_result(face_result)
 
         log_step(job_id, 7, "말하기 속도와 침묵 구간을 분석하는 중...")
@@ -418,6 +421,23 @@ def create_mediapipe_image_from_frame_path(frame_path: str) -> mp.Image | None:
         image_format=mp.ImageFormat.SRGB,
         data=rgb_image,
     )
+
+
+# pose/face 분석이 각자 같은 sampledFrames를 순회하며 프레임마다 따로 이미지를
+# 읽고 BGR->RGB 변환을 했었습니다. 프레임 수만큼 디코딩+색변환이 두 번씩
+# 일어나던 것을, 여기서 한 번만 미리 디코딩해 두 분석 함수가 공유하게 합니다.
+def preload_mediapipe_images(
+        sampled_frames: List[Dict[str, Any]]
+) -> List[mp.Image | None]:
+    images: List[mp.Image | None] = []
+
+    for frame_info in sampled_frames:
+        frame_path = frame_info.get("framePath")
+        images.append(
+            create_mediapipe_image_from_frame_path(frame_path) if frame_path else None
+        )
+
+    return images
 
 
 def extract_video_info(video_path: Path) -> Dict[str, Any]:
@@ -711,7 +731,8 @@ def count_words_for_presentation(text: str) -> int:
 
 
 def analyze_pose_from_frames(
-        sampled_frames: List[Dict[str, Any]]
+        sampled_frames: List[Dict[str, Any]],
+        mp_images: List[mp.Image | None],
 ) -> Dict[str, Any]:
     if not sampled_frames:
         return create_empty_pose_result()
@@ -722,15 +743,7 @@ def analyze_pose_from_frames(
     shoulder_diffs: List[float] = []
 
     with model_registry.pose_landmarker_context() as landmarker:
-        for frame_info in sampled_frames:
-            frame_path = frame_info.get("framePath")
-
-            if not frame_path:
-                analyzed_frames.append(create_pose_frame_result(frame_info, False))
-                continue
-
-            mp_image = create_mediapipe_image_from_frame_path(frame_path)
-
+        for frame_info, mp_image in zip(sampled_frames, mp_images):
             if mp_image is None:
                 analyzed_frames.append(create_pose_frame_result(frame_info, False))
                 continue
@@ -1040,7 +1053,8 @@ def create_gesture_frame_result(
 
 
 def analyze_face_from_frames(
-        sampled_frames: List[Dict[str, Any]]
+        sampled_frames: List[Dict[str, Any]],
+        mp_images: List[mp.Image | None],
 ) -> Dict[str, Any]:
     if not sampled_frames:
         return create_empty_face_result()
@@ -1051,15 +1065,7 @@ def analyze_face_from_frames(
     camera_gaze_frame_count = 0
 
     with model_registry.face_landmarker_context() as landmarker:
-        for frame_info in sampled_frames:
-            frame_path = frame_info.get("framePath")
-
-            if not frame_path:
-                analyzed_frames.append(create_face_frame_result(frame_info, False))
-                continue
-
-            mp_image = create_mediapipe_image_from_frame_path(frame_path)
-
+        for frame_info, mp_image in zip(sampled_frames, mp_images):
             if mp_image is None:
                 analyzed_frames.append(create_face_frame_result(frame_info, False))
                 continue

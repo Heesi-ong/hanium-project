@@ -6,6 +6,7 @@ import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+import { useJobStatusPolling } from "../hooks/useJobStatusPolling";
 import {
     cancelAnalysis,
     getAnalysisProgress,
@@ -92,8 +93,6 @@ function UploadPage() {
     const navigate = useNavigate();
     const { showToast } = useToast();
     const confirm = useConfirm();
-    const pollingTimerRef = useRef(null);
-    const pollingStartedAtRef = useRef(null);
     const progressTimerRef = useRef(null);
     const cooldownTimerRef = useRef(null);
 
@@ -105,7 +104,6 @@ function UploadPage() {
     const [useOpenAi, setUseOpenAi] = useState(true);
     const [loading, setLoading] = useState(false);
     const [running, setRunning] = useState(false);
-    const [polling, setPolling] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [isDragActive, setIsDragActive] = useState(false);
     const [previewUrl, setPreviewUrl] = useState("");
@@ -129,6 +127,37 @@ function UploadPage() {
     const isFailed = currentStatus === "FAILED";
     const isCancelled = currentStatus === "CANCELLED";
     const isRateLimited = rateLimitedUntil > Date.now();
+
+    // 폴링 도중 상태 조회가 한 번이라도 실패하면(maxConsecutiveFailures: 1) 바로
+    // 멈춥니다. ResultDetailPage는 이미 결과 상세를 보고 있는 화면이라 잠깐의
+    // 네트워크 실패를 몇 번 더 참아도 되지만, 이 페이지는 업로드 직후 접수
+    // 확인이 우선이라 기존부터 실패를 즉시 사용자에게 알리는 쪽을 택하고 있었습니다.
+    const { polling, startPolling: startStatusPolling, stopPolling } = useJobStatusPolling({
+        intervalMs: POLLING_INTERVAL_MS,
+        timeoutMs: POLLING_TIMEOUT_MS,
+        maxConsecutiveFailures: 1,
+        fetchStatus: fetchStatusOnce,
+        onCompleted: async (statusData) => {
+            showToast("분석이 완료되었습니다.", "success");
+            navigate(`/results/${statusData.jobId}`);
+        },
+        onFailed: (statusData) => {
+            setError(statusData.failReason || "분석이 실패했습니다.");
+        },
+        onCancelled: () => {
+            setError("분석이 취소되었습니다. 결과 상세 화면에서 다시 시도할 수 있습니다.");
+        },
+        onTimeout: () => {
+            setError("분석 상태 확인 시간이 초과되었습니다. 결과 목록에서 다시 확인하세요.");
+        },
+        onPollError: (requestError) => {
+            setError(getErrorMessage(
+                requestError,
+                "분석 상태 확인 중 오류가 발생했습니다."
+            ));
+        },
+    });
+
     const isFileSelectionDisabled = loading || running || polling || cancelling;
 
     useEffect(() => {
@@ -137,7 +166,7 @@ function UploadPage() {
             stopProgressPolling();
             stopRateLimitCooldown();
         };
-    }, []);
+    }, [stopPolling]);
 
     useEffect(() => {
         if (!file) {
@@ -153,16 +182,6 @@ function UploadPage() {
             URL.revokeObjectURL(objectUrl);
         };
     }, [file]);
-
-    function stopPolling() {
-        if (pollingTimerRef.current) {
-            clearInterval(pollingTimerRef.current);
-            pollingTimerRef.current = null;
-        }
-
-        pollingStartedAtRef.current = null;
-        setPolling(false);
-    }
 
     function stopProgressPolling() {
         if (progressTimerRef.current) {
@@ -409,51 +428,6 @@ function UploadPage() {
         const response = await getAnalysisStatus(jobId);
         setAnalysisStatus(response.data);
         return response.data;
-    }
-
-    function startStatusPolling(jobId) {
-        stopPolling();
-
-        pollingStartedAtRef.current = Date.now();
-        setPolling(true);
-
-        pollingTimerRef.current = setInterval(async () => {
-            try {
-                const elapsedMs = Date.now() - pollingStartedAtRef.current;
-
-                if (elapsedMs > POLLING_TIMEOUT_MS) {
-                    stopPolling();
-                    setError("분석 상태 확인 시간이 초과되었습니다. 결과 목록에서 다시 확인하세요.");
-                    return;
-                }
-
-                const statusData = await fetchStatusOnce(jobId);
-
-                if (statusData.status === "COMPLETED") {
-                    stopPolling();
-                    showToast("분석이 완료되었습니다.", "success");
-                    navigate(`/results/${jobId}`);
-                    return;
-                }
-
-                if (statusData.status === "FAILED") {
-                    stopPolling();
-                    setError(statusData.failReason || "분석이 실패했습니다.");
-                    return;
-                }
-
-                if (statusData.status === "CANCELLED") {
-                    stopPolling();
-                    setError("분석이 취소되었습니다. 결과 상세 화면에서 다시 시도할 수 있습니다.");
-                }
-            } catch (requestError) {
-                stopPolling();
-                setError(getErrorMessage(
-                    requestError,
-                    "분석 상태 확인 중 오류가 발생했습니다."
-                ));
-            }
-        }, POLLING_INTERVAL_MS);
     }
 
     function handleReset() {

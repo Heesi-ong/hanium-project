@@ -513,7 +513,7 @@ def test_call_real_video_llm_model_rejects_invalid_base_url_before_network(
     assert FakeNvidiaClient.instances == []
 
 
-def test_call_real_video_llm_model_includes_duration_hint_in_prompt(monkeypatch, tmp_path):
+def test_call_real_video_llm_model_uses_natural_prompt_for_short_duration(monkeypatch, tmp_path):
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
@@ -530,13 +530,54 @@ def test_call_real_video_llm_model_includes_duration_hint_in_prompt(monkeypatch,
     user_text = sent_request["json"]["messages"][1]["content"][0]["text"]
     assert "The video is exactly 4.166 seconds long." in user_text
     assert "within [0, 4.166]" in user_text
+    assert "Report the real moments you actually observe" in user_text
+    assert "Do not force the video into artificial sub-segments" in user_text
+    # 30초 미만은 3구간 강제 분할 프롬프트를 쓰지 않습니다.
+    assert "Divide the video into three temporal segments" not in user_text
+
+
+def test_call_real_video_llm_model_forces_three_segments_for_long_duration(
+    monkeypatch, tmp_path
+):
+    video_path = create_video_file(tmp_path)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "100")
+
+    video_llm_analysis.call_real_video_llm_model(
+        VideoLlmAnalysisRequest(
+            jobId="long-duration-prompt-job",
+            videoPath=video_path,
+            durationSec=60.0,
+        )
+    )
+
+    sent_request = FakeNvidiaClient.instances[0].requests[0]
+    user_text = sent_request["json"]["messages"][1]["content"][0]["text"]
+    assert "The video is exactly 60.000 seconds long." in user_text
+    assert "within [0, 60.000]" in user_text
     assert "must not all be 0" in user_text
     assert "Divide the video into three temporal segments" in user_text
-    assert "[0, 1.389)" in user_text
-    assert "[1.389, 2.777)" in user_text
-    assert "[2.777, 4.166]" in user_text
+    assert "[0, 20.000)" in user_text
+    assert "[20.000, 40.000)" in user_text
+    assert "[40.000, 60.000]" in user_text
     assert "include at least one observation for each segment" in user_text
     assert "do not collapse all observations into a single [0, duration] range" in user_text
+
+
+@pytest.mark.parametrize("duration_sec", [0.0, 29.999])
+def test_build_duration_prompt_uses_natural_prompt_below_threshold(duration_sec):
+    prompt = video_llm_analysis.build_duration_prompt(duration_sec)
+
+    assert "Divide the video into three temporal segments" not in prompt
+    assert "Report the real moments you actually observe" in prompt
+
+
+@pytest.mark.parametrize("duration_sec", [30.0, 45.0])
+def test_build_duration_prompt_forces_segments_at_or_above_threshold(duration_sec):
+    prompt = video_llm_analysis.build_duration_prompt(duration_sec)
+
+    assert "Divide the video into three temporal segments" in prompt
 
 
 def test_build_duration_prompt_without_duration_keeps_existing_empty_prompt():

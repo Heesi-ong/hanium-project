@@ -616,9 +616,29 @@ def build_nvidia_video_input_from_local_file(
     }
 
 
+# 이보다 짧은 영상에는 3구간 강제 분할을 적용하지 않습니다. 원래 3구간 강제 프롬프트는
+# 60초/120초 영상에서 모델이 관찰을 [0, duration] 하나로 뭉개버리는 문제(구간 분할
+# 실패)에 대응하려고 도입했습니다(docs/service-plan/video-llm-model-options.md 5절
+# 측정 참고). 하지만 구간 분할(chunking) 도입 이후에는 이 프롬프트가 이미 짧은
+# 세그먼트(예: 10~20초)에도 그대로 적용되어, 오히려 실제로는 하나로 이어지는 행동을
+# 억지로 3조각으로 쪼개 답하게 만들 위험이 있습니다. 짧은 영상/세그먼트는 모델이
+# 실제로 관찰한 시점을 그대로 보고하게 하는 쪽이 더 정직한 결과를 기대할 수 있습니다.
+MIN_DURATION_FOR_FORCED_SEGMENTATION_SEC = 30.0
+
+
 def build_duration_prompt(duration_sec: float | None) -> str:
     if duration_sec is None:
         return ""
+
+    if duration_sec < MIN_DURATION_FOR_FORCED_SEGMENTATION_SEC:
+        return (
+            f"The video is exactly {duration_sec:.3f} seconds long. "
+            f"All startSec and endSec values must be within [0, {duration_sec:.3f}]. "
+            "Report the real moments you actually observe with their true timestamps. "
+            "Do not force the video into artificial sub-segments: if a behavior genuinely "
+            f"spans the whole clip, report one observation covering [0, {duration_sec:.3f}]; "
+            "if distinct moments are visible, report them separately with their actual timing. "
+        )
 
     first_boundary = duration_sec / 3
     second_boundary = duration_sec * 2 / 3

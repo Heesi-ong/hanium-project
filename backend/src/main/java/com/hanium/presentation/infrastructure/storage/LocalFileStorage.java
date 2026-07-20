@@ -36,16 +36,6 @@ public class LocalFileStorage {
         }
     }
 
-    public boolean exists(Path path) {
-        return Files.exists(path);
-    }
-
-    public void validateExists(Path path) {
-        if (!exists(path)) {
-            throw new BusinessException(ErrorCode.FILE_NOT_FOUND);
-        }
-    }
-
     public void deleteDirectoryIfExists(Path directoryPath) {
         if (directoryPath == null || !Files.exists(directoryPath)) {
             return;

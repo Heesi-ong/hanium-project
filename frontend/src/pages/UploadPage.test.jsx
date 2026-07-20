@@ -137,6 +137,31 @@ describe("UploadPage", () => {
         });
     });
 
+    it("resets the native file input's value when the reset button is clicked", async () => {
+        // 브라우저는 JS로 <input type="file">의 value에 빈 문자열 외의 값을 대입하는 것을
+        // 막기 때문에(jsdom도 동일), "선택 후 값이 채워졌다가 초기화로 비워진다"를 값 자체로
+        // 검증할 수는 없다. 대신 실제 코드가 하는 일 — value setter가 ""로 호출되는 것 —을
+        // 직접 스파이로 검증한다. 이 대입이 있어야 브라우저가 같은 파일을 다시 선택했을 때도
+        // change 이벤트를 발생시킨다(대입이 없으면 파일 목록이 안 바뀐 것으로 보고 무시한다).
+        const valueSetterSpy = vi.spyOn(window.HTMLInputElement.prototype, "value", "set");
+
+        try {
+            const file = createVideoFile();
+            const { container } = renderUploadPage();
+            const fileInput = container.querySelector('input[type="file"]');
+
+            fireEvent.change(fileInput, { target: { files: [file] } });
+            expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
+
+            valueSetterSpy.mockClear();
+            fireEvent.click(screen.getByText("초기화"));
+
+            expect(valueSetterSpy).toHaveBeenCalledWith("");
+        } finally {
+            valueSetterSpy.mockRestore();
+        }
+    });
+
     it("shows a queued cancel button and cancels the job immediately", async () => {
         const jobId = "job-cancel-test";
 

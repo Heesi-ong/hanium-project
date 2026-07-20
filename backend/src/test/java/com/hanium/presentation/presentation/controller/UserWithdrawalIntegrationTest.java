@@ -112,6 +112,33 @@ class UserWithdrawalIntegrationTest {
     }
 
     @Test
+    void withdrawRollsBackAllDeletionsWhenOneJobCannotBeDeleted() throws Exception {
+        String token = signupAndLogin("partial-failure@example.com", "password123");
+        Long userId = userRepository.findByEmail("partial-failure@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createResultFixture(FIRST_JOB_ID, userId);
+        AnalysisJob queuedJob = AnalysisJob.create(SECOND_JOB_ID, userId);
+        queuedJob.enqueue(false, false);
+        analysisJobRepository.save(queuedJob);
+
+        mockMvc.perform(delete("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "password123"))))
+                .andExpect(status().isInternalServerError());
+
+        // 대기 중인 SECOND_JOB_ID는 삭제할 수 없어 전체 탈퇴가 실패했으므로, 이미
+        // 정상적으로 삭제 가능했던 FIRST_JOB_ID의 DB 행/파일도 함께 롤백돼야 합니다.
+        // 원자성이 깨지면 계정은 남았는데 FIRST_JOB_ID만 먼저 사라지는 반쪽 상태가 됩니다.
+        assertThat(userRepository.findById(userId)).isPresent();
+        assertThat(analysisJobRepository.existsByJobId(FIRST_JOB_ID)).isTrue();
+        assertThat(analysisJobRepository.existsByJobId(SECOND_JOB_ID)).isTrue();
+        assertThat(uploadedVideoRepository.existsByJobId(FIRST_JOB_ID)).isTrue();
+    }
+
+    @Test
     void wrongPasswordDoesNotDeleteAnything() throws Exception {
         String token = signupAndLogin("wrong-password@example.com", "password123");
         Long userId = userRepository.findByEmail("wrong-password@example.com")

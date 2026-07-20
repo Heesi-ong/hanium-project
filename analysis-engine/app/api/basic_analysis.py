@@ -1,8 +1,10 @@
 import logging
 import math
 import os
+import queue
 import shutil
 import subprocess
+import threading
 import wave
 from array import array
 from pathlib import Path
@@ -645,19 +647,34 @@ def extract_audio_from_video(
         }
 
 
-def transcribe_audio(audio_extraction_result: Dict[str, Any]) -> Dict[str, Any]:
-    if not audio_extraction_result.get("success"):
-        return create_empty_stt_result(
-            reason="오디오 추출에 실패하여 STT를 수행하지 못했습니다.",
+def resolve_whisper_transcribe_timeout_seconds() -> float:
+    raw_value = os.environ.get("ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS", "600")
+
+    try:
+        timeout_seconds = float(raw_value)
+    except ValueError as exception:
+        raise ValueError(
+            "ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS must be a positive number, "
+            f"got {raw_value!r}."
+        ) from exception
+
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError(
+            "ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS must be a positive number."
         )
 
-    audio_path = audio_extraction_result.get("audioPath", "")
+    return timeout_seconds
 
-    if not audio_path or not Path(audio_path).exists():
-        return create_empty_stt_result(
-            reason="STT 대상 오디오 파일을 찾을 수 없습니다.",
-        )
 
+def _run_whisper_transcription(
+        audio_path: str,
+        result_queue: "queue.Queue[tuple[str, Any]]",
+) -> None:
+    # 별도 데몬 스레드에서 실행됩니다. faster-whisper/ctranslate2가 손상된 오디오에서
+    # 끝나지 않는 경우, 이 스레드 자체를 강제 종료할 방법은 Python에 없습니다. 대신
+    # 데몬 스레드로 띄워 프로세스 종료를 막지 않게 하고, 호출 측이 큐를 기다리다
+    # 타임아웃하면 이 스레드는 백그라운드에 남긴 채 요청을 진행시킵니다(풀 슬롯 1개를
+    # 잃을 수 있지만, 최소한 요청 스레드/나머지 풀 슬롯은 계속 정상 동작합니다).
     try:
         with model_registry.whisper_model_context() as model:
             segments_generator, info = model.transcribe(
@@ -687,12 +704,62 @@ def transcribe_audio(audio_extraction_result: Dict[str, Any]) -> Dict[str, Any]:
 
             transcript = " ".join(full_text_parts).strip()
 
+        result_queue.put((
+            "success",
+            {
+                "language": info.language,
+                "languageProbability": round(info.language_probability, 4),
+                "transcript": transcript,
+                "segments": segments,
+            },
+        ))
+    except Exception as exception:
+        result_queue.put(("error", exception))
+
+
+def transcribe_audio(audio_extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    if not audio_extraction_result.get("success"):
+        return create_empty_stt_result(
+            reason="오디오 추출에 실패하여 STT를 수행하지 못했습니다.",
+        )
+
+    audio_path = audio_extraction_result.get("audioPath", "")
+
+    if not audio_path or not Path(audio_path).exists():
+        return create_empty_stt_result(
+            reason="STT 대상 오디오 파일을 찾을 수 없습니다.",
+        )
+
+    try:
+        timeout_seconds = resolve_whisper_transcribe_timeout_seconds()
+        result_queue: "queue.Queue[tuple[str, Any]]" = queue.Queue(maxsize=1)
+        worker = threading.Thread(
+            target=_run_whisper_transcription,
+            args=(audio_path, result_queue),
+            daemon=True,
+            name="whisper-transcribe-worker",
+        )
+        worker.start()
+
+        try:
+            status, payload = result_queue.get(timeout=timeout_seconds)
+        except queue.Empty as exception:
+            raise TimeoutError(
+                f"Whisper STT가 {timeout_seconds}초 내에 끝나지 않아 중단합니다."
+            ) from exception
+
+        if status == "error":
+            raise payload
+
+        transcript = payload["transcript"]
+        segments = payload["segments"]
+
         return {
             "success": True,
             "analysisMethod": "faster_whisper",
             "modelSize": WHISPER_MODEL_SIZE,
-            "language": info.language,
-            "languageProbability": round(info.language_probability, 4),
+            "language": payload["language"],
+            "languageProbability": payload["languageProbability"],
             "transcript": transcript,
             "segments": segments,
             "segmentCount": len(segments),

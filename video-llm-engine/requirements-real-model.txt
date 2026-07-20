@@ -1,7 +1,9 @@
 # VIDEO_LLM_BACKEND=local-model 전용 의존성입니다. 실제 Qwen-VL류 모델을 로컬에서 구동할
 # 때만 설치하세요. mock/external-api 모드는 이 파일을 설치하지 않아도 동작합니다
-# (video_llm_analysis.py의 call_real_video_llm_model은 아직 NotImplementedError이며,
-# 이 파일은 향후 로컬 모델 연동을 시작할 때 실제로 쓰이게 됩니다).
+# (video_llm_analysis.py의 call_real_video_llm_model은 NVIDIA hosted API를 실제로
+# 호출하도록 구현되어 있으며, VIDEO_LLM_ENABLED=true로 이미 사용할 수 있습니다. 이
+# 파일은 그것과 별개로, 향후 자체 GPU로 로컬 모델을 구동하는 local-model 백엔드를
+# 시작할 때 실제로 쓰이게 됩니다).
 #
 # requirements-base.txt 위에 추가로 설치하는 용도이므로, 아래 -r로 base를 포함합니다.
 -r requirements-base.txt

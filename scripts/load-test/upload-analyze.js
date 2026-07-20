@@ -39,7 +39,11 @@ const runRejected = new Counter("run_rejected_429"); // 큐 상한으로 거부�
 const analysisCompleted = new Counter("analysis_completed");
 const analysisTimedOut = new Counter("analysis_poll_timeout");
 const analysisFailed = new Counter("analysis_failed");
-const timeToComplete = new Trend("analysis_time_to_complete_seconds", true);
+// isTime 플래그(두 번째 인자)를 주지 않습니다. 그 플래그를 주면 k6가 값을 자체
+// 시간 단위(ms)로 해석해 표시 라벨을 자동으로 붙이는데, 아래 add() 호출은 이미
+// "/1000"으로 초 단위 숫자를 직접 넣고 있어 실제로는 "80대 초"인 값이 "80.xxms"로
+// 잘못 표시되는 문제가 있었습니다.
+const timeToComplete = new Trend("analysis_time_to_complete_seconds");
 
 export const options = {
     // 기본은 아주 가벼운 smoke. 진짜 부하는 STAGES 환경변수나 아래 값을 조정하세요.

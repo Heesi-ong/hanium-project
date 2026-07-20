@@ -1,7 +1,8 @@
 # Project Structure
 
-작성일: 2026-07-05
-기준 커밋/브랜치: main (5a7f7f9)
+작성일: 2026-07-05 (2026-07-20 일부 갱신: video-llm-engine/analysis-engine 내부 구조,
+video-llm-engine 실제 모델 연동 현황)
+기준 커밋/브랜치: main (2cda065)
 
 ## 1. 전체 개요
 
@@ -67,7 +68,7 @@
 ### 확인해야 할 연결
 
 - 라우터/페이지 구조: `frontend/src/routes/AppRoutes.jsx`, `ProtectedRoute.jsx`, `frontend/src/pages/` (Home, Login, Signup, Upload, ResultList, ResultDetail)
-- API client 위치: `frontend/src/api/` (`apiClient.js`, `authApi.js`, `analysisApi.js`, `errorUtils.js`)
+- API client 위치: `frontend/src/api/` (`apiClient.js`, `authApi.js`, `analysisApi.js`, `adminApi.js`, `coachApi.js`, `onboardingApi.js`, `errorUtils.js`)
 - 인증 토큰 저장/전송 방식: `frontend/src/context/` + `apiClient.js`의 헤더 주입 확인
 - 결과 상세/목록/업로드/로그인 화면 연결: `pages/` ↔ `routes/AppRoutes.jsx`
 
@@ -82,7 +83,10 @@
 ### 진입점
 
 - `analysis-engine/app/main.py`
-- 내부 구조: `app/api/`(라우터), `app/services/`(분석 로직), `app/core/`(설정·보안), `app/schemas/`, `app/utils/`
+- 내부 구조: `app/api/`(basic_analysis.py — 프레임/오디오 추출부터 pose/gesture/face/emotion
+  분석, 점수 계산까지 대부분의 로직이 여기 한 파일에 있음. readiness.py),
+  `app/core/`(logging_config.py, model_registry.py, security.py). `services/schemas/utils`
+  같은 하위 패키지는 실제로 존재하지 않는다.
 
 ### 책임
 
@@ -99,14 +103,19 @@
 ### 진입점
 
 - `video-llm-engine/app/main.py`
-- 내부 구조: `app/api/`, `app/services/`, `app/model/`, `app/prompts/`, `app/core/`, `app/schemas/`, `app/utils/`
+- 내부 구조: `app/api/`(video_llm_analysis.py, readiness.py), `app/core/`(logging_config.py, security.py). `services/model/prompts/schemas/utils` 같은 하위 패키지는 실제로 존재하지 않으며, 대부분의 로직이 `app/api/video_llm_analysis.py` 한 파일에 있다.
 
 ### 현재 상태
 
 - backend가 기대하는 Video LLM 응답 스키마를 제공한다.
-- 현재 실제 모델 분석이 아니라 mock 응답이다.
-- 실제 모델 도입 후보는 `docs/service-plan/video-llm-model-options.md` 참고.
-- 테스트: `video-llm-engine/tests/` (`test_video_llm_analysis.py`, `test_security.py`)
+- `VIDEO_LLM_ENABLED` 기본값은 `false`(mock)다. `true`로 켜고 `NVIDIA_API_KEY`를 설정하면
+  NVIDIA hosted API(`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`)를 실제로 호출한다
+  (`call_real_video_llm_model()`). 실패 시 mock으로 폴백(`FALLBACK`)한다.
+- 동시 호출 수 제한(세마포어), 긴 영상 구간 분할(ffmpeg chunking) 후 병합, 구간 길이에 따른
+  프롬프트 분기(30초 미만은 3구간 강제 분할 프롬프트 미적용)까지 구현되어 있다. 다만 실제
+  NVIDIA 응답 품질은 API 키 없이는 검증하지 못했다.
+- 활성화 전 결정 체크리스트/실측 결과는 `docs/service-plan/video-llm-model-options.md` 참고.
+- 테스트: `video-llm-engine/tests/` (`test_video_llm_analysis.py`, `test_security.py` 등)
 
 ## 7. 런타임 데이터와 주의사항
 

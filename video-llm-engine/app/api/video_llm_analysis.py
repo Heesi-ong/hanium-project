@@ -6,6 +6,8 @@ import math
 import mimetypes
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -13,6 +15,7 @@ from typing import Any, Dict, Iterator
 from urllib.parse import urlparse
 
 import httpx
+import imageio_ffmpeg
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
 
@@ -87,6 +90,42 @@ def resolve_real_model_semaphore_timeout_seconds() -> float:
 
     return timeout_seconds
 
+
+# 라이브 테스트에서 성공이 확인된 안전 구간(120초)보다 여유를 둔 기본값입니다. 이보다
+# 긴 영상은 이 길이 단위로 실제로 잘라(ffmpeg) 구간마다 독립적으로 NVIDIA를 호출합니다.
+# 프롬프트 지시만으로 긴 타임라인을 구간화하게 하는 것보다, 모델이 실제로 그 구간만
+# 보고 답하게 하는 쪽이 더 정직한 시간 구간화 품질을 기대할 수 있습니다
+# (docs/service-plan/video-llm-model-options.md의 3구간 프롬프트 한계 참고).
+def resolve_video_llm_chunk_duration_seconds() -> float:
+    raw_value = os.getenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "100").strip()
+    try:
+        chunk_duration_seconds = float(raw_value)
+    except ValueError as exception:
+        raise RuntimeError(
+            "VIDEO_LLM_CHUNK_DURATION_SECONDS must be a positive number."
+        ) from exception
+
+    if not math.isfinite(chunk_duration_seconds) or chunk_duration_seconds <= 0:
+        raise RuntimeError("VIDEO_LLM_CHUNK_DURATION_SECONDS must be a positive number.")
+
+    return chunk_duration_seconds
+
+
+def resolve_video_llm_segment_split_timeout_seconds() -> float:
+    raw_value = os.getenv("VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS", "30").strip()
+    try:
+        timeout_seconds = float(raw_value)
+    except ValueError as exception:
+        raise RuntimeError(
+            "VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS must be a positive number."
+        ) from exception
+
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise RuntimeError("VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS must be a positive number.")
+
+    return timeout_seconds
+
+
 OBSERVATION_CATEGORIES = (
     "eyeContact",
     "facialExpression",
@@ -155,11 +194,204 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
         NVIDIA_DEFAULT_ASSET_BASE_URL,
     )
     timeout_seconds = resolve_nvidia_timeout_seconds()
+    chunk_duration_seconds = resolve_video_llm_chunk_duration_seconds()
+
+    if request.durationSec is not None and request.durationSec > chunk_duration_seconds:
+        return call_real_video_llm_model_in_chunks(
+            request,
+            api_key,
+            model,
+            base_url,
+            asset_base_url,
+            timeout_seconds,
+            chunk_duration_seconds,
+        )
+
+    with resolve_video_file(request) as (video_path, content_type):
+        model_json = call_nvidia_chat_completion(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            asset_base_url=asset_base_url,
+            timeout_seconds=timeout_seconds,
+            job_id=request.jobId,
+            video_path=video_path,
+            content_type=content_type,
+            duration_hint_sec=request.durationSec,
+            sample_fps=request.sampleFps,
+            max_frames=request.maxFrames,
+        )
+
+    return normalize_video_llm_response(request.jobId, model, model_json, request.durationSec)
+
+
+def call_real_video_llm_model_in_chunks(
+    request: VideoLlmAnalysisRequest,
+    api_key: str,
+    model: str,
+    base_url: str,
+    asset_base_url: str,
+    timeout_seconds: float,
+    chunk_duration_seconds: float,
+) -> Dict[str, Any]:
+    """긴 영상을 chunk_duration_seconds 단위로 실제로 잘라(ffmpeg) NVIDIA를 구간마다
+    호출하고 결과를 하나로 합칩니다. 세그먼트 일부가 실패해도 나머지로 계속 진행하고,
+    전부 실패했을 때만 예외를 던져 analyze_video()의 기존 FALLBACK 경로를 타게 합니다.
+    """
+    with resolve_video_file(request) as (video_path, content_type):
+        with split_video_into_segments(
+            video_path, chunk_duration_seconds, request.durationSec
+        ) as segment_paths:
+            merged_observations: Dict[str, list] = {
+                category: [] for category in OBSERVATION_CATEGORIES
+            }
+            summary_parts: Dict[str, list] = {field: [] for field in SUMMARY_FIELDS}
+            succeeded_segment_count = 0
+
+            for index, segment_path in enumerate(segment_paths):
+                segment_start_offset = index * chunk_duration_seconds
+                segment_local_duration = min(
+                    chunk_duration_seconds, request.durationSec - segment_start_offset
+                )
+
+                try:
+                    segment_model_json = call_nvidia_chat_completion(
+                        api_key=api_key,
+                        model=model,
+                        base_url=base_url,
+                        asset_base_url=asset_base_url,
+                        timeout_seconds=timeout_seconds,
+                        job_id=f"{request.jobId}-segment-{index}",
+                        video_path=segment_path,
+                        content_type=content_type,
+                        duration_hint_sec=segment_local_duration,
+                        sample_fps=request.sampleFps,
+                        max_frames=request.maxFrames,
+                    )
+                    segment_normalized = normalize_video_llm_response(
+                        request.jobId, model, segment_model_json, segment_local_duration
+                    )
+                except Exception:
+                    logger.exception(
+                        "(%s) Video LLM 세그먼트 %d/%d 호출에 실패해 이 구간은 건너뜁니다.",
+                        request.jobId,
+                        index + 1,
+                        len(segment_paths),
+                    )
+                    continue
+
+                succeeded_segment_count += 1
+                for category in OBSERVATION_CATEGORIES:
+                    for item in segment_normalized["observations"][category]:
+                        offset_item = dict(item)
+                        offset_item["startSec"] = round(item["startSec"] + segment_start_offset, 3)
+                        offset_item["endSec"] = round(item["endSec"] + segment_start_offset, 3)
+                        merged_observations[category].append(offset_item)
+
+                segment_end_offset = segment_start_offset + segment_local_duration
+                for field in SUMMARY_FIELDS:
+                    summary_parts[field].append(
+                        f"[{segment_start_offset:.0f}-{segment_end_offset:.0f}s] "
+                        f"{segment_normalized['globalSummary'][field]}"
+                    )
+
+    if succeeded_segment_count == 0:
+        raise RuntimeError(
+            f"Video LLM 구간 분할 호출이 {len(segment_paths)}개 세그먼트 모두 실패했습니다."
+        )
+
+    merged_model_json = {
+        "observations": merged_observations,
+        "globalSummary": {
+            field: " ".join(parts) for field, parts in summary_parts.items()
+        },
+    }
+
+    # 세그먼트별로는 각자의 로컬 구간 길이로 이미 클램프했지만, 반올림/마지막 구간 오차에
+    # 대비해 전체 영상 길이 기준으로 한 번 더 검증/클램프합니다.
+    return normalize_video_llm_response(
+        request.jobId, model, merged_model_json, request.durationSec
+    )
+
+
+@contextmanager
+def split_video_into_segments(
+    video_path: Path,
+    chunk_duration_seconds: float,
+    total_duration_sec: float,
+) -> Iterator[list[Path]]:
+    """ffmpeg -c copy로 원본을 재인코딩 없이 chunk_duration_seconds 단위로 잘라, 생성된
+    세그먼트 파일 경로 목록을 만듭니다. 임시 디렉터리는 이 컨텍스트를 벗어나면 정리됩니다.
+    """
+    segment_count = math.ceil(total_duration_sec / chunk_duration_seconds)
+    output_dir = Path(tempfile.mkdtemp(prefix="video-llm-segments-"))
+    ffmpeg_executable = imageio_ffmpeg.get_ffmpeg_exe()
+    split_timeout_seconds = resolve_video_llm_segment_split_timeout_seconds()
+    suffix = video_path.suffix or ".mp4"
+
+    try:
+        segment_paths: list[Path] = []
+
+        for index in range(segment_count):
+            start_sec = index * chunk_duration_seconds
+            output_path = output_dir / f"segment-{index}{suffix}"
+
+            subprocess.run(
+                [
+                    ffmpeg_executable,
+                    "-y",
+                    "-ss", str(start_sec),
+                    "-t", str(chunk_duration_seconds),
+                    "-i", str(video_path),
+                    "-c", "copy",
+                    "-avoid_negative_ts", "make_zero",
+                    str(output_path),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=split_timeout_seconds,
+            )
+
+            if output_path.exists() and output_path.stat().st_size > 0:
+                segment_paths.append(output_path)
+            else:
+                logger.warning(
+                    "ffmpeg가 세그먼트 %d/%d를 만들지 못했습니다(빈 출력). 이 구간은 건너뜁니다.",
+                    index + 1,
+                    segment_count,
+                )
+
+        if not segment_paths:
+            raise RuntimeError("ffmpeg가 영상을 세그먼트로 나누지 못했습니다(생성된 세그먼트 없음).")
+
+        yield segment_paths
+    finally:
+        shutil.rmtree(output_dir, ignore_errors=True)
+
+
+def call_nvidia_chat_completion(
+    api_key: str,
+    model: str,
+    base_url: str,
+    asset_base_url: str,
+    timeout_seconds: float,
+    job_id: str,
+    video_path: Path,
+    content_type: str,
+    duration_hint_sec: float | None,
+    sample_fps: int,
+    max_frames: int,
+) -> Dict[str, Any]:
+    """세마포어로 보호된 단일 NVIDIA chat/completions 호출입니다. video_path가 가리키는
+    파일(전체 영상 또는 분할된 세그먼트) 하나를 보내고, 정규화 이전의 원본 model_json을
+    반환합니다 — 여러 세그먼트를 하나로 합치는 상위 호출부가 정규화/시간 오프셋을 책임집니다.
+    """
+    url = f"{base_url}/chat/completions"
 
     # NVIDIA 계정 전체가 공유하는 순간 rate limit(약 40 RPM으로 알려짐)에 여러 분석
-    # 작업이 동시에 부딪히지 않도록, 실제 모델 호출 구간 전체를 세마포어로 감쌉니다.
-    # 순번을 제한 시간 안에 확보하지 못하면 예외를 던져, 호출부(analyze_video)의 기존
-    # FALLBACK 폴백 경로를 그대로 타게 합니다.
+    # 작업(과 한 작업 안의 여러 세그먼트)이 동시에 부딪히지 않도록, 실제 모델 호출 자체를
+    # 세마포어로 감쌉니다. 순번을 제한 시간 안에 확보하지 못하면 예외를 던져, 호출부의
+    # 기존 FALLBACK 폴백 경로를 그대로 타게 합니다.
     semaphore_timeout_seconds = resolve_real_model_semaphore_timeout_seconds()
     acquired = _REAL_MODEL_SEMAPHORE.acquire(timeout=semaphore_timeout_seconds)
     if not acquired:
@@ -169,21 +401,24 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
         )
 
     try:
-        url = f"{base_url}/chat/completions"
         started_at = time.monotonic()
         response_status = "not_sent"
         asset_id = None
 
         try:
             with httpx.Client(timeout=timeout_seconds) as client:
-                video_input = prepare_nvidia_video_input(
+                video_input = build_nvidia_video_input_from_local_file(
                     client=client,
                     api_key=api_key,
                     asset_base_url=asset_base_url,
-                    request=request,
+                    video_path=video_path,
+                    content_type=content_type,
+                    description=f"video-llm-analysis jobId={job_id}",
                 )
                 asset_id = video_input.get("asset_id")
-                payload = build_nvidia_chat_completion_payload(request, model, video_input)
+                payload = build_nvidia_chat_completion_payload(
+                    duration_hint_sec, sample_fps, max_frames, model, video_input
+                )
                 headers = {
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
@@ -219,26 +454,22 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
             elapsed_ms = int((time.monotonic() - started_at) * 1000)
             logger.info(
                 "NVIDIA_VIDEO_LLM_USAGE jobId=%s model=%s generationMode=REAL status=%s elapsedMs=%s",
-                request.jobId,
+                job_id,
                 model,
                 response_status,
                 elapsed_ms,
             )
 
         content = extract_chat_completion_content(response.json())
-        model_json = parse_model_json(content)
-        return normalize_video_llm_response(
-            request.jobId,
-            model,
-            model_json,
-            request.durationSec,
-        )
+        return parse_model_json(content)
     finally:
         _REAL_MODEL_SEMAPHORE.release()
 
 
 def build_nvidia_chat_completion_payload(
-    request: VideoLlmAnalysisRequest,
+    duration_hint_sec: float | None,
+    sample_fps: int,
+    max_frames: int,
     model: str,
     video_input: Dict[str, str | None],
 ) -> Dict[str, Any]:
@@ -247,7 +478,7 @@ def build_nvidia_chat_completion_payload(
         "You are a presentation-coaching video analyst. Return only strict JSON. "
         "Do not wrap the JSON in Markdown. The JSON must match the requested schema exactly."
     )
-    duration_prompt = build_duration_prompt(request.durationSec)
+    duration_prompt = build_duration_prompt(duration_hint_sec)
     user_prompt = (
         "Analyze the uploaded presentation video for visible delivery behavior. "
         "Return JSON with this exact shape: "
@@ -270,7 +501,7 @@ def build_nvidia_chat_completion_payload(
         "}. "
         "Use seconds from the start of the video. Keep confidence between 0 and 1. "
         f"{duration_prompt}"
-        f"Sampling hint from caller: sampleFps={request.sampleFps}, maxFrames={request.maxFrames}."
+        f"Sampling hint from caller: sampleFps={sample_fps}, maxFrames={max_frames}."
     )
 
     if video_input.get("asset_id"):
@@ -331,41 +562,58 @@ def prepare_nvidia_video_input(
     request: VideoLlmAnalysisRequest,
 ) -> Dict[str, str | None]:
     with resolve_video_file(request) as (video_path, content_type):
-        video_size = video_path.stat().st_size
-        max_size = resolve_video_max_size_bytes()
-        if video_size > max_size:
-            raise ValueError(
-                "Video file exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
-                f"({video_size} bytes > {max_size} bytes)."
-            )
-
-        if video_size <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
-            encoded = base64.b64encode(video_path.read_bytes()).decode("ascii")
-            return {
-                "url": f"data:{content_type};base64,{encoded}",
-                "asset_id": None,
-                "content_type": content_type,
-            }
-
-        description = f"video-llm-analysis jobId={request.jobId}"
-        asset_id, upload_url = create_nvidia_asset(
-            client,
-            api_key,
-            asset_base_url,
-            content_type,
-            description,
+        return build_nvidia_video_input_from_local_file(
+            client=client,
+            api_key=api_key,
+            asset_base_url=asset_base_url,
+            video_path=video_path,
+            content_type=content_type,
+            description=f"video-llm-analysis jobId={request.jobId}",
         )
-        try:
-            upload_video_to_asset(client, upload_url, video_path, content_type, description)
-        except Exception:
-            delete_nvidia_asset(client, api_key, asset_base_url, asset_id)
-            raise
 
+
+def build_nvidia_video_input_from_local_file(
+    client: httpx.Client,
+    api_key: str,
+    asset_base_url: str,
+    video_path: Path,
+    content_type: str,
+    description: str,
+) -> Dict[str, str | None]:
+    video_size = video_path.stat().st_size
+    max_size = resolve_video_max_size_bytes()
+    if video_size > max_size:
+        raise ValueError(
+            "Video file exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
+            f"({video_size} bytes > {max_size} bytes)."
+        )
+
+    if video_size <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
+        encoded = base64.b64encode(video_path.read_bytes()).decode("ascii")
         return {
-            "url": f"data:{content_type};asset_id,{asset_id}",
-            "asset_id": asset_id,
+            "url": f"data:{content_type};base64,{encoded}",
+            "asset_id": None,
             "content_type": content_type,
         }
+
+    asset_id, upload_url = create_nvidia_asset(
+        client,
+        api_key,
+        asset_base_url,
+        content_type,
+        description,
+    )
+    try:
+        upload_video_to_asset(client, upload_url, video_path, content_type, description)
+    except Exception:
+        delete_nvidia_asset(client, api_key, asset_base_url, asset_id)
+        raise
+
+    return {
+        "url": f"data:{content_type};asset_id,{asset_id}",
+        "asset_id": asset_id,
+        "content_type": content_type,
+    }
 
 
 def build_duration_prompt(duration_sec: float | None) -> str:

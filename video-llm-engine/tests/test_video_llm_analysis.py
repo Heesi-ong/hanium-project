@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import subprocess
 import threading
 
 import httpx
@@ -31,6 +32,26 @@ def analysis_payload(job_id: str = "video-llm-job-1") -> dict:
 def create_video_file(tmp_path) -> str:
     video_path = tmp_path / "sample.mp4"
     video_path.write_bytes(b"fake mp4 bytes")
+    return str(video_path)
+
+
+def create_real_video_file(tmp_path, duration_seconds: float, name: str = "real.mp4") -> str:
+    """구간 분할(ffmpeg) 테스트는 실제로 디코딩 가능한 영상이 있어야 하므로, lavfi로
+    지정한 길이만큼의 최소 동영상을 실제로 만들어 반환합니다."""
+    video_path = tmp_path / name
+    ffmpeg_executable = video_llm_analysis.imageio_ffmpeg.get_ffmpeg_exe()
+    subprocess.run(
+        [
+            ffmpeg_executable, "-y",
+            "-f", "lavfi", "-i", f"color=c=blue:s=64x64:d={duration_seconds}",
+            "-f", "lavfi", "-i", f"sine=frequency=1000:duration={duration_seconds}",
+            "-c:v", "libx264", "-c:a", "aac", "-shortest",
+            str(video_path),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
     return str(video_path)
 
 
@@ -1035,3 +1056,151 @@ def test_resolve_video_max_size_rejects_invalid_values(monkeypatch, configured_v
 
     with pytest.raises(RuntimeError, match="must be a positive integer"):
         video_llm_analysis.resolve_video_max_size_bytes()
+
+
+def test_split_video_into_segments_creates_expected_segment_files(tmp_path):
+    video_path = Path(create_real_video_file(tmp_path, duration_seconds=5))
+
+    with video_llm_analysis.split_video_into_segments(
+        video_path, chunk_duration_seconds=2, total_duration_sec=5
+    ) as segments:
+        assert len(segments) == 3
+        for segment_path in segments:
+            assert segment_path.exists()
+            assert segment_path.stat().st_size > 0
+        segment_dir = segments[0].parent
+
+    # 컨텍스트를 벗어나면 임시 디렉터리가 정리되어야 합니다.
+    assert not segment_dir.exists()
+
+
+def test_split_video_into_segments_raises_when_input_is_not_a_valid_video(tmp_path):
+    invalid_path = tmp_path / "not-a-video.mp4"
+    invalid_path.write_bytes(b"this is not a real video file")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        with video_llm_analysis.split_video_into_segments(
+            invalid_path, chunk_duration_seconds=2, total_duration_sec=5
+        ):
+            pass
+
+
+def test_call_real_video_llm_model_uses_single_call_for_short_video(monkeypatch, tmp_path):
+    video_path = create_video_file(tmp_path)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "100")
+
+    video_llm_analysis.call_real_video_llm_model(
+        VideoLlmAnalysisRequest(
+            jobId="short-video-job",
+            videoPath=video_path,
+            durationSec=10.0,
+            sampleFps=1,
+            maxFrames=90,
+        )
+    )
+
+    assert len(FakeNvidiaClient.instances) == 1
+
+
+def test_call_real_video_llm_model_splits_long_video_and_merges_segment_results(
+    monkeypatch, tmp_path
+):
+    video_path = create_real_video_file(tmp_path, duration_seconds=5)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    # 5초 영상을 2.5초 단위로 나누면 세그먼트 2개(각 2.5초)로 정확히 떨어집니다.
+    monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "2.5")
+
+    response = video_llm_analysis.call_real_video_llm_model(
+        VideoLlmAnalysisRequest(
+            jobId="chunked-job",
+            videoPath=video_path,
+            durationSec=5.0,
+            sampleFps=1,
+            maxFrames=90,
+        )
+    )
+
+    # 세그먼트 2개 = NVIDIA 호출 2번.
+    assert len(FakeNvidiaClient.instances) == 2
+    assert response["status"] == "success"
+    assert response["model"]["generationMode"] == "REAL"
+
+    # nvidia_model_payload()의 각 세그먼트 응답은 카테고리당 관찰 1개(로컬 startSec=1,
+    # endSec=3, 세그먼트 길이 2.5초 안에 들어옴)라, 병합 후에는 세그먼트 수만큼 있어야 합니다.
+    eye_contact = response["observations"]["eyeContact"]
+    assert len(eye_contact) == 2
+
+    # 세그먼트별 관찰(로컬 startSec=1, endSec=3)은 먼저 세그먼트 길이(2.5초)로 클램프되어
+    # endSec=2.5가 된 뒤, 세그먼트 시작 offset만큼 더해집니다: 세그먼트0은 [1, 2.5],
+    # 세그먼트1(offset=2.5)은 [3.5, 5.0].
+    offsets = sorted(item["startSec"] for item in eye_contact)
+    assert offsets[0] == pytest.approx(1.0)
+    assert offsets[1] == pytest.approx(3.5)
+    assert all(item["endSec"] <= 5.0 for item in eye_contact)
+
+    # 두 세그먼트의 요약이 모두 최종 globalSummary에 반영되어야 합니다(단순 이어붙이기).
+    assert response["globalSummary"]["visualDelivery"].count("전반적으로 안정적인 발표 태도입니다.") == 2
+
+
+def test_call_real_video_llm_model_in_chunks_continues_when_one_segment_fails(
+    monkeypatch, tmp_path
+):
+    video_path = create_real_video_file(tmp_path, duration_seconds=5)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "2.5")
+
+    call_count = {"n": 0}
+    original_post = FakeNvidiaClient.post
+
+    def flaky_post(self, url, headers, json):
+        if url.endswith("/chat/completions"):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise httpx.ConnectError(
+                    "simulated segment network failure",
+                    request=httpx.Request("POST", url),
+                )
+        return original_post(self, url, headers, json)
+
+    monkeypatch.setattr(FakeNvidiaClient, "post", flaky_post)
+
+    response = video_llm_analysis.call_real_video_llm_model(
+        VideoLlmAnalysisRequest(
+            jobId="partial-failure-job",
+            videoPath=video_path,
+            durationSec=5.0,
+            sampleFps=1,
+            maxFrames=90,
+        )
+    )
+
+    assert response["status"] == "success"
+    # 세그먼트 2개 중 1개만 성공했으므로 카테고리별 관찰이 1개씩만 있어야 합니다.
+    assert len(response["observations"]["eyeContact"]) == 1
+
+
+def test_call_real_video_llm_model_in_chunks_raises_when_all_segments_fail(
+    monkeypatch, tmp_path
+):
+    video_path = create_real_video_file(tmp_path, duration_seconds=5)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    FakeNvidiaClient.raised_exception = httpx.ConnectError(
+        "simulated total failure", request=httpx.Request("POST", "https://example.com")
+    )
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "2.5")
+
+    with pytest.raises(RuntimeError, match="모두 실패"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="total-failure-job",
+                videoPath=video_path,
+                durationSec=5.0,
+                sampleFps=1,
+                maxFrames=90,
+            )
+        )

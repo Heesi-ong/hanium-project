@@ -477,3 +477,20 @@
 - **N9 해결**: `ResultQueryService.toSummaryResponse()`가 이제 `analysisJob.getStatus() == COMPLETED && finalResult.isEmpty()`인 경우를 새 손상 유형 `dataIssue=RESULT_DATA_UNAVAILABLE`로 표시한다(`ResultSummaryResponse.missingResultData(...)` 신규 팩토리). QUEUED/RUNNING처럼 아직 결과 파일이 없는 게 정상인 상태는 그대로 두어 오탐을 만들지 않는다. `readFinalResultSafely()`의 예외 삼킴에도 `log.warn`을 추가해 운영 관측성을 확보했다. "완료인데 결과 파일 없음"과 "아직 대기 중이라 결과 없음"을 각각 재현하는 단위 테스트 2건을 추가했다. 프론트는 `dataIssue`/`dataIssueDescription`을 값에 상관없이 그대로 렌더링하는 기존 구조라 별도 프론트 수정이 필요 없었다.
 - **검증**: backend 전체 테스트(`./gradlew test`, `BUILD SUCCESSFUL`), analysis-engine pytest(91) 및 pip-audit(0건), video-llm-engine pytest(58) 및 `requirements-real-model.txt` pip-audit(0건), `analysis-engine`/`video-llm-engine` Docker 이미지 실제 재빌드(pillow 12.3.0 import 확인, `.env` 미포함 확인) 모두 통과.
 - **남은 것**: 이번 수정으로 N1이 향후 발생하는 삭제/탈퇴에는 적용되지만, 07-16/07-17 업데이트에서 지적된 "기존에 이미 유실된 MinIO 오브젝트"나 이번에 N9로 발견한 실제 3건의 손상된 결과(userId=1)에 대한 **소급 정리는 포함하지 않는다** — 별도로 결정·진행할 사안이다.
+
+### 2026-07-20 재확인: N9가 언급한 userId=1의 3건은 현재 정상 상태
+
+`GET /api/admin/users/1/results`로 `2조.MOV`(20260714091707-1463466a)/`4조.MOV`
+(20260714041149-c5fdc530)/`5조.MOV`(20260708022538-b221e530) 3건을 다시 조회한
+결과, 셋 다 `dataIssue: null`이고 실제 점수(totalScore 47/55/54)와 실제 피드백
+텍스트가 정상적으로 채워져 있었다. 로컬 디스크(`storage/results/{jobId}/`)에는
+파일이 없었지만(정리 스케줄러가 지운 것으로 보임), MinIO(`hanium-storage/results/
+{jobId}/`)에는 6개 결과 파일(final-result.json 포함)이 모두 온전히 남아 있고
+`readFinalResultSafely()`가 MinIO 우선 읽기로 정상적으로 서빙하고 있음을 확인했다.
+
+즉 이 3건은 "손상된 채로 방치된 데이터"가 아니라, 07-18 관찰 시점 이후 어느
+시점(P2 MinIO 백필 관련 작업으로 추정, 파일 mtime이 07-16)에 MinIO 쪽 사본이
+채워지면서 이미 정상화되어 있었다. 별도의 소급 정리 작업은 필요하지 않다 —
+위 "남은 것" 항목의 이 부분은 완료된 것으로 정정한다. (다른 계정에 동일한
+근본 원인의 미확인 사례가 남아있을 가능성 자체는 배제하지 않았다 — 그건
+전수조사가 필요한 별개 사안이다.)

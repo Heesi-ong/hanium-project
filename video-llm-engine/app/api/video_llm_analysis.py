@@ -274,6 +274,8 @@ def call_real_video_llm_model_in_chunks(
     호출하고 결과를 하나로 합칩니다. 세그먼트 일부가 실패해도 나머지로 계속 진행하고,
     전부 실패했을 때만 예외를 던져 analyze_video()의 기존 FALLBACK 경로를 타게 합니다.
     """
+    total_segment_count = math.ceil(request.durationSec / chunk_duration_seconds)
+
     with resolve_video_file(request) as (video_path, content_type):
         with split_video_into_segments(
             video_path, chunk_duration_seconds, request.durationSec
@@ -284,8 +286,12 @@ def call_real_video_llm_model_in_chunks(
             summary_parts: Dict[str, list] = {field: [] for field in SUMMARY_FIELDS}
             succeeded_segment_count = 0
 
-            for index, segment_path in enumerate(segment_paths):
-                segment_start_offset = index * chunk_duration_seconds
+            # segment_paths는 (원래 청크 인덱스, 파일 경로) 튜플 목록입니다. ffmpeg가 일부
+            # 구간 생성에 실패하면 그 구간은 목록에서 통째로 빠지므로, enumerate()로 다시
+            # 매긴 위치가 아니라 이 원래 인덱스로 시간 오프셋을 계산해야 이후 구간들의
+            # startSec/endSec이 조용히 앞으로 밀리지 않습니다.
+            for original_index, segment_path in segment_paths:
+                segment_start_offset = original_index * chunk_duration_seconds
                 segment_local_duration = min(
                     chunk_duration_seconds, request.durationSec - segment_start_offset
                 )
@@ -297,7 +303,7 @@ def call_real_video_llm_model_in_chunks(
                         base_url=base_url,
                         asset_base_url=asset_base_url,
                         timeout_seconds=timeout_seconds,
-                        job_id=f"{request.jobId}-segment-{index}",
+                        job_id=f"{request.jobId}-segment-{original_index}",
                         video_path=segment_path,
                         content_type=content_type,
                         duration_hint_sec=segment_local_duration,
@@ -311,8 +317,8 @@ def call_real_video_llm_model_in_chunks(
                     logger.exception(
                         "(%s) Video LLM 세그먼트 %d/%d 호출에 실패해 이 구간은 건너뜁니다.",
                         request.jobId,
-                        index + 1,
-                        len(segment_paths),
+                        original_index + 1,
+                        total_segment_count,
                     )
                     continue
 
@@ -355,9 +361,12 @@ def split_video_into_segments(
     video_path: Path,
     chunk_duration_seconds: float,
     total_duration_sec: float,
-) -> Iterator[list[Path]]:
+) -> Iterator[list[tuple[int, Path]]]:
     """ffmpeg -c copy로 원본을 재인코딩 없이 chunk_duration_seconds 단위로 잘라, 생성된
-    세그먼트 파일 경로 목록을 만듭니다. 임시 디렉터리는 이 컨텍스트를 벗어나면 정리됩니다.
+    세그먼트의 (원래 청크 인덱스, 파일 경로) 목록을 만듭니다. 임시 디렉터리는 이 컨텍스트를
+    벗어나면 정리됩니다. 인덱스를 함께 반환하는 이유는, 일부 세그먼트가 생성에 실패해
+    목록에서 빠지더라도 호출부가 시간 오프셋을 원래 위치 기준으로 정확히 계산할 수 있게
+    하기 위해서입니다(단순 목록 위치로 계산하면 실패 이후 모든 구간의 시간이 밀립니다).
     """
     segment_count = math.ceil(total_duration_sec / chunk_duration_seconds)
     output_dir = Path(tempfile.mkdtemp(prefix="video-llm-segments-"))
@@ -366,7 +375,7 @@ def split_video_into_segments(
     suffix = video_path.suffix or ".mp4"
 
     try:
-        segment_paths: list[Path] = []
+        segment_paths: list[tuple[int, Path]] = []
 
         for index in range(segment_count):
             start_sec = index * chunk_duration_seconds
@@ -389,7 +398,7 @@ def split_video_into_segments(
             )
 
             if output_path.exists() and output_path.stat().st_size > 0:
-                segment_paths.append(output_path)
+                segment_paths.append((index, output_path))
             else:
                 logger.warning(
                     "ffmpeg가 세그먼트 %d/%d를 만들지 못했습니다(빈 출력). 이 구간은 건너뜁니다.",

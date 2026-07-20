@@ -679,6 +679,44 @@ def test_normalize_video_llm_response_clamps_times_to_duration():
     assert response["observations"]["eyeContact"][0]["endSec"] == 4.166
 
 
+def test_normalize_video_llm_response_clamps_negative_times_to_zero():
+    item = {
+        "startSec": -3.5,
+        "endSec": -1.0,
+        "label": "hallucinated",
+        "description": "모델이 음수 시간을 반환한 경우입니다.",
+        "confidence": 0.7,
+    }
+    payload = {
+        "observations": {
+            "eyeContact": [item],
+            "facialExpression": [item],
+            "gesture": [item],
+            "posture": [item],
+        },
+        "globalSummary": {
+            "visualDelivery": "요약",
+            "mainStrength": "강점",
+            "mainWeakness": "약점",
+        },
+    }
+
+    response = video_llm_analysis.normalize_video_llm_response(
+        "negative-clamp-job",
+        "test-model",
+        payload,
+        duration_sec=10.0,
+    )
+
+    assert response["observations"]["eyeContact"][0]["startSec"] == 0
+    assert response["observations"]["eyeContact"][0]["endSec"] == 0
+
+
+@pytest.mark.parametrize("duration_sec", [None, 10.0])
+def test_clamp_observation_time_floors_negative_values_regardless_of_duration(duration_sec):
+    assert video_llm_analysis.clamp_observation_time(-5.0, duration_sec, "eyeContact", 0, "startSec") == 0
+
+
 def test_normalize_video_llm_response_keeps_existing_validation_without_duration():
     item = {
         "startSec": 5,

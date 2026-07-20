@@ -1049,6 +1049,17 @@ def clamp_observation_time(
     index: int,
     field: str,
 ) -> int | float:
+    if value < 0:
+        logger.warning(
+            "NVIDIA_VIDEO_LLM_TIME_CLAMP category=%s index=%s field=%s original=%s durationSec=%s reason=negative",
+            category,
+            index,
+            field,
+            value,
+            duration_sec,
+        )
+        value = 0
+
     if duration_sec is None or value <= duration_sec:
         return value
 

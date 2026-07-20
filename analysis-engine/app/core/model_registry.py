@@ -256,37 +256,47 @@ def model_status() -> dict[str, bool]:
     }
 
 
-def _close_pool(pool_name: str, pool: queue.Queue[object]) -> None:
+def _close_pool(pool_name: str, pool: queue.Queue[object]) -> int:
+    closed_count = 0
+
     while not pool.empty():
         try:
             instance = pool.get_nowait()
         except queue.Empty:
             break
 
+        closed_count += 1
         if hasattr(instance, "close"):
             try:
                 instance.close()
             except Exception:
                 logger.warning("%s 모델 종료 중 오류가 발생했습니다.", pool_name, exc_info=True)
 
+    return closed_count
+
 
 def close_all() -> None:
     global _whisper_loaded_count, _pose_loaded_count, _face_loaded_count
 
-    # FastAPI lifespan 종료 시점에는 요청 처리가 끝난 상태입니다. 각 생성 락을 잡고 풀을
-    # 비운 뒤 카운터도 함께 초기화해, 테스트 재기동이나 명시적 재초기화에서 readiness가
-    # 이미 닫힌 모델을 loaded로 오인하지 않게 합니다.
+    # FastAPI lifespan 종료 시점에는 대부분 요청 처리가 끝난 상태지만, graceful shutdown
+    # 유예 시간 안에 끝나지 않은 요청이 model_context()로 인스턴스를 빌려 간(큐 밖에 있는)
+    # 상태로 남아 있을 수 있습니다. 카운터를 무조건 0으로 리셋하면, 그 스레드가 나중에
+    # finally에서 인스턴스를 반납했을 때 풀에는 실제로 인스턴스가 남아 있는데 카운터만
+    # 0으로 남아 다음 _ensure_*_pool() 호출이 필요 이상으로 새 인스턴스를 더 만들어내고
+    # POOL_SIZE보다 많은 인스턴스가 쌓이게 됩니다. 그래서 카운터는 "이번에 실제로 큐에서
+    # 꺼내 닫은 개수"만큼만 뺍니다 - 대여 중이던 인스턴스는 이번 종료 대상에서 제외되고
+    # (진행 중인 요청을 방해하지 않음) 나중에 반납되면 그대로 풀의 정상 멤버로 남습니다.
     with _whisper_load_lock:
-        _close_pool("whisper", _whisper_pool)
-        _whisper_loaded_count = 0
+        closed_count = _close_pool("whisper", _whisper_pool)
+        _whisper_loaded_count = max(0, _whisper_loaded_count - closed_count)
 
     with _pose_load_lock:
-        _close_pool("pose", _pose_pool)
-        _pose_loaded_count = 0
+        closed_count = _close_pool("pose", _pose_pool)
+        _pose_loaded_count = max(0, _pose_loaded_count - closed_count)
 
     with _face_load_lock:
-        _close_pool("face", _face_pool)
-        _face_loaded_count = 0
+        closed_count = _close_pool("face", _face_pool)
+        _face_loaded_count = max(0, _face_loaded_count - closed_count)
 
 
 atexit.register(close_all)

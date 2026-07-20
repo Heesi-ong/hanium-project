@@ -15,7 +15,7 @@ import imageio_ffmpeg
 import mediapipe as mp
 import requests
 from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core import model_registry
 from app.core.logging_config import bind_job_id, bind_request_id
@@ -113,8 +113,16 @@ KOREAN_FILLER_WORDS = [
 ]
 
 
+# backend의 JobIdGenerator가 항상 이 형식(timestamp-uuid8)으로만 jobId를 만들기 때문에
+# 지금은 실제로 악용 가능한 경로는 아니지만, 이 엔진이 jobId를 그대로 파일시스템 경로에
+# 사용하는 여러 곳(download/frame/audio 임시 디렉터리 등)에는 cleanup_temp_directory처럼
+# 경로 이탈(path traversal) 방지 검사가 없다. 요청 진입점에서 형식을 강제해두면, 호출자가
+# 바뀌거나 ID 생성 로직이 바뀌어도 그 방어를 각 파일마다 따로 구현할 필요가 없다.
+JOB_ID_PATTERN = r"^\d{14}-[0-9a-f]{8}$"
+
+
 class BasicAnalysisRequest(BaseModel):
-    jobId: str
+    jobId: str = Field(pattern=JOB_ID_PATTERN)
     videoPath: str
     videoDownloadUrl: str | None = None
 

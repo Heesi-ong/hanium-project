@@ -701,21 +701,22 @@ def test_call_real_video_llm_model_uses_nvcf_asset_for_large_video(
     ]
 
 
-def test_prepare_nvidia_video_input_rejects_oversized_local_video(monkeypatch, tmp_path):
+def test_build_nvidia_video_input_from_local_file_rejects_oversized_video(
+    monkeypatch, tmp_path
+):
     video_path = tmp_path / "oversized.mp4"
     video_path.write_bytes(b"x" * (1024 * 1024 + 1))
     monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "1")
     client = FakeNvidiaClient(timeout=120)
 
     with pytest.raises(ValueError, match="exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB"):
-        video_llm_analysis.prepare_nvidia_video_input(
+        video_llm_analysis.build_nvidia_video_input_from_local_file(
             client=client,
             api_key="nvapi-test-key",
             asset_base_url="https://api.nvcf.nvidia.com/v2/nvcf",
-            request=VideoLlmAnalysisRequest(
-                jobId="oversized-local-video",
-                videoPath=str(video_path),
-            ),
+            video_path=video_path,
+            content_type="video/mp4",
+            description="video-llm-analysis jobId=oversized-local-video",
         )
 
     assert client.requests == []

@@ -555,23 +555,6 @@ def build_nvidia_chat_completion_payload(
     }
 
 
-def prepare_nvidia_video_input(
-    client: httpx.Client,
-    api_key: str,
-    asset_base_url: str,
-    request: VideoLlmAnalysisRequest,
-) -> Dict[str, str | None]:
-    with resolve_video_file(request) as (video_path, content_type):
-        return build_nvidia_video_input_from_local_file(
-            client=client,
-            api_key=api_key,
-            asset_base_url=asset_base_url,
-            video_path=video_path,
-            content_type=content_type,
-            description=f"video-llm-analysis jobId={request.jobId}",
-        )
-
-
 def build_nvidia_video_input_from_local_file(
     client: httpx.Client,
     api_key: str,

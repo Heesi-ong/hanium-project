@@ -79,6 +79,7 @@ backend worker와 analysis-engine은 서로 다른 두 단계의 동시성 상�
 ## 한계 / 주의
 
 - 2026-07-17에 공식 k6 런타임으로 파싱 검증하고, 모의 API가 분석 실행 요청에 429를 반환하는 네이티브 smoke를 수행했습니다. 429 응답 8건이 `run_rejected_429`에는 기록되면서 `http_req_failed=0.00%`로 유지되는 것을 확인했습니다.
-- 실제 backend/worker를 대상으로 한 부하 실행 결과는 아직 없습니다. 실제 수치(적정 VU, 큐 상한 적정값)는 대상 하드웨어에서 한 번 돌려봐야 확정됩니다.
+- 2026-07-20에 실제 dev docker-compose 스택(`BASE_URL=http://backend:8080`, 컨테이너 네트워크 내부)의 실제 backend/worker를 대상으로 처음 실행했습니다. 이 과정에서 `analysis_time_to_complete_seconds` 트렌드 지표가 `Trend(name, true)`의 `isTime` 플래그 때문에 실제 초 단위 값(예: 81초)이 ms로 오표기(예: "81.45ms")되는 버그를 발견해 수정했습니다(`upload-analyze.js`, `isTime` 인자 제거). 동일 IP에서 반복 자동 가입 시 signup/login rate limit이 정상적으로 차단하는 것도 함께 확인했습니다(테스트 진행을 위해 해당 IP의 Redis rate-limit 키를 수동 삭제). 다만 이 실행은 스모크 성격(정식 VU/HOLD 수치, p50/p95/p99, 컨테이너 메모리 등 정량 기록은 아직 남기지 않음) — "실제 backend/worker에서 스크립트 자체가 정상 동작한다"는 것만 확정됐고, 적정 VU/큐 상한 값 산정을 위한 정식 부하 리포트는 여전히 남은 과제입니다.
+- **2026-07-20 이후 주의**: `upload-analyze.js:135`는 `useVideoLlm: true`를 고정으로 보냅니다. `VIDEO_LLM_ENABLED=true` + 실제 NVIDIA 키가 설정된 환경(현재 로컬 dev가 이 상태)에서 VU를 올려 돌리면 **실제 유료 NVIDIA API 호출이 동시다발적으로 발생**합니다(일일/월간 예산 가드가 있어 무한 과금은 아니지만, 정식 부하 테스트 전에는 `useVideoLlm: false`로 바꾸거나 `VIDEO_LLM_ENABLED=false`인 별도 환경에서 실행하는 것을 권장합니다).
 - 업로드 응답의 jobId 필드명은 `jobId`(없으면 `id`)를 시도합니다. 백엔드 응답 스키마가 다르면 `unwrap()` 부분을 조정하세요.
 - 분석 상태 필드는 `status`(없으면 `state`)를 봅니다. 마찬가지로 실제 응답에 맞춰 조정할 수 있습니다.

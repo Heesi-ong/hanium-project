@@ -256,10 +256,6 @@ def model_status() -> dict[str, bool]:
     }
 
 
-def is_ready() -> bool:
-    return all(model_status().values())
-
-
 def _close_pool(pool_name: str, pool: queue.Queue[object]) -> None:
     while not pool.empty():
         try:

@@ -149,3 +149,46 @@ def test_close_all_closes_instances_and_resets_readiness(monkeypatch):
         "pose": False,
         "face": False,
     }
+
+
+def test_close_all_does_not_lose_track_of_instances_borrowed_during_shutdown(monkeypatch):
+    class ClosableInstance:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    created_instances = []
+
+    def create_whisper_instance():
+        instance = ClosableInstance()
+        created_instances.append(instance)
+        return instance
+
+    monkeypatch.setattr(model_registry, "_create_whisper_instance", create_whisper_instance)
+
+    model_registry._ensure_whisper_pool()
+    # model_context()로 인스턴스를 빌려 간 뒤 아직 반납하지 않은 상태(큐 밖에 있는
+    # 상태)를 흉내냅니다 - 예를 들어 graceful shutdown 유예 시간 안에 끝나지 않은
+    # 요청이 여기 해당합니다.
+    borrowed_instance = model_registry._whisper_pool.get_nowait()
+
+    model_registry.close_all()
+
+    # 대여 중인 인스턴스는 이번 종료에서 닫히지 않아야 하고, 카운터는 "실제로 살아있는
+    # (대여 중인) 인스턴스 수"를 정확히 반영해야 합니다 - 무조건 0으로 리셋되면 안 됩니다.
+    assert borrowed_instance.closed is False
+    assert model_registry._whisper_loaded_count == 1
+
+    # 대여했던 스레드가 뒤늦게 반납합니다(model_context()의 finally와 동일한 동작).
+    model_registry._whisper_pool.put(borrowed_instance)
+
+    # 카운터가 정확했으므로, 풀을 다시 채울 때 부족한 1개만 새로 만들어야 합니다.
+    # 카운터가 0으로 잘못 리셋돼 있었다면 여기서 2개를 더 만들어 풀에
+    # WHISPER_POOL_SIZE보다 많은 인스턴스가 쌓였을 것입니다.
+    model_registry._ensure_whisper_pool()
+
+    assert model_registry._whisper_loaded_count == model_registry.WHISPER_POOL_SIZE
+    assert model_registry._whisper_pool.qsize() == model_registry.WHISPER_POOL_SIZE
+    assert len(created_instances) == model_registry.WHISPER_POOL_SIZE + 1

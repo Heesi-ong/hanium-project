@@ -977,10 +977,11 @@ CI의 `docker-build` job은 서비스/운영 보조 이미지(`backend`, `fronte
 - 업로드 영상 매직바이트 검증
 - 분석 작업 상태 관리
 - 분석 작업/결과 소유권 검증
-- 외부 Python 엔진 Mock 연동
+- 외부 Python 엔진 연동(analysis-engine은 OpenCV/MediaPipe/faster-whisper 기반 실제 분석,
+  아래 "현재 실제 분석으로 반영된 범위" 참고)
 - 내부 엔진 API 키 인증
-- Video LLM Mock 분석
-- OpenAI Mock 피드백
+- Video LLM 분석(기본은 안전한 mock, `VIDEO_LLM_ENABLED=true`로 NVIDIA hosted 모델 실제 연동 가능 — 5.1절 참고)
+- OpenAI 피드백 생성(기본은 안전한 mock 폴백, `OPENAI_ENABLED=true`로 실제 API 연동 가능 — "OpenAI 호출 및 비용 제어 정책" 절 참고)
 - 결과 JSON 저장
 - 결과 목록 조회 및 페이지네이션
 - 결과 상세 조회
@@ -996,6 +997,11 @@ CI의 `docker-build` job은 서비스/운영 보조 이미지(`backend`, `fronte
 - 자동 상태 폴링
 - CORS 설정
 - README 실행 가이드
+- 온보딩 화면 및 비밀번호 재설정(이메일 발송)
+- AI 코치 대화(완료된 분석 결과 기반 채팅, 사용자별 일일 한도)
+- 관리자 대시보드/사용자 관리/감사 로그
+- MySQL + Flyway 마이그레이션, MinIO 오브젝트 스토리지, Redis 기반 rate limiting
+- Docker Compose 기반 local/dev/prod 배포, Prometheus/Grafana 모니터링, 자동 백업
 
 현재 실제 분석으로 반영된 범위:
 

@@ -310,6 +310,26 @@ class VideoFileCommandServiceTest {
         assertThat(url).isEqualTo("https://minio.local/hanium-storage/uploads/job-stream/original.mp4?X-Amz-Signature=abc");
     }
 
+    // 재생 URL 만료는 고정값이 아니라 "허용된 최대 영상 길이(VideoProperties.maxDurationMinutes) +
+    // 재생 여유분"으로 계산됩니다. 이 테스트 설정의 maxDurationMinutes=30이므로 30+30=60분이
+    // 기대값입니다 — 하드코딩된 1시간으로 되돌아가는 회귀를 잡기 위한 테스트입니다.
+    @Test
+    void resolveStreamingUrlExpirationScalesWithConfiguredMaxVideoDuration() {
+        when(objectStorage.exists("uploads/job-stream-expiry/original.mp4")).thenReturn(true);
+        when(objectStorage.generatePublicPresignedUrl(eq("uploads/job-stream-expiry/original.mp4"), any()))
+                .thenReturn("https://minio.local/presigned");
+
+        videoFileCommandService.resolveStreamingUrl(
+                "job-stream-expiry",
+                tempDir.resolve("uploads").resolve("job-stream-expiry").resolve("original.mp4").toString()
+        );
+
+        verify(objectStorage).generatePublicPresignedUrl(
+                eq("uploads/job-stream-expiry/original.mp4"),
+                eq(Duration.ofMinutes(60))
+        );
+    }
+
     @Test
     void resolveStreamingUrlReturnsNullWhenObjectDoesNotExist() {
         when(objectStorage.exists("uploads/job-stream-missing/original.mp4")).thenReturn(false);

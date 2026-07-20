@@ -141,6 +141,15 @@ public class VideoFileCommandService {
         }
     }
 
+    // 재생 URL은 앱 자체의 영상 접근 토큰(5분, ResultController.VIDEO_ACCESS_TOKEN_EXPIRES_IN_SECONDS)
+    // 검증을 통과해야만 발급되지만, 일단 발급되면 그 뒤로는 별도 인증 없이 쓸 수 있는
+    // 링크입니다. 짧게 두고 싶지만, 영상을 끊김 없이 끝까지(일시정지 후 이어보기 포함)
+    // 재생하려면 최소한 "허용된 최대 영상 길이"만큼은 유효해야 합니다. 그보다 짧으면
+    // 긴 영상을 재생하는 도중 URL이 만료돼 재생이 끊깁니다. 그래서 만료 시간을 고정값이
+    // 아니라 "최대 영상 길이 + 일시정지/되감기 여유분"으로 계산해, 유출된 링크의 유효
+    // 기간을 실제로 필요한 만큼으로만 제한합니다.
+    private static final long STREAMING_URL_PLAYBACK_BUFFER_MINUTES = 30L;
+
     /**
      * 브라우저 영상 재생(스트리밍)을 위한 presigned URL을 생성합니다. resolveDownloadUrl과 달리
      * 오브젝트가 실제로 MinIO에 존재하는지 먼저 확인합니다 - 스트리밍은 여기서 실패를 감지하지
@@ -156,7 +165,10 @@ public class VideoFileCommandService {
                 return null;
             }
 
-            return objectStorage.generatePublicPresignedUrl(objectKey, Duration.ofHours(1));
+            Duration expiration = Duration.ofMinutes(
+                    videoProperties.maxDurationMinutes() + STREAMING_URL_PLAYBACK_BUFFER_MINUTES
+            );
+            return objectStorage.generatePublicPresignedUrl(objectKey, expiration);
         } catch (Exception exception) {
             log.warn(
                     "OBJECT_STORAGE_STREAMING_URL_FAILED jobId={} reason={}",

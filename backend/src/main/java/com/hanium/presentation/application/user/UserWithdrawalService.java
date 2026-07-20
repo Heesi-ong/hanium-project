@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,6 +38,9 @@ public class UserWithdrawalService {
         this.passwordEncoder = passwordEncoder;
     }
 
+    // 여러 job을 순회하며 삭제하다가 일부가 실패하면 전체를 롤백해야, 먼저 처리된 job의
+    // DB/파일이 이미 삭제된 채로 계정만 남는 반쪽짜리 탈퇴 상태를 방지할 수 있습니다.
+    @Transactional
     public void withdraw(Long userId, String rawPassword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT_VALUE));
@@ -52,6 +56,7 @@ public class UserWithdrawalService {
      * 관리자가 대상 사용자의 비밀번호 없이 강제로 탈퇴시킵니다.
      * 관리자 권한 검증과 감사로그 기록은 호출 측(AdminUserActionService)의 책임입니다.
      */
+    @Transactional
     public void forceWithdraw(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));

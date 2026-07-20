@@ -513,6 +513,68 @@ def test_call_real_video_llm_model_rejects_invalid_base_url_before_network(
     assert FakeNvidiaClient.instances == []
 
 
+@pytest.mark.parametrize("duration_sec", [0.0, -5.0, float("inf"), float("nan")])
+def test_call_real_video_llm_model_rejects_non_positive_or_non_finite_duration(
+    monkeypatch, tmp_path, duration_sec
+):
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    with pytest.raises(RuntimeError, match="durationSec"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="invalid-duration-job",
+                videoPath=create_video_file(tmp_path),
+                durationSec=duration_sec,
+            )
+        )
+
+    assert FakeNvidiaClient.instances == []
+
+
+def test_call_real_video_llm_model_rejects_duration_exceeding_configured_max(
+    monkeypatch, tmp_path
+):
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_MAX_DURATION_SECONDS", "3600")
+
+    with pytest.raises(RuntimeError, match="VIDEO_LLM_MAX_DURATION_SECONDS"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="oversized-duration-job",
+                videoPath=create_video_file(tmp_path),
+                # 단위 착오(ms를 초로 전달)를 흉내낸 값입니다.
+                durationSec=3_600_000.0,
+            )
+        )
+
+    assert FakeNvidiaClient.instances == []
+
+
+def test_analyze_falls_back_to_mock_when_duration_exceeds_configured_max(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_MAX_DURATION_SECONDS", "3600")
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    client = create_client(monkeypatch, tmp_path)
+
+    payload = analysis_payload("oversized-duration-endpoint-job")
+    payload["durationSec"] = 3_600_000.0
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"]["generationMode"] == "FALLBACK"
+    assert FakeNvidiaClient.instances == []
+
+
 def test_call_real_video_llm_model_uses_natural_prompt_for_short_duration(monkeypatch, tmp_path):
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))

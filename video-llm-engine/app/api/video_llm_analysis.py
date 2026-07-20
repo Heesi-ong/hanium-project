@@ -126,6 +126,40 @@ def resolve_video_llm_segment_split_timeout_seconds() -> float:
     return timeout_seconds
 
 
+# backend가 업로드 시점에 이미 VIDEO_MAX_DURATION_MINUTES(기본 30분)로 영상 길이를
+# 제한하지만, 이 엔진은 그 값을 그대로 신뢰해 durationSec만큼 ffmpeg 세그먼트 분할
+# 루프를 돈다. durationSec에 단위 착오(예: ms를 초로 전달) 같은 잘못된 값이 들어오면
+# 세그먼트 수가 비정상적으로 커져 sync 스레드풀을 고갈시킬 수 있어, 방어적으로 한 번
+# 더 상한을 둔다. 업로드 정책보다 넉넉하게 잡아 정상적인 긴 영상은 막지 않는다.
+def resolve_video_llm_max_duration_seconds() -> float:
+    raw_value = os.getenv("VIDEO_LLM_MAX_DURATION_SECONDS", "7200").strip()
+    try:
+        max_duration_seconds = float(raw_value)
+    except ValueError as exception:
+        raise RuntimeError(
+            "VIDEO_LLM_MAX_DURATION_SECONDS must be a positive number."
+        ) from exception
+
+    if not math.isfinite(max_duration_seconds) or max_duration_seconds <= 0:
+        raise RuntimeError("VIDEO_LLM_MAX_DURATION_SECONDS must be a positive number.")
+
+    return max_duration_seconds
+
+
+def validate_duration_sec(duration_sec: float | None) -> None:
+    if duration_sec is None:
+        return
+
+    if not math.isfinite(duration_sec) or duration_sec <= 0:
+        raise RuntimeError(f"durationSec must be a positive finite number, got {duration_sec!r}.")
+
+    max_duration_seconds = resolve_video_llm_max_duration_seconds()
+    if duration_sec > max_duration_seconds:
+        raise RuntimeError(
+            f"durationSec={duration_sec} exceeds VIDEO_LLM_MAX_DURATION_SECONDS={max_duration_seconds}."
+        )
+
+
 OBSERVATION_CATEGORIES = (
     "eyeContact",
     "facialExpression",
@@ -195,6 +229,8 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
     )
     timeout_seconds = resolve_nvidia_timeout_seconds()
     chunk_duration_seconds = resolve_video_llm_chunk_duration_seconds()
+
+    validate_duration_sec(request.durationSec)
 
     if request.durationSec is not None and request.durationSec > chunk_duration_seconds:
         return call_real_video_llm_model_in_chunks(

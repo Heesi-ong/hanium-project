@@ -95,6 +95,7 @@ function UploadPage() {
     const confirm = useConfirm();
     const progressTimerRef = useRef(null);
     const cooldownTimerRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     const [file, setFile] = useState(null);
     const [uploadedResult, setUploadedResult] = useState(null);
@@ -439,6 +440,13 @@ function UploadPage() {
         setError("");
         setUseVideoLlm(true);
         setUseOpenAi(true);
+
+        // <input type="file">는 같은 경로의 파일을 다시 선택해도 네이티브 change 이벤트가
+        // 발생하지 않는다(파일 목록이 실제로 바뀌지 않았다고 보기 때문). value를 직접
+        // 비워야 이후 같은 파일을 다시 골랐을 때도 정상적으로 change가 발생한다.
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
     }
 
     function getStepClassName(stepStatus) {
@@ -506,6 +514,7 @@ function UploadPage() {
                         onDrop={handleDrop}
                     >
                         <input
+                            ref={fileInputRef}
                             type="file"
                             accept=".mp4,.mov,.avi,.mkv,video/mp4,video/quicktime"
                             onChange={handleFileChange}

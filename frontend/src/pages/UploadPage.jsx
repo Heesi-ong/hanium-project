@@ -238,6 +238,14 @@ function UploadPage() {
         setError("");
         setUploadedResult(null);
         setAnalysisStatus(null);
+
+        // <input type="file">는 같은 경로의 파일을 다시 선택해도 네이티브 change 이벤트가
+        // 발생하지 않는다(파일 목록이 실제로 바뀌지 않았다고 보기 때문). validateAndSetFile()이
+        // 매번(성공이든 거부든) 이 함수를 먼저 호출하므로, 여기서 value를 비워두면 확장자/용량
+        // 오류로 거부된 뒤 같은 파일을 다시 선택하는 경우도 항상 새 change 이벤트로 처리된다.
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
     }
 
     function validateAndSetFile(selectedFile) {

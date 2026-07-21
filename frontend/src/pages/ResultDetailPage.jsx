@@ -34,6 +34,7 @@ import {
     retryAnalysis,
 } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
+import { STATUS_STEP_LABELS } from "../constants/analysisStatus";
 import { useConfirm } from "../context/ConfirmContext";
 
 const POLLING_INTERVAL_MS = 1500;
@@ -198,10 +199,11 @@ function ResultDetailPage() {
             setResultData(response.data);
 
             if (response.data?.result?.status) {
+                const status = response.data.result.status;
                 setAnalysisStatus({
                     jobId,
-                    status: response.data.result.status,
-                    statusDescription: response.data.result.status,
+                    status,
+                    statusDescription: STATUS_STEP_LABELS[status] || status,
                     failReason: response.data.result.failReason || null,
                 });
             }

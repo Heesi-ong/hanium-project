@@ -1076,9 +1076,19 @@ def clamp_observation_time(
 
 def require_number(item: Dict[str, Any], field: str, category: str, index: int) -> int | float:
     value = item.get(field)
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
+    # json.loads()는 표준 JSON 사양 밖의 확장 리터럴인 NaN/Infinity/-Infinity를 기본적으로
+    # 허용한다. 이런 값은 모든 비교 연산에서 항상 False가 되어 clamp_observation_time의
+    # 상/하한 검사와 confidence 범위 검사를 그대로 통과해버리므로, 검증 없이 최종 응답에
+    # 그대로 실려 backend로 전달된다(엄격한 JSON 파서에서 파싱 실패를 유발할 수 있고,
+    # 원래 이 값들이 걸러졌어야 할 mock FALLBACK 경로도 타지 않는다). 여기서 명시적으로
+    # 걸러낸다.
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+    ):
         raise ValueError(
-            f"NVIDIA response observations.{category}[{index}].{field} must be a number."
+            f"NVIDIA response observations.{category}[{index}].{field} must be a finite number."
         )
     return value
 

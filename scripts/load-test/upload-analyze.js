@@ -50,11 +50,20 @@ const analysisFailed = new Counter("analysis_failed");
 // 잘못 표시되는 문제가 있었습니다.
 const timeToComplete = new Trend("analysis_time_to_complete_seconds");
 
-// gracefulStop이 MAX_POLL_SECONDS(기본 180s)보다 짧으면, HOLD 구간 막바지에 시작된
-// 반복은 분석 완료를 끝까지 기다려보지도 못하고 강제 종료된다 - "0 complete, N
-// interrupted"로 나와 마치 아무 것도 안 끝난 것처럼 보이는 착시가 생긴다(실제로는
-// 서버에서 정상 처리 중이었을 수 있음). 기본값을 MAX_POLL_SECONDS + 30초 여유로
-// 자동 계산하고, 필요하면 GRACEFUL_STOP_SECONDS로 직접 override할 수 있게 한다.
+// gracefulStop/gracefulRampDown이 MAX_POLL_SECONDS(기본 180s)보다 짧으면, HOLD 구간
+// 막바지에 시작된 반복은 분석 완료를 끝까지 기다려보지도 못하고 강제 종료된다 -
+// "0 complete, N interrupted"로 나와 마치 아무 것도 안 끝난 것처럼 보이는 착시가
+// 생긴다(실제로는 서버에서 정상 처리 중이었을 수 있음). 기본값을 MAX_POLL_SECONDS +
+// 30초 여유로 자동 계산하고, 필요하면 GRACEFUL_STOP_SECONDS로 직접 override할 수
+// 있게 한다.
+//
+// 주의: 이 시나리오의 마지막 stage는 target을 0으로 낮추는 ramp-down이다. k6에서
+// 진행 중인 반복이 "ramp-down 단계에서" 얼마나 기다림을 받는지는 gracefulStop이
+// 아니라 gracefulRampDown이 결정한다(gracefulStop은 모든 stage가 끝난 뒤 남은
+// 반복에 적용됨). gracefulStop만 늘리고 gracefulRampDown을 기본값(30s)으로 두면,
+// ramp-down이 시작되고 정확히 30초 뒤에 모든 진행 중인 반복이 강제 종료된다 -
+// 처음 이 스크립트를 VUS=8로 돌렸을 때 정확히 이 이유로 8건 전부가 인터럽트됐다.
+// 두 값을 동일하게 맞춰야 한다.
 const GRACEFUL_STOP_SECONDS = Number(
     __ENV.GRACEFUL_STOP_SECONDS || MAX_POLL_SECONDS + 30
 );
@@ -71,6 +80,7 @@ export const options = {
                 { duration: "15s", target: 0 },
             ],
             gracefulStop: `${GRACEFUL_STOP_SECONDS}s`,
+            gracefulRampDown: `${GRACEFUL_STOP_SECONDS}s`,
         },
     },
     thresholds: {

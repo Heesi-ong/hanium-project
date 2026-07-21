@@ -1,4 +1,5 @@
 import json
+import math
 from pathlib import Path
 import subprocess
 import threading
@@ -745,6 +746,54 @@ def test_normalize_video_llm_response_keeps_existing_validation_without_duration
             "test-model",
             payload,
         )
+
+
+@pytest.mark.parametrize("field", ["startSec", "endSec", "confidence"])
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+def test_normalize_video_llm_response_rejects_nan_and_infinite_values(field, bad_value):
+    # json.loads()는 표준 JSON 사양 밖의 확장 리터럴인 NaN/Infinity를 기본적으로 허용한다.
+    # 이 값들은 모든 비교 연산에서 항상 False가 되어 상/하한 클램프와 confidence 범위
+    # 검사를 그대로 통과해버릴 수 있으므로, require_number()가 명시적으로 걸러내야 한다.
+    item = {
+        "startSec": 1.0,
+        "endSec": 2.0,
+        "label": "hallucinated",
+        "description": "모델이 비정상적인 수치를 반환한 경우입니다.",
+        "confidence": 0.7,
+    }
+    item[field] = bad_value
+
+    payload = {
+        "observations": {
+            "eyeContact": [item],
+            "facialExpression": [],
+            "gesture": [],
+            "posture": [],
+        },
+        "globalSummary": {
+            "visualDelivery": "요약",
+            "mainStrength": "강점",
+            "mainWeakness": "약점",
+        },
+    }
+
+    with pytest.raises(ValueError, match="finite number"):
+        video_llm_analysis.normalize_video_llm_response(
+            "nan-infinity-job",
+            "test-model",
+            payload,
+            duration_sec=10.0,
+        )
+
+
+def test_json_loads_accepts_nan_and_infinity_literals_by_default():
+    # require_number()의 방어가 왜 필요한지 보여주는 전제 조건 테스트입니다: 실제 NVIDIA
+    # 응답을 파싱하는 json.loads()는 이런 값을 조용히 통과시킵니다.
+    parsed = json.loads('{"a": NaN, "b": Infinity, "c": -Infinity}')
+
+    assert math.isnan(parsed["a"])
+    assert parsed["b"] == float("inf")
+    assert parsed["c"] == float("-inf")
 
 
 def test_call_real_video_llm_model_uses_nvcf_asset_for_large_video(

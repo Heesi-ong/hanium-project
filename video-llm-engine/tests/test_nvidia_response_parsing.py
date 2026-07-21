@@ -60,7 +60,7 @@ class TestRequireNumberAndString:
 
     def test_require_number_rejects_bool(self):
         # bool은 int의 하위 타입이지만 숫자로 취급하면 안 됩니다(True==1로 새면 안 됨).
-        with pytest.raises(ValueError, match="must be a number"):
+        with pytest.raises(ValueError, match="must be a finite number"):
             v.require_number({"x": True}, "x", "cat", 0)
 
     def test_require_string_trims_and_returns(self):

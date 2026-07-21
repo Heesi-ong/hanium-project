@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from app.core import model_registry
 from app.core.logging_config import bind_job_id, bind_request_id
+from app.core.paths import resolve_project_root
 from app.core.security import verify_internal_api_key
 
 logger = logging.getLogger("analysis-engine")
@@ -402,21 +403,6 @@ def download_video_from_url(
     finally:
         if response is not None:
             response.close()
-
-
-def resolve_project_root() -> Path:
-    current_path = Path.cwd().resolve()
-
-    if current_path.name == "analysis-engine":
-        return current_path.parent
-
-    if (current_path / "storage").exists():
-        return current_path
-
-    if (current_path.parent / "storage").exists():
-        return current_path.parent
-
-    return current_path.parent
 
 
 def create_mediapipe_image_from_frame_path(frame_path: str) -> mp.Image | None:

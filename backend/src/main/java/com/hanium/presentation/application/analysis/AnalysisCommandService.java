@@ -565,15 +565,13 @@ public class AnalysisCommandService {
 
             VideoLlmEngineResponse videoLlmEngineResponse;
 
-            if (!useVideoLlm) {
-                log.info("[{}] Video LLM 분석을 건너뜁니다. (useVideoLlm=false)", jobId);
-                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.DISABLED);
-            } else if (!canUseDailyVideoLlmBudget(jobId)) {
-                log.info("[{}] Video LLM 분석을 건너뜁니다. (사용자별 일일 한도 초과)", jobId);
-                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED);
-            } else if (!canUseMonthlyVideoLlmBudget(jobId)) {
-                log.info("[{}] Video LLM 분석을 건너뜁니다. (월간 한도 초과)", jobId);
-                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED);
+            VideoLlmSkipReason budgetSkipReason = useVideoLlm
+                    ? reserveVideoLlmBudgetOrSkipReason(jobId)
+                    : VideoLlmSkipReason.DISABLED;
+
+            if (budgetSkipReason != null) {
+                log.info("[{}] Video LLM 분석을 건너뜁니다. ({})", jobId, budgetSkipReason);
+                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, budgetSkipReason);
             } else {
                 if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                     return;
@@ -710,32 +708,37 @@ public class AnalysisCommandService {
         }
     }
 
-    private boolean canUseMonthlyVideoLlmBudget(String jobId) {
-        boolean allowed = userRateLimiter.tryConsume("video-llm-monthly", currentMonthKey());
-        if (!allowed) {
-            log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
-        }
-        return allowed;
-    }
-
-    // 전역 월간 예산(video-llm-monthly)과는 별개로, 사용자 한 명이 그 예산을 독점하지 못하도록
-    // 먼저 확인합니다. 이 확인을 월간 확인보다 앞에 두어, 일일 한도로 어차피 막힐 호출이
-    // 공용 월간 카운터까지 소비하지 않게 합니다.
-    private boolean canUseDailyVideoLlmBudget(String jobId) {
+    // 일일 예산과 월간 예산을 모두 먼저 peek(wouldAllow)해 어느 한쪽이라도 이미
+    // 소진되어 있으면 실제 소비(tryConsume) 없이 즉시 건너뛴다. 이렇게 하면 일일
+    // 한도로 어차피 막힐 호출이 공용 월간 카운터를 헛되이 소비하는 일이 없다.
+    private VideoLlmSkipReason reserveVideoLlmBudgetOrSkipReason(String jobId) {
         Long ownerId = analysisJobRepository.findByJobId(jobId)
                 .map(AnalysisJob::getOwnerId)
                 .orElse(null);
 
-        if (ownerId == null) {
-            log.warn("[{}] Video LLM 일일 한도 확인을 위한 소유자 정보를 찾지 못해 한도 확인을 건너뜁니다.", jobId);
-            return true;
+        if (ownerId != null && !userRateLimiter.wouldAllow("video-llm-daily", ownerId)) {
+            log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
+            return VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED;
         }
 
-        boolean allowed = userRateLimiter.tryConsume("video-llm-daily", ownerId);
-        if (!allowed) {
-            log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
+        if (!userRateLimiter.wouldAllow("video-llm-monthly", currentMonthKey())) {
+            log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
+            return VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED;
         }
-        return allowed;
+
+        if (ownerId == null) {
+            log.warn("[{}] Video LLM 일일 한도 확인을 위한 소유자 정보를 찾지 못해 한도 확인을 건너뜁니다.", jobId);
+        } else if (!userRateLimiter.tryConsume("video-llm-daily", ownerId)) {
+            log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
+            return VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED;
+        }
+
+        if (!userRateLimiter.tryConsume("video-llm-monthly", currentMonthKey())) {
+            log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
+            return VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED;
+        }
+
+        return null;
     }
 
     private String currentMonthKey() {

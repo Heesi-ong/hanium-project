@@ -139,6 +139,17 @@ describe("ResultDetailPage", () => {
         });
     });
 
+    it("shows the Korean status label instead of the raw status enum", async () => {
+        renderResultDetailPage();
+
+        await waitFor(() => {
+            expect(analysisApiMock.getResult).toHaveBeenCalledWith("job-print-test");
+        });
+
+        expect(await screen.findByText("분석 완료")).toBeInTheDocument();
+        expect(screen.queryByText("COMPLETED")).not.toBeInTheDocument();
+    });
+
     it("shows a data issue warning when the result payload is incomplete", async () => {
         analysisApiMock.getResult.mockResolvedValue({
             data: {
@@ -195,7 +206,7 @@ describe("ResultDetailPage", () => {
             await vi.advanceTimersByTimeAsync(0);
         });
 
-        expect(screen.getAllByText("QUEUED").length).toBeGreaterThan(0);
+        expect(screen.getAllByText("분석 대기 중").length).toBeGreaterThan(0);
 
         expect(screen.getByText(/분석 상태를 자동으로 확인하는 중입니다/)).toBeInTheDocument();
 

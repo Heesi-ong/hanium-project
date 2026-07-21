@@ -15,6 +15,7 @@ import {
     uploadAnalysisVideo,
 } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
+import { STATUS_STEP_LABELS } from "../constants/analysisStatus";
 
 const MAX_FILE_SIZE_MB = 500;
 const POLLING_INTERVAL_MS = 1500;
@@ -30,19 +31,6 @@ const RUNNING_STATUSES = [
     "OPENAI_GENERATING",
     "MERGING_RESULT",
 ];
-
-const STATUS_STEP_LABELS = {
-    UPLOADED: "업로드 완료",
-    QUEUED: "분석 대기 중",
-    BASIC_ANALYZING: "기본 분석 중",
-    VIDEO_LLM_ANALYZING: "Video LLM 분석 중",
-    COMPACTING: "분석 결과 축약 중",
-    OPENAI_GENERATING: "AI 피드백 생성 중",
-    MERGING_RESULT: "최종 결과 병합 중",
-    COMPLETED: "분석 완료",
-    FAILED: "분석 실패",
-    CANCELLED: "분석 취소됨",
-};
 
 // 백엔드는 각 단계가 시작될 때 고정된 퍼센트(예: 기본분석 시작 시 10%)만 보내고,
 // 그 단계가 끝날 때까지는 새 값을 보내지 않는다. 그래서 그대로 표시하면 오래 걸리는

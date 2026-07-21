@@ -1006,24 +1006,20 @@ def normalize_observation_item(
     if not isinstance(item, dict):
         raise ValueError(f"NVIDIA response observations.{category}[{index}] must be an object.")
 
-    start_sec = clamp_observation_time(
-        require_number(item, "startSec", category, index),
-        duration_sec,
-        category,
-        index,
-        "startSec",
-    )
-    end_sec = clamp_observation_time(
-        require_number(item, "endSec", category, index),
-        duration_sec,
-        category,
-        index,
-        "endSec",
-    )
-    if end_sec < start_sec:
+    raw_start_sec = require_number(item, "startSec", category, index)
+    raw_end_sec = require_number(item, "endSec", category, index)
+
+    # 순서 검증은 클램프 전(원본 값) 기준으로 합니다. 예를 들어 startSec=-1.0,
+    # endSec=-3.5(둘 다 음수, 순서도 뒤집힘)는 각각 0으로 클램프되면 0 < 0이 되어
+    # "정상"처럼 보이지만, 실제로는 애초에 유효하지 않았던 값입니다. 클램프 결과가
+    # 우연히 뒤집힌 순서를 가려버리지 않도록 원본 값으로 먼저 걸러냅니다.
+    if raw_end_sec < raw_start_sec:
         raise ValueError(
             f"NVIDIA response observations.{category}[{index}] has endSec < startSec."
         )
+
+    start_sec = clamp_observation_time(raw_start_sec, duration_sec, category, index, "startSec")
+    end_sec = clamp_observation_time(raw_end_sec, duration_sec, category, index, "endSec")
 
     label = require_string(item, "label", category, index)
     description = require_string(item, "description", category, index)

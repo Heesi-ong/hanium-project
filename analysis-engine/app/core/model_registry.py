@@ -11,6 +11,8 @@ from typing import Iterator
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
+from app.core.paths import resolve_project_root
+
 logger = logging.getLogger("analysis-engine")
 
 WHISPER_MODEL_SIZE = "base"
@@ -199,22 +201,6 @@ def face_landmarker_context() -> Iterator[object]:
         yield landmarker
     finally:
         _face_pool.put(landmarker)
-
-
-def resolve_project_root() -> Path:
-    current_path = Path(__file__).resolve()
-
-    for parent in current_path.parents:
-        if parent.name == "analysis-engine":
-            return parent.parent
-
-    if (current_path / "storage").exists():
-        return current_path
-
-    if (current_path.parent / "storage").exists():
-        return current_path.parent
-
-    return current_path.parent
 
 
 def resolve_model_directory() -> Path:

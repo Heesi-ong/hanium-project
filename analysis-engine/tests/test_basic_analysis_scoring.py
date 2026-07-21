@@ -328,6 +328,12 @@ def test_expression_helpers():
     assert basic.calculate_expression_variety_score({"unknown": 3}) == 40
     assert basic.resolve_dominant_emotion({"unknown": 4}) == "unknown"
     assert basic.resolve_dominant_emotion({"neutral": 2, "engaged": 5, "unknown": 9}) == "engaged"
+    # 얼굴이 한 번도 검출되지 않아 unknown만 쌓인 실제 상황을 흉내낸 케이스입니다.
+    # analyze_emotion_from_face_result가 미리 채워두는 것과 같은 형태(0으로 초기화된
+    # 4개 키 + unknown)입니다. "neutral"로 오인되면 안 됩니다.
+    assert basic.resolve_dominant_emotion(
+        {"neutral": 0, "engaged": 0, "speaking": 0, "low_energy": 0, "unknown": 20}
+    ) == "unknown"
 
 
 def test_speech_speed_silence_and_pause_helpers():

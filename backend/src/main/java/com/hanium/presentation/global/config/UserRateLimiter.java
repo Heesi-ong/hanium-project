@@ -4,9 +4,12 @@ import com.hanium.presentation.global.properties.RateLimitProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,6 +17,21 @@ public class UserRateLimiter {
 
     private static final Logger log = LoggerFactory.getLogger(UserRateLimiter.class);
     private static final String KEY_PREFIX = "rate-limit:";
+
+    // INCR과 "처음 생성됐을 때만 EXPIRE"를 각각 별도의 Redis 왕복으로 하면, INCR은
+    // 성공했는데 그 직후 EXPIRE만 실패하는 경우(네트워크 순간 단절 등) 카운터가
+    // TTL 없이 영구히 남는다. 그러면 이후 어떤 요청도 count==1 분기를 다시 타지 못해
+    // 그 키는 영원히 만료되지 않고, 해당 사용자/버킷은 다음 초기화 시점 없이 영구히
+    // 차단된다. Lua 스크립트로 INCR+EXPIRE를 하나의 원자적 왕복으로 묶어 이 경합을
+    // 없앤다(Redis는 스크립트 실행 중 다른 명령을 끼워 넣지 않는다).
+    private static final RedisScript<Long> INCREMENT_AND_EXPIRE_IF_NEW_SCRIPT = new DefaultRedisScript<>(
+            "local current = redis.call('INCR', KEYS[1]) "
+                    + "if current == 1 then "
+                    + "redis.call('EXPIRE', KEYS[1], ARGV[1]) "
+                    + "end "
+                    + "return current",
+            Long.class
+    );
 
     private final StringRedisTemplate redisTemplate;
     private final RateLimitProperties rateLimitProperties;
@@ -40,10 +58,11 @@ public class UserRateLimiter {
         String rateLimitKey = buildKey(bucketName, key);
 
         try {
-            Long count = redisTemplate.opsForValue().increment(rateLimitKey);
-            if (count != null && count == 1L) {
-                redisTemplate.expire(rateLimitKey, Duration.ofMinutes(limit.refillMinutes()));
-            }
+            Long count = redisTemplate.execute(
+                    INCREMENT_AND_EXPIRE_IF_NEW_SCRIPT,
+                    Collections.singletonList(rateLimitKey),
+                    String.valueOf(Duration.ofMinutes(limit.refillMinutes()).toSeconds())
+            );
 
             onRedisSuccess();
             return count != null && count <= limit.capacity();

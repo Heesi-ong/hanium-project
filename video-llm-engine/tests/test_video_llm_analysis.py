@@ -718,6 +718,40 @@ def test_clamp_observation_time_floors_negative_values_regardless_of_duration(du
     assert video_llm_analysis.clamp_observation_time(-5.0, duration_sec, "eyeContact", 0, "startSec") == 0
 
 
+def test_normalize_video_llm_response_rejects_reversed_negative_times_instead_of_clamping_to_zero():
+    # startSec=-1.0, endSec=-3.5는 원본 기준으로 이미 순서가 뒤집혀 있다(-3.5 < -1.0).
+    # 각각 독립적으로 0으로 클램프하면 0 < 0이 되어 "정상"처럼 보이지만, 애초에
+    # 유효하지 않았던 값이므로 클램프 전에 걸러져야 한다.
+    item = {
+        "startSec": -1.0,
+        "endSec": -3.5,
+        "label": "hallucinated",
+        "description": "모델이 순서가 뒤집힌 음수 시간을 반환한 경우입니다.",
+        "confidence": 0.7,
+    }
+    payload = {
+        "observations": {
+            "eyeContact": [item],
+            "facialExpression": [],
+            "gesture": [],
+            "posture": [],
+        },
+        "globalSummary": {
+            "visualDelivery": "요약",
+            "mainStrength": "강점",
+            "mainWeakness": "약점",
+        },
+    }
+
+    with pytest.raises(ValueError, match="endSec < startSec"):
+        video_llm_analysis.normalize_video_llm_response(
+            "reversed-negative-job",
+            "test-model",
+            payload,
+            duration_sec=10.0,
+        )
+
+
 def test_normalize_video_llm_response_keeps_existing_validation_without_duration():
     item = {
         "startSec": 5,

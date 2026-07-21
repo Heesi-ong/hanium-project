@@ -16,7 +16,9 @@ import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.CoachConversationResponse;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,6 +36,7 @@ public class CoachChatService {
     private final JsonFileStorage jsonFileStorage;
     private final OpenAiCoachClient openAiCoachClient;
     private final UserRateLimiter userRateLimiter;
+    private final TransactionTemplate transactionTemplate;
 
     public CoachChatService(
             AnalysisJobRepository analysisJobRepository,
@@ -42,7 +45,8 @@ public class CoachChatService {
             FilePathGenerator filePathGenerator,
             JsonFileStorage jsonFileStorage,
             OpenAiCoachClient openAiCoachClient,
-            UserRateLimiter userRateLimiter
+            UserRateLimiter userRateLimiter,
+            PlatformTransactionManager transactionManager
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.coachConversationRepository = coachConversationRepository;
@@ -51,6 +55,7 @@ public class CoachChatService {
         this.jsonFileStorage = jsonFileStorage;
         this.openAiCoachClient = openAiCoachClient;
         this.userRateLimiter = userRateLimiter;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional(readOnly = true)
@@ -64,8 +69,29 @@ public class CoachChatService {
                 .orElseGet(() -> CoachConversationResponse.from(List.of()));
     }
 
-    @Transactional
+    // OpenAI 호출(openai.timeout-ms, 최대 15초)은 DB 트랜잭션 밖에서 실행합니다. 이 메서드
+    // 전체를 하나의 @Transactional로 감싸면, OpenAI 응답이 느려질 때마다 그 시간만큼 Hikari
+    // 커넥션을 붙잡고 있게 되어 커넥션 풀(기본 10개)이 동시 코치채팅 요청 몇 건만으로도
+    // 고갈되고, 로그인/업로드 등 완전히 무관한 API까지 함께 멈출 수 있습니다. 그래서 DB
+    // 작업만 두 개의 짧은 트랜잭션으로 나누고 그 사이에서 OpenAI를 호출합니다.
+    // OpenAiCoachClient.generateReply()는 실패해도 예외를 던지지 않고 항상 mock/fallback
+    // 응답을 반환하도록 이미 설계돼 있어(내부에서 RuntimeException을 잡아 폴백), 두 번째
+    // 트랜잭션이 실행되지 않는 경우는 사실상 없습니다.
     public CoachConversationResponse sendMessage(String jobId, Long ownerId, String content) {
+        PreparedCoachMessage prepared = transactionTemplate.execute(
+                status -> prepareMessage(jobId, ownerId, content)
+        );
+
+        OpenAiCoachReplyResponse reply = openAiCoachClient.generateReply(
+                new OpenAiCoachChatRequest(jobId, prepared.compactAnalysis(), prepared.history(), content)
+        );
+
+        return transactionTemplate.execute(
+                status -> saveReplyAndBuildResponse(prepared.conversationId(), reply)
+        );
+    }
+
+    private PreparedCoachMessage prepareMessage(String jobId, Long ownerId, String content) {
         AnalysisJob analysisJob = validateOwnership(jobId, ownerId);
 
         if (!analysisJob.isCompleted()) {
@@ -94,20 +120,30 @@ public class CoachChatService {
 
         coachMessageRepository.save(CoachMessage.userMessage(conversation.getId(), content));
 
-        OpenAiCoachReplyResponse reply = openAiCoachClient.generateReply(
-                new OpenAiCoachChatRequest(jobId, compactAnalysis, history, content)
-        );
+        return new PreparedCoachMessage(conversation.getId(), compactAnalysis, history);
+    }
 
+    private CoachConversationResponse saveReplyAndBuildResponse(
+            Long conversationId,
+            OpenAiCoachReplyResponse reply
+    ) {
         coachMessageRepository.save(CoachMessage.assistantMessage(
-                conversation.getId(),
+                conversationId,
                 reply.replyText(),
                 reply.generationMode()
         ));
 
         List<CoachMessage> messages = coachMessageRepository
-                .findAllByConversationIdOrderByCreatedAtAsc(conversation.getId());
+                .findAllByConversationIdOrderByCreatedAtAsc(conversationId);
 
         return CoachConversationResponse.from(messages);
+    }
+
+    private record PreparedCoachMessage(
+            Long conversationId,
+            Map<String, Object> compactAnalysis,
+            List<OpenAiCoachChatRequest.ChatTurn> history
+    ) {
     }
 
     private AnalysisJob validateOwnership(String jobId, Long ownerId) {

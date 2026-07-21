@@ -494,3 +494,92 @@
 위 "남은 것" 항목의 이 부분은 완료된 것으로 정정한다. (다른 계정에 동일한
 근본 원인의 미확인 사례가 남아있을 가능성 자체는 배제하지 않았다 — 그건
 전수조사가 필요한 별개 사안이다.)
+
+---
+
+## 업데이트: 2026-07-21 현재 상태
+
+2026-07-20 이후 두 가지를 반영한다: (1) Video LLM 실연동이 결정 문서 단계를 넘어 실제로
+활성화·검증됐다는 사실, (2) 이번 회차의 2차 코드 리뷰(4개 컴포넌트 병렬 검토)에서 새로
+발견해 같은 회차에 전부 수정·테스트·커밋까지 마친 14건. 이번 회차는 새 코드 수정에 앞서
+의존성 재감사와 CI 관련 사각지대 재확인도 함께 수행했다.
+
+### L8(Video LLM) 판정 상향: 부분해결 → 해결
+
+- `video-llm-engine/.env`, 루트 `.env` 모두 `VIDEO_LLM_ENABLED=true`, `VIDEO_LLM_BACKEND=external-api`로 확인됨.
+- `docs/service-plan/video-llm-activation-decision.md`의 2026-07-20 갱신에 실제 NVIDIA API 키로
+  전환해 `readiness`(`mode: REAL, realModelReady: true`)와 실제 업로드→분석 완료 E2E까지 확인한
+  기록이 있다. A-4(업로드 동의 체크박스)는 "미구현"이 아니라 "PrivacyPage 국외이전 고지로 대체하기로
+  결정"으로 판정이 바뀌었다.
+- 따라서 서비스 가능 수준 L1~L10 기준 중 마지막까지 "결정 대기"였던 L8이 이제 실질적으로 충족 상태다.
+  L1~L10 전체를 다시 보면 L5(진짜 메시지 브로커가 아닌 DB 폴링 claim 큐)만 "구조적 한계로 의도적 유지"
+  상태로 남는다.
+
+### 2차 코드 리뷰로 새로 발견해 같은 회차에 수정한 14건 (커밋 `9c436d8`~`f80d65e`)
+
+기존 롤링 문서의 A/B/N 계열 항목과는 별개로, 이번 회차는 1차 9건 수정 이후 재점검에서
+추가로 나온 항목이다. 전부 코드 근거 확인 → 구현 → 회귀 테스트로 결함 재현/해결 확인 →
+전체 스위트 통과 → 파일별/논리 단위로 분리 커밋까지 마쳤다.
+
+| # | 항목 | 심각도 | 요지 |
+| --- | --- | --- | --- |
+| 1 | 회원탈퇴/결과삭제 파일 삭제 트랜잭션 원자성 | High | `ResultCommandService.deleteResult()`가 DB 삭제 전에 로컬/오브젝트 삭제를 수행해, DB 트랜잭션이 롤백돼도 파일은 이미 지워지는 비원자성이 있었다. `TransactionSynchronization.afterCommit()`으로 커밋 후에만 파일을 지우도록 수정. |
+| 2 | CoachChatService가 OpenAI 동기 호출 동안 DB 트랜잭션을 점유 | High | `@Transactional` 메서드 안에서 OpenAI 코치 응답을 기다리는 동안 DB 커넥션을 계속 물고 있어, 커넥션 풀 고갈 위험이 있었다. `TransactionTemplate`로 트랜잭션을 앞/뒤 두 개로 쪼개 외부 호출 중에는 커넥션을 반납하도록 수정. |
+| 3 | rate limit INCR+EXPIRE 비원자성 | Medium | Redis INCR 성공 직후 EXPIRE만 실패하면 카운터가 TTL 없이 영구 잔류하는 경합이 있었다. Lua 스크립트로 원자화. |
+| 4 | Video LLM 일일/월간 한도의 불필요한 소비 순서 | Low | 일일 한도를 먼저 tryConsume한 뒤 월간 한도가 소진돼 있으면, 일일 예산만 헛되이 소비되고 어차피 호출은 건너뛰었다. `wouldAllow`로 두 한도를 모두 peek한 뒤 통과 시에만 소비하도록 변경. |
+| 5 | analysis-engine 프로젝트 루트 경로 계산 버그 | High | `model_registry.py`의 자체 `resolve_project_root()`가 `parents` 루프에서 변수를 갱신하지 않는 버그로, 실제 컨테이너 레이아웃(cwd=`/app`)에서 절대 매치되지 않고 잘못된 경로(`/app/app/core`)로 폴백하고 있었다. `basic_analysis.py`의 올바른 구현을 `app/core/paths.py`로 추출해 공유. |
+| 6 | 양쪽 눈 시선 측정 실패 시 정면 응시로 오인 | Medium | `average_gaze_ratios`가 두 눈 모두 실패 시 `(0.5, 0.5)`(완벽한 정면 응시)를 반환해 측정 불가를 최고 점수로 오인시켰다. `None` 반환 후 해당 프레임을 집계에서 제외하도록 수정. |
+| 7 | 얼굴 미검출 시 중립 표정으로 오인 | Medium | `resolve_dominant_emotion`의 `filtered_counts`는 항상 4개 키가 0으로 채워져 있어 "비어 있음" 검사가 절대 참이 되지 않고, `max()`가 삽입 순서상 첫 키인 neutral을 반환했다. "값이 전부 0인지" 검사로 수정. |
+| 8 | NVIDIA 응답의 NaN/Infinity 미검증 | Medium | `json.loads()`가 표준 밖 확장 리터럴(NaN/Infinity)을 기본 허용하는데, 이 값은 모든 비교에서 항상 False가 되어 상/하한 검사를 그대로 통과했다. `math.isfinite()` 명시 검증 추가. |
+| 9 | 순서 뒤집힌 음수 타임스탬프가 클램프 후 정상으로 위장 | Medium | startSec/endSec이 둘 다 음수이며 순서가 뒤집힌 경우, 각각 0으로 클램프하면 0<0이 되어 정상처럼 보였다. 클램프 전 원본 값으로 순서 검증하도록 순서 변경. |
+| 10 | videoPath 경로 이탈 방지 없음 | High(방어적) | video-llm-engine이 `request.videoPath`를 검증 없이 그대로 열어 제3자(NVIDIA)로 업로드했다. `VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR` 밖 경로를 거부하는 검증 추가(analysis-engine의 기존 job_id 검증과 동일한 방어 목적). |
+| 11 | videoDownloadUrl SSRF 미검증 | High(방어적) | 요청마다 달라지는 `videoDownloadUrl`(주로 backend가 만드는 MinIO presigned URL)에는 `resolve_absolute_http_url` 같은 scheme/host 검증이 없었다. `file://` 등 예상 밖 스킴을 거부하도록 추가. |
+| 12 | 폴링 중 결과 페이지 이동 가능 | Low(UX) | 분석 결과 파일이 아직 없는 폴링 중에도 "결과 페이지로 이동" 버튼이 활성 상태라 이동 시 깨진 에러 화면을 볼 수 있었다. 폴링 중 비활성화. |
+| 13 | 파일 거부 후 같은 파일 재선택 시 무반응 | Low(UX) | `<input type="file">`는 같은 경로 파일을 다시 선택해도 파일 목록이 안 바뀌었다고 보아 change 이벤트가 발생하지 않는데, 이전에는 성공 시에만 value를 초기화했다. 거부 경로에서도 초기화하도록 수정. |
+| 14 | 결과 상세 페이지가 상태값을 원본 enum으로 노출 | Low(UX) | `ResultDetailPage`가 `statusDescription`에 `status`를 그대로 복사해 "QUEUED" 같은 원본 값을 사용자에게 노출했다. UploadPage의 한글 라벨 맵을 `constants/analysisStatus.js`로 추출해 공유. |
+
+**검증**: 각 항목마다 결함 재현(수정 되돌려 실패 확인) → 수정 → 회귀 테스트 추가 → 해당
+컴포넌트 전체 스위트 통과를 개별 확인했고, 최종적으로 backend 전체(`./gradlew test`),
+analysis-engine(118 passed), video-llm-engine(130 passed), frontend(185 passed)를 전부
+재실행해 통과를 재확인했다. 커밋은 파일/논리 단위로 14개로 분리했다(`git log 9c436d8..f80d65e`).
+
+### 의존성 재감사 (2026-07-21, 새 코드 수정 없이 확인만)
+
+| 대상 | 결과 |
+| --- | --- |
+| `analysis-engine/requirements.txt` (`pip-audit`) | 0건 (N2에서 pillow 12.3.0으로 이미 해결된 상태 유지 확인) |
+| `video-llm-engine/requirements-test.txt` (`pip-audit`) | 0건 |
+| `video-llm-engine/requirements-real-model.txt` (`pip-audit --no-deps`) | 0건 (N2 부가 발견분도 유지 확인) |
+| `frontend` (`npm audit --audit-level=high`) | 0건 |
+
+새로 잡힌 CVE는 없다. N2에서 CI에 추가한 `requirements-real-model.txt` 감사 스텝도 여전히
+`.github/workflows/verify.yml`의 `python-engines` job에 남아 있음을 확인했다.
+
+### 2026-07-21 기준 가장 큰 잔여 리스크 (우선순위 순)
+
+1. **"외부 환경" 항목은 여전히 로컬 개발 환경에서는 검증 불가능하다.** staging 기존 데이터 백필,
+   MinIO 강제 중단 시 동작 확인, 실제 운영 CPU/GPU 부하 측정은 실제 staging/운영 인프라가 있어야
+   진행 가능하며 이번 회차에도 진행하지 않았다(07-17 업데이트의 "남은 외부 환경 항목"과 동일).
+2. **로컬 디스크 fallback 제거 여부가 여전히 미결정이다.** MinIO 이중 쓰기 구조 자체는 유지되고
+   있고, 안전망을 언제 걷어낼지는 별도 결정 사안으로 남아 있다(07-16 P2와 동일).
+3. **L5(DB 폴링 claim 큐)는 의도된 구조적 한계로 유지된다.** 진짜 메시지 브로커(우선순위/데드레터/
+   지수 백오프)가 필요해지는 트래픽 규모에 도달하기 전까지는 현재 구조로 충분하다는 기존 판단을
+   유지한다.
+4. **Video LLM이 이제 진짜로 켜져 있으므로, 비용/폴백 관측을 실사용 기준으로 계속 지켜봐야 한다.**
+   `video_llm_generation_total{mode=...}` 메트릭과 `VideoLlmFallbackRateHigh` 알림은 이미 구현돼
+   있지만, 실제 트래픽에서 폴백률이나 월 예산 소진 속도를 관찰한 이력은 아직 짧다.
+5. **이번 14건 중 일부(#10, #11)는 "backend가 항상 안전한 값만 보낸다"는 전제 위의 방어적 조치다.**
+   즉 지금 당장 악용 가능한 경로가 확인된 것은 아니고, 백엔드 버그·침해 시 2차 피해를 줄이는
+   심층 방어다 — 우선순위를 매길 때 "이미 뚫린 취약점"과 구분해서 봐야 한다.
+
+### 다음 우선순위 (권장)
+
+이번 회차로 코드 수준의 새 발견은 대부분 소진됐다. 다음으로 의미 있는 진전은 아래 셋 중
+하나를 사용자와 상의해 정하는 것을 권장한다.
+
+1. **로컬 디스크 fallback 제거 결정** — MinIO 백필이 이미 실환경에서 검증된 만큼(07-17), 쓰기
+   실패 시 정책을 "에러로 전환"할지 결정하면 L4/B4 계열 갭이 완전히 닫힌다.
+2. **staging 환경 구축 후 "외부 환경 항목" 전수 실행** — 지금까지 코드/로컬 Docker로는 검증할
+   수 없었던 항목들(기존 데이터 백필, 강제 중단 시나리오, 실부하)을 실제로 닫는 단계.
+3. **Video LLM 실사용 관측 대시보드를 일정 기간 관찰** — 새 코드 수정보다는 운영 관찰 기간을
+   가지며 비용/폴백률 실측치를 쌓는 단계.

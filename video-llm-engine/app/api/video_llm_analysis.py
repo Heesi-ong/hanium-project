@@ -213,6 +213,25 @@ def resolve_absolute_http_url(name: str, default_value: str) -> str:
     return value
 
 
+def resolve_allowed_video_base_dir() -> Path:
+    return Path(resolve_env_with_default("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", "/storage")).resolve()
+
+
+# request.videoPath는 backend가 만들어 보내는 값이라 지금은 항상 안전한 경로만 들어오지만,
+# analysis-engine의 job_id 검증(경로 이탈 방지)과 같은 이유로 이 엔진도 방어적으로 한 번 더
+# 검증합니다. 이 경로의 내용은 그대로 읽혀 제3자(NVIDIA)로 업로드되므로, backend가 버그나
+# 침해로 잘못된 경로를 보내는 경우 임의 파일이 외부로 유출되는 것을 막습니다.
+def validate_local_video_path(video_path: Path) -> None:
+    allowed_base_dir = resolve_allowed_video_base_dir()
+    resolved_path = video_path.resolve()
+
+    if resolved_path != allowed_base_dir and allowed_base_dir not in resolved_path.parents:
+        raise ValueError(
+            f"videoPath must be inside {allowed_base_dir}, got {video_path!r} "
+            f"(resolved to {resolved_path})."
+        )
+
+
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
     api_key = os.getenv("NVIDIA_API_KEY", "").strip()
     if not api_key:
@@ -703,6 +722,7 @@ def resolve_video_file(request: VideoLlmAnalysisRequest) -> Iterator[tuple[Path,
 
     if downloaded is None:
         local_path = Path(request.videoPath)
+        validate_local_video_path(local_path)
         content_type = mimetypes.guess_type(local_path.name)[0] or "video/mp4"
         yield local_path, content_type
         return

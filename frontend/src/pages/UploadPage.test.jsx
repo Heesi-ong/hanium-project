@@ -230,4 +230,51 @@ describe("UploadPage", () => {
 
         expect(await screen.findByText("취소됨")).toBeInTheDocument();
     });
+
+    it("disables navigating to the result page while analysis is still polling", async () => {
+        const jobId = "job-polling-nav-test";
+
+        analysisApiMock.uploadAnalysisVideo.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                originalFileName: "presentation.mp4",
+                storedFilePath: "/storage/uploads/job-polling-nav-test/presentation.mp4",
+                fileSize: 1024,
+            },
+        });
+
+        analysisApiMock.runAnalysis.mockResolvedValue({ data: {} });
+
+        // 분석이 QUEUED에서 계속 머물러 있는 상황을 흉내냅니다(아직 완료되지 않음).
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "QUEUED",
+                statusDescription: "분석 대기 중",
+                failReason: null,
+            },
+        });
+
+        analysisApiMock.getAnalysisProgress.mockResolvedValue({
+            data: { percent: 0, message: "대기 중" },
+        });
+
+        renderUploadPage();
+
+        dropFile(getDropZone(), createVideoFile());
+        fireEvent.click(await screen.findByRole("button", { name: "영상 업로드" }));
+
+        await screen.findByText(jobId);
+
+        fireEvent.click(await screen.findByRole("button", { name: "분석 실행" }));
+
+        // 아직 분석 결과 파일이 없는데도 상세 페이지로 이동하면 진행률 UI 대신 깨진
+        // 에러 화면을 보게 되므로, 폴링 중에는 이 버튼이 비활성화돼 있어야 합니다.
+        const goToResultButton = await screen.findByRole("button", { name: "결과 페이지로 이동" });
+        await waitFor(() => {
+            expect(goToResultButton).toBeDisabled();
+        });
+    });
 });

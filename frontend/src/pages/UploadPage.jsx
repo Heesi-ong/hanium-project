@@ -728,7 +728,7 @@ function UploadPage() {
                             onClick={() =>
                                 uploadedResult?.jobId && navigate(`/results/${uploadedResult.jobId}`)
                             }
-                            disabled={!uploadedResult || running || loading}
+                            disabled={!uploadedResult || running || loading || polling}
                         >
                             결과 페이지로 이동
                         </button>

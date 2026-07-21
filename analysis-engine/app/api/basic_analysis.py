@@ -1188,13 +1188,22 @@ def analyze_face_from_frames(
                 eye_bottom=right_eye_bottom,
             )
 
-            horizontal_ratio, vertical_ratio = average_gaze_ratios(
-                left_gaze_ratio,
-                right_gaze_ratio,
-            )
+            gaze_ratios = average_gaze_ratios(left_gaze_ratio, right_gaze_ratio)
 
-            gaze_score = calculate_gaze_score_from_ratios(horizontal_ratio, vertical_ratio)
-            gazing_at_camera = is_gazing_at_camera(horizontal_ratio, vertical_ratio)
+            if gaze_ratios is None:
+                # 양쪽 눈 모두 시선 비율을 계산할 수 없는 프레임입니다. 측정 불가를
+                # "정면 응시"로 오인해 최고 점수를 주지 않도록, 이 프레임은 얼굴이
+                # 검출된 프레임 수(detected_count)에는 그대로 포함하되 시선 점수
+                # 평균과 카메라 응시 비율 집계에서는 제외합니다.
+                horizontal_ratio = None
+                vertical_ratio = None
+                gaze_score = None
+                gazing_at_camera = False
+            else:
+                horizontal_ratio, vertical_ratio = gaze_ratios
+                gaze_score = calculate_gaze_score_from_ratios(horizontal_ratio, vertical_ratio)
+                gazing_at_camera = is_gazing_at_camera(horizontal_ratio, vertical_ratio)
+                gaze_scores.append(gaze_score)
 
             if gazing_at_camera:
                 camera_gaze_frame_count += 1
@@ -1214,8 +1223,6 @@ def analyze_face_from_frames(
                 left_eye_outer=left_eye_outer,
                 right_eye_outer=right_eye_outer,
             )
-
-            gaze_scores.append(gaze_score)
 
             analyzed_frames.append(
                 {
@@ -2050,11 +2057,15 @@ def calculate_iris_gaze_ratio(
 def average_gaze_ratios(
         left_gaze_ratio: Dict[str, float] | None,
         right_gaze_ratio: Dict[str, float] | None,
-) -> tuple[float, float]:
+) -> tuple[float, float] | None:
+    """양쪽 눈 모두 홍채 비율을 계산할 수 없으면(눈 깜빡임 등으로 눈 랜드마크가 무너진
+    경우) None을 반환합니다. 예전에는 이 경우 "정면 응시"(0.5, 0.5)로 대체했는데,
+    측정 실패를 최고 점수(완벽한 정면 응시)로 오인시키는 결과였습니다.
+    """
     ratios = [ratio for ratio in (left_gaze_ratio, right_gaze_ratio) if ratio is not None]
 
     if not ratios:
-        return GAZE_CAMERA_CENTER, GAZE_CAMERA_CENTER
+        return None
 
     horizontal_ratio = sum(ratio["horizontalRatio"] for ratio in ratios) / len(ratios)
     vertical_ratio = sum(ratio["verticalRatio"] for ratio in ratios) / len(ratios)

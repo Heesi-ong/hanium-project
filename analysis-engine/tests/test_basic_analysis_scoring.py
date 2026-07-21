@@ -296,7 +296,8 @@ def test_gaze_score_and_eye_contact_helpers():
         {"horizontalRatio": 0.4, "verticalRatio": 0.6},
         {"horizontalRatio": 0.6, "verticalRatio": 0.4},
     ) == (0.5, 0.5)
-    assert basic.average_gaze_ratios(None, None) == (0.5, 0.5)
+    # 양쪽 눈 모두 측정 실패 시 "정면 응시"로 오인시키지 않도록 None을 반환해야 합니다.
+    assert basic.average_gaze_ratios(None, None) is None
     assert basic.is_gazing_at_camera(0.5, 0.5) is True
     assert basic.is_gazing_at_camera(0.7, 0.5) is False
     assert basic.calculate_gaze_score_from_ratios(0.5, 0.5) == 100

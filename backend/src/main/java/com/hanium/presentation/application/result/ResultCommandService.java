@@ -17,6 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -195,19 +197,54 @@ public class ResultCommandService {
         UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
                 .orElse(null);
 
-        Path uploadDirectory = filePathGenerator.generateUploadDirectory(jobId);
-        Path resultDirectory = filePathGenerator.generateResultDirectory(jobId);
-
-        localFileStorage.deleteDirectoryIfExists(uploadDirectory);
-        localFileStorage.deleteDirectoryIfExists(resultDirectory);
-        deleteObjectStoragePrefixQuietly("uploads/" + jobId + "/");
-        deleteObjectStoragePrefixQuietly("results/" + jobId + "/");
-
         if (uploadedVideo != null) {
             uploadedVideoRepository.delete(uploadedVideo);
         }
 
         analysisJobRepository.delete(analysisJob);
+
+        // 실제 파일 삭제는 이 트랜잭션이 커밋된 뒤에만 실행합니다. 회원탈퇴처럼 여러 job을
+        // 한 트랜잭션 안에서 순회 삭제하다가 뒤에 나온 job이 실패해 전체가 롤백되면, 커밋
+        // 전에 파일부터 지웠을 경우 이미 처리된 앞선 job들의 물리 파일은 사라졌는데 DB
+        // 행만 롤백으로 되살아나는 불일치가 생깁니다(실제 재현된 문제). 파일 삭제를
+        // 커밋 이후로 미루면 트랜잭션이 롤백될 때 파일 삭제 자체가 실행되지 않습니다.
+        scheduleFileDeletionAfterCommit(jobId);
+    }
+
+    private void scheduleFileDeletionAfterCommit(String jobId) {
+        Runnable deleteFiles = () -> {
+            try {
+                Path uploadDirectory = filePathGenerator.generateUploadDirectory(jobId);
+                Path resultDirectory = filePathGenerator.generateResultDirectory(jobId);
+
+                localFileStorage.deleteDirectoryIfExists(uploadDirectory);
+                localFileStorage.deleteDirectoryIfExists(resultDirectory);
+            } catch (Exception exception) {
+                // 이 시점에는 DB 삭제가 이미 커밋되어 되돌릴 수 없으므로, 로컬 파일 삭제
+                // 실패는 예외를 던지는 대신 로그만 남깁니다(고아 파일이 남을 뿐 DB와의
+                // 불일치로 이어지지는 않습니다).
+                log.warn(
+                        "RESULT_DELETE_LOCAL_FILE_FAILED_AFTER_COMMIT jobId={} reason={}",
+                        jobId,
+                        exception.toString()
+                );
+            }
+
+            deleteObjectStoragePrefixQuietly("uploads/" + jobId + "/");
+            deleteObjectStoragePrefixQuietly("results/" + jobId + "/");
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deleteFiles.run();
+                }
+            });
+        } else {
+            // 트랜잭션 없이 호출되는 경우(예: 단위 테스트)를 대비한 안전장치입니다.
+            deleteFiles.run();
+        }
     }
 
     // 로컬 삭제와 별개로 MinIO에 미러링된 오브젝트도 정리합니다(StorageCleanupService,

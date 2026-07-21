@@ -136,6 +136,12 @@ class UserWithdrawalIntegrationTest {
         assertThat(analysisJobRepository.existsByJobId(FIRST_JOB_ID)).isTrue();
         assertThat(analysisJobRepository.existsByJobId(SECOND_JOB_ID)).isTrue();
         assertThat(uploadedVideoRepository.existsByJobId(FIRST_JOB_ID)).isTrue();
+
+        // 파일 삭제는 트랜잭션 커밋 이후로 미뤄지므로, 트랜잭션 자체가 롤백되면
+        // FIRST_JOB_ID의 실제 영상/결과 파일도 지워지지 않고 그대로 남아야 합니다.
+        // DB 행만 살아남고 파일은 이미 사라진 상태(고스트 job)가 되면 안 됩니다.
+        assertThat(Files.exists(filePathGenerator.generateUploadDirectory(FIRST_JOB_ID))).isTrue();
+        assertThat(Files.exists(filePathGenerator.generateResultDirectory(FIRST_JOB_ID))).isTrue();
     }
 
     @Test

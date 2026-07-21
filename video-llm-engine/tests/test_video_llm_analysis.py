@@ -1232,6 +1232,54 @@ def test_resolve_video_file_falls_back_to_local_path_when_download_fails(monkeyp
     assert content_type == "video/mp4"
 
 
+def test_validate_local_video_path_accepts_path_inside_allowed_base_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", str(tmp_path))
+    inside_path = tmp_path / "uploads" / "job-1" / "original.mp4"
+    inside_path.parent.mkdir(parents=True)
+    inside_path.write_bytes(b"x")
+
+    # 예외를 던지지 않으면 통과입니다.
+    video_llm_analysis.validate_local_video_path(inside_path)
+
+
+def test_validate_local_video_path_rejects_path_outside_allowed_base_dir(monkeypatch, tmp_path):
+    allowed_dir = tmp_path / "storage"
+    allowed_dir.mkdir()
+    monkeypatch.setenv("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", str(allowed_dir))
+
+    outside_path = tmp_path / "etc" / "passwd"
+    outside_path.parent.mkdir(parents=True)
+    outside_path.write_bytes(b"secret")
+
+    with pytest.raises(ValueError, match="must be inside"):
+        video_llm_analysis.validate_local_video_path(outside_path)
+
+
+def test_call_real_video_llm_model_rejects_local_path_outside_allowed_base_dir(
+    monkeypatch, tmp_path
+):
+    allowed_dir = tmp_path / "storage"
+    allowed_dir.mkdir()
+    monkeypatch.setenv("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", str(allowed_dir))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+
+    outside_path = tmp_path / "etc" / "passwd"
+    outside_path.parent.mkdir(parents=True)
+    outside_path.write_bytes(b"secret")
+
+    with pytest.raises(ValueError, match="must be inside"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="path-traversal-job",
+                videoPath=str(outside_path),
+            )
+        )
+
+    # 경로가 거부됐으므로 NVIDIA에는 아무것도 전송되지 않아야 합니다.
+    assert FakeNvidiaClient.instances == []
+
+
 def test_resolve_video_file_uses_local_path_when_no_download_url(tmp_path):
     video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(

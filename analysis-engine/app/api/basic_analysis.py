@@ -1481,7 +1481,13 @@ def resolve_dominant_emotion(emotion_counts: Dict[str, int]) -> str:
         if emotion != "unknown"
     }
 
-    if not filtered_counts:
+    # emotion_counts는 항상 neutral/engaged/speaking/low_energy 네 키를 0으로 미리 채워
+    # 두고 시작하므로(analyze_emotion_from_face_result), filtered_counts는 값이 전부
+    # 0이어도 "비어 있지 않은" 상태입니다. 그래서 "비어 있으면"이 아니라 "전부 0이면"을
+    # 검사해야, 얼굴이 한 번도 검출되지 않은(unknown만 쌓인) 경우를 실제로 걸러냅니다.
+    # 그렇지 않으면 max()가 삽입 순서상 첫 키인 "neutral"을 반환해, 데이터가 전혀 없는
+    # 상태를 "중립적인 표정이 관찰됨"으로 오인시킵니다.
+    if not any(filtered_counts.values()):
         return "unknown"
 
     return max(filtered_counts, key=filtered_counts.get)

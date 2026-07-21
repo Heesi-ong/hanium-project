@@ -734,6 +734,20 @@ def resolve_video_file(request: VideoLlmAnalysisRequest) -> Iterator[tuple[Path,
         downloaded_path.unlink(missing_ok=True)
 
 
+def validate_video_download_url(video_download_url: str) -> None:
+    # resolve_absolute_http_url()과 같은 수준의 검증입니다. 다만 그 함수는 설정(env var)에
+    # 박힌 고정 URL을 검증하는 반면, 이 값은 요청마다 달라지는 videoDownloadUrl(보통
+    # backend가 만드는 MinIO presigned URL)입니다. scheme/host가 없는 값(예: file://,
+    # 상대 경로처럼 보이는 문자열)을 걸러 httpx가 예상 밖의 프로토콜로 요청을 보내지
+    # 않게 합니다.
+    parsed = urlparse(video_download_url)
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(
+            f"videoDownloadUrl must be an absolute http(s) URL, got {video_download_url!r}."
+        )
+
+
 def download_video_to_temp_file(
     job_id: str,
     video_download_url: str,
@@ -744,6 +758,8 @@ def download_video_to_temp_file(
     max_size = resolve_video_max_size_bytes()
 
     try:
+        validate_video_download_url(video_download_url)
+
         with tempfile.NamedTemporaryFile(
             prefix=f"video-llm-{job_id}-",
             suffix=suffix,

@@ -1232,6 +1232,53 @@ def test_resolve_video_file_falls_back_to_local_path_when_download_fails(monkeyp
     assert content_type == "video/mp4"
 
 
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "file:///etc/passwd",
+        "ftp://example.com/video.mp4",
+        "not-a-url",
+        "",
+        "//example.com/video.mp4",
+    ],
+)
+def test_validate_video_download_url_rejects_non_http_urls(bad_url):
+    with pytest.raises(ValueError, match="absolute http"):
+        video_llm_analysis.validate_video_download_url(bad_url)
+
+
+def test_validate_video_download_url_accepts_http_and_https():
+    video_llm_analysis.validate_video_download_url("https://minio.local/uploads/x/original.mp4")
+    video_llm_analysis.validate_video_download_url("http://minio.local/uploads/x/original.mp4")
+
+
+def test_resolve_video_file_falls_back_to_local_path_without_attempting_request_for_bad_url(
+    monkeypatch, tmp_path
+):
+    request_attempted = {"called": False}
+
+    class TrackingFakeDownloadClient(FakeDownloadClient):
+        def stream(self, method, url):
+            request_attempted["called"] = True
+            return super().stream(method, url)
+
+    monkeypatch.setattr(video_llm_analysis.httpx, "Client", TrackingFakeDownloadClient)
+
+    video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-ssrf-job",
+        videoPath=video_path,
+        # 스킴이 http(s)가 아닌 값입니다 - httpx가 이 스킴을 어떻게 다루든, 애초에
+        # 요청을 시도조차 하지 않아야 합니다.
+        videoDownloadUrl="file:///etc/passwd",
+    )
+
+    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(video_path)
+
+    assert request_attempted["called"] is False
+
+
 def test_validate_local_video_path_accepts_path_inside_allowed_base_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", str(tmp_path))
     inside_path = tmp_path / "uploads" / "job-1" / "original.mp4"

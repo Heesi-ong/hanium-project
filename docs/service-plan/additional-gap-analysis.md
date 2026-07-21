@@ -615,3 +615,80 @@ strict 모드에서도 정상 동작함을 재확인). 상세 절차와 근거�
 
 이로써 위 "2026-07-21 기준 가장 큰 잔여 리스크"의 2번 항목은 해소됐다. 잔여 리스크 목록에서
 제거하고 1/3/4/5번만 유효한 것으로 갱신한다.
+
+---
+
+## 업데이트: 2026-07-21 (같은 날 후속 2) "외부 환경 항목" 로컬 시뮬레이션 진행
+
+실제 staging 서버/클라우드 계정이 아직 없어(사용자 확인), 같은 노트북에서 실제 docker-compose
+스택을 prod에 가깝게 기동해 "외부 환경 항목" 중 로컬로 검증 가능한 부분만 진행했다.
+
+### 로컬 파일 백필 실측
+
+이 저장소의 `storage/uploads`·`storage/results`에 실제로 남아 있던 로컬 파일을 대상으로
+`docker compose run --rm -e STORAGE_BACKFILL_ENABLED=true backend`를 실행했다(env를 셸
+프리픽스로 주지 말고 `-e` 플래그로 직접 주입해야 컨테이너에 실제로 전달된다는 점을 시행착오로
+확인 — `docker-compose.yml`에는 `STORAGE_BACKFILL_ENABLED`가 배선돼 있지 않아 셸 프리픽스만으로는
+전달되지 않는다). 결과: `uploads[scanned=60, uploaded=42, skipped=18, failed=0]`,
+`results[scanned=106, uploaded=3, skipped=103, failed=0]`. MinIO 오브젝트 수(uploads 87→129,
+results 134→137)가 정확히 델타만큼 증가함을 `mc ls`로 직접 대조했다. 재실행 시
+`uploaded=0, skipped=전체, failed=0`으로 idempotency도 확인했다. `docs/ops/minio-backfill-and-fallback-plan.md`의
+"파트 1" 절차가 실제로 이 저장소의 로컬 데이터에 대해 정상 동작함을 최초로 실측했다는 의미가 있다
+(이전까지는 일회용 격리 MinIO의 인공 테스트 파일 2개로만 검증됐었다).
+
+### k6 부하 테스트 스크립트의 실제 버그 3건 발견·수정 (커밋 `418c801`)
+
+실제로 `scripts/load-test/upload-analyze.js`를 이 저장소의 실제 docker-compose 스택에 대해
+반복 실행하는 과정에서, 스크립트 자체의 결함 3건을 발견해 즉시 고쳤다:
+
+1. **`useVideoLlm: true` 고정** — Video LLM이 실제로 켜져 있는(`VIDEO_LLM_ENABLED=true` +
+   실제 API 키) 이 환경에서 VU를 올려 돌리면, 부하 테스트의 목적과 무관하게 실제 유료 NVIDIA
+   호출이 동시다발적으로 발생하는 상태였다. 기본값을 `false`로 바꾸고 `USE_VIDEO_LLM=true`로만
+   opt-in하도록 수정.
+2. **`gracefulStop: "30s"` 고정** — `MAX_POLL_SECONDS`(기본 180초)보다 훨씬 짧아, 실제로
+   VUS=3짜리 최초 smoke 실행에서 "0 complete, N interrupted"로 관측됐다. 서버는 실제로
+   정상 처리 중이었는데(DB 확인으로 검증) 테스트 하네스 자체의 타이밍 버그 때문에 마치 아무
+   것도 안 끝난 것처럼 보이는 착시였다. `MAX_POLL_SECONDS + 30초`로 자동 계산하도록 수정.
+3. **매 반복(iteration)마다 재로그인** — VUS=4~8로 실제로 돌려본 결과, 로그인 rate limit
+   (이메일 기준, 기본 5/10분)이 몇 초 안에 소진되어 "login 200" 체크가 최대 97.76% 실패로
+   나타났다. 이 상태에서는 겉보기엔 "부하 테스트를 실행했다"처럼 보이지만 실제로는 인증
+   계층에서 대부분 막혀 분석 파이프라인에는 거의 부하가 가지 않는다 — 07-20 노트에 남아 있던
+   "테스트 진행을 위해 Redis rate-limit 키를 수동 삭제해야 했다"는 워크어라운드의 근본 원인이
+   바로 이것이었다. VU당 최초 1회만 로그인하도록 고쳐 해결했다.
+
+### 첫 정식(제한적) 부하 실행
+
+세 버그를 고친 뒤 `analysis-worker`를 반드시 함께 띄워야 한다는 것도 실측으로 확인했다
+(이 compose 토폴로지는 기본적으로 `backend`=API 전용, 실행은 `analysis-worker`가
+전담 — `ANALYSIS_DISPATCH_LOCAL_ON_RUN`이 backend에서는 기본 `false`다. 이 사실을 모르고
+`backend`만 띄운 채 첫 테스트를 돌렸다가 job이 전부 `QUEUED`에 멈춰 있는 것을 보고서야
+발견했다). `VUS=4 RAMP_UP=10s HOLD=90s MAX_POLL_SECONDS=150`(VU 4는 `analysis-worker`의
+기본 `ANALYSIS_EXECUTOR_MAX_POOL_SIZE=4`와 정확히 같은 경계값)로 실행한 결과
+`http_req_failed=0.00%`, `analysis_time_to_complete_seconds` 평균 약 74초(useVideoLlm/
+useOpenAi 모두 false, 실제 ffmpeg/faster-whisper/MediaPipe로 처리).
+
+### 남은 것 — VUS 5+ 부하 측정은 별개의 rate limit 벽에 막혀 미완료
+
+VUS를 5~10으로 올려 큐잉/백프레셔가 실제로 발동하는 지점을 찾으려 했으나, 로그인(이메일
+기준)·가입(클라이언트 IP 기준) rate limit 용량이 각각 기본 5/10분이라 `AUTO_SIGNUP=true`로도
+동일 IP에서 도네이션하는 이 실행 방식으로는 인증 계층에서 먼저 막혔다. `docker-compose.yml`에
+`LOGIN_RATE_LIMIT_CAPACITY`/`SIGNUP_RATE_LIMIT_CAPACITY`를 오버라이드할 env 배선이 없어
+이번 회차에는 완화하지 못했다(대신 Redis rate-limit 키를 직접 삭제하는 임시 방편을 시도했으나,
+재시도가 반복되며 곧바로 재소진돼 근본 해결은 아니었다). 상세 내용과 다음 시도를 위한 선택지
+세 가지(compose에 env 노출 / 계정 사전 생성 / 테스트 직전 Redis 키 삭제)는
+`scripts/load-test/README.md`의 "2026-07-21 VUS 5+ 시도에서 발견한 별개의 차단 요인" 절에
+기록했다. **VUS 5+ 정식 처리량 리포트(p50/p95, 큐잉 발동 지점)는 이번 회차에도 완성하지 못한
+과제로 남는다.**
+
+검증에 사용한 테스트 계정 20개는 전부 회원탈퇴 API로 정리했고(로컬/MinIO/DB 전부 삭제 확인),
+사용한 컨테이너는 전부 원래 상태(정지)로 되돌렸다.
+
+### 다음 우선순위 갱신
+
+1. **VUS 5+ 부하 리포트 완성** — 위 세 가지 선택지 중 하나로 rate limit 벽을 우회한 뒤,
+   실제 큐잉/백프레셔 발동 지점과 p50/p95 완료 시간을 측정하는 것이 이제 가장 구체적이고
+   비용이 낮은 다음 단계다.
+2. **staging 인프라 구축** — 여전히 사용자의 실제 서버/클라우드 계정 결정이 필요한, 로컬로는
+   대체할 수 없는 유일한 항목(기존 데이터 백필의 "다른 사람의 실제 운영 데이터" 시나리오,
+   여러 대의 물리적으로 분리된 인스턴스 간 네트워크 장애 시나리오 등).
+3. **Video LLM 실사용 관측을 계속 지켜보기** — 이전 업데이트와 동일하게 유효.

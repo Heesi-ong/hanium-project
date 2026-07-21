@@ -162,6 +162,29 @@ describe("UploadPage", () => {
         }
     });
 
+    it("resets the native file input's value even when the selected file is rejected", async () => {
+        // 확장자/용량 오류로 거부된 뒤에도 value가 그대로면, 같은(잘못된) 파일을 다시
+        // 고르거나 문제를 고친 같은 이름의 파일을 다시 선택했을 때 change 이벤트가
+        // 발생하지 않아 아무 반응도 일어나지 않는다.
+        const valueSetterSpy = vi.spyOn(window.HTMLInputElement.prototype, "value", "set");
+
+        try {
+            const { container } = renderUploadPage();
+            const fileInput = container.querySelector('input[type="file"]');
+            const rejectedFile = new File(["not-video"], "memo.txt", { type: "text/plain" });
+
+            valueSetterSpy.mockClear();
+            fireEvent.change(fileInput, { target: { files: [rejectedFile] } });
+
+            expect(
+                await screen.findByText("mp4, mov, avi, mkv 형식의 영상 파일만 업로드할 수 있습니다.")
+            ).toBeInTheDocument();
+            expect(valueSetterSpy).toHaveBeenCalledWith("");
+        } finally {
+            valueSetterSpy.mockRestore();
+        }
+    });
+
     it("shows a queued cancel button and cancels the job immediately", async () => {
         const jobId = "job-cancel-test";
 

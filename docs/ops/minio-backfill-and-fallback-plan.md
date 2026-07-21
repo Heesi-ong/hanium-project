@@ -1,7 +1,7 @@
 # MinIO 백필 리허설 & 로컬 디스크 fallback 제거 계획
 
 작성일: 2026-07-16
-상태: **격리 로컬 MinIO 백필 및 API+2워커 E2E 완료 / prod B안 적용 완료(2026-07-17).** staging 기존 데이터 백필은 아직 수행하지 않았습니다.
+상태: **B안 최종 확정 및 운영 검증 체크리스트 3항목 전부 실측 완료(2026-07-21).** C안(로컬 완전 제거)은 MinIO 분산화/관리형 전환 전까지 의도적으로 계속 보류. staging 기존 데이터 백필만 외부 인프라 필요로 남음.
 
 ## 결정 기록 (2026-07-16)
 
@@ -117,7 +117,19 @@ mc ls --recursive "local/$MINIO_BUCKET_NAME/results/" | wc -l
 - 이에 따라 기존 로컬 전용 파일이나 백필 누락 파일은 잘못된 MinIO URL 다운로드를 최대 60초 기다리지 않고 즉시 로컬 경로로 전환됨
 - analysis-engine 다운로드는 `ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB`(기본 500MB)를 응답 `Content-Length`와 실제 누적 바이트에 모두 적용하고, HTTP 오류·중간 연결 실패·빈 응답·크기 초과 시 부분 파일과 HTTP 연결을 즉시 정리함
 
-### 남은 staging 기록
+### 2026-07-21 로컬 환경 MinIO 강제 중단 실측 (B안 체크리스트 항목 1 완료)
 
-- 실제 기존 `storage/uploads`, `storage/results` 파일 수와 MinIO 객체 수 대조
-- MinIO 강제 중단 상태에서 신규 업로드와 결과 저장이 성공으로 오인되지 않는지 확인
+- 목적: "B안 운영 검증 체크리스트"의 미확인 항목("MinIO 강제 중단 상태에서 업로드가 명확한 에러로 실패하는지")을 실제로 실행해 확인.
+- 구성: 로컬 docker-compose 스택(`mysql`, `redis`, `minio`, `minio-init`, `backend`)을 `STORAGE_OBJECT_WRITE_REQUIRED=true STORAGE_OBJECT_READ_PREFERRED=true`(prod와 동일한 정책값)로 기동. 전용 테스트 계정(`fallback-test-20260721@example.com`)으로 실제 HTTP API 호출.
+- **1) 베이스라인(MinIO 정상)**: `POST /api/analysis/upload`로 `sample-demo.mp4` 업로드 → 200 성공. 로컬 디스크(`/storage/uploads/<jobId>/original.mp4`)와 MinIO(`hanium-storage/uploads/<jobId>/original.mp4`, `mc ls`로 직접 확인) 양쪽에 정확히 미러링됨을 확인.
+- **2) 장애 주입**: `docker compose stop minio` 후 동일한 업로드 재시도 → **500 `FILE_UPLOAD_FAILED`**로 명확히 실패(조용한 로컬 전용 성공이 발생하지 않음). 실패한 job의 로컬 디렉터리는 생성됐지만 파일 없이 비어 있음(스트릭트 실패 시 `localFileStorage.deleteFileIfExists()`로 정리됨을 실제로 확인). MySQL에서도 해당 `job_id`로 `analysis_jobs` 행이 전혀 없음을 확인(`@Transactional` 롤백으로 DB에도 흔적이 남지 않음).
+- **3) 복구**: `docker compose start minio`로 MinIO 재기동 후 동일 업로드 재시도 → 200 성공으로 즉시 복귀(코드 변경/재배포 불필요).
+- **4) 삭제 경로 동시 검증(부가 확인)**: 테스트 계정을 `DELETE /api/users/me`로 회원탈퇴 → 베이스라인/복구 두 건의 로컬 파일·MinIO 객체·DB 행(job, user) 전부 삭제됨을 재조회로 확인. 이번 세션에서 고친 파일삭제 트랜잭션 원자성 수정(커밋 `9c436d8`)이 strict 모드에서도 정상 동작함을 부가로 재확인.
+- 테스트 종료 후 이번 검증을 위해 기동한 컨테이너를 전부 원래 상태(정지)로 되돌렸다. 정책 오버라이드는 `docker compose up` 실행 시점의 환경변수로만 주입했고 `.env`/컴포즈 파일은 수정하지 않았다.
+- **결론**: B안 체크리스트의 첫 항목(강제 중단 시 명확한 실패)은 로컬 환경에서 실제로 검증 완료. 남은 두 항목(2워커 E2E, 정리 스케줄러의 이중 삭제)은 07-17에 이미 별도로 검증됐으므로(위 "2026-07-17 격리 API + 2워커 E2E" 및 07-16/07-18 스케줄러 분산 락·삭제 관련 기록 참고), **B안 체크리스트 3항목이 전부 실측 완료** 상태가 됐다.
+
+## 결정 (2026-07-21 최종화)
+
+- **local/dev(A안)·prod(B안) 이원화를 그대로 확정**한다. B안의 핵심 약속("MinIO 없이는 새 파일이 조용히 로컬에만 남지 않는다")이 오늘 실제 장애 주입으로 검증됐으므로, 더 이상 "미결정" 상태가 아니다.
+- **C안(로컬 완전 제거)은 여전히 보류**한다. 이유는 07-16 결정과 동일 — MinIO가 단일 인스턴스(SPOF)인 현재 구성에서 로컬 fallback을 완전히 없애면 MinIO 장애가 곧 서비스 전체 장애가 된다. MinIO를 분산 모드(다중 노드)로 구성하거나 관리형 오브젝트 스토리지(AWS S3 등 SLA가 있는 서비스)로 이전한 뒤에 C안을 재검토한다. 지금 트리거 조건을 명시해 둔다: **"MinIO 자체가 더 이상 단일 장애점이 아니게 되는 시점"**이 C안 재검토 조건이다.
+- **staging 기존 데이터 백필**은 여전히 staging 인프라가 있어야 실행 가능하므로 로컬 검증 범위 밖으로 남는다. 이 항목만 "외부 환경 필요" 사유로 계속 대기한다.

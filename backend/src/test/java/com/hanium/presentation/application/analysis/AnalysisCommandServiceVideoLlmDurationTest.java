@@ -90,6 +90,8 @@ class AnalysisCommandServiceVideoLlmDurationTest {
                 .thenReturn(successEngineResponse());
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenAnswer(invocation -> videoLlmResponse(invocation.getArgument(0, VideoLlmEngineRequest.class).jobId()));
+        when(userRateLimiter.wouldAllow(eq("video-llm-monthly"), anyString())).thenReturn(true);
+        when(userRateLimiter.wouldAllow(eq("video-llm-daily"), any(Long.class))).thenReturn(true);
         when(userRateLimiter.tryConsume(eq("video-llm-monthly"), anyString())).thenReturn(true);
         when(userRateLimiter.tryConsume(eq("video-llm-daily"), any(Long.class))).thenReturn(true);
         when(resultCommandService.saveEngineResultsAndCompact(anyString(), any(), any()))
@@ -141,11 +143,16 @@ class AnalysisCommandServiceVideoLlmDurationTest {
 
     @Test
     void skipsVideoLlmEngineCallWhenMonthlyBudgetExceeded() {
-        when(userRateLimiter.tryConsume(eq("video-llm-monthly"), anyString())).thenReturn(false);
+        when(userRateLimiter.wouldAllow(eq("video-llm-monthly"), anyString())).thenReturn(false);
 
         analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
 
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
+        // 월간 예산이 이미 소진된 것으로 확인(peek)되면, 일일/월간 어느 쪽도 실제로
+        // 소비(tryConsume)하지 않아야 합니다 - 사용자의 일일 한도를 헛되이 낭비하지
+        // 않는 것이 이번 수정의 핵심입니다.
+        verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
+        verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
 
         ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
         verify(resultCommandService).saveEngineResultsAndCompact(eq(JOB_ID), any(), captor.capture());
@@ -160,12 +167,15 @@ class AnalysisCommandServiceVideoLlmDurationTest {
 
     @Test
     void skipsVideoLlmEngineCallWhenDailyBudgetExceeded() {
-        when(userRateLimiter.tryConsume(eq("video-llm-daily"), any(Long.class))).thenReturn(false);
+        when(userRateLimiter.wouldAllow(eq("video-llm-daily"), any(Long.class))).thenReturn(false);
 
         analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
 
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
-        // 일일 한도로 이미 막혔으므로 공용 월간 카운터는 소비하지 않아야 합니다.
+        // 일일 한도로 이미 막혔으므로(peek 단계) 공용 월간 카운터는 peek조차 하지 않고,
+        // 어느 쪽도 실제로 소비하지 않아야 합니다.
+        verify(userRateLimiter, never()).wouldAllow(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
 
         ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
@@ -183,6 +193,8 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     void skipsVideoLlmEngineCallWithDisabledReasonWhenUserTurnsOffVideoLlm() {
         analysisCommandService.runAnalysis(JOB_ID, 1L, false, false);
 
+        verify(userRateLimiter, never()).wouldAllow(eq("video-llm-daily"), any(Long.class));
+        verify(userRateLimiter, never()).wouldAllow(eq("video-llm-monthly"), anyString());
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
@@ -201,6 +213,8 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     void consumesMonthlyBudgetAndCallsVideoLlmEngineWhenBudgetAllows() {
         analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
 
+        verify(userRateLimiter).wouldAllow(eq("video-llm-daily"), any(Long.class));
+        verify(userRateLimiter).wouldAllow(eq("video-llm-monthly"), anyString());
         verify(userRateLimiter).tryConsume(eq("video-llm-daily"), any(Long.class));
         verify(userRateLimiter).tryConsume(eq("video-llm-monthly"), anyString());
         verify(videoLlmEngineClient).analyze(any(VideoLlmEngineRequest.class));

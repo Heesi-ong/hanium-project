@@ -72,6 +72,21 @@ public class UserRateLimiter {
         }
     }
 
+    // 여러 예산(예: 일일/월간)을 순서대로 확인해야 할 때, tryConsume으로 먼저
+    // 소비해버리면 뒤쪽 예산이 이미 소진된 경우에도 앞쪽 예산을 헛되이 낭비하게
+    // 된다. wouldAllow는 실제로 소비하지 않고 "지금 소비하면 허용될지"만 확인해,
+    // 모든 예산을 먼저 peek한 뒤 실제 소비는 전부 통과했을 때만 하도록 한다.
+    public boolean wouldAllow(String bucketName, Long userId) {
+        return wouldAllow(bucketName, "user:" + userId);
+    }
+
+    public boolean wouldAllow(String bucketName, String key) {
+        RateLimitProperties.Limit limit = resolveLimit(bucketName);
+        validateLimit(bucketName, limit);
+
+        return getCurrentCount(bucketName, key) < limit.capacity();
+    }
+
     public long getCurrentCount(String bucketName, String key) {
         String rateLimitKey = buildKey(bucketName, key);
 

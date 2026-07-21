@@ -27,6 +27,11 @@ const AUTO_SIGNUP = (__ENV.AUTO_SIGNUP || "false").toLowerCase() === "true";
 const EMAIL = __ENV.LOAD_EMAIL || "loadtest@example.com";
 const PASSWORD = __ENV.LOAD_PASSWORD || "LoadTest!2026aB";
 const VIDEO_PATH = __ENV.VIDEO_PATH || "../../sample-demo.mp4";
+// 기본값 false: VIDEO_LLM_ENABLED=true + 실제 API 키가 설정된 환경(dev 포함)에서
+// 이 스크립트를 VU를 올려 돌리면 useVideoLlm:true가 고정돼 있을 경우 실제 유료
+// 외부 API 호출이 동시다발적으로 발생한다. 부하 테스트의 목적(큐/백프레셔 검증)에는
+// 필요하지 않으므로 명시적으로 켜고 싶을 때만 USE_VIDEO_LLM=true로 opt-in한다.
+const USE_VIDEO_LLM = (__ENV.USE_VIDEO_LLM || "false").toLowerCase() === "true";
 // 분석 완료까지 최대 몇 초 폴링할지. 초과하면 미완료로 기록(실패가 아니라 관측치).
 const MAX_POLL_SECONDS = Number(__ENV.MAX_POLL_SECONDS || 180);
 const POLL_INTERVAL_SECONDS = Number(__ENV.POLL_INTERVAL_SECONDS || 3);
@@ -45,6 +50,15 @@ const analysisFailed = new Counter("analysis_failed");
 // 잘못 표시되는 문제가 있었습니다.
 const timeToComplete = new Trend("analysis_time_to_complete_seconds");
 
+// gracefulStop이 MAX_POLL_SECONDS(기본 180s)보다 짧으면, HOLD 구간 막바지에 시작된
+// 반복은 분석 완료를 끝까지 기다려보지도 못하고 강제 종료된다 - "0 complete, N
+// interrupted"로 나와 마치 아무 것도 안 끝난 것처럼 보이는 착시가 생긴다(실제로는
+// 서버에서 정상 처리 중이었을 수 있음). 기본값을 MAX_POLL_SECONDS + 30초 여유로
+// 자동 계산하고, 필요하면 GRACEFUL_STOP_SECONDS로 직접 override할 수 있게 한다.
+const GRACEFUL_STOP_SECONDS = Number(
+    __ENV.GRACEFUL_STOP_SECONDS || MAX_POLL_SECONDS + 30
+);
+
 export const options = {
     // 기본은 아주 가벼운 smoke. 진짜 부하는 STAGES 환경변수나 아래 값을 조정하세요.
     scenarios: {
@@ -56,7 +70,7 @@ export const options = {
                 { duration: __ENV.HOLD || "1m", target: Number(__ENV.VUS || 3) },
                 { duration: "15s", target: 0 },
             ],
-            gracefulStop: "30s",
+            gracefulStop: `${GRACEFUL_STOP_SECONDS}s`,
         },
     },
     thresholds: {
@@ -80,7 +94,19 @@ function unwrap(res) {
     }
 }
 
+// VU 하나가 여러 반복(iteration)을 도는 동안, 로그인 성공 여부를 모듈 스코프에 기억해
+// 재사용합니다. k6는 같은 VU 안에서 모듈 스코프 변수를 반복 간에 그대로 유지하고
+// 쿠키 자(jar)도 VU별로 유지되므로, 반복마다 다시 로그인할 필요가 없습니다. 이전에는
+// 매 반복 로그인을 시도해 VUS를 조금만 올려도(예: 4) 로그인 rate limit이 몇 초 만에
+// 소진되어, 실제로는 로그인 요청 대부분이 429로 막히고("login 200" 체크가 거의 전부
+// 실패) 정작 검증하려던 분석 파이프라인 부하는 몇 건밖에 발생하지 않는 문제가 있었다.
+let loggedIn = false;
+
 function ensureLoggedIn() {
+    if (loggedIn) {
+        return true;
+    }
+
     // k6는 VU별 쿠키 자(jar)를 자동 관리하므로, 로그인 성공 시 httpOnly 세션 쿠키가 유지됩니다.
     let email = EMAIL;
     if (AUTO_SIGNUP) {
@@ -98,7 +124,8 @@ function ensureLoggedIn() {
         { headers: { "Content-Type": "application/json" }, tags: { name: "login" } }
     );
     check(res, { "login 200": (r) => r.status === 200 });
-    return res.status === 200;
+    loggedIn = res.status === 200;
+    return loggedIn;
 }
 
 export default function () {
@@ -132,7 +159,7 @@ export default function () {
     // 2) 분석 실행. 큐 상한 초과 시 429 → 정상 방어로 카운트.
     const runRes = http.post(
         `${BASE_URL}/api/analysis/${jobId}/run`,
-        JSON.stringify({ useVideoLlm: true, useOpenAi: false }),
+        JSON.stringify({ useVideoLlm: USE_VIDEO_LLM, useOpenAi: false }),
         { headers: { "Content-Type": "application/json" }, tags: { name: "run" } }
     );
     if (runRes.status === 429) {

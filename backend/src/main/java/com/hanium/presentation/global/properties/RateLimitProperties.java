@@ -11,6 +11,7 @@ public record RateLimitProperties(
         Limit signup,
         Limit passwordResetRequest,
         Limit passwordResetConfirm,
+        Limit passwordChange,
         Limit openaiMonthly,
         Limit videoLlmMonthly,
         Limit videoLlmDaily,

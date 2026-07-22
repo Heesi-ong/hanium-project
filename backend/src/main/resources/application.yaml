@@ -237,6 +237,11 @@ rate-limit:
     # 다른 인증 관련 엔드포인트와의 일관성을 위해 IP 기준으로도 제한합니다.
     capacity: ${PASSWORD_RESET_CONFIRM_RATE_LIMIT_CAPACITY:10}
     refill-minutes: ${PASSWORD_RESET_CONFIRM_RATE_LIMIT_REFILL_MINUTES:10}
+  password-change:
+    # 로그인된 세션(예: 탈취된 쿠키)에서 현재 비밀번호를 무차별 대입으로 맞춰보는
+    # 시도를 막기 위해 사용자 기준으로 제한합니다.
+    capacity: ${PASSWORD_CHANGE_RATE_LIMIT_CAPACITY:10}
+    refill-minutes: ${PASSWORD_CHANGE_RATE_LIMIT_REFILL_MINUTES:10}
   openai-monthly:
     capacity: ${OPENAI_MONTHLY_RATE_LIMIT_CAPACITY:1000}
     refill-minutes: ${OPENAI_MONTHLY_RATE_LIMIT_REFILL_MINUTES:44640}

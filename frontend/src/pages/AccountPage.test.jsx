@@ -11,6 +11,7 @@ const authMock = vi.hoisted(() => ({
 
 const apiMock = vi.hoisted(() => ({
     withdrawAccount: vi.fn(),
+    changePassword: vi.fn(),
 }));
 
 const toastMock = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ vi.mock("../context/AuthContext", () => ({
 
 vi.mock("../api/authApi", () => ({
     withdrawAccount: apiMock.withdrawAccount,
+    changePassword: apiMock.changePassword,
 }));
 
 vi.mock("../context/ToastContext", () => ({
@@ -57,6 +59,7 @@ describe("AccountPage", () => {
     beforeEach(() => {
         authMock.logout.mockReset();
         apiMock.withdrawAccount.mockReset();
+        apiMock.changePassword.mockReset();
         toastMock.showToast.mockReset();
         confirmMock.confirm.mockReset();
         confirmMock.confirm.mockResolvedValue(true);
@@ -119,5 +122,111 @@ describe("AccountPage", () => {
 
         expect(await screen.findByText("비밀번호가 올바르지 않습니다.")).toBeInTheDocument();
         expect(authMock.logout).not.toHaveBeenCalled();
+    });
+
+    it("hides the password change form until the toggle button is clicked", () => {
+        renderAccountPage();
+
+        expect(screen.queryByLabelText("현재 비밀번호")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }));
+
+        expect(screen.getByLabelText("현재 비밀번호")).toBeInTheDocument();
+    });
+
+    it("changes the password and resets the form on success", async () => {
+        apiMock.changePassword.mockResolvedValue({ success: true });
+
+        renderAccountPage();
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }));
+
+        fireEvent.change(screen.getByLabelText("현재 비밀번호"), {
+            target: { value: "oldPassword123" },
+        });
+        fireEvent.change(screen.getByLabelText(/^새 비밀번호(?!\s*확인)/), {
+            target: { value: "newPassword456" },
+        });
+        fireEvent.change(screen.getByLabelText("새 비밀번호 확인"), {
+            target: { value: "newPassword456" },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경 저장" }));
+
+        await waitFor(() => {
+            expect(apiMock.changePassword).toHaveBeenCalledWith({
+                currentPassword: "oldPassword123",
+                newPassword: "newPassword456",
+            });
+            expect(toastMock.showToast).toHaveBeenCalledWith(
+                "비밀번호가 변경되었습니다.",
+                "success"
+            );
+        });
+
+        // 성공하면 폼이 다시 접혀야 합니다(입력값도 초기화된 채로).
+        expect(screen.queryByLabelText("현재 비밀번호")).not.toBeInTheDocument();
+    });
+
+    it("shows a client-side error and does not call the API when the new password confirmation does not match", async () => {
+        renderAccountPage();
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }));
+
+        fireEvent.change(screen.getByLabelText("현재 비밀번호"), {
+            target: { value: "oldPassword123" },
+        });
+        fireEvent.change(screen.getByLabelText(/^새 비밀번호(?!\s*확인)/), {
+            target: { value: "newPassword456" },
+        });
+        fireEvent.change(screen.getByLabelText("새 비밀번호 확인"), {
+            target: { value: "somethingElse789" },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경 저장" }));
+
+        expect(
+            await screen.findByText("새 비밀번호가 서로 일치하지 않습니다.")
+        ).toBeInTheDocument();
+        expect(apiMock.changePassword).not.toHaveBeenCalled();
+    });
+
+    it("shows the server error message when changing the password fails", async () => {
+        apiMock.changePassword.mockRejectedValue({
+            message: "비밀번호가 올바르지 않습니다.",
+        });
+
+        renderAccountPage();
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }));
+
+        fireEvent.change(screen.getByLabelText("현재 비밀번호"), {
+            target: { value: "wrongCurrentPassword" },
+        });
+        fireEvent.change(screen.getByLabelText(/^새 비밀번호(?!\s*확인)/), {
+            target: { value: "newPassword456" },
+        });
+        fireEvent.change(screen.getByLabelText("새 비밀번호 확인"), {
+            target: { value: "newPassword456" },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경 저장" }));
+
+        expect(await screen.findByText("비밀번호가 올바르지 않습니다.")).toBeInTheDocument();
+        // 실패했으므로 폼은 계속 열려 있어야 합니다.
+        expect(screen.getByLabelText("현재 비밀번호")).toBeInTheDocument();
+    });
+
+    it("clears the form and hides it when cancel is clicked", () => {
+        renderAccountPage();
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }));
+        fireEvent.change(screen.getByLabelText("현재 비밀번호"), {
+            target: { value: "oldPassword123" },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "취소" }));
+
+        expect(screen.queryByLabelText("현재 비밀번호")).not.toBeInTheDocument();
     });
 });

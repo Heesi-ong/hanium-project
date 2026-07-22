@@ -8,6 +8,7 @@ import Spinner from "../components/Spinner";
 const HomePage = lazy(() => import("../pages/HomePage"));
 const UploadPage = lazy(() => import("../pages/UploadPage"));
 const ResultListPage = lazy(() => import("../pages/ResultListPage"));
+const ResultComparePage = lazy(() => import("../pages/ResultComparePage"));
 const ResultDetailPage = lazy(() => import("../pages/ResultDetailPage"));
 const LoginPage = lazy(() => import("../pages/LoginPage"));
 const SignupPage = lazy(() => import("../pages/SignupPage"));
@@ -52,6 +53,7 @@ function AppRoutes() {
                         <Route path="/onboarding" element={<OnboardingPage />} />
                         <Route path="/upload" element={<UploadPage />} />
                         <Route path="/results" element={<ResultListPage />} />
+                        <Route path="/results/compare" element={<ResultComparePage />} />
                         <Route path="/results/:jobId" element={<ResultDetailPage />} />
                         <Route path="/account" element={<AccountPage />} />
                         <Route path="/status" element={<StatusPage />} />

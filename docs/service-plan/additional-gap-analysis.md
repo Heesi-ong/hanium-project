@@ -737,3 +737,34 @@ env 배선을 추가해(다른 rate limit 카테고리는 이미 노출돼 있�
    analysis-engine 모델 풀/CPU 제한만 늘리는 것은 증상만 가릴 위험이 있다.
 2. **staging 인프라 구축** — 이전 업데이트와 동일하게 유효.
 3. **Video LLM 실사용 관측을 계속 지켜보기** — 이전 업데이트와 동일하게 유효.
+
+---
+
+## 업데이트: 2026-07-22 서킷브레이커 근본 원인 확정 및 수정 완료 (커밋 `2be7f7d`)
+
+위 1번 항목을 완료했다. **근본 원인**: Resilience4j `slow-call-duration-threshold`가 명시
+설정 없이 기본값 60초로 동작하고 있었다. 로컬 부하 실측(VUS=4/8/16)의 정상 분석 완료 시간이
+89~281초로 이 기본값을 항상 초과했기 때문에, **실제로 실패한 호출은 단 한 건도 없었는데도**
+성공 응답들이 계속 "느린 호출"로 집계돼 슬라이딩 윈도우 내 slow-call 비율이 기본 임계치
+100%에 도달하는 즉시 회로가 열렸다. 회로가 열리면 대기 중이던 작업들이 `CallNotPermittedException`
+으로 실제 호출 시도조차 못 해보고 한꺼번에 `FAILED` 처리됐다 — failure-rate가 아니라
+**정상 장기 요청을 장애로 오판한 slow-call 설정**이 지난 업데이트에서 발견한 연쇄 실패의
+전체 원인이었다.
+
+**수정**: analysis-engine은 5분(HTTP read timeout 10분보다 낮게), video-llm-engine은 110초로
+`slow-call-duration-threshold`를 명시하고 두 값 모두 docker-compose.yml env로 노출했다.
+재발 시 즉시 원인을 구분할 수 있도록 `CircuitBreakerEventLogger`(상태 전이·호출 거부 이벤트
+로그)와 `AnalysisEngineClient`의 원본 예외 타입/메시지 로깅도 함께 추가했다.
+
+**검증**: `AnalysisEngineClientCircuitBreakerTest` 및 backend 전체 테스트 통과. 수정된 이미지로
+재빌드 후 동일한 VUS=16 부하를 다시 실행해 실사용 재현 — 수정 전 10/16건이 동일 타임스탬프에
+일괄 실패했던 것과 대조적으로, **수정 후 16/16건 전부 `COMPLETED`, 실패 0건, 서킷브레이커
+상태 전이/거부 이벤트도 전 구간에서 0건**임을 확인했다.
+
+### 다음 우선순위 재갱신 (2026-07-22)
+
+1. **staging 인프라 구축** — 사용자의 실제 서버/클라우드 계정 결정이 필요한, 로컬로는 대체할
+   수 없는 유일한 항목으로 남아 있다.
+2. **Video LLM 실사용 관측을 계속 지켜보기** — 이전 업데이트와 동일하게 유효.
+3. **video-llm-engine 서킷브레이커의 slow-call 임계치(110초)도 동일한 방식으로 실측 검증할
+   가치가 있다** — analysis-engine과 달리 아직 실부하로 재현·검증되지 않았다.

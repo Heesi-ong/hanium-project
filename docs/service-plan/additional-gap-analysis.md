@@ -766,5 +766,10 @@ env 배선을 추가해(다른 rate limit 카테고리는 이미 노출돼 있�
 1. **staging 인프라 구축** — 사용자의 실제 서버/클라우드 계정 결정이 필요한, 로컬로는 대체할
    수 없는 유일한 항목으로 남아 있다.
 2. **Video LLM 실사용 관측을 계속 지켜보기** — 이전 업데이트와 동일하게 유효.
-3. **video-llm-engine 서킷브레이커의 slow-call 임계치(110초)도 동일한 방식으로 실측 검증할
-   가치가 있다** — analysis-engine과 달리 아직 실부하로 재현·검증되지 않았다.
+3. **video-llm-engine 서킷브레이커의 slow-call 임계치(110초) 실부하 검증** — 상태 부분해결로
+   낮춤(2026-07-22, 커밋 `73a23cd`). `VideoLlmEngineClient`에도 analysis-engine과 동일한
+   원본 예외 타입/메시지 로깅을 추가하고, `slowCallDurationThreshold==110s`/
+   `slowCallRateThreshold==100%` 설정값 자체를 검증하는 테스트를 추가해 **설정 레벨**에서는
+   대칭을 맞췄다. 다만 analysis-engine처럼 **실제 부하로 재현·검증**하려면 `VIDEO_LLM_ENABLED=true`
+   상태에서 실제 유료 NVIDIA API를 동시다발적으로 호출해야 해서, 이번 회차에서는 비용 문제로
+   보류했다. 진행하려면 사용자의 명시적 승인(예산 한도, 실행 시점)이 먼저 필요하다.

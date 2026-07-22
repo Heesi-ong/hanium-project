@@ -62,11 +62,19 @@ public class CoachChatService {
     public CoachConversationResponse getMessages(String jobId, Long ownerId) {
         validateOwnership(jobId, ownerId);
 
+        UserRateLimiter.Usage dailyUsage = userRateLimiter.getUsage("coach-daily", ownerId);
+
         return coachConversationRepository.findByJobId(jobId)
                 .map(conversation -> CoachConversationResponse.from(
-                        coachMessageRepository.findAllByConversationIdOrderByCreatedAtAsc(conversation.getId())
+                        coachMessageRepository.findAllByConversationIdOrderByCreatedAtAsc(conversation.getId()),
+                        dailyUsage.used(),
+                        dailyUsage.capacity()
                 ))
-                .orElseGet(() -> CoachConversationResponse.from(List.of()));
+                .orElseGet(() -> CoachConversationResponse.from(
+                        List.of(),
+                        dailyUsage.used(),
+                        dailyUsage.capacity()
+                ));
     }
 
     // 대화 내용만 비우고 CoachConversation 자체는 남겨둡니다(jobId 기준 unique라 재생성할
@@ -99,7 +107,7 @@ public class CoachChatService {
         );
 
         return transactionTemplate.execute(
-                status -> saveReplyAndBuildResponse(prepared.conversationId(), reply)
+                status -> saveReplyAndBuildResponse(prepared.conversationId(), reply, ownerId)
         );
     }
 
@@ -137,7 +145,8 @@ public class CoachChatService {
 
     private CoachConversationResponse saveReplyAndBuildResponse(
             Long conversationId,
-            OpenAiCoachReplyResponse reply
+            OpenAiCoachReplyResponse reply,
+            Long ownerId
     ) {
         coachMessageRepository.save(CoachMessage.assistantMessage(
                 conversationId,
@@ -147,8 +156,9 @@ public class CoachChatService {
 
         List<CoachMessage> messages = coachMessageRepository
                 .findAllByConversationIdOrderByCreatedAtAsc(conversationId);
+        UserRateLimiter.Usage dailyUsage = userRateLimiter.getUsage("coach-daily", ownerId);
 
-        return CoachConversationResponse.from(messages);
+        return CoachConversationResponse.from(messages, dailyUsage.used(), dailyUsage.capacity());
     }
 
     private record PreparedCoachMessage(

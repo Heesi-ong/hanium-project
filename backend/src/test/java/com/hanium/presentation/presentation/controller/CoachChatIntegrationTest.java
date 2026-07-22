@@ -179,6 +179,52 @@ class CoachChatIntegrationTest {
     }
 
     @Test
+    void messageHistoryIncludesDailyUsageThatIncrementsAsMessagesAreSent() throws Exception {
+        String token = signupAndLogin("coach-usage@example.com");
+        Long ownerId = userRepository.findByEmail("coach-usage@example.com")
+                .map(User::getId)
+                .orElseThrow();
+        createCompletedJobFixture(COMPLETED_JOB_ID, ownerId);
+
+        ResponseEntity<String> initialHistoryResponse = restTemplate.exchange(
+                "/api/results/" + COMPLETED_JOB_ID + "/coach/messages",
+                HttpMethod.GET,
+                new HttpEntity<>(authorizedHeaders(token)),
+                String.class
+        );
+        JsonNode initialUsage = objectMapper.readTree(initialHistoryResponse.getBody())
+                .path("data").path("dailyUsage");
+        assertThat(initialUsage.path("used").asLong()).isEqualTo(0L);
+        assertThat(initialUsage.path("capacity").asLong()).isEqualTo(2L);
+        assertThat(initialUsage.path("remaining").asLong()).isEqualTo(2L);
+
+        JsonNode afterSendUsage = objectMapper.readTree(
+                        sendMessage(token, COMPLETED_JOB_ID, "질문 1").getBody()
+                )
+                .path("data").path("dailyUsage");
+        assertThat(afterSendUsage.path("used").asLong()).isEqualTo(1L);
+        assertThat(afterSendUsage.path("remaining").asLong()).isEqualTo(1L);
+
+        // 한도(2개)를 초과해 429가 발생해도, 해당 사용자의 사용량 자체는 계속 조회할 수 있어야 합니다.
+        assertThat(sendMessage(token, COMPLETED_JOB_ID, "질문 2").getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(sendMessage(token, COMPLETED_JOB_ID, "질문 3").getStatusCode())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+
+        ResponseEntity<String> finalHistoryResponse = restTemplate.exchange(
+                "/api/results/" + COMPLETED_JOB_ID + "/coach/messages",
+                HttpMethod.GET,
+                new HttpEntity<>(authorizedHeaders(token)),
+                String.class
+        );
+        JsonNode finalUsage = objectMapper.readTree(finalHistoryResponse.getBody())
+                .path("data").path("dailyUsage");
+        // 한도를 초과해 거절된 시도도 Redis 카운터 자체는 증가시키므로(공유 INCR 카운터),
+        // 성공 2회 + 거절 1회로 used는 3이 되고 remaining은 0으로 클램프됩니다.
+        assertThat(finalUsage.path("used").asLong()).isEqualTo(3L);
+        assertThat(finalUsage.path("remaining").asLong()).isEqualTo(0L);
+    }
+
+    @Test
     void ownerCanResetConversationAndHistoryBecomesEmpty() throws Exception {
         String token = signupAndLogin("coach-reset-owner@example.com");
         Long ownerId = userRepository.findByEmail("coach-reset-owner@example.com")

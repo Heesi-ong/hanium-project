@@ -10,6 +10,7 @@ import java.util.Map;
 
 public record ResultSummaryResponse(
         String jobId,
+        String memo,
         AnalysisStatus status,
         String statusDescription,
         String originalFileName,
@@ -53,6 +54,7 @@ public record ResultSummaryResponse(
 
         return new ResultSummaryResponse(
                 analysisJob.getJobId(),
+                analysisJob.getMemo(),
                 analysisJob.getStatus(),
                 analysisJob.getStatus().getDescription(),
                 uploadedVideo.getOriginalFileName(),
@@ -79,6 +81,7 @@ public record ResultSummaryResponse(
 
         return new ResultSummaryResponse(
                 analysisJob.getJobId(),
+                analysisJob.getMemo(),
                 analysisJob.getStatus(),
                 analysisJob.getStatus().getDescription(),
                 "(영상 정보 없음)",
@@ -105,6 +108,7 @@ public record ResultSummaryResponse(
     ) {
         return new ResultSummaryResponse(
                 analysisJob.getJobId(),
+                analysisJob.getMemo(),
                 analysisJob.getStatus(),
                 analysisJob.getStatus().getDescription(),
                 uploadedVideo.getOriginalFileName(),

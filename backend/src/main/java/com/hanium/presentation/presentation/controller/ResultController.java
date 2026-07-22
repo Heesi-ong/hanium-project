@@ -10,7 +10,9 @@ import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
 import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.VideoAccessTokenResponse;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.data.domain.Page;
@@ -25,7 +27,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -93,6 +97,21 @@ public class ResultController {
                 "분석 결과 조회가 완료되었습니다.",
                 response
         );
+    }
+
+    @PatchMapping("/{jobId}/memo")
+    public ApiResponse<Void> updateMemo(
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication,
+            @Valid @RequestBody UpdateMemoRequest request
+    ) {
+        resultCommandService.updateMemo(
+                jobId,
+                getCurrentUserId(authentication),
+                request.memo()
+        );
+
+        return ApiResponse.success("메모가 저장되었습니다.");
     }
 
     @DeleteMapping("/{jobId}")
@@ -211,5 +230,11 @@ public class ResultController {
             case AVI -> MediaType.valueOf("video/x-msvideo");
             case MKV -> MediaType.valueOf("video/x-matroska");
         };
+    }
+
+    public record UpdateMemoRequest(
+            @Size(max = 200, message = "메모는 200자를 초과할 수 없습니다.")
+            String memo
+    ) {
     }
 }

@@ -46,6 +46,11 @@ public class AnalysisJob {
     @Column(name = "use_openai", nullable = false)
     private boolean useOpenAi = true;
 
+    // 사용자가 결과 목록에서 구분하기 위해 직접 붙이는 메모(제목)입니다. 분석 파이프라인과는
+    // 무관하며, 비어있으면 목록 화면이 파일명 등으로 대체 표시합니다.
+    @Column(length = 200)
+    private String memo;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -107,6 +112,14 @@ public class AnalysisJob {
 
     public boolean isUseOpenAi() {
         return useOpenAi;
+    }
+
+    public String getMemo() {
+        return memo;
+    }
+
+    public void updateMemo(String memo) {
+        this.memo = memo;
     }
 
     public LocalDateTime getCreatedAt() {

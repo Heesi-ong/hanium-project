@@ -104,6 +104,11 @@ export async function getResult(jobId) {
     return unwrapApiResponse(response);
 }
 
+export async function updateResultMemo(jobId, memo) {
+    const response = await apiClient.patch(`/api/results/${jobId}/memo`, { memo });
+    return unwrapApiResponse(response);
+}
+
 export async function getVideoAccessToken(jobId) {
     const response = await apiClient.post(
         `/api/results/${jobId}/video-access-token`

@@ -9,11 +9,15 @@ import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngine
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
 public class AnalysisEngineClient extends AbstractEngineClient {
+
+    private static final Logger log = LoggerFactory.getLogger(AnalysisEngineClient.class);
 
     public AnalysisEngineClient(
             RestClient.Builder restClientBuilder,
@@ -37,6 +41,12 @@ public class AnalysisEngineClient extends AbstractEngineClient {
                     .retrieve()
                     .body(AnalysisEngineResponse.class);
         } catch (Exception e) {
+            log.error(
+                    "analysis-engine 호출 실패: exceptionType={} message={}",
+                    e.getClass().getName(),
+                    e.getMessage(),
+                    e
+            );
             throw new BusinessException(
                     ErrorCode.ANALYSIS_ENGINE_ERROR,
                     "기본 분석 엔진 호출에 실패했습니다: " + e.getMessage()

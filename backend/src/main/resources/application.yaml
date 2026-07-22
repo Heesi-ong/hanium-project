@@ -104,6 +104,8 @@ resilience4j:
         sliding-window-size: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE:10}
         minimum-number-of-calls: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_MINIMUM_NUMBER_OF_CALLS:5}
         failure-rate-threshold: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_FAILURE_RATE_THRESHOLD:50}
+        slow-call-duration-threshold: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_DURATION_THRESHOLD:5m}
+        slow-call-rate-threshold: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_RATE_THRESHOLD:100}
         wait-duration-in-open-state: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_WAIT_DURATION_IN_OPEN_STATE:30s}
         permitted-number-of-calls-in-half-open-state: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_HALF_OPEN_PERMITTED_CALLS:3}
         automatic-transition-from-open-to-half-open-enabled: ${ANALYSIS_ENGINE_CIRCUIT_BREAKER_AUTO_HALF_OPEN_ENABLED:true}
@@ -112,6 +114,8 @@ resilience4j:
         sliding-window-size: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE:10}
         minimum-number-of-calls: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_MINIMUM_NUMBER_OF_CALLS:5}
         failure-rate-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_FAILURE_RATE_THRESHOLD:50}
+        slow-call-duration-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_DURATION_THRESHOLD:110s}
+        slow-call-rate-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_RATE_THRESHOLD:100}
         wait-duration-in-open-state: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_WAIT_DURATION_IN_OPEN_STATE:30s}
         permitted-number-of-calls-in-half-open-state: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_HALF_OPEN_PERMITTED_CALLS:3}
         automatic-transition-from-open-to-half-open-enabled: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_AUTO_HALF_OPEN_ENABLED:true}

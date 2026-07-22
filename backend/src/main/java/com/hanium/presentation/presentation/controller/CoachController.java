@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,6 +58,16 @@ public class CoachController {
         );
 
         return ApiResponse.success("메시지가 전송되었습니다.", response);
+    }
+
+    @DeleteMapping("/messages")
+    public ApiResponse<Void> resetConversation(
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            Authentication authentication
+    ) {
+        coachChatService.resetConversation(jobId, getCurrentUserId(authentication));
+
+        return ApiResponse.success("대화가 초기화되었습니다.");
     }
 
     private Long getCurrentUserId(Authentication authentication) {

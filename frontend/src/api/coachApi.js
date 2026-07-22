@@ -11,3 +11,8 @@ export async function sendCoachMessage(jobId, content) {
     });
     return unwrapApiResponse(response);
 }
+
+export async function resetCoachConversation(jobId) {
+    const response = await apiClient.delete(`/api/results/${jobId}/coach/messages`);
+    return unwrapApiResponse(response);
+}

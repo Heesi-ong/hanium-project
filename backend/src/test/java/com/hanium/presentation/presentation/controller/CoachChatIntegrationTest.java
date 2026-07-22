@@ -178,11 +178,95 @@ class CoachChatIntegrationTest {
         assertThat(limitedResponse.getBody()).contains("AI 코치 일일 메시지 한도");
     }
 
+    @Test
+    void ownerCanResetConversationAndHistoryBecomesEmpty() throws Exception {
+        String token = signupAndLogin("coach-reset-owner@example.com");
+        Long ownerId = userRepository.findByEmail("coach-reset-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+        createCompletedJobFixture(COMPLETED_JOB_ID, ownerId);
+
+        assertThat(sendMessage(token, COMPLETED_JOB_ID, "질문 1").getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> resetResponse = resetConversation(token, COMPLETED_JOB_ID);
+
+        assertThat(resetResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode resetBody = objectMapper.readTree(resetResponse.getBody());
+        assertThat(resetBody.path("message").asText()).isEqualTo("대화가 초기화되었습니다.");
+
+        ResponseEntity<String> historyResponse = restTemplate.exchange(
+                "/api/results/" + COMPLETED_JOB_ID + "/coach/messages",
+                HttpMethod.GET,
+                new HttpEntity<>(authorizedHeaders(token)),
+                String.class
+        );
+        JsonNode historyBody = objectMapper.readTree(historyResponse.getBody());
+        assertThat(historyBody.path("data").path("messages")).isEmpty();
+
+        // 초기화 후에도 대화(CoachConversation) 자체는 남아있어 다음 메시지를 그대로 이어받습니다.
+        assertThat(coachConversationRepository.findByJobId(COMPLETED_JOB_ID)).isPresent();
+    }
+
+    @Test
+    void resettingConversationDoesNotResetTheDailyMessageLimit() throws Exception {
+        String token = signupAndLogin("coach-reset-limit@example.com");
+        Long ownerId = userRepository.findByEmail("coach-reset-limit@example.com")
+                .map(User::getId)
+                .orElseThrow();
+        createCompletedJobFixture(COMPLETED_JOB_ID, ownerId);
+
+        assertThat(sendMessage(token, COMPLETED_JOB_ID, "질문 1").getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(sendMessage(token, COMPLETED_JOB_ID, "질문 2").getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resetConversation(token, COMPLETED_JOB_ID).getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> limitedResponse = sendMessage(token, COMPLETED_JOB_ID, "질문 3");
+
+        assertThat(limitedResponse.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
+    void resettingConversationWithoutAnyMessagesIsANoOp() throws Exception {
+        String token = signupAndLogin("coach-reset-empty@example.com");
+        Long ownerId = userRepository.findByEmail("coach-reset-empty@example.com")
+                .map(User::getId)
+                .orElseThrow();
+        createCompletedJobFixture(COMPLETED_JOB_ID, ownerId);
+
+        ResponseEntity<String> resetResponse = resetConversation(token, COMPLETED_JOB_ID);
+
+        assertThat(resetResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void otherUserCannotResetOwnersConversation() throws Exception {
+        String otherToken = signupAndLogin("coach-reset-other@example.com");
+        Long ownerId = userRepository.save(User.create(
+                        "coach-reset-owner-without-login@example.com",
+                        "encoded-password"
+                ))
+                .getId();
+        createCompletedJobFixture(OTHER_OWNER_JOB_ID, ownerId);
+
+        ResponseEntity<String> response = resetConversation(otherToken, OTHER_OWNER_JOB_ID);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).contains("ANALYSIS_JOB_ACCESS_DENIED");
+    }
+
     private ResponseEntity<String> sendMessage(String token, String jobId, String content) {
         return restTemplate.exchange(
                 "/api/results/" + jobId + "/coach/messages",
                 HttpMethod.POST,
                 new HttpEntity<>(Map.of("content", content), authorizedHeaders(token)),
+                String.class
+        );
+    }
+
+    private ResponseEntity<String> resetConversation(String token, String jobId) {
+        return restTemplate.exchange(
+                "/api/results/" + jobId + "/coach/messages",
+                HttpMethod.DELETE,
+                new HttpEntity<>(authorizedHeaders(token)),
                 String.class
         );
     }

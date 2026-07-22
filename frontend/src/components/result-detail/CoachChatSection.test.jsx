@@ -6,17 +6,30 @@ import CoachChatSection from "./CoachChatSection";
 const coachApiMock = vi.hoisted(() => ({
     getCoachMessages: vi.fn(),
     sendCoachMessage: vi.fn(),
+    resetCoachConversation: vi.fn(),
+}));
+
+const confirmMock = vi.hoisted(() => ({
+    confirm: vi.fn(),
 }));
 
 vi.mock("../../api/coachApi", () => ({
     getCoachMessages: coachApiMock.getCoachMessages,
     sendCoachMessage: coachApiMock.sendCoachMessage,
+    resetCoachConversation: coachApiMock.resetCoachConversation,
+}));
+
+vi.mock("../../context/ConfirmContext", () => ({
+    useConfirm: () => confirmMock.confirm,
 }));
 
 describe("CoachChatSection", () => {
     beforeEach(() => {
         coachApiMock.getCoachMessages.mockReset();
         coachApiMock.sendCoachMessage.mockReset();
+        coachApiMock.resetCoachConversation.mockReset();
+        confirmMock.confirm.mockReset();
+        confirmMock.confirm.mockResolvedValue(true);
         window.HTMLElement.prototype.scrollIntoView = vi.fn();
     });
 
@@ -116,5 +129,97 @@ describe("CoachChatSection", () => {
                 screen.getByText("AI 코치 일일 메시지 한도를 초과했습니다. 내일 다시 시도해주세요.")
             ).toBeInTheDocument();
         });
+    });
+
+    it("does not show the reset button when there is no conversation yet", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({ data: { messages: [] } });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        await waitFor(() => {
+            expect(coachApiMock.getCoachMessages).toHaveBeenCalled();
+        });
+
+        expect(screen.queryByRole("button", { name: "대화 초기화" })).not.toBeInTheDocument();
+    });
+
+    it("asks for confirmation and clears the conversation when reset is confirmed", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [
+                    { role: "USER", content: "질문입니다.", generationMode: null },
+                    { role: "ASSISTANT", content: "답변입니다.", generationMode: "MOCK" },
+                ],
+            },
+        });
+        coachApiMock.resetCoachConversation.mockResolvedValue({ success: true });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        await waitFor(() => {
+            expect(screen.getByText("답변입니다.")).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "대화 초기화" }));
+
+        await waitFor(() => {
+            expect(confirmMock.confirm).toHaveBeenCalled();
+            expect(coachApiMock.resetCoachConversation).toHaveBeenCalledWith("job-1");
+        });
+
+        expect(screen.queryByText("답변입니다.")).not.toBeInTheDocument();
+        expect(screen.getByText("아직 대화가 없습니다. 궁금한 점을 물어보세요.")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "대화 초기화" })).not.toBeInTheDocument();
+    });
+
+    it("does not reset the conversation when confirmation is cancelled", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [
+                    { role: "USER", content: "질문입니다.", generationMode: null },
+                ],
+            },
+        });
+        confirmMock.confirm.mockResolvedValue(false);
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        await waitFor(() => {
+            expect(screen.getByText("질문입니다.")).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "대화 초기화" }));
+
+        await waitFor(() => {
+            expect(confirmMock.confirm).toHaveBeenCalled();
+        });
+        expect(coachApiMock.resetCoachConversation).not.toHaveBeenCalled();
+        expect(screen.getByText("질문입니다.")).toBeInTheDocument();
+    });
+
+    it("shows an error message when resetting the conversation fails", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [
+                    { role: "USER", content: "질문입니다.", generationMode: null },
+                ],
+            },
+        });
+        coachApiMock.resetCoachConversation.mockRejectedValue({
+            message: "대화 초기화 중 오류가 발생했습니다.",
+        });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        await waitFor(() => {
+            expect(screen.getByText("질문입니다.")).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "대화 초기화" }));
+
+        await waitFor(() => {
+            expect(screen.getByText("대화 초기화 중 오류가 발생했습니다.")).toBeInTheDocument();
+        });
+        expect(screen.getByText("질문입니다.")).toBeInTheDocument();
     });
 });

@@ -69,6 +69,18 @@ public class CoachChatService {
                 .orElseGet(() -> CoachConversationResponse.from(List.of()));
     }
 
+    // 대화 내용만 비우고 CoachConversation 자체는 남겨둡니다(jobId 기준 unique라 재생성할
+    // 이유가 없고, 다음 메시지 전송 시 findByJobId로 그대로 재사용됩니다). 일일 메시지 한도는
+    // ownerId 기준으로 별도 관리되므로 초기화해도 한도가 리셋되지는 않습니다.
+    @Transactional
+    public void resetConversation(String jobId, Long ownerId) {
+        validateOwnership(jobId, ownerId);
+
+        coachConversationRepository.findByJobId(jobId)
+                .ifPresent(conversation ->
+                        coachMessageRepository.deleteAllByConversationId(conversation.getId()));
+    }
+
     // OpenAI 호출(openai.timeout-ms, 최대 15초)은 DB 트랜잭션 밖에서 실행합니다. 이 메서드
     // 전체를 하나의 @Transactional로 감싸면, OpenAI 응답이 느려질 때마다 그 시간만큼 Hikari
     // 커넥션을 붙잡고 있게 되어 커넥션 풀(기본 10개)이 동시 코치채팅 요청 몇 건만으로도

@@ -833,6 +833,18 @@ pre {
   gap: 10px;
 }
 
+.card-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-header-row h2 {
+  margin: 0;
+}
+
 .score-panel {
   display: grid;
   grid-template-columns: 0.9fr 2fr;

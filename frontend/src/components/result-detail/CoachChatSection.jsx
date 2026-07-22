@@ -19,6 +19,7 @@ function getGenerationModeLabel(mode) {
 function CoachChatSection({ jobId, isCompleted, disabledReason }) {
     const confirm = useConfirm();
     const [messages, setMessages] = useState([]);
+    const [dailyUsage, setDailyUsage] = useState(null);
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
     const [resetting, setResetting] = useState(false);
@@ -33,6 +34,7 @@ function CoachChatSection({ jobId, isCompleted, disabledReason }) {
 
             const response = await getCoachMessages(jobId);
             setMessages(response.data?.messages || []);
+            setDailyUsage(response.data?.dailyUsage || null);
         } catch (requestError) {
             setError(getErrorMessage(
                 requestError,
@@ -71,6 +73,7 @@ function CoachChatSection({ jobId, isCompleted, disabledReason }) {
 
             const response = await sendCoachMessage(jobId, content);
             setMessages(response.data?.messages || []);
+            setDailyUsage(response.data?.dailyUsage || null);
             setInput("");
         } catch (requestError) {
             setError(getErrorMessage(
@@ -143,8 +146,18 @@ function CoachChatSection({ jobId, isCompleted, disabledReason }) {
                 )}
             </div>
             <p className="muted-text">
-                이 분석 결과에 대해 궁금한 점을 물어보세요. 하루에 보낼 수 있는 메시지 수는 제한되어 있습니다.
+                이 분석 결과에 대해 궁금한 점을 물어보세요.
+                {" "}
+                {dailyUsage
+                    ? `오늘 ${dailyUsage.capacity}회 중 ${Math.min(dailyUsage.used, dailyUsage.capacity)}회 사용했습니다. (남은 횟수: ${dailyUsage.remaining}회)`
+                    : "하루에 보낼 수 있는 메시지 수는 제한되어 있습니다."}
             </p>
+
+            {dailyUsage && dailyUsage.remaining <= 0 && (
+                <StateMessage type="error">
+                    오늘 사용 가능한 AI 코치 메시지를 모두 사용했습니다. 내일 다시 시도해주세요.
+                </StateMessage>
+            )}
 
             {loading ? (
                 <p className="muted-text">대화 이력을 불러오는 중입니다.</p>
@@ -184,13 +197,13 @@ function CoachChatSection({ jobId, isCompleted, disabledReason }) {
                     placeholder="예: 말이 너무 빠른가요? 어떻게 개선할 수 있을까요?"
                     value={input}
                     onChange={(event) => setInput(event.target.value)}
-                    disabled={sending}
+                    disabled={sending || dailyUsage?.remaining <= 0}
                 />
 
                 <button
                     type="submit"
                     className="primary-button"
-                    disabled={sending || !input.trim()}
+                    disabled={sending || !input.trim() || dailyUsage?.remaining <= 0}
                 >
                     {sending ? "전송 중..." : "전송"}
                 </button>

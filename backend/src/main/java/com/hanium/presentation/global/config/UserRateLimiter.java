@@ -87,6 +87,19 @@ public class UserRateLimiter {
         return getCurrentCount(bucketName, key) < limit.capacity();
     }
 
+    public Usage getUsage(String bucketName, Long userId) {
+        return getUsage(bucketName, "user:" + userId);
+    }
+
+    public Usage getUsage(String bucketName, String key) {
+        RateLimitProperties.Limit limit = resolveLimit(bucketName);
+        validateLimit(bucketName, limit);
+
+        long used = getCurrentCount(bucketName, key);
+
+        return new Usage(used, limit.capacity());
+    }
+
     public long getCurrentCount(String bucketName, String key) {
         String rateLimitKey = buildKey(bucketName, key);
 
@@ -176,5 +189,14 @@ public class UserRateLimiter {
             int count,
             Instant expiresAt
     ) {
+    }
+
+    public record Usage(
+            long used,
+            long capacity
+    ) {
+        public long remaining() {
+            return Math.max(0, capacity - used);
+        }
     }
 }

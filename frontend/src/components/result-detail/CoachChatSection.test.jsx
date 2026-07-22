@@ -131,6 +131,72 @@ describe("CoachChatSection", () => {
         });
     });
 
+    it("shows the daily usage summary when it is included in the history response", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [],
+                dailyUsage: { used: 1, capacity: 5, remaining: 4 },
+            },
+        });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        expect(
+            await screen.findByText(/오늘 5회 중 1회 사용했습니다\. \(남은 횟수: 4회\)/)
+        ).toBeInTheDocument();
+    });
+
+    it("disables the input and shows a notice once the daily usage is exhausted", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [],
+                dailyUsage: { used: 5, capacity: 5, remaining: 0 },
+            },
+        });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        expect(
+            await screen.findByText("오늘 사용 가능한 AI 코치 메시지를 모두 사용했습니다. 내일 다시 시도해주세요.")
+        ).toBeInTheDocument();
+        expect(
+            screen.getByPlaceholderText("예: 말이 너무 빠른가요? 어떻게 개선할 수 있을까요?")
+        ).toBeDisabled();
+        expect(screen.getByRole("button", { name: "전송" })).toBeDisabled();
+    });
+
+    it("updates the daily usage summary after sending a message", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [],
+                dailyUsage: { used: 0, capacity: 5, remaining: 5 },
+            },
+        });
+        coachApiMock.sendCoachMessage.mockResolvedValue({
+            data: {
+                messages: [
+                    { role: "USER", content: "질문입니다.", generationMode: null },
+                    { role: "ASSISTANT", content: "답변입니다.", generationMode: "MOCK" },
+                ],
+                dailyUsage: { used: 1, capacity: 5, remaining: 4 },
+            },
+        });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        await screen.findByText(/오늘 5회 중 0회 사용했습니다\. \(남은 횟수: 5회\)/);
+
+        fireEvent.change(
+            screen.getByPlaceholderText("예: 말이 너무 빠른가요? 어떻게 개선할 수 있을까요?"),
+            { target: { value: "질문입니다." } }
+        );
+        fireEvent.click(screen.getByRole("button", { name: "전송" }));
+
+        expect(
+            await screen.findByText(/오늘 5회 중 1회 사용했습니다\. \(남은 횟수: 4회\)/)
+        ).toBeInTheDocument();
+    });
+
     it("does not show the reset button when there is no conversation yet", async () => {
         coachApiMock.getCoachMessages.mockResolvedValue({ data: { messages: [] } });
 

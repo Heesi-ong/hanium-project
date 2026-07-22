@@ -1,0 +1,2 @@
+ALTER TABLE analysis_jobs
+    ADD COLUMN memo VARCHAR(200) NULL;

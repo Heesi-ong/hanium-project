@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { deleteResult, getResults } from "../api/analysisApi";
+import { deleteResult, getResults, updateResultMemo } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 import AnimatedSection from "../components/motion/AnimatedSection";
 import EmptyState from "../components/EmptyState";
@@ -88,6 +88,10 @@ function ResultListPage() {
     const [hasMore, setHasMore] = useState(false);
     const [deletingJobId, setDeletingJobId] = useState("");
     const [error, setError] = useState("");
+    const [editingMemoJobId, setEditingMemoJobId] = useState("");
+    const [memoDraft, setMemoDraft] = useState("");
+    const [savingMemo, setSavingMemo] = useState(false);
+    const [memoError, setMemoError] = useState("");
     // 비교 모드에서는 완료된 결과 중 최대 2개까지만 선택할 수 있습니다. jobId만 저장해두고
     // 실제 비교 페이지로 넘길 때 results에서 전체 객체를 다시 찾아 state로 전달합니다.
     const [compareMode, setCompareMode] = useState(false);
@@ -138,6 +142,7 @@ function ResultListPage() {
 
                 const searchableText = [
                     result.jobId,
+                    result.memo,
                     result.fileName,
                     result.originalFileName,
                     result.videoFileName,
@@ -286,6 +291,45 @@ function ResultListPage() {
         }
     }
 
+    function startEditingMemo(result) {
+        setEditingMemoJobId(result.jobId);
+        setMemoDraft(result.memo || "");
+        setMemoError("");
+    }
+
+    function cancelEditingMemo() {
+        setEditingMemoJobId("");
+        setMemoDraft("");
+        setMemoError("");
+    }
+
+    async function handleSaveMemo(jobId) {
+        try {
+            setSavingMemo(true);
+            setMemoError("");
+
+            const trimmedMemo = memoDraft.trim();
+            await updateResultMemo(jobId, trimmedMemo);
+
+            setResults((prevResults) =>
+                prevResults.map((result) =>
+                    result.jobId === jobId
+                        ? { ...result, memo: trimmedMemo || null }
+                        : result
+                )
+            );
+            setEditingMemoJobId("");
+            setMemoDraft("");
+        } catch (requestError) {
+            setMemoError(getErrorMessage(
+                requestError,
+                "메모 저장 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setSavingMemo(false);
+        }
+    }
+
     function toggleCompareMode() {
         setCompareMode((previous) => !previous);
         setSelectedForCompare([]);
@@ -337,6 +381,7 @@ function ResultListPage() {
 
     function getResultTitle(result) {
         return (
+            result?.memo ||
             result?.fileName ||
             result?.originalFileName ||
             result?.videoFileName ||
@@ -589,7 +634,51 @@ function ResultListPage() {
                                                 비교 대상으로 선택
                                             </label>
                                         )}
-                                        <h3>{getResultTitle(result)}</h3>
+                                        {editingMemoJobId === result.jobId ? (
+                                            <div className="memo-edit-row">
+                                                <input
+                                                    type="text"
+                                                    className="text-input"
+                                                    value={memoDraft}
+                                                    maxLength={200}
+                                                    placeholder="예: 1차 리허설, 발표 대회 최종본"
+                                                    onChange={(event) => setMemoDraft(event.target.value)}
+                                                    disabled={savingMemo}
+                                                    autoFocus
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="primary-button"
+                                                    onClick={() => handleSaveMemo(result.jobId)}
+                                                    disabled={savingMemo}
+                                                >
+                                                    {savingMemo ? "저장 중..." : "저장"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="secondary-button"
+                                                    onClick={cancelEditingMemo}
+                                                    disabled={savingMemo}
+                                                >
+                                                    취소
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="memo-display-row">
+                                                <h3>{getResultTitle(result)}</h3>
+                                                <button
+                                                    type="button"
+                                                    className="memo-edit-button"
+                                                    onClick={() => startEditingMemo(result)}
+                                                    aria-label="메모 편집"
+                                                >
+                                                    메모 편집
+                                                </button>
+                                            </div>
+                                        )}
+                                        {editingMemoJobId === result.jobId && (
+                                            <StateMessage type="error">{memoError}</StateMessage>
+                                        )}
                                         <p>
                                             jobId: <code>{result.jobId}</code>
                                         </p>

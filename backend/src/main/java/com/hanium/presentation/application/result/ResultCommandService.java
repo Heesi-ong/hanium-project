@@ -179,6 +179,19 @@ public class ResultCommandService {
     }
 
     @Transactional
+    public void updateMemo(String jobId, Long ownerId, String memo) {
+        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+
+        if (!ownerId.equals(analysisJob.getOwnerId())) {
+            throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
+        }
+
+        String normalizedMemo = memo == null || memo.isBlank() ? null : memo.trim();
+        analysisJob.updateMemo(normalizedMemo);
+    }
+
+    @Transactional
     public void deleteResult(String jobId, Long ownerId) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));

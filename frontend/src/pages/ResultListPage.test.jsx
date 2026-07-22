@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
@@ -7,11 +7,13 @@ import ResultListPage from "./ResultListPage";
 const analysisApiMock = vi.hoisted(() => ({
     deleteResult: vi.fn(),
     getResults: vi.fn(),
+    updateResultMemo: vi.fn(),
 }));
 
 vi.mock("../api/analysisApi", () => ({
     deleteResult: analysisApiMock.deleteResult,
     getResults: analysisApiMock.getResults,
+    updateResultMemo: analysisApiMock.updateResultMemo,
 }));
 
 vi.mock("../context/ConfirmContext", () => ({
@@ -54,6 +56,7 @@ describe("ResultListPage", () => {
     beforeEach(() => {
         analysisApiMock.deleteResult.mockReset();
         analysisApiMock.getResults.mockReset();
+        analysisApiMock.updateResultMemo.mockReset();
         analysisApiMock.getResults.mockResolvedValue({
             data: {
                 content: [
@@ -236,5 +239,71 @@ describe("ResultListPage", () => {
         expect(await screen.findByTestId("compare-destination")).toHaveTextContent(
             "job-list-pipeline-openai,job-list-real-video-llm"
         );
+    });
+
+    it("edits a result's memo and shows it as the card title instead of the filename", async () => {
+        analysisApiMock.updateResultMemo.mockResolvedValue({ success: true });
+
+        renderResultListPage();
+
+        await screen.findByText("presentation.mp4");
+
+        const card = screen.getByText("presentation.mp4").closest("article");
+        fireEvent.click(within(card).getByRole("button", { name: "메모 편집" }));
+
+        fireEvent.change(within(card).getByPlaceholderText("예: 1차 리허설, 발표 대회 최종본"), {
+            target: { value: "1차 리허설" },
+        });
+        fireEvent.click(within(card).getByRole("button", { name: "저장" }));
+
+        await waitFor(() => {
+            expect(analysisApiMock.updateResultMemo).toHaveBeenCalledWith(
+                "job-list-video-llm",
+                "1차 리허설"
+            );
+        });
+        expect(await screen.findByText("1차 리허설")).toBeInTheDocument();
+        expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
+    });
+
+    it("cancels memo editing without calling the API", async () => {
+        renderResultListPage();
+
+        await screen.findByText("presentation.mp4");
+
+        const card = screen.getByText("presentation.mp4").closest("article");
+        fireEvent.click(within(card).getByRole("button", { name: "메모 편집" }));
+        fireEvent.change(within(card).getByPlaceholderText("예: 1차 리허설, 발표 대회 최종본"), {
+            target: { value: "저장 안 할 메모" },
+        });
+        fireEvent.click(within(card).getByRole("button", { name: "취소" }));
+
+        expect(analysisApiMock.updateResultMemo).not.toHaveBeenCalled();
+        expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
+    });
+
+    it("shows an error message when saving the memo fails", async () => {
+        analysisApiMock.updateResultMemo.mockRejectedValue({
+            message: "메모 저장 중 오류가 발생했습니다.",
+        });
+
+        renderResultListPage();
+
+        await screen.findByText("presentation.mp4");
+
+        const card = screen.getByText("presentation.mp4").closest("article");
+        fireEvent.click(within(card).getByRole("button", { name: "메모 편집" }));
+        fireEvent.change(within(card).getByPlaceholderText("예: 1차 리허설, 발표 대회 최종본"), {
+            target: { value: "실패할 메모" },
+        });
+        fireEvent.click(within(card).getByRole("button", { name: "저장" }));
+
+        expect(
+            await screen.findByText("메모 저장 중 오류가 발생했습니다.")
+        ).toBeInTheDocument();
+        // 저장이 실패하면 편집 폼이 그대로 열려 있어야 합니다(입력값도 유지된 채로).
+        expect(
+            within(card).getByPlaceholderText("예: 1차 리허설, 발표 대회 최종본")
+        ).toHaveValue("실패할 메모");
     });
 });

@@ -1770,6 +1770,44 @@ button.observation-seek::before {
   font-size: 13px;
 }
 
+.memo-display-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.memo-display-row h3 {
+  margin: 0 0 6px;
+}
+
+.memo-edit-button {
+  border: none;
+  background: transparent;
+  color: #FF934D;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-bottom: 6px;
+}
+
+.memo-edit-button:hover {
+  text-decoration: underline;
+}
+
+.memo-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.memo-edit-row .text-input {
+  flex: 1;
+  min-width: 160px;
+}
+
 .result-data-issue {
   margin: 0;
   padding: 10px 14px;

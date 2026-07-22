@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { deleteResult, getResults } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 import AnimatedSection from "../components/motion/AnimatedSection";
@@ -76,6 +76,7 @@ const SORT_OPTIONS = [
 
 function ResultListPage() {
     const confirm = useConfirm();
+    const navigate = useNavigate();
     const [results, setResults] = useState([]);
     const [filterStatus, setFilterStatus] = useState("ALL");
     const [generationModeFilter, setGenerationModeFilter] = useState("ALL");
@@ -87,6 +88,10 @@ function ResultListPage() {
     const [hasMore, setHasMore] = useState(false);
     const [deletingJobId, setDeletingJobId] = useState("");
     const [error, setError] = useState("");
+    // 비교 모드에서는 완료된 결과 중 최대 2개까지만 선택할 수 있습니다. jobId만 저장해두고
+    // 실제 비교 페이지로 넘길 때 results에서 전체 객체를 다시 찾아 state로 전달합니다.
+    const [compareMode, setCompareMode] = useState(false);
+    const [selectedForCompare, setSelectedForCompare] = useState([]);
 
     const completedCount = results.filter(
         (result) => result.status === "COMPLETED"
@@ -279,6 +284,37 @@ function ResultListPage() {
         } finally {
             setDeletingJobId("");
         }
+    }
+
+    function toggleCompareMode() {
+        setCompareMode((previous) => !previous);
+        setSelectedForCompare([]);
+    }
+
+    function toggleSelectForCompare(jobId) {
+        setSelectedForCompare((previous) => {
+            if (previous.includes(jobId)) {
+                return previous.filter((id) => id !== jobId);
+            }
+
+            if (previous.length >= 2) {
+                return previous;
+            }
+
+            return [...previous, jobId];
+        });
+    }
+
+    function handleCompareNavigate() {
+        const selectedResults = selectedForCompare
+            .map((jobId) => results.find((result) => result.jobId === jobId))
+            .filter(Boolean);
+
+        if (selectedResults.length !== 2) {
+            return;
+        }
+
+        navigate("/results/compare", { state: { results: selectedResults } });
     }
 
     function getGenerationMode(result) {
@@ -488,7 +524,32 @@ function ResultListPage() {
                 >
                     새로고침
                 </button>
+
+                <button
+                    type="button"
+                    className={compareMode ? "filter-button active" : "secondary-button"}
+                    onClick={toggleCompareMode}
+                >
+                    {compareMode ? "비교 모드 종료" : "결과 비교"}
+                </button>
             </div>
+
+            {compareMode && (
+                <div className="compare-action-bar" role="status">
+                    <span>
+                        비교할 완료된 결과를 2개 선택하세요 ({selectedForCompare.length}/2)
+                    </span>
+
+                    <button
+                        type="button"
+                        className="primary-button"
+                        onClick={handleCompareNavigate}
+                        disabled={selectedForCompare.length !== 2}
+                    >
+                        선택한 결과 비교하기
+                    </button>
+                </div>
+            )}
 
             <AnimatedSection>
             {filteredResults.length === 0 ? (
@@ -501,11 +562,33 @@ function ResultListPage() {
                     {filteredResults.map((result) => {
                         const totalScore = getTotalScore(result);
                         const isDeleting = deletingJobId === result.jobId;
+                        const isSelectedForCompare = selectedForCompare.includes(result.jobId);
+                        const isCompareEligible = result.status === "COMPLETED";
+                        const isCompareDisabled =
+                            !isSelectedForCompare && selectedForCompare.length >= 2;
 
                         return (
-                            <article className="result-card" key={result.jobId}>
+                            <article
+                                className={
+                                    compareMode && isSelectedForCompare
+                                        ? "result-card compare-selected"
+                                        : "result-card"
+                                }
+                                key={result.jobId}
+                            >
                                 <div className="result-card-header">
                                     <div>
+                                        {compareMode && isCompareEligible && (
+                                            <label className="compare-select-checkbox">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelectedForCompare}
+                                                    disabled={isCompareDisabled}
+                                                    onChange={() => toggleSelectForCompare(result.jobId)}
+                                                />
+                                                비교 대상으로 선택
+                                            </label>
+                                        )}
                                         <h3>{getResultTitle(result)}</h3>
                                         <p>
                                             jobId: <code>{result.jobId}</code>

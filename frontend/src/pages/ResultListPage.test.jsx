@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import ResultListPage from "./ResultListPage";
 
@@ -26,6 +26,26 @@ function renderResultListPage() {
     return render(
         <MemoryRouter>
             <ResultListPage />
+        </MemoryRouter>
+    );
+}
+
+// 비교하기를 누르면 실제로 /results/compare로 이동하며 선택한 두 결과가
+// navigation state에 담겨 전달되는지 확인하기 위한 목적지 스텁입니다.
+function CompareDestinationStub() {
+    const location = useLocation();
+    const jobIds = (location.state?.results || []).map((result) => result.jobId);
+
+    return <div data-testid="compare-destination">{jobIds.join(",")}</div>;
+}
+
+function renderResultListPageWithCompareRoute() {
+    return render(
+        <MemoryRouter initialEntries={["/results"]}>
+            <Routes>
+                <Route path="/results" element={<ResultListPage />} />
+                <Route path="/results/compare" element={<CompareDestinationStub />} />
+            </Routes>
         </MemoryRouter>
     );
 }
@@ -171,5 +191,50 @@ describe("ResultListPage", () => {
             expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
             expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
         });
+    });
+
+    it("only allows selecting up to two results for comparison and enables the compare button at exactly two", async () => {
+        renderResultListPage();
+
+        await screen.findByText("presentation.mp4");
+
+        fireEvent.click(screen.getByRole("button", { name: "결과 비교" }));
+
+        const checkboxes = screen.getAllByRole("checkbox", { name: "비교 대상으로 선택" });
+        expect(checkboxes).toHaveLength(3);
+
+        const compareButton = screen.getByRole("button", { name: "선택한 결과 비교하기" });
+        expect(compareButton).toBeDisabled();
+
+        fireEvent.click(checkboxes[0]);
+        expect(compareButton).toBeDisabled();
+
+        fireEvent.click(checkboxes[1]);
+        expect(compareButton).toBeEnabled();
+
+        // 이미 2개를 고른 상태에서 세 번째를 눌러도 선택되지 않아야 합니다.
+        fireEvent.click(checkboxes[2]);
+        expect(checkboxes[2]).not.toBeChecked();
+        expect(compareButton).toBeEnabled();
+    });
+
+    it("navigates to /results/compare with the two selected results in navigation state", async () => {
+        renderResultListPageWithCompareRoute();
+
+        await screen.findByText("presentation.mp4");
+
+        fireEvent.click(screen.getByRole("button", { name: "결과 비교" }));
+
+        const checkboxes = screen.getAllByRole("checkbox", { name: "비교 대상으로 선택" });
+        fireEvent.click(checkboxes[0]);
+        fireEvent.click(checkboxes[1]);
+
+        fireEvent.click(screen.getByRole("button", { name: "선택한 결과 비교하기" }));
+
+        // 기본 정렬(최신순)이라 목록 순서는 pipeline-openai(11:00) -> real-video-llm(10:00)
+        // -> video-llm(09:00)입니다. 앞의 두 체크박스를 선택했으므로 이 두 jobId가 전달됩니다.
+        expect(await screen.findByTestId("compare-destination")).toHaveTextContent(
+            "job-list-pipeline-openai,job-list-real-video-llm"
+        );
     });
 });

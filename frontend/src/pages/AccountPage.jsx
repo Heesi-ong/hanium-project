@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { withdrawAccount } from "../api/authApi";
+import { changePassword, withdrawAccount } from "../api/authApi";
 import { getErrorMessage } from "../api/errorUtils";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+
+const hintStyle = {
+    display: "block",
+    marginTop: 6,
+    fontSize: 13,
+    color: "#B7ADA4",
+};
 
 function AccountPage() {
     const navigate = useNavigate();
@@ -18,6 +25,42 @@ function AccountPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmNewPassword, setConfirmNewPassword] = useState("");
+    const [showPasswordChangeFields, setShowPasswordChangeFields] = useState(false);
+    const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
+    const [passwordChangeError, setPasswordChangeError] = useState("");
+
+    async function handleChangePassword(event) {
+        event.preventDefault();
+
+        if (newPassword !== confirmNewPassword) {
+            setPasswordChangeError("새 비밀번호가 서로 일치하지 않습니다.");
+            return;
+        }
+
+        try {
+            setPasswordChangeLoading(true);
+            setPasswordChangeError("");
+
+            await changePassword({ currentPassword, newPassword });
+
+            setCurrentPassword("");
+            setNewPassword("");
+            setConfirmNewPassword("");
+            setShowPasswordChangeFields(false);
+            showToast("비밀번호가 변경되었습니다.", "success");
+        } catch (requestError) {
+            setPasswordChangeError(getErrorMessage(
+                requestError,
+                "비밀번호 변경 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setPasswordChangeLoading(false);
+        }
+    }
 
     async function handleWithdraw(event) {
         event.preventDefault();
@@ -62,6 +105,98 @@ function AccountPage() {
                     <p className="card-description">
                         {user?.email || "사용자"}
                     </p>
+                </div>
+
+                <div className="option-panel">
+                    <strong>비밀번호</strong>
+
+                    {!showPasswordChangeFields ? (
+                        <div className="button-row">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => setShowPasswordChangeFields(true)}
+                            >
+                                비밀번호 변경
+                            </button>
+                        </div>
+                    ) : (
+                        <form className="option-panel" onSubmit={handleChangePassword}>
+                            <label>
+                                <span>
+                                    <strong>현재 비밀번호</strong>
+                                    <input
+                                        type="password"
+                                        value={currentPassword}
+                                        onChange={(event) => setCurrentPassword(event.target.value)}
+                                        autoComplete="current-password"
+                                        className="text-input"
+                                        required
+                                    />
+                                </span>
+                            </label>
+
+                            <label>
+                                <span>
+                                    <strong>새 비밀번호</strong>
+                                    <input
+                                        type="password"
+                                        value={newPassword}
+                                        onChange={(event) => setNewPassword(event.target.value)}
+                                        autoComplete="new-password"
+                                        minLength={8}
+                                        className="text-input"
+                                        required
+                                    />
+                                    <small style={hintStyle}>
+                                        영문자와 숫자를 각각 1자 이상 포함해 8자 이상 입력해주세요.
+                                    </small>
+                                </span>
+                            </label>
+
+                            <label>
+                                <span>
+                                    <strong>새 비밀번호 확인</strong>
+                                    <input
+                                        type="password"
+                                        value={confirmNewPassword}
+                                        onChange={(event) => setConfirmNewPassword(event.target.value)}
+                                        autoComplete="new-password"
+                                        minLength={8}
+                                        className="text-input"
+                                        required
+                                    />
+                                </span>
+                            </label>
+
+                            <StateMessage type="error">{passwordChangeError}</StateMessage>
+
+                            <div className="button-row">
+                                <button
+                                    type="submit"
+                                    className="primary-button"
+                                    disabled={passwordChangeLoading}
+                                >
+                                    {passwordChangeLoading ? "변경 중..." : "비밀번호 변경 저장"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => {
+                                        setShowPasswordChangeFields(false);
+                                        setCurrentPassword("");
+                                        setNewPassword("");
+                                        setConfirmNewPassword("");
+                                        setPasswordChangeError("");
+                                    }}
+                                    disabled={passwordChangeLoading}
+                                >
+                                    취소
+                                </button>
+                            </div>
+                        </form>
+                    )}
                 </div>
 
                 <form className="option-panel" onSubmit={handleWithdraw}>

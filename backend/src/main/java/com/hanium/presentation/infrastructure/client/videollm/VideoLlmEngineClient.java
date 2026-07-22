@@ -10,6 +10,8 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -18,6 +20,8 @@ import java.util.Map;
 
 @Component
 public class VideoLlmEngineClient extends AbstractEngineClient {
+
+    private static final Logger log = LoggerFactory.getLogger(VideoLlmEngineClient.class);
 
     // generationMode(REAL/FALLBACK/MOCK)별 응답 건수 카운터. FALLBACK/MOCK 비율이 조용히
     // 올라가면 "실제 모델은 꺼져 있는데 사용자에겐 결과가 나가는" 품질 저하를 뜻하므로 감시합니다.
@@ -69,6 +73,12 @@ public class VideoLlmEngineClient extends AbstractEngineClient {
             recordGenerationMode(response);
             return response;
         } catch (Exception e) {
+            log.error(
+                    "video-llm-engine 호출 실패: exceptionType={} message={}",
+                    e.getClass().getName(),
+                    e.getMessage(),
+                    e
+            );
             throw new BusinessException(
                     ErrorCode.VIDEO_LLM_ENGINE_ERROR,
                     "Video LLM 엔진 호출에 실패했습니다: " + e.getMessage()

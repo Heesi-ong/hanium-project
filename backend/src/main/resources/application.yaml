@@ -133,6 +133,10 @@ password-reset:
   token-expiration-minutes: ${PASSWORD_RESET_TOKEN_EXPIRATION_MINUTES:30}
   reset-url-base: ${PASSWORD_RESET_URL_BASE:http://localhost:5173/reset-password}
   mail-from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
+  cleanup:
+    # 만료된 지 오래된(사용/무효화 여부 무관) 토큰 행을 주기적으로 삭제합니다.
+    cron: "${PASSWORD_RESET_CLEANUP_CRON:0 30 3 * * *}"
+    retention-days: ${PASSWORD_RESET_CLEANUP_RETENTION_DAYS:7}
 
 analysis:
   retry:

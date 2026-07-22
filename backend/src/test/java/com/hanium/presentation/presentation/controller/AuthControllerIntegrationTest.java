@@ -527,6 +527,51 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
+    void requestingANewPasswordResetInvalidatesThePreviousToken() throws Exception {
+        signup("reset-superseded@example.com", "password123");
+
+        requestPasswordReset("reset-superseded@example.com");
+        String firstLink = capturePasswordResetLink();
+        String firstToken = firstLink.substring(firstLink.indexOf("token=") + "token=".length());
+
+        Mockito.reset(passwordResetEmailSender);
+        requestPasswordReset("reset-superseded@example.com");
+        String secondLink = capturePasswordResetLink();
+        String secondToken = secondLink.substring(secondLink.indexOf("token=") + "token=".length());
+
+        assertThat(firstToken).isNotEqualTo(secondToken);
+
+        ResponseEntity<String> oldTokenConfirmResponse = confirmPasswordReset(firstToken, "newpassword123");
+        assertThat(oldTokenConfirmResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        ResponseEntity<String> newTokenConfirmResponse = confirmPasswordReset(secondToken, "newpassword123");
+        assertThat(newTokenConfirmResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    void confirmingAPasswordResetInvalidatesOtherActiveTokensForTheSameUser() {
+        signup("reset-multi-token@example.com", "password123");
+        User user = userRepository.findByEmail("reset-multi-token@example.com").orElseThrow();
+
+        passwordResetTokenRepository.save(PasswordResetToken.create(
+                user,
+                sha256("token-a"),
+                LocalDateTime.now().plusMinutes(30)
+        ));
+        passwordResetTokenRepository.save(PasswordResetToken.create(
+                user,
+                sha256("token-b"),
+                LocalDateTime.now().plusMinutes(30)
+        ));
+
+        ResponseEntity<String> firstConfirmResponse = confirmPasswordReset("token-a", "newpassword123");
+        assertThat(firstConfirmResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> secondConfirmResponse = confirmPasswordReset("token-b", "anotherpassword123");
+        assertThat(secondConfirmResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     void passwordResetConfirmRejectsExpiredToken() {
         signup("reset-expired@example.com", "password123");
         User user = userRepository.findByEmail("reset-expired@example.com").orElseThrow();

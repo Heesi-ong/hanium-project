@@ -49,6 +49,11 @@ public class PasswordResetService {
     @Transactional
     public void requestPasswordReset(String email) {
         userRepository.findByEmail(normalizeEmail(email)).ifPresent(user -> {
+            // 사용자당 활성 재설정 토큰은 항상 1개만 유효해야 합니다. 새 토큰을 만들기 전에
+            // 기존에 발급했던(아직 사용되지 않은) 토큰을 모두 무효화해, 이전 메일의 링크가
+            // 새 링크 발급 이후에도 계속 살아있는 상태를 없앱니다.
+            passwordResetTokenRepository.invalidateActiveTokensForUser(user, LocalDateTime.now());
+
             String token = generateToken();
             PasswordResetToken resetToken = PasswordResetToken.create(
                     user,
@@ -73,6 +78,13 @@ public class PasswordResetService {
         User user = resetToken.getUser();
         user.changePasswordHash(passwordEncoder.encode(newPassword));
         resetToken.markUsed(now);
+
+        // 이 토큰 외에 같은 사용자 앞으로 발급됐던 다른 활성 토큰(예: 이번 요청 이전에
+        // requestPasswordReset이 여러 번 호출된 과거 데이터)도 비밀번호가 실제로 바뀐
+        // 시점에 함께 무효화합니다. 방금 markUsed()로 처리한 토큰은 이미 usedAt이 설정돼
+        // 있어 이 쿼리(usedAt IS NULL 대상)의 영향을 받지 않습니다.
+        passwordResetTokenRepository.invalidateActiveTokensForUser(user, now);
+
         return true;
     }
 

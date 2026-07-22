@@ -10,6 +10,7 @@ function SttSection({
                         sttInfo,
                         audioExtractionInfo,
                         sttSegments,
+                        onSeekToTime,
                     }) {
     return (
         <article className="detail-card wide">
@@ -92,7 +93,20 @@ function SttSection({
                             {sttSegments.map((segment, index) => (
                                 <tr key={`${segment.start}-${segment.end}-${index}`}>
                                     <td>{index + 1}</td>
-                                    <td>{formatNumber(segment.start)}초</td>
+                                    <td>
+                                        {onSeekToTime && typeof segment.start === "number" ? (
+                                            <button
+                                                type="button"
+                                                className="observation-time observation-seek"
+                                                onClick={() => onSeekToTime(segment.start)}
+                                                aria-label={`영상을 ${formatNumber(segment.start)}초 지점으로 이동`}
+                                            >
+                                                {formatNumber(segment.start)}초
+                                            </button>
+                                        ) : (
+                                            `${formatNumber(segment.start)}초`
+                                        )}
+                                    </td>
                                     <td>{formatNumber(segment.end)}초</td>
                                     <td>{formatNumber(segment.duration)}초</td>
                                     <td>{segment.text || "-"}</td>

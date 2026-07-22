@@ -794,6 +794,7 @@ function ResultDetailPage() {
                     sttInfo={sttInfo}
                     audioExtractionInfo={audioExtractionInfo}
                     sttSegments={sttSegments}
+                    onSeekToTime={handleSeekToObservation}
                 />
             </AnimatedSection>
 

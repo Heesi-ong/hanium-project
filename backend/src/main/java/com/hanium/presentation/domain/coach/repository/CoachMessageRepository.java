@@ -11,4 +11,6 @@ public interface CoachMessageRepository extends JpaRepository<CoachMessage, Long
 
     // 프롬프트에 넣을 최근 대화 이력만 가져올 때 사용 (개수는 서비스 계층에서 슬라이싱)
     List<CoachMessage> findTop20ByConversationIdOrderByCreatedAtDesc(Long conversationId);
+
+    void deleteAllByConversationId(Long conversationId);
 }

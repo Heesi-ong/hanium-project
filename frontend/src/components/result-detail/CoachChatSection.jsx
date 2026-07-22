@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import StateMessage from "../StateMessage";
-import { getCoachMessages, sendCoachMessage } from "../../api/coachApi";
+import { getCoachMessages, resetCoachConversation, sendCoachMessage } from "../../api/coachApi";
 import { getErrorMessage } from "../../api/errorUtils";
+import { useConfirm } from "../../context/ConfirmContext";
 
 function getGenerationModeLabel(mode) {
     if (mode === "REAL") {
@@ -16,9 +17,11 @@ function getGenerationModeLabel(mode) {
 }
 
 function CoachChatSection({ jobId, isCompleted, disabledReason }) {
+    const confirm = useConfirm();
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
+    const [resetting, setResetting] = useState(false);
     const [error, setError] = useState("");
     const [input, setInput] = useState("");
     const messagesEndRef = useRef(null);
@@ -79,6 +82,32 @@ function CoachChatSection({ jobId, isCompleted, disabledReason }) {
         }
     }
 
+    async function handleResetConversation() {
+        const confirmed = await confirm(
+            "이 대화 내용을 모두 삭제하고 새로 시작하시겠습니까? 삭제된 대화는 복구할 수 없습니다."
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setResetting(true);
+            setError("");
+
+            await resetCoachConversation(jobId);
+
+            setMessages([]);
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "대화 초기화 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setResetting(false);
+        }
+    }
+
     if (!isCompleted) {
         return (
             <article className="detail-card">
@@ -99,7 +128,20 @@ function CoachChatSection({ jobId, isCompleted, disabledReason }) {
 
     return (
         <article className="detail-card">
-            <h2>AI 코치에게 물어보기</h2>
+            <div className="card-header-row">
+                <h2>AI 코치에게 물어보기</h2>
+
+                {!loading && messages.length > 0 && (
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={handleResetConversation}
+                        disabled={resetting || sending}
+                    >
+                        {resetting ? "초기화 중..." : "대화 초기화"}
+                    </button>
+                )}
+            </div>
             <p className="muted-text">
                 이 분석 결과에 대해 궁금한 점을 물어보세요. 하루에 보낼 수 있는 메시지 수는 제한되어 있습니다.
             </p>

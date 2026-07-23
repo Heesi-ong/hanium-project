@@ -8,6 +8,7 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public record ResultSummaryResponse(
@@ -212,6 +213,11 @@ public record ResultSummaryResponse(
                     "-"
             ));
             normalizedFeedback.put("overall", getOrDefault(source, "overall", ""));
+            // ResultMergeService.createFeedback()이 이미 채워 저장하는 필드지만, 이전에는
+            // 여기서 빠져 있어 강점/개선점이 실제로 생성됐어도 결과 화면에는 항상 "표시할
+            // 강점/개선점이 없습니다"로만 보였습니다(2026-07-23 발견).
+            normalizedFeedback.put("strengths", getOrDefault(source, "strengths", List.of()));
+            normalizedFeedback.put("improvements", getOrDefault(source, "improvements", List.of()));
 
             return normalizedFeedback;
         }
@@ -382,6 +388,8 @@ public record ResultSummaryResponse(
                 "-"
         ));
         feedback.put("overall", "");
+        feedback.put("strengths", List.of());
+        feedback.put("improvements", List.of());
 
         return feedback;
     }

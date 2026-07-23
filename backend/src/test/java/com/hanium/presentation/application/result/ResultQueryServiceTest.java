@@ -435,6 +435,44 @@ class ResultQueryServiceTest {
         assertThat(dataIssueCount("list", "RESULT_DATA_INCOMPLETE")).isEqualTo(1.0);
     }
 
+    // ResultMergeService.createFeedback()이 저장한 strengths/improvements가 이전에는 응답
+    // 정규화 과정에서 조용히 빠져, 실제로 생성됐어도 결과 화면에는 항상 "표시할 강점/개선점이
+    // 없습니다"로만 보였다(2026-07-23 발견).
+    @Test
+    void getResultSummariesIncludesStrengthsAndImprovementsFromStoredFeedback() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob completedJob = AnalysisJob.create("20260703090013-nnnnnnnn", ownerId);
+        completedJob.complete();
+
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(completedJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllByJobIdIn(List.of(completedJob.getJobId())))
+                .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "strengths.mp4")));
+        when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
+                .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "scoreSummary", Map.of("totalScore", 88, "level", "A"),
+                        "feedback", Map.of(
+                                "generationMode", "REAL",
+                                "model", "gpt-4.1-mini",
+                                "realApiUsed", true,
+                                "fallbackReason", "-",
+                                "overall", "피드백",
+                                "strengths", List.of("자세가 안정적입니다."),
+                                "improvements", List.of("시선 처리를 개선하세요.")
+                        )
+                ));
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        ResultSummaryResponse summary = response.getContent().get(0);
+        assertThat(summary.feedback())
+                .containsEntry("strengths", List.of("자세가 안정적입니다."))
+                .containsEntry("improvements", List.of("시선 처리를 개선하세요."));
+    }
+
     @Test
     void getFinalResultIncludesDataIssueWhenStoredResultIsIncomplete() {
         Long ownerId = 1L;

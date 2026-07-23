@@ -2,8 +2,8 @@ package com.hanium.presentation.infrastructure.client.openai;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.infrastructure.client.openai.dto.ChatCompletionApiRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiCoachChatRequest;
-import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -19,26 +19,26 @@ public class CoachPromptBuilder {
         this.objectMapper = objectMapper;
     }
 
-    public List<OpenAiResponsesApiRequest.InputMessage> buildMessages(
+    public List<ChatCompletionApiRequest.Message> buildMessages(
             Map<String, Object> compactAnalysis,
             List<Map<String, Object>> historySummary,
             List<OpenAiCoachChatRequest.ChatTurn> history,
             String newUserMessage
     ) {
-        List<OpenAiResponsesApiRequest.InputMessage> messages = new ArrayList<>();
-        messages.add(OpenAiResponsesApiRequest.InputMessage.system(
+        List<ChatCompletionApiRequest.Message> messages = new ArrayList<>();
+        messages.add(ChatCompletionApiRequest.Message.system(
                 buildSystemPrompt(compactAnalysis, historySummary)
         ));
 
         for (OpenAiCoachChatRequest.ChatTurn turn : history) {
             if ("ASSISTANT".equals(turn.role())) {
-                messages.add(OpenAiResponsesApiRequest.InputMessage.assistant(turn.content()));
+                messages.add(ChatCompletionApiRequest.Message.assistant(turn.content()));
             } else {
-                messages.add(OpenAiResponsesApiRequest.InputMessage.user(turn.content()));
+                messages.add(ChatCompletionApiRequest.Message.user(turn.content()));
             }
         }
 
-        messages.add(OpenAiResponsesApiRequest.InputMessage.user(newUserMessage));
+        messages.add(ChatCompletionApiRequest.Message.user(newUserMessage));
         return messages;
     }
 

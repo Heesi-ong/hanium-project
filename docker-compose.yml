@@ -298,6 +298,12 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
+      # AI 코치가 OpenAI 대신 build.nvidia.com의 무료/오픈 모델을 임시로 쓰게 하는
+      # 스위치입니다(coach.llm.provider). video-llm-engine과 같은 NVIDIA_API_KEY를 재사용합니다.
+      COACH_LLM_PROVIDER: ${COACH_LLM_PROVIDER:-openai}
+      COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_API_BASE_URL: ${NVIDIA_API_BASE_URL:-https://integrate.api.nvidia.com/v1}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -462,6 +468,12 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
+      # AI 코치가 OpenAI 대신 build.nvidia.com의 무료/오픈 모델을 임시로 쓰게 하는
+      # 스위치입니다(coach.llm.provider). video-llm-engine과 같은 NVIDIA_API_KEY를 재사용합니다.
+      COACH_LLM_PROVIDER: ${COACH_LLM_PROVIDER:-openai}
+      COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_API_BASE_URL: ${NVIDIA_API_BASE_URL:-https://integrate.api.nvidia.com/v1}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}

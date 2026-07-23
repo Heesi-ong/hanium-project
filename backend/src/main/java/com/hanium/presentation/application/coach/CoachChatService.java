@@ -2,6 +2,8 @@ package com.hanium.presentation.application.coach;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
+import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.coach.entity.CoachConversation;
 import com.hanium.presentation.domain.coach.entity.CoachMessage;
 import com.hanium.presentation.domain.coach.repository.CoachConversationRepository;
@@ -15,6 +17,8 @@ import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiCoachReply
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.CoachConversationResponse;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +27,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,6 +42,7 @@ public class CoachChatService {
     private final OpenAiCoachClient openAiCoachClient;
     private final UserRateLimiter userRateLimiter;
     private final TransactionTemplate transactionTemplate;
+    private final int historySummarySize;
 
     public CoachChatService(
             AnalysisJobRepository analysisJobRepository,
@@ -46,7 +52,8 @@ public class CoachChatService {
             JsonFileStorage jsonFileStorage,
             OpenAiCoachClient openAiCoachClient,
             UserRateLimiter userRateLimiter,
-            PlatformTransactionManager transactionManager
+            PlatformTransactionManager transactionManager,
+            @Value("${coach.history-summary-size:5}") int historySummarySize
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.coachConversationRepository = coachConversationRepository;
@@ -56,6 +63,7 @@ public class CoachChatService {
         this.openAiCoachClient = openAiCoachClient;
         this.userRateLimiter = userRateLimiter;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.historySummarySize = historySummarySize;
     }
 
     @Transactional(readOnly = true)
@@ -103,7 +111,13 @@ public class CoachChatService {
         );
 
         OpenAiCoachReplyResponse reply = openAiCoachClient.generateReply(
-                new OpenAiCoachChatRequest(jobId, prepared.compactAnalysis(), prepared.history(), content)
+                new OpenAiCoachChatRequest(
+                        jobId,
+                        prepared.compactAnalysis(),
+                        prepared.historySummary(),
+                        prepared.history(),
+                        content
+                )
         );
 
         return transactionTemplate.execute(
@@ -122,6 +136,7 @@ public class CoachChatService {
         }
 
         Map<String, Object> compactAnalysis = loadCompactAnalysis(jobId);
+        List<Map<String, Object>> historySummary = loadHistorySummary(ownerId, jobId);
 
         // 코치 채팅 자체의 사용자별 일일 한도. openai-monthly(전역 예산, OpenAiCoachClient 내부에서
         // 별도 체크)와는 다른 계층의 방어선으로, OpenAI를 호출하기 전에 먼저 통과해야 하는
@@ -140,7 +155,7 @@ public class CoachChatService {
 
         coachMessageRepository.save(CoachMessage.userMessage(conversation.getId(), content));
 
-        return new PreparedCoachMessage(conversation.getId(), compactAnalysis, history);
+        return new PreparedCoachMessage(conversation.getId(), compactAnalysis, historySummary, history);
     }
 
     private CoachConversationResponse saveReplyAndBuildResponse(
@@ -164,6 +179,7 @@ public class CoachChatService {
     private record PreparedCoachMessage(
             Long conversationId,
             Map<String, Object> compactAnalysis,
+            List<Map<String, Object>> historySummary,
             List<OpenAiCoachChatRequest.ChatTurn> history
     ) {
     }
@@ -192,6 +208,53 @@ public class CoachChatService {
                         message.getContent()
                 ))
                 .toList();
+    }
+
+    // 현재 발표 외에 같은 사용자의 다른 완료된 발표(재분석 제외) 점수 요약을 최근 순으로
+    // 최대 historySummarySize개까지 모읍니다. 토큰 비용을 억제하기 위해 원시 지표/자막/
+    // Video LLM 관찰 같은 무거운 데이터는 포함하지 않고 점수만 담습니다.
+    private List<Map<String, Object>> loadHistorySummary(Long ownerId, String currentJobId) {
+        List<AnalysisJob> pastJobs = analysisJobRepository
+                .findByOwnerIdAndStatusAndAnalysisKindAndJobIdNotOrderByCreatedAtDesc(
+                        ownerId,
+                        AnalysisStatus.COMPLETED,
+                        AnalysisKind.STANDARD,
+                        currentJobId,
+                        PageRequest.of(0, historySummarySize)
+                );
+
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        for (AnalysisJob pastJob : pastJobs) {
+            Map<String, Object> scoreSummary = readScoreSummary(pastJob.getJobId());
+            if (scoreSummary == null || scoreSummary.isEmpty()) {
+                continue;
+            }
+
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("jobId", pastJob.getJobId());
+            entry.put("completedAt", pastJob.getCompletedAt());
+            entry.put("scoreSummary", scoreSummary);
+            summaries.add(entry);
+        }
+        return summaries;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readScoreSummary(String jobId) {
+        try {
+            Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
+            Map<String, Object> finalResult = jsonFileStorage.readJson(finalResultPath, Map.class);
+            if (finalResult == null) {
+                return null;
+            }
+
+            Object scoreSummary = finalResult.get("scoreSummary");
+            return scoreSummary instanceof Map ? (Map<String, Object>) scoreSummary : null;
+        } catch (RuntimeException exception) {
+            // 과거 발표 하나의 결과 파일이 손상/누락돼도 히스토리 요약 전체나 현재 코치
+            // 채팅이 실패하면 안 되므로, 이 항목만 건너뜁니다.
+            return null;
+        }
     }
 
     private Map<String, Object> loadCompactAnalysis(String jobId) {

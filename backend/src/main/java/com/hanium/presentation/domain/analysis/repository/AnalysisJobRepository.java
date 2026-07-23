@@ -1,6 +1,7 @@
 package com.hanium.presentation.domain.analysis.repository;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
@@ -126,4 +127,15 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
 
     // 관리자 대시보드: 재시도 소진(DEAD_LETTER) 작업 목록을 최신 순으로 페이지네이션 조회합니다.
     Page<AnalysisJob> findByStatusOrderByCreatedAtDesc(AnalysisStatus status, Pageable pageable);
+
+    // AI 코치가 "저번보다 나아졌나요?" 같은 질문에 답할 수 있도록, 현재 발표 외에 같은
+    // 사용자의 다른 완료된 발표를 최근 순으로 가져옵니다. 재분석(VIDEO_LLM_REANALYSIS)은
+    // 별도 발표가 아니라 같은 영상의 재처리이므로 STANDARD만 대상으로 합니다.
+    List<AnalysisJob> findByOwnerIdAndStatusAndAnalysisKindAndJobIdNotOrderByCreatedAtDesc(
+            Long ownerId,
+            AnalysisStatus status,
+            AnalysisKind analysisKind,
+            String excludedJobId,
+            Pageable pageable
+    );
 }

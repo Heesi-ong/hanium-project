@@ -1,7 +1,10 @@
 package com.hanium.presentation.global.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
+import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.exception.ErrorResponse;
 import com.hanium.presentation.global.filter.UserRateLimitFilter;
 import com.hanium.presentation.global.properties.ApiDocsProperties;
 import io.jsonwebtoken.Claims;
@@ -115,9 +118,15 @@ public class SecurityConfig {
     public JwtAuthenticationFilter jwtAuthenticationFilter(
             JwtTokenProvider jwtTokenProvider,
             UserRepository userRepository,
-            JwtBlacklist jwtBlacklist
+            JwtBlacklist jwtBlacklist,
+            ObjectMapper objectMapper
     ) {
-        return new JwtAuthenticationFilter(jwtTokenProvider, userRepository, jwtBlacklist);
+        return new JwtAuthenticationFilter(
+                jwtTokenProvider,
+                userRepository,
+                jwtBlacklist,
+                objectMapper
+        );
     }
 
     public static class JwtTokenProvider {
@@ -211,15 +220,18 @@ public class SecurityConfig {
         private final JwtTokenProvider jwtTokenProvider;
         private final UserRepository userRepository;
         private final JwtBlacklist jwtBlacklist;
+        private final ObjectMapper objectMapper;
 
         public JwtAuthenticationFilter(
                 JwtTokenProvider jwtTokenProvider,
                 UserRepository userRepository,
-                JwtBlacklist jwtBlacklist
+                JwtBlacklist jwtBlacklist,
+                ObjectMapper objectMapper
         ) {
             this.jwtTokenProvider = jwtTokenProvider;
             this.userRepository = userRepository;
             this.jwtBlacklist = jwtBlacklist;
+            this.objectMapper = objectMapper;
         }
 
         @Override
@@ -229,18 +241,46 @@ public class SecurityConfig {
                 FilterChain filterChain
         ) throws ServletException, IOException {
             Optional<String> bearerToken = resolveBearerToken(request);
-            if (bearerToken.isPresent() && jwtBlacklist.isBlacklisted(bearerToken.get())) {
-                filterChain.doFilter(request, response);
-                return;
+            if (bearerToken.isPresent()) {
+                String token = bearerToken.get();
+                Optional<String> email = jwtTokenProvider.extractEmail(token);
+
+                // 서명·만료 검증을 통과한 JWT만 Redis/DB 폐기 원장을 조회한다. 그렇지
+                // 않으면 공격자가 임의 bearer 문자열로 DB 조회를 유발할 수 있다.
+                if (email.isPresent()) {
+                    if (isRevokedOrUnavailable(token, response)) {
+                        if (response.getStatus() == HttpServletResponse.SC_SERVICE_UNAVAILABLE) {
+                            return;
+                        }
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+
+                    email.flatMap(userRepository::findByEmail)
+                            .filter(user -> isTokenIssuedAfterPasswordChange(token, user))
+                            .filter(user -> !user.isSuspended())
+                            .ifPresent(this::authenticate);
+                }
             }
 
-            bearerToken.ifPresent(token -> jwtTokenProvider.extractEmail(token)
-                    .flatMap(userRepository::findByEmail)
-                    .filter(user -> isTokenIssuedAfterPasswordChange(token, user))
-                    .filter(user -> !user.isSuspended())
-                    .ifPresent(this::authenticate));
-
             filterChain.doFilter(request, response);
+        }
+
+        private boolean isRevokedOrUnavailable(
+                String token,
+                HttpServletResponse response
+        ) throws IOException {
+            try {
+                return jwtBlacklist.isBlacklisted(token);
+            } catch (JwtRevocationUnavailableException exception) {
+                SecurityContextHolder.clearContext();
+                ErrorCode errorCode = ErrorCode.AUTH_SESSION_SERVICE_UNAVAILABLE;
+                response.setStatus(errorCode.getStatus().value());
+                response.setContentType("application/json");
+                response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+                objectMapper.writeValue(response.getWriter(), ErrorResponse.of(errorCode));
+                return true;
+            }
         }
 
         private boolean isTokenIssuedAfterPasswordChange(String token, User user) {

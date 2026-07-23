@@ -89,6 +89,11 @@ function VideoLlmGenerationBadge({ result }) {
             <div className="ai-mode-meta">
                 <strong>{getVideoLlmGenerationModeText(generationMode)}</strong>
                 <span>Video LLM · {model}</span>
+                {generationMode === "FALLBACK" && (
+                    <span className="ai-mode-warning" role="alert">
+                        실제 영상 분석에 실패해 샘플 데이터로 대체된 결과입니다.
+                    </span>
+                )}
             </div>
         </div>
     );

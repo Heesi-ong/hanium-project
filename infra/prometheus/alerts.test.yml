@@ -4,6 +4,85 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  - name: video llm degraded fallback rate becomes warning
+    interval: 1m
+    input_series:
+      - series: 'video_llm_generation_total{mode="REAL"}'
+        values: 0+1x20
+      - series: 'video_llm_generation_total{mode="FALLBACK"}'
+        values: 0+2x20
+      - series: 'video_llm_generation_total{mode="MOCK"}'
+        values: 0+10x20
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: VideoLlmFallbackRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Video LLM이 실제 모델 대신 mock으로 응답하는 비율이 높습니다"
+              description: "최근 30분간 실제 Video LLM 시도 응답의 절반 이상이 FALLBACK입니다. NVIDIA 연동 상태, 서킷브레이커와 video-llm-engine 로그를 확인하세요. DEGRADED 정책에서 사용자에게 샘플 대체 결과가 나가고 있습니다."
+
+  - name: jwt revocation database failure becomes critical
+    interval: 1m
+    input_series:
+      - series: 'security_jwt_revocation_total{result="database_read_failure"}'
+        values: 0+1x10
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: JwtRevocationDatabaseUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "JWT 폐기 DB 원장을 사용할 수 없습니다"
+              description: "토큰 폐기 상태의 DB 읽기/쓰기가 실패해 인증 요청 또는 로그아웃이 503으로 차단됐습니다. MySQL 연결과 backend 로그의 JWT_REVOCATION_UNAVAILABLE 오류를 즉시 확인하세요."
+
+  - name: jwt revocation redis cache failure becomes warning
+    interval: 1m
+    input_series:
+      - series: 'security_jwt_revocation_total{result="redis_read_failure"}'
+        values: 0+1x15
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: JwtRevocationRedisCacheFailure
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "JWT 폐기 Redis 캐시가 비정상입니다"
+              description: "JWT 폐기 Redis 캐시 오류가 지속돼 DB 최종 원장 fallback으로 처리 중입니다. 인증 보장은 유지되지만 DB 부하가 증가하므로 Redis 연결을 확인하세요."
+
+  - name: storage deletion dead letter backlog becomes warning
+    interval: 1m
+    input_series:
+      - series: storage_deletion_dead_letter
+        values: 1x15
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StorageDeletionDeadLetterBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "스토리지 삭제 작업이 DEAD_LETTER 상태로 쌓이고 있습니다"
+              description: "storage_deletion_dead_letter가 10분 이상 0보다 큽니다. 관리자 대시보드에서 DEAD_LETTER 목록을 확인하고, MinIO 상태를 점검한 뒤 재큐잉하세요."
+
+  - name: password reset email dead letter backlog becomes warning
+    interval: 1m
+    input_series:
+      - series: password_reset_email_dead_letter
+        values: 1x15
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: PasswordResetEmailDeadLetterBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "비밀번호 재설정 이메일이 DEAD_LETTER 상태로 쌓이고 있습니다"
+              description: "password_reset_email_dead_letter가 10분 이상 0보다 큽니다. 관리자 대시보드에서 DEAD_LETTER 목록을 확인하고, SMTP 상태를 점검한 뒤 재큐잉하세요."
+
   - name: remote backup export failure becomes critical
     interval: 1m
     input_series:

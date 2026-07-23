@@ -1,10 +1,10 @@
 package com.hanium.presentation.application.storage;
 
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.storage.type.StorageDeletionReason;
 import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.global.properties.StorageProperties;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
-import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,6 +19,7 @@ import java.time.temporal.ChronoUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -61,7 +62,7 @@ class StorageCleanupServiceTest {
         when(analysisJobRepository.existsByJobId("recent-orphan-result")).thenReturn(false);
         SchedulerDistributedLock schedulerDistributedLock = mock(SchedulerDistributedLock.class);
         when(schedulerDistributedLock.tryLock(eq("storage-cleanup"), eq(Duration.ofMinutes(10)))).thenReturn(true);
-        ObjectStorage objectStorage = mock(ObjectStorage.class);
+        StorageDeletionTaskService storageDeletionTaskService = mock(StorageDeletionTaskService.class);
 
         StorageCleanupService storageCleanupService = new StorageCleanupService(
                 analysisJobRepository,
@@ -74,7 +75,7 @@ class StorageCleanupServiceTest {
                         0L
                 )),
                 schedulerDistributedLock,
-                objectStorage,
+                storageDeletionTaskService,
                 6,
                 24,
                 10
@@ -92,11 +93,19 @@ class StorageCleanupServiceTest {
         assertThat(oldOrphanResult).doesNotExist();
         assertThat(oldTemp).doesNotExist();
 
-        verify(objectStorage).deleteObjectsWithPrefix("uploads/old-orphan-upload/");
-        verify(objectStorage).deleteObjectsWithPrefix("results/old-orphan-result/");
-        verify(objectStorage, org.mockito.Mockito.never()).deleteObjectsWithPrefix("uploads/existing-job/");
-        verify(objectStorage, org.mockito.Mockito.never()).deleteObjectsWithPrefix("uploads/recent-orphan-upload/");
-        verify(objectStorage, org.mockito.Mockito.never()).deleteObjectsWithPrefix("results/recent-orphan-result/");
+        // MinIO 정리는 더 이상 이 서비스가 직접 시도하지 않고 outbox 행을 만드는 것으로 대신한다.
+        verify(storageDeletionTaskService).enqueue(
+                "old-orphan-upload", "uploads/old-orphan-upload/", StorageDeletionReason.ORPHAN_CLEANUP
+        );
+        verify(storageDeletionTaskService).enqueue(
+                "old-orphan-result", "results/old-orphan-result/", StorageDeletionReason.ORPHAN_CLEANUP
+        );
+        verify(storageDeletionTaskService, org.mockito.Mockito.never())
+                .enqueue(eq("existing-job"), any(), any());
+        verify(storageDeletionTaskService, org.mockito.Mockito.never())
+                .enqueue(eq("recent-orphan-upload"), any(), any());
+        verify(storageDeletionTaskService, org.mockito.Mockito.never())
+                .enqueue(eq("recent-orphan-result"), any(), any());
     }
 
     @Test
@@ -114,7 +123,7 @@ class StorageCleanupServiceTest {
         AnalysisJobRepository analysisJobRepository = mock(AnalysisJobRepository.class);
         SchedulerDistributedLock schedulerDistributedLock = mock(SchedulerDistributedLock.class);
         when(schedulerDistributedLock.tryLock(eq("storage-cleanup"), eq(Duration.ofMinutes(10)))).thenReturn(false);
-        ObjectStorage objectStorage = mock(ObjectStorage.class);
+        StorageDeletionTaskService storageDeletionTaskService = mock(StorageDeletionTaskService.class);
 
         StorageCleanupService storageCleanupService = new StorageCleanupService(
                 analysisJobRepository,
@@ -127,7 +136,7 @@ class StorageCleanupServiceTest {
                         0L
                 )),
                 schedulerDistributedLock,
-                objectStorage,
+                storageDeletionTaskService,
                 6,
                 24,
                 10
@@ -139,8 +148,11 @@ class StorageCleanupServiceTest {
         verifyNoInteractions(analysisJobRepository);
     }
 
+    // outbox 행 생성이 로컬 orphan 디렉토리 삭제보다 먼저 일어나야 한다. enqueue가 실패하면
+    // 로컬 디렉토리를 지우지 않고 그대로 남겨서, 다음 스케줄 주기에 같은 orphan이 다시
+    // 발견되어 outbox 생성이 재시도되게 한다(2026-07-23 코드 리뷰 P1-03).
     @Test
-    void cleanupStorageStillDeletesLocalDirectoryWhenObjectStorageCleanupFails() throws IOException {
+    void cleanupStorageKeepsLocalDirectoryWhenEnqueueingTheDeletionTaskFails() throws IOException {
         Path uploadRoot = tempDir.resolve("uploads");
         Path resultRoot = tempDir.resolve("results");
         Path tempRoot = tempDir.resolve("temp");
@@ -155,9 +167,9 @@ class StorageCleanupServiceTest {
         when(analysisJobRepository.existsByJobId("old-orphan-upload")).thenReturn(false);
         SchedulerDistributedLock schedulerDistributedLock = mock(SchedulerDistributedLock.class);
         when(schedulerDistributedLock.tryLock(eq("storage-cleanup"), eq(Duration.ofMinutes(10)))).thenReturn(true);
-        ObjectStorage objectStorage = mock(ObjectStorage.class);
-        org.mockito.Mockito.doThrow(new RuntimeException("minio down"))
-                .when(objectStorage).deleteObjectsWithPrefix(any());
+        StorageDeletionTaskService storageDeletionTaskService = mock(StorageDeletionTaskService.class);
+        doThrow(new RuntimeException("db down"))
+                .when(storageDeletionTaskService).enqueue(any(), any(), any());
 
         StorageCleanupService storageCleanupService = new StorageCleanupService(
                 analysisJobRepository,
@@ -170,7 +182,7 @@ class StorageCleanupServiceTest {
                         0L
                 )),
                 schedulerDistributedLock,
-                objectStorage,
+                storageDeletionTaskService,
                 6,
                 24,
                 10
@@ -178,7 +190,7 @@ class StorageCleanupServiceTest {
 
         storageCleanupService.cleanupStorage();
 
-        assertThat(oldOrphanUpload).doesNotExist();
+        assertThat(oldOrphanUpload).exists();
     }
 
     private Path createDirectory(Path rootDirectory, String directoryName) throws IOException {

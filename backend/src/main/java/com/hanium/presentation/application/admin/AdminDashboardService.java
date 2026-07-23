@@ -3,13 +3,19 @@ package com.hanium.presentation.application.admin;
 import com.hanium.presentation.application.result.ResultQueryService;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.storage.repository.StorageDeletionTaskRepository;
+import com.hanium.presentation.domain.storage.type.StorageDeletionTaskStatus;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
+import com.hanium.presentation.domain.user.repository.PasswordResetEmailTaskRepository;
+import com.hanium.presentation.domain.user.type.PasswordResetEmailTaskStatus;
 import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
+import com.hanium.presentation.presentation.dto.response.AdminStorageDeletionTaskResponse;
+import com.hanium.presentation.presentation.dto.response.AdminPasswordResetEmailTaskResponse;
 import com.hanium.presentation.presentation.dto.response.AdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import org.springframework.data.domain.Page;
@@ -27,15 +33,21 @@ public class AdminDashboardService {
     private final UserRepository userRepository;
     private final AnalysisJobRepository analysisJobRepository;
     private final ResultQueryService resultQueryService;
+    private final StorageDeletionTaskRepository storageDeletionTaskRepository;
+    private final PasswordResetEmailTaskRepository passwordResetEmailTaskRepository;
 
     public AdminDashboardService(
             UserRepository userRepository,
             AnalysisJobRepository analysisJobRepository,
-            ResultQueryService resultQueryService
+            ResultQueryService resultQueryService,
+            StorageDeletionTaskRepository storageDeletionTaskRepository,
+            PasswordResetEmailTaskRepository passwordResetEmailTaskRepository
     ) {
         this.userRepository = userRepository;
         this.analysisJobRepository = analysisJobRepository;
         this.resultQueryService = resultQueryService;
+        this.storageDeletionTaskRepository = storageDeletionTaskRepository;
+        this.passwordResetEmailTaskRepository = passwordResetEmailTaskRepository;
     }
 
     @Transactional(readOnly = true)
@@ -89,5 +101,27 @@ public class AdminDashboardService {
         return analysisJobRepository
                 .findByStatusOrderByCreatedAtDesc(AnalysisStatus.DEAD_LETTER, pageable)
                 .map(AdminAnalysisJobSummaryResponse::from);
+    }
+
+    // 재시도 소진(DEAD_LETTER) 스토리지 삭제 작업을 모아 보여줍니다. MinIO 프리픽스 삭제가
+    // 반복 실패해 outbox 워커가 더 이상 자동 재시도하지 않는 항목을 관리자가 원인 확인 후
+    // 수동으로 재큐잉할 수 있게 합니다(2026-07-23 코드 리뷰 P1-03).
+    @Transactional(readOnly = true)
+    public Page<AdminStorageDeletionTaskResponse> getDeadLetterStorageDeletionTasks(Pageable pageable) {
+        return storageDeletionTaskRepository
+                .findByStatusOrderByCreatedAtDesc(StorageDeletionTaskStatus.DEAD_LETTER, pageable)
+                .map(AdminStorageDeletionTaskResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AdminPasswordResetEmailTaskResponse> getDeadLetterPasswordResetEmailTasks(
+            Pageable pageable
+    ) {
+        return passwordResetEmailTaskRepository
+                .findByStatusOrderByCreatedAtDesc(
+                        PasswordResetEmailTaskStatus.DEAD_LETTER,
+                        pageable
+                )
+                .map(AdminPasswordResetEmailTaskResponse::from);
     }
 }

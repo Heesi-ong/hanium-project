@@ -49,6 +49,38 @@ function StatusPage() {
         return backendHealth.status || "unknown";
     }
 
+    function getPasswordResetStatus() {
+        const passwordReset = backendHealth?.passwordReset;
+
+        if (!passwordReset) {
+            return "unknown";
+        }
+
+        if (!passwordReset.enabled) {
+            return "degraded";
+        }
+
+        return passwordReset.smtpConfigured ? "ok" : "down";
+    }
+
+    function getPasswordResetReasonText() {
+        const passwordReset = backendHealth?.passwordReset;
+
+        if (!passwordReset) {
+            return "";
+        }
+
+        if (!passwordReset.enabled) {
+            return "관리자가 이 기능을 의도적으로 비활성화했습니다.";
+        }
+
+        if (!passwordReset.smtpConfigured) {
+            return "SMTP가 설정되지 않아 재설정 이메일을 보낼 수 없습니다.";
+        }
+
+        return "";
+    }
+
     function getEngineStatus(engineName) {
         const health = engineHealth?.[engineName]?.health;
 
@@ -171,6 +203,13 @@ function StatusPage() {
                                 </div>
                             )}
 
+                            {readiness.response?.policy && (
+                                <div>
+                                    <span>Policy</span>
+                                    <strong>{readiness.response.policy}</strong>
+                                </div>
+                            )}
+
                             {readiness.response?.realModelReady !== undefined && (
                                 <div>
                                     <span>Real Model</span>
@@ -240,6 +279,19 @@ function StatusPage() {
                         baseUrl: engineHealth?.videoLlmEngine?.baseUrl,
                         reachable: getEngineReachable("videoLlmEngine"),
                         readiness: getEngineReadiness("videoLlmEngine"),
+                    })}
+
+                    {renderEngineCard({
+                        title: "비밀번호 재설정",
+                        description: "이메일 발송을 통한 비밀번호 재설정 기능의 사용 가능 여부입니다.",
+                        status: getPasswordResetStatus(),
+                        reachable: Boolean(backendHealth?.passwordReset?.smtpConfigured),
+                        readiness: backendHealth?.passwordReset && {
+                            ready: backendHealth.passwordReset.enabled && backendHealth.passwordReset.smtpConfigured,
+                            response: {
+                                reason: getPasswordResetReasonText(),
+                            },
+                        },
                     })}
                 </div>
             </section>

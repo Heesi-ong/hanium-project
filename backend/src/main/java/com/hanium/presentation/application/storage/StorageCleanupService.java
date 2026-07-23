@@ -1,9 +1,9 @@
 package com.hanium.presentation.application.storage;
 
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.storage.type.StorageDeletionReason;
 import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
-import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,7 +29,7 @@ public class StorageCleanupService {
     private final AnalysisJobRepository analysisJobRepository;
     private final FilePathGenerator filePathGenerator;
     private final SchedulerDistributedLock schedulerDistributedLock;
-    private final ObjectStorage objectStorage;
+    private final StorageDeletionTaskService storageDeletionTaskService;
     private final Duration tempMaxAge;
     private final Duration orphanMaxAge;
     private final Duration lockTtl;
@@ -38,7 +38,7 @@ public class StorageCleanupService {
             AnalysisJobRepository analysisJobRepository,
             FilePathGenerator filePathGenerator,
             SchedulerDistributedLock schedulerDistributedLock,
-            ObjectStorage objectStorage,
+            StorageDeletionTaskService storageDeletionTaskService,
             @Value("${storage.cleanup.temp-max-age-hours:6}") long tempMaxAgeHours,
             @Value("${storage.cleanup.orphan-max-age-hours:24}") long orphanMaxAgeHours,
             @Value("${scheduler.lock.storage-cleanup-ttl-minutes:10}") long lockTtlMinutes
@@ -46,7 +46,7 @@ public class StorageCleanupService {
         this.analysisJobRepository = analysisJobRepository;
         this.filePathGenerator = filePathGenerator;
         this.schedulerDistributedLock = schedulerDistributedLock;
-        this.objectStorage = objectStorage;
+        this.storageDeletionTaskService = storageDeletionTaskService;
         this.tempMaxAge = Duration.ofHours(tempMaxAgeHours);
         this.orphanMaxAge = Duration.ofHours(orphanMaxAgeHours);
         this.lockTtl = Duration.ofMinutes(lockTtlMinutes);
@@ -115,12 +115,36 @@ public class StorageCleanupService {
 
         try (Stream<Path> paths = Files.list(rootDirectory)) {
             for (Path path : paths.filter(Files::isDirectory).toList()) {
-                if (deletePredicate.shouldDelete(path) && deleteDirectory(path)) {
-                    deletedDirectories++;
+                if (!deletePredicate.shouldDelete(path)) {
+                    continue;
+                }
 
+                try {
+                    // 로컬 디렉토리 존재 여부가 곧 "이 orphan을 다음 주기에 다시 발견할 근거"이므로,
+                    // MinIO 정리 outbox 행을 먼저 만들어 커밋한 뒤에만 로컬 디렉토리를 지운다.
+                    // 순서가 반대라면 로컬 삭제 후 outbox 생성이 실패했을 때 그 prefix는 로컬/DB
+                    // 어디에도 흔적이 남지 않아 영영 재시도되지 못한다(2026-07-23 코드 리뷰 P1-03).
                     if (objectStoragePrefix != null) {
-                        deleteObjectStoragePrefixQuietly(objectStoragePrefix + path.getFileName() + "/");
+                        String jobId = path.getFileName().toString();
+                        storageDeletionTaskService.enqueue(
+                                jobId,
+                                objectStoragePrefix + jobId + "/",
+                                StorageDeletionReason.ORPHAN_CLEANUP
+                        );
                     }
+
+                    if (deleteDirectory(path)) {
+                        deletedDirectories++;
+                    }
+                } catch (Exception exception) {
+                    // 이 디렉토리 하나의 처리 실패가 나머지 orphan/temp 정리까지 막지 않도록
+                    // 여기서 잡아 로그만 남긴다. 로컬 디렉토리가 그대로 남아 있으므로 다음
+                    // 스케줄 주기에 같은 대상이 다시 발견되어 재시도된다.
+                    log.warn(
+                            "ORPHAN_CLEANUP_ENQUEUE_FAILED path={} reason={}",
+                            path,
+                            exception.toString()
+                    );
                 }
             }
         } catch (IOException e) {
@@ -128,18 +152,6 @@ public class StorageCleanupService {
         }
 
         return deletedDirectories;
-    }
-
-    /**
-     * 로컬 디렉토리 삭제와 별개로 MinIO에 미러링된 오브젝트도 정리합니다. 이 호출이 실패해도
-     * 로컬 정리 결과(deletedDirectories 카운트)에는 영향을 주지 않는 best-effort입니다.
-     */
-    private void deleteObjectStoragePrefixQuietly(String prefix) {
-        try {
-            objectStorage.deleteObjectsWithPrefix(prefix);
-        } catch (Exception exception) {
-            log.warn("OBJECT_STORAGE_CLEANUP_FAILED prefix={} reason={}", prefix, exception.toString());
-        }
     }
 
     private boolean isOlderThan(Path directory, Duration maxAge, Instant now) {

@@ -1,6 +1,5 @@
 import atexit
 import logging
-import os
 import queue
 import threading
 import urllib.request
@@ -12,6 +11,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from app.core.paths import resolve_project_root
+from app.core.settings import AnalysisEngineSettings
 
 logger = logging.getLogger("analysis-engine")
 
@@ -31,28 +31,14 @@ FACE_TASK_MODEL_URL = (
     "face_landmarker.task"
 )
 
-def _positive_int_from_env(name: str, default: int) -> int:
-    raw_value = os.environ.get(name, str(default))
-
-    try:
-        value = int(raw_value)
-    except ValueError as exception:
-        raise ValueError(f"{name} must be a positive integer, got {raw_value!r}.") from exception
-
-    if value < 1:
-        raise ValueError(f"{name} must be at least 1, got {value}.")
-
-    return value
-
-
 # 동시에 여러 분석 작업이 들어와도 모델 추론이 완전히 직렬화되지 않도록, 모델별로
 # 미리 만들어둔 인스턴스 풀에서 빌려 쓰고 반납하는 방식을 사용합니다. 풀 크기만큼
 # 동시 추론이 가능해지고, 그 이상 요청이 몰리면 인스턴스가 반납될 때까지 자연스럽게
 # 대기합니다(단일 락과 달리 완전 직렬화는 아닙니다). 풀 크기는 컨테이너 CPU/메모리
 # 제한에 맞게 환경변수로 조정하세요.
-WHISPER_POOL_SIZE = _positive_int_from_env("ANALYSIS_ENGINE_WHISPER_POOL_SIZE", 2)
-POSE_POOL_SIZE = _positive_int_from_env("ANALYSIS_ENGINE_POSE_POOL_SIZE", 2)
-FACE_POOL_SIZE = _positive_int_from_env("ANALYSIS_ENGINE_FACE_POOL_SIZE", 2)
+WHISPER_POOL_SIZE = 2
+POSE_POOL_SIZE = 2
+FACE_POOL_SIZE = 2
 
 _whisper_pool: "queue.Queue[object]" = queue.Queue()
 _pose_pool: "queue.Queue[object]" = queue.Queue()
@@ -68,6 +54,17 @@ _face_load_lock = threading.Lock()
 _whisper_loaded_count = 0
 _pose_loaded_count = 0
 _face_loaded_count = 0
+
+
+def configure_pool_sizes(settings: AnalysisEngineSettings) -> None:
+    global WHISPER_POOL_SIZE, POSE_POOL_SIZE, FACE_POOL_SIZE
+
+    if any((_whisper_loaded_count, _pose_loaded_count, _face_loaded_count)):
+        raise RuntimeError("Model pool sizes cannot change after models have been loaded.")
+
+    WHISPER_POOL_SIZE = settings.whisper_pool_size
+    POSE_POOL_SIZE = settings.pose_pool_size
+    FACE_POOL_SIZE = settings.face_pool_size
 
 
 def preload_all() -> None:

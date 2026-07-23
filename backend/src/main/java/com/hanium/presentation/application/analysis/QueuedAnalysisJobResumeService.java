@@ -45,13 +45,19 @@ public class QueuedAnalysisJobResumeService {
             AnalysisCommandService analysisCommandService,
             SchedulerDistributedLock schedulerDistributedLock,
             @Value("${analysis.queued-job.stale-seconds:60}") long staleSeconds,
-            @Value("${scheduler.lock.queued-job-resume-ttl-minutes:2}") long lockTtlMinutes
+            // resume-cron 기본값(매 분)보다 짧아야 합니다. tryLock에는 명시적 unlock이 없어
+            // TTL이 다 돼야 풀리므로, 예전 기본값(2분)처럼 TTL이 실행 간격(1분)보다 길면
+            // 같은(유일한) 인스턴스가 스스로 잠금을 쥔 채라 다음 틱을 매번 건너뛰게 됩니다
+            // (2026-07-23 코드 리뷰 P1-05 — StorageDeletionOutboxWorker에서 실측으로 발견한
+            // 것과 동일한 버그 유형). 분 단위로는 실행 간격보다 여유 있게 짧게 두기 어려워
+            // 초 단위로 바꿨습니다.
+            @Value("${scheduler.lock.queued-job-resume-ttl-seconds:45}") long lockTtlSeconds
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.analysisCommandService = analysisCommandService;
         this.schedulerDistributedLock = schedulerDistributedLock;
         this.staleSeconds = staleSeconds;
-        this.lockTtl = Duration.ofMinutes(lockTtlMinutes);
+        this.lockTtl = Duration.ofSeconds(lockTtlSeconds);
     }
 
     @Scheduled(cron = "${analysis.queued-job.resume-cron:15 */1 * * * *}")

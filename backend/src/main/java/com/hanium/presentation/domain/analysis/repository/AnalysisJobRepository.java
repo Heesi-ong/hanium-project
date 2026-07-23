@@ -22,6 +22,11 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
 
     Optional<AnalysisJob> findByJobIdAndOwnerId(String jobId, Long ownerId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
+    @Query("SELECT j FROM AnalysisJob j WHERE j.jobId = :jobId")
+    Optional<AnalysisJob> findByJobIdForUpdate(@Param("jobId") String jobId);
+
     boolean existsByJobId(String jobId);
 
     List<AnalysisJob> findAllByOrderByCreatedAtDesc();
@@ -74,6 +79,37 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
 
     // 관리자 대시보드: 사용자별 전체 분석 작업 수(상태 무관)를 보여줄 때 사용합니다.
     long countByOwnerId(Long ownerId);
+
+    long countByVideoAssetId(Long videoAssetId);
+
+    boolean existsBySourceJobId(String sourceJobId);
+
+    boolean existsByVideoAssetIdAndStatusNot(Long videoAssetId, AnalysisStatus status);
+
+    boolean existsByVideoAssetIdAndCompletedAtAfter(Long videoAssetId, LocalDateTime completedAt);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
+    @Query("SELECT j FROM AnalysisJob j WHERE j.videoAssetId = :videoAssetId ORDER BY j.id ASC")
+    List<AnalysisJob> findAllByVideoAssetIdForUpdate(@Param("videoAssetId") Long videoAssetId);
+
+    Optional<AnalysisJob> findByOwnerIdAndSourceJobIdAndAnalysisKindAndReanalysisIdempotencyKeyHash(
+            Long ownerId,
+            String sourceJobId,
+            com.hanium.presentation.domain.analysis.type.AnalysisKind analysisKind,
+            String reanalysisIdempotencyKeyHash
+    );
+
+    Optional<AnalysisJob> findFirstBySourceJobIdAndAnalysisKindAndStatusInOrderByCreatedAtDesc(
+            String sourceJobId,
+            com.hanium.presentation.domain.analysis.type.AnalysisKind analysisKind,
+            List<AnalysisStatus> statuses
+    );
+
+    Optional<AnalysisJob> findFirstBySourceJobIdAndAnalysisKindOrderByCreatedAtDesc(
+            String sourceJobId,
+            com.hanium.presentation.domain.analysis.type.AnalysisKind analysisKind
+    );
 
     // 관리자 사용자 목록 페이지용 배치 조회. 목록의 각 행마다 countByOwnerId를 따로
     // 호출하면 페이지 크기만큼(N+1) 쿼리가 나가므로, 페이지에 담긴 ownerId를 한 번에

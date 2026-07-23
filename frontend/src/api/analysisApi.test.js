@@ -8,6 +8,7 @@ import {
     cancelAnalysis,
     getAnalysisProgress,
     getAnalysisStatus,
+    requestVideoLlmReanalysis,
     retryAnalysis,
     runAnalysis,
     uploadAnalysisVideo,
@@ -59,6 +60,23 @@ describe("analysisApi", () => {
         await action();
 
         expect(getRequestConfig().timeout).toBe(ANALYSIS_COMMAND_TIMEOUT_MS);
+    });
+
+    it("sends an idempotency key for Video LLM reanalysis", async () => {
+        const getRequestConfig = captureRequestConfig();
+
+        await requestVideoLlmReanalysis("20260718120000-aaaabbbb", {
+            useOpenAi: true,
+            idempotencyKey: "video-llm-reanalysis:test-key-1234",
+        });
+
+        const requestConfig = getRequestConfig();
+        expect(requestConfig.timeout).toBe(ANALYSIS_COMMAND_TIMEOUT_MS);
+        expect(requestConfig.url)
+            .toBe("/api/analysis/20260718120000-aaaabbbb/video-llm-reanalysis");
+        expect(requestConfig.headers.get("Idempotency-Key"))
+            .toBe("video-llm-reanalysis:test-key-1234");
+        expect(JSON.parse(requestConfig.data)).toEqual({ useOpenAi: true });
     });
 
     it.each([

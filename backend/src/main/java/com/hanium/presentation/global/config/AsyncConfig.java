@@ -26,6 +26,8 @@ public class AsyncConfig {
             @Value("${analysis.executor.queue-capacity:20}") int queueCapacity,
             @Value("${analysis.executor.await-termination-seconds:25}") int analysisExecutorAwaitTerminationSeconds
     ) {
+        validateExecutorConfig(corePoolSize, maxPoolSize, queueCapacity, analysisExecutorAwaitTerminationSeconds);
+
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);
         executor.setMaxPoolSize(maxPoolSize);
@@ -58,5 +60,42 @@ public class AsyncConfig {
         });
         executor.initialize();
         return executor;
+    }
+
+    // core > max처럼 잘못된 조합은 실제로는 ThreadPoolExecutor 생성자가 IllegalArgumentException을
+    // 던지긴 하지만, Spring 빈 초기화 스택 트레이스에 묻혀 원인(어떤 설정값 조합이 문제인지)을
+    // 바로 알아보기 어렵다. 값 자체와 관계를 먼저 이름 그대로 검증해 원인을 바로 드러낸다
+    // (2026-07-23 코드 리뷰 P1-05).
+    private void validateExecutorConfig(
+            int corePoolSize,
+            int maxPoolSize,
+            int queueCapacity,
+            int awaitTerminationSeconds
+    ) {
+        if (corePoolSize < 1) {
+            throw new IllegalStateException(
+                    "analysis.executor.core-pool-size must be at least 1, got " + corePoolSize
+            );
+        }
+
+        if (maxPoolSize < corePoolSize) {
+            throw new IllegalStateException(
+                    "analysis.executor.max-pool-size(" + maxPoolSize + ") must be >= "
+                            + "analysis.executor.core-pool-size(" + corePoolSize + ")"
+            );
+        }
+
+        if (queueCapacity < 0) {
+            throw new IllegalStateException(
+                    "analysis.executor.queue-capacity must not be negative, got " + queueCapacity
+            );
+        }
+
+        if (awaitTerminationSeconds < 0) {
+            throw new IllegalStateException(
+                    "analysis.executor.await-termination-seconds must not be negative, got "
+                            + awaitTerminationSeconds
+            );
+        }
     }
 }

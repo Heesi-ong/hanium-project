@@ -47,7 +47,8 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 | --- | --- | --- | --- |
 | `SMTP_HOST` | (빈 값) | 비밀번호 재설정 이메일을 실제로 보내지 않고 dev에서는 로그로만 남김, prod에서는 링크를 로그에도 남기지 않음 | 비밀번호 재설정 기능을 실제로 쓰게 할 시점 |
 | `ADMIN_EMAILS` | (빈 값) | 관리자 대시보드(`/api/admin/**`)에 접근 가능한 계정이 없음 | 관리자 대시보드를 실제로 쓰게 할 시점 |
-| `VIDEO_LLM_ENABLED` | `false` | NVIDIA 실연동 대신 mock 응답만 생성 | `README.md` "5.1 Video LLM 실제 모델 활성화"의 결정 체크리스트를 먼저 확인한 뒤 |
+| `VIDEO_LLM_POLICY` | `DISABLED` | NVIDIA 실연동 대신 명시적 MOCK 응답만 생성 | `README.md` "5.1 Video LLM 실제 모델 활성화"에서 STRICT/DEGRADED 실패 정책을 결정한 뒤 |
+| `VIDEO_LLM_ENABLED` | `false` | 정책 값이 비었을 때만 DISABLED로 해석되는 하위 호환 스위치 | 기존 배포 마이그레이션 시 정책 값과 의미를 맞출 때 |
 | `OPENAI_ENABLED` | `false` | OpenAI 피드백 생성 대신 폴백 처리 | OpenAI 키를 확보하고 비용 정책을 확인한 뒤 |
 
 ## 4. 모니터링 알림 필수값
@@ -68,6 +69,17 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 - MySQL healthcheck는 root 비밀번호로 TCP `SELECT 1`까지 실행하므로 `healthy`가 되어야 한다.
   `unhealthy`이면 단순 포트 상태가 아니라 `DB_ROOT_PASSWORD`, 초기 스키마 생성, 데이터 디렉터리
   권한을 `docker compose logs mysql`에서 확인한다.
+- V21/V24 SHA-256 해시 컬럼(`revoked_access_tokens.token_hash`,
+  `analysis_jobs.reanalysis_idempotency_key_hash`)이 MySQL `CHAR(64)`이며 JPA schema validate와
+  일치하는지 확인한다. 빈 MySQL 8.4에 V1부터 전체 적용하는 CI `backend-boot-smoke`를
+  생략하지 않는다.
+- 재분석 child가 남은 source 결과 삭제가 HTTP 409로 거부되는지 확인한다. 삭제는 child부터
+  수행하며, child 삭제 때는 공유 원본 asset과 upload prefix가 유지되고 마지막 source 삭제
+  때만 asset과 upload 삭제 Outbox가 생성되어야 한다.
+- MinIO를 의도적으로 중단한 상태에서 삭제 Outbox가 `PENDING`과 오류·다음 재시도 시각을
+  보존하는지, MinIO 복구 후 `COMPLETED`로 바뀌고 실제 객체가 사라지는지 확인한다. 운영
+  인수 전에는 재시도 소진→`DEAD_LETTER`→관리자 목록 조회→재큐잉→감사로그→실제 삭제까지
+  리허설한다. 2026-07-23 격리 MySQL·실제 MinIO 검증에서는 이 전체 흐름이 통과했다.
 - `analysis-engine`과 `video-llm-engine`이 `healthy`가 된 뒤에만 backend와 analysis-worker가
   시작되는지 `docker compose ps`로 확인한다. analysis-engine 최초 기동은 Whisper/MediaPipe
   모델 다운로드와 풀 프리로드 때문에 시간이 걸릴 수 있으며, 10분의 healthcheck 준비 시간을
@@ -84,9 +96,10 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 - 전체 기동 후 `GET /api/health/engines`에서 두 엔진의 `health`뿐 아니라 내부 API 키를 사용하는
   authenticated readiness 경로도 성공하는지 확인한다. 단순 `/health` 성공만으로 분석 API 인증까지
   검증됐다고 판단하면 안 된다.
-- `VIDEO_LLM_ENABLED=true`로 배포했다면 `videoLlmEngine.readiness.response.mode=REAL`,
-  `realModelReady=true`인지 확인한다. `health`가 `up`이어도 readiness가 `ready=false` 또는
-  `mode=FALLBACK`이면 API 키, timeout, 영상 크기 상한, NVIDIA base URL 설정을 먼저 수정한다.
+- 실제 모델 정책으로 배포했다면 `videoLlmEngine.readiness.response.mode=REAL`,
+  `policy=STRICT|DEGRADED`, `realModelReady=true`인지 확인한다. `health`가 `up`이어도
+  readiness가 `ready=false`이면 API 키, timeout, 영상 크기 상한, NVIDIA base URL 설정을
+  먼저 수정한다.
 - MySQL 백업/복구가 실제로 동작하는지: `docs/ops/backup-restore-runbook.md`의 리허설 절차를 운영
   DB 인스턴스 기준으로 최소 1회 재현한다.
 - `backup` 서비스는 전용 멀티 아키텍처 이미지를 빌드해 `mysqldump`, `openssl`, `mc`를 포함한다.

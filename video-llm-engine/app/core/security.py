@@ -1,7 +1,8 @@
-import os
 import secrets
 
 from fastapi import Header, HTTPException, status
+
+from app.core.settings import get_settings
 
 INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
 
@@ -9,7 +10,7 @@ INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
 def verify_internal_api_key(
         x_internal_api_key: str | None = Header(default=None, alias=INTERNAL_API_KEY_HEADER),
 ) -> None:
-    configured_api_key = os.getenv("INTERNAL_ENGINE_API_KEY", "").strip()
+    configured_api_key = get_settings().internal_engine_api_key
 
     # Fail closed: this endpoint accepts server-side video paths, so a missing
     # shared secret must not silently turn authentication off.

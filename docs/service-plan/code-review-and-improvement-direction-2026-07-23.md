@@ -29,6 +29,40 @@
 4. 엔진의 URL 다운로드와 로컬 파일 접근 경계를 제한한다.
 5. 분산 환경의 보안·설정 실패 정책을 명시하고 기동 시 검증한다.
 
+### 1.1 구현 진행 상태 (2026-07-23 현재 작업 트리)
+
+최초 리뷰 이후 P1 항목의 구현이 진행됐다. 아래 상태는 아직 하나의 검토 가능한 커밋으로 정리되기 전인 **현재 작업 트리**를 기준으로 하며, 완료 표시는 코드와 자동 테스트 범위에서의 완료를 뜻한다. 실제 SMTP, NVIDIA 모델, staging E2E 검증을 대신하지 않는다.
+
+| 항목 | 현재 상태 | 구현·확인 내용 | 남은 운영 게이트 |
+|---|---|---|---|
+| P1-01 재설정 토큰 | 완료 | 사용자별 기존 활성 토큰 무효화, 변경 성공 후 잔여 토큰 무효화, 만료 토큰 정리 작업 | 운영 DB에서 정리량·락 경합 관측 |
+| P1-02 SMTP 정책 | 코드 완료 | 기능 플래그, prod 기동 검증, AES-GCM 암호화 email outbox, lease·backoff·DEAD_LETTER·관리자 재큐잉, SMTP timeout, health/UI·메트릭 | 실제 MySQL V20 migration 및 SMTP 송수신·장애 rehearsal |
+| P1-03 삭제 신뢰성 | 코드·장애 복구 실측 완료 | DB 삭제 outbox, 활성 작업 멱등성, lease 복구, 트랜잭션 밖 MinIO I/O, 재시도·DEAD_LETTER·관리자 재큐잉·감사로그, 완료 행 30일 정리, 설정 검증·메트릭. 실제 MySQL V19와 MinIO 중단→PENDING→DEAD_LETTER→관리자 재큐잉→복구→COMPLETED를 확인 | 배포 환경별 주기적 복구 훈련과 경보 수신 확인 |
+| P1-04 SSRF·경로 경계 | 코드 완료 | 엔진별 host:port allowlist, redirect 차단, 허용 base directory 검증, 보안 회귀 테스트 | 배포 환경의 실제 MinIO endpoint allowlist와 presigned URL E2E |
+| P1-05 설정 검증 | 코드 완료 | backend executor/rate limit/timeout 관계, 두 Python 엔진의 불변 settings 객체·기동 전수 검증, Video LLM mode/backend 교차 검증 | 실제 Compose 기동에서 잘못된 설정 주입 fail-fast 확인 |
+
+P2 보완도 현재 작업 트리에서 시작했다.
+
+| 항목 | 현재 상태 | 구현·확인 내용 | 남은 운영 게이트 |
+|---|---|---|---|
+| P2-01 JWT 강제 무효화 | 코드 완료 | SHA-256 DB 폐기 원장, Redis 양성 캐시, DB fallback, DB 판정 실패 시 503 fail-closed, 만료 행 정리, 메트릭·경보 | 실제 MySQL V21 migration과 Redis 중단/복구 rehearsal |
+| P2-03 Video LLM 실패 정책 | 핵심 정책 코드 완료 | STRICT/DEGRADED/DISABLED, STRICT 502→작업 실패, DEGRADED만 FALLBACK, readiness/UI 정책 노출, MOCK 제외 fallback 경보 | 실제 NVIDIA 장애 rehearsal |
+| P2-03 R1~R4 보존형 재분석 | 코드 완료, R5 주요 DB·스토리지 실측 완료 | V22 asset FK, V23 lineage/mode, V24 멱등·active unique guard, 공유 asset 참조 안전 삭제/retention 잠금, source 선삭제 차단, 202 접수·200 replay·403/409/410/429, 엔진/backend `requireReal` 이중 검증, 상세/목록 lineage 응답, FALLBACK 확인 dialog·child 이동/polling UI. MySQL 8.4 fresh V1→V24, MinIO-only 원본, 동시 10요청, child→source 삭제와 Outbox DEAD_LETTER 관리자 복구 실측 통과 | 실제 NVIDIA REAL·timeout/5xx, 500MB 경계, 원본/재분석 직접 비교 UX |
+
+추가 감사에서 발견한 두 회귀 가능성도 현재 작업 트리에서 보완했다.
+
+- 스토리지 삭제 DEAD_LETTER 수동 재큐잉 시 `attemptCount`, `lastError`, `completedAt`을 초기화해 새 재시도 예산을 부여한다.
+- `analysis.job.timeout-minutes`와 `analysis.stuck-job.max-running-minutes`가 0 또는 음수이면 backend가 기동 단계에서 실패한다.
+- 동일 reason·prefix의 활성 삭제 작업은 전용 DB enqueue lock과 unique key로 한 건만 생성한다.
+- worker는 짧은 DB transaction에서 처리 token과 lease만 선점하고 MinIO 삭제는 transaction 밖에서 실행한다. 중간에 프로세스가 종료되면 lease 만료 뒤 다른 worker가 다시 선점한다.
+- 완료된 outbox 행은 기본 30일 보존 후 500건 단위 transaction으로 정리하고, DEAD_LETTER는 자동 삭제하지 않는다.
+- 비밀번호 재설정 요청은 사용자 행을 잠가 동시 요청에서도 활성 토큰/PENDING 이메일을 각각 한 건만 유지한다.
+- reset link는 token hash를 AAD로 사용하는 AES-GCM 암호문으로만 email outbox에 저장한다. 성공·취소 시 수신 이메일과 암호문을 즉시 지우고, 토큰 만료 DEAD_LETTER도 자동 취소한다.
+- SMTP 호출은 DB transaction 밖에서 실행하며 connection/read/write timeout, 지수 backoff, DEAD_LETTER 목록·관리자 재큐잉과 감사로그를 제공한다.
+- SMTP는 provider idempotency가 없으므로 발송 성공 직후 worker가 종료되면 같은 유효 링크가 한 번 더 발송될 수 있다. 데이터 유실보다 at-least-once 전달을 선택한 정책이며 메일 내용은 동일 토큰을 사용한다.
+- 두 Python 엔진은 환경변수를 lifespan에서 단일 불변 settings 객체로 한 번 파싱한다. 모델 풀·semaphore도 검증된 snapshot으로 구성하며 요청 중 환경변수 변경은 런타임 동작을 바꾸지 않는다.
+- Video LLM 실제 모드는 `VIDEO_LLM_BACKEND=external-api`와 NVIDIA 키가 함께 있어야 하며, 숫자·URL·절대경로·host:port allowlist와 chunk/max-duration 교차 조건이 잘못되면 readiness 전에 기동 실패한다.
+
 ## 2. 확인한 현재 상태
 
 ### 2.1 구조와 실행 단위
@@ -204,6 +238,29 @@
 - 최소 변경으로는 Redis 장애 메트릭·경보와 보안 민감 API의 fail-closed 정책을 분리한다.
 - 사용자에게 제공하는 보안 정책에 강제 무효화의 최대 지연을 명시한다.
 
+**현재 작업 트리의 보완**
+
+- 로그아웃된 access token의 raw 값 대신 SHA-256 해시와 원래 만료 시각을
+  `revoked_access_tokens` DB 원장에 먼저 커밋한다.
+- 서명·만료 검증을 무효화 원장 조회보다 먼저 수행해, 임의의 bearer 문자열이 Redis miss와
+  DB 조회를 반복 유발하지 못하게 한다.
+- Redis는 폐기된 토큰만 빠르게 판정하는 양성 캐시로 사용한다. Redis miss 또는 장애 시
+  DB 원장을 조회하므로 Redis 재시작·장애 중에도 로그아웃 무효화가 유지된다.
+- DB 원장 읽기까지 실패하면 JWT 필터가 인증을 허용하지 않고 구조화된 503
+  `AUTH_SESSION_SERVICE_UNAVAILABLE` 응답을 반환한다.
+- DB 원장 쓰기가 실패한 로그아웃도 성공으로 표시하지 않고 503을 반환하며, 클라이언트가
+  복구 뒤 다시 로그아웃할 수 있도록 성공 쿠키 삭제 헤더를 보내지 않는다.
+- 만료된 원장 행은 worker가 500건 단위로 정리한다. DB/Redis 실패 counter와
+  `JwtRevocationDatabaseUnavailable`, `JwtRevocationRedisCacheFailure` 경보를 추가했다.
+- 운영 비용은 Redis miss마다 기존 사용자 조회 외에 DB 존재 확인 쿼리 한 건이 추가되는
+  것이다. refresh token·세션 테이블 전환 전까지 보안 보장과 변경 범위를 절충한 구조다.
+
+**남은 검증**
+
+- 실제 MySQL에 V21을 적용하고 `ddl-auto: validate`를 확인한다.
+- Redis를 중단한 상태에서 기존 로그아웃 토큰이 계속 401인지, 신규 로그아웃이 DB 원장에
+  기록되는지, Redis 복구 뒤 캐시가 다시 사용되는지를 Compose 환경에서 rehearsal한다.
+
 ### P2-02. 핵심 로직이 초대형 파일에 집중돼 변경 위험이 높다
 
 현재 주요 파일 크기:
@@ -231,20 +288,46 @@
 
 ### P2-03. 실제 Video LLM 장애가 mock 결과를 반환해 job 성공으로 보일 수 있다
 
-**근거와 현재 완화**
+**최초 근거**
 
 - `VIDEO_LLM_ENABLED=true`에서도 실제 호출 예외는 `FALLBACK` mock 응답으로 바뀐다.
 - 결과 JSON과 UI badge, backend 메트릭에는 REAL/FALLBACK/MOCK이 구분돼 있어 완전히 숨겨지지는 않는다.
 
-**남은 문제**
+**현재 작업 트리의 보완**
 
-- 사용자는 분석 완료를 실제 모델 성공으로 오해할 수 있고, 운영 KPI도 단순 완료율만 보면 품질 저하를 놓칠 수 있다.
+- `VIDEO_LLM_POLICY=STRICT|DEGRADED|DISABLED`를 도입했다. 정책 값이 비었을 때만 기존
+  `VIDEO_LLM_ENABLED`에서 DEGRADED/DISABLED를 유도한다.
+- STRICT에서는 실제 호출 예외를 구조화된 502로 반환하고 backend가
+  `VIDEO_LLM_ENGINE_ERROR`로 작업을 실패 처리한다.
+- DEGRADED만 FALLBACK 샘플 응답을 허용하며 결과 목록·비교·관리 화면에 실제 분석 실패와
+  샘플 대체 경고를 표시한다.
+- readiness와 상태 화면에 policy를 노출한다. fallback 경보는 의도된 DISABLED/MOCK을 제외하고
+  REAL+FALLBACK 시도 중 FALLBACK 비율만 계산한다.
 
-**수정 방향**
+**남은 문제와 방향**
 
-- 제품 정책을 `STRICT`, `DEGRADED`, `DISABLED`로 명시한다.
-- STRICT에서는 real 실패 시 단계/작업을 실패시키고, DEGRADED에서는 결과 상단에 명확한 경고와 재시도 액션을 제공한다.
-- fallback 비율 SLO와 경보를 추가한다.
+- 배포 환경별 정책을 확정하고 실제 NVIDIA timeout/5xx를 주입해 STRICT 작업 실패와 DEGRADED
+  샘플 대체를 E2E로 검증해야 한다.
+- 완료된 DEGRADED 결과는 일반 `/retry` 대신 보존형 재분석 API를 사용한다. 원본 결과는
+  유지하고, 비용·사용 한도를 다시 소비하는 새 child job을 생성한다.
+- 보존형 재분석의 권장 모델과 단계별 migration/API/retention 계약은
+  `docs/service-plan/video-llm-reanalysis-design-2026-07-23.md`에 정리했다. 기존 job 초기화나
+  영상 물리 복사 대신 불변 video asset을 여러 analysis job이 공유하는 구조를 권장한다.
+- R1/R2 기반으로 V22 `video_asset_id`, V23 `analysis_kind`·`source_job_id`·최종
+  `video_llm_generation_mode`를 추가했고, 신규 업로드·worker·결과 목록·영상 재생을 asset
+  참조 우선으로 전환했다. 개별 결과 삭제는 마지막 참조에서만 원본을 삭제하며, retention은
+  같은 asset의 최신 또는 미완료 참조가 있으면 삭제를 보류한다.
+- backend에는 `POST /api/analysis/{sourceJobId}/video-llm-reanalysis`를 열었다. 원본/asset
+  잠금, SHA-256 멱등 키, active child DB guard, 큐·비용 사전 확인, `requireReal` 이중 검증을
+  함께 적용했다.
+- R4에서 목록·상세 응답에 `analysisKind`, `sourceJobId`, 저장된
+  `videoLlmGenerationMode`를 노출하고 원본 상세에는 최신 재분석 job ID를 제공한다. 결과
+  파일이 아직 없는 QUEUED/RUNNING child도 상태 shell을 반환하므로 기존 상세 polling을
+  재사용한다.
+- 프론트 상세는 STANDARD+COMPLETED+FALLBACK에서만 실제 Video LLM 재분석 버튼을 표시한다.
+  확인 dialog에 비용·한도 재소비와 새 결과 생성을 알리고, 네트워크 재시도에도 같은
+  `Idempotency-Key`를 유지한 뒤 child 상세로 이동한다. 원본/최신 재분석 링크는 제공하지만
+  두 결과를 한 번에 선택하는 직접 비교 UX는 후속 보완이다.
 
 ### P2-04. 빌드 재현성과 예정된 도구 변경 대응이 필요하다
 
@@ -294,16 +377,19 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 
 ### P3-03. README의 Video LLM 설명이 현재 구현과 서로 충돌한다
 
-루트 README의 실행 안내 앞부분은 “현재는 mock 응답만 반환”한다고 설명하지만, 같은 문서 뒤에서는 `VIDEO_LLM_ENABLED=true`와 NVIDIA API key를 이용한 실제 hosted 호출을 안내한다. CI 파일 상단 주석에도 mock 중심이라는 오래된 표현이 일부 남아 있다.
+최초 감사에서는 루트 README의 실행 안내 앞부분이 “현재는 mock 응답만 반환”한다고
+설명하지만, 같은 문서 뒤에서는 실제 hosted 호출을 안내해 서로 충돌했다.
 
 **영향**
 
 - 새 개발자나 운영자가 실제 모델 경로가 미구현이라고 오해하거나, 반대로 검증되지 않은 local-model 경로까지 완성된 것으로 오해할 수 있다.
 
-**개선 방향**
+**현재 작업 트리의 보완**
 
-- 모드를 `mock`, `external NVIDIA hosted`, `local-model 미구현/준비 중`으로 명확히 구분한다.
-- README, `.env.example`, Compose, CI 주석, `docs/PROJECT_STRUCTURE.md`를 한 변경에서 함께 갱신한다.
+- README, `.env.example`, Compose, 배포 체크리스트와 `docs/PROJECT_STRUCTURE.md`를
+  `STRICT`, `DEGRADED`, `DISABLED` 정책 기준으로 함께 갱신했다.
+- `external-api` 실제 호출과 `local-model` 이미지 의존성 프로필을 구분하고,
+  정책·backend 설치 형태의 교차 조건을 기동 시 검증한다.
 - 문서의 기준 커밋/갱신일을 현재 상태에 맞춘다.
 
 ## 4. 수정하지 않은 항목
@@ -395,7 +481,79 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 추가 관찰:
 
 - 백엔드 최초 `clean test`는 Gradle 캐시를 사용했으므로 검증 근거로 삼지 않고 `--rerun-tasks` 결과를 기준으로 했다.
-- Gradle 10 toolchain 경고와 `@MockBean` 제거 예정 경고 30건이 확인됐다.
+
+### 6.1 구현 진행분 재검증 (2026-07-23)
+
+- `git diff --check`: 통과
+- backend `./gradlew clean test --rerun-tasks --no-daemon`: 403 tests 중 395 통과,
+  8 skipped, failures/errors 0
+- backend 보완 대상 테스트 8개 강제 재실행: 통과
+- frontend `npm run build`, `npm run lint`: 통과
+- frontend `npm test -- --run`: 45 files, 216 tests 통과
+- analysis-engine `.venv/bin/python -m pytest -q`: 144 tests 통과
+- video-llm-engine `.venv/bin/python -m pytest -q`: 177 tests 통과, 1 deselected
+- `docker compose config --quiet`: 통과
+
+첫 Python 테스트 시도는 루트 공용 `.venv`에 pytest가 없어 실행되지 않았고, 각 엔진의 `.venv`로 바로잡은 결과를 위 검증 근거로 사용했다.
+- Gradle 10 toolchain 경고와 `@MockBean` 제거 예정 경고 35건이 확인됐다.
+- P1/P2 보완 후 base/prod `docker compose config --quiet`는 다시 통과했다.
+- Prometheus alert/rule-test YAML은 파싱됐지만 로컬에 `promtool`이 없어
+  `promtool test rules`는 실행하지 못했다.
+
+### 6.2 R5 MySQL·MinIO·동시성 실측 (2026-07-23)
+
+- 기존 dev MySQL 8.4 스키마를 V18에서 V24까지 올리고 Flyway 24개 validation과 Hibernate
+  `ddl-auto: validate`, backend `/api/health`, actuator `UP`을 확인했다.
+- 이 과정에서 V21 `revoked_access_tokens.token_hash`와 V24
+  `analysis_jobs.reanalysis_idempotency_key_hash`가 migration에서는 `CHAR(64)`, JPA에서는
+  `VARCHAR(64)`로 해석돼 기동을 차단하는 문제를 발견했다. 두 엔티티를 고정 길이
+  `CHAR(64)`로 맞춘 뒤 재기동이 통과했다.
+- 기존 볼륨과 분리된 일회용 MySQL 8.4 빈 스키마에도 V1→V24 전체 24개 migration을 적용했고,
+  마지막 이력 `version=24, success=1`, backend health를 확인한 뒤 컨테이너를 삭제했다.
+- 938 KiB 실제 MP4를 `write-required/read-preferred=true`로 업로드하고 MinIO 객체를 직접
+  확인한 뒤 로컬 원본을 격리했다. MinIO만 남은 상태에서도 재분석 접수가 202로 성공했다.
+- API 전용 모드(`worker.enabled=false`, `dispatch.local-on-run=false`)에서 같은 source에
+  서로 다른 키 10개를 동시에 보냈다. 결과는 202 한 건, 409 아홉 건이며 DB active child도
+  한 건이었다. 성공 키 replay는 HTTP 200과 동일 child ID를 반환했다.
+- 첫 동시성 시도에서 local dispatch를 끄지 않아 첫 child가 즉시 FAILED된 뒤 두 번째 요청이
+  합법적으로 접수되는 현상도 확인했다. 이는 active 중복이 아니라 “실패로 guard 해제 후 새
+  접수”이며, 순수 접수 경합 검증은 API 전용 모드로 다시 수행했다.
+- `.env.example`은 `MINIO_ROOT_USER/PASSWORD`를 표준으로 안내하지만 직접 실행 경로는
+  `MINIO_ACCESS_KEY/SECRET_KEY`만 읽던 불일치를 수정했다. access/secret이 없을 때 root
+  변수를 사용하는 fallback으로 dev 직접 기동을 재검증했다.
+- 테스트용 계정·source/child/asset DB 행, MinIO 객체, 로컬·임시 파일은 모두 삭제했고 기존
+  Compose 볼륨은 보존한 채 데이터 계층을 원래의 정지 상태로 복원했다.
+
+### 6.3 R5 lineage 삭제 순서·MinIO Outbox 장애 복구 실측 (2026-07-23)
+
+- 기존 구현은 source를 먼저 삭제해도 공유 asset만 보존하고 child의 `source_job_id`는 그대로
+  남겨, child 상세의 원본 링크가 404가 되는 dangling lineage를 허용했다. 실행 중 child도
+  source 계약을 잃을 수 있었다.
+- source 행의 비관적 잠금 아래 `existsBySourceJobId`를 확인해 child가 하나라도 남아 있으면
+  HTTP 409 `ANALYSIS_DELETE_NOT_ALLOWED`로 거부하고 “재분석 결과를 먼저 삭제”하도록 바꿨다.
+  재분석 생성도 같은 source 행을 잠그므로 판정 직후 새 child가 끼어드는 race가 없다.
+- H2와 격리 MySQL 8.4 모두에서 source 우선 삭제 409, lineage·asset·outbox 무변경을 확인했다.
+  이후 child를 삭제하면 child result outbox만 생기고 asset은 유지되며, source를 마지막으로
+  삭제할 때 source result와 upload outbox가 생성되고 asset 행이 제거되는 것을 확인했다.
+- 실제 MinIO에 24바이트 검증 객체를 만든 뒤 MinIO를 중단하고 격리 MySQL outbox 한 건을
+  처리했다. 작업은 `PENDING`, `attempt_count=1`, 오류 있음, processing token 해제, 미래
+  `next_attempt_at` 상태로 영속돼 삭제 요청이 유실되지 않았다.
+- MinIO 복구 후 같은 작업을 재시도해 `COMPLETED`, 오류·active key 해제, 완료 시각 기록과
+  실제 객체 0건을 확인했다. MinIO I/O는 DB transaction 밖에서 실행됐다.
+- 별도 격리 MySQL에서 최대 시도 횟수를 3으로 두고 MinIO 장애를 유지해
+  `PENDING:1 → PENDING:2 → DEAD_LETTER:3`을 재현했다. 관리자 목록 API는 해당 작업을
+  HTTP 200으로 노출했고, 관리자 재큐잉 API는 `PENDING`, `attempt_count=0`, 오류·lease
+  초기화와 `REQUEUE_STORAGE_DELETION_TASK` 감사로그를 같은 흐름에서 기록했다.
+- MinIO 컨테이너가 시작됐지만 아직 health-ready가 아니던 첫 재시도는 다시 `PENDING:1`로
+  안전하게 남았다. healthy 이후 다음 시도에서 `COMPLETED`, 오류·active key·lease 해제,
+  실제 객체 0건을 확인했고 관리자 DEAD_LETTER 목록에서도 제거됐다.
+- 첫 기본 복구 검증에 사용한 backend, MySQL, MinIO 객체·컨테이너는 제거했고 기존 Compose
+  데이터 볼륨과 사용자 DB는 수정하지 않았다.
+
+> 2026-07-23 마지막 DEAD_LETTER 리허설의 backend 프로세스는 종료했지만, 자동 승인 한도
+> 초과로 종료 명령이 거부돼 격리 MySQL·Redis·MinIO 컨테이너와
+> `/private/tmp/hanium-r5-deadletter-*` 파일의 최종 제거 여부는 아직 확인하지 못했다.
+> 다음 실행에서 가장 먼저 정리·확인해야 한다.
 
 ## 7. 검증하지 못한 항목과 남은 위험
 
@@ -404,11 +562,20 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 - 실제 SMTP 계정으로 메일 발송/반송 처리
 - 공개 도메인의 TLS 최초 발급과 자동 갱신
 - 원격 MinIO 백업을 빈 MySQL에 복원하는 이번 시점의 리허설
-- Redis/MinIO/worker 강제 종료를 포함한 chaos test
+- Redis/worker 강제 종료를 포함한 전체 chaos test
 - 정식 침투 테스트와 개인정보/법률 준수 검토
 
 정적 리뷰와 현재 테스트가 통과했다는 사실은 위 실환경 검증을 대체하지 않는다.
 
 ## 8. 다음 우선순위
 
-다음 구현 작업은 **1단계의 P1-01 비밀번호 재설정 토큰 단일 활성화**부터 시작하는 것이 가장 안전하다. 변경 범위가 비교적 작고 보안 효과가 명확하며, 이후 SMTP/outbox 작업의 데이터 모델 기준도 함께 정리할 수 있다.
+다음 우선순위는 **P1 실환경 gate와 P2 인증 세션 무효화 정책**이다.
+
+1. staging 정책을 STRICT 또는 DEGRADED로 확정하고 NVIDIA timeout/5xx 장애를 주입해
+   child FAILED, REAL 복구 성공, 비용·quota 메트릭을 rehearsal한다.
+2. 500MB 경계 영상의 asset 공유 시 저장 중복이 없는지 확인한다.
+3. 테스트 SMTP에서 정상 발송과 연결 실패 → backoff → DEAD_LETTER → 관리자 재큐잉 흐름을 rehearsal한다.
+4. 잘못된 Python 설정을 의도적으로 주입해 두 엔진이 readiness 전에 종료되는지 Compose에서 확인한다.
+5. Redis 중단 중 기존 폐기 토큰 401, 신규 로그아웃 DB 기록, Redis 복구 뒤 캐시 사용을
+   Compose에서 rehearsal한다.
+6. 원본/재분석 직접 비교 UX를 보완한다.

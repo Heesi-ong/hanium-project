@@ -5,14 +5,15 @@ from fastapi import FastAPI
 
 from app.core.logging_config import configure_logging
 
-configure_logging()
-
-# 다른 애플리케이션 모듈은 로깅 핸들러가 이미 붙은 뒤에 import되도록 의도적으로 여기에
-# 둡니다(파일 맨 위로 옮기지 않음). ruff의 E402(모듈 상단이 아닌 import)는 이 순서를
-# 위한 의도된 예외라 노란색 경고 대신 명시적으로 무시합니다.
+# 설정을 import 시 읽지 않고 lifespan에서 한 번 검증·고정하기 위해 애플리케이션
+# 모듈 import와 로깅 초기화를 분리합니다. E402는 이 의도된 초기화 순서를 위한 예외입니다.
 from app.core import model_registry  # noqa: E402
+from app.core.settings import (  # noqa: E402
+    AnalysisEngineSettings,
+    clear_settings,
+    install_settings,
+)
 from app.api.basic_analysis import (  # noqa: E402
-    resolve_analysis_engine_max_video_size_bytes,
     router as basic_analysis_router,
 )
 from app.api.readiness import router as readiness_router  # noqa: E402
@@ -23,17 +24,22 @@ logger = logging.getLogger("analysis-engine")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        resolve_analysis_engine_max_video_size_bytes()
+        settings = AnalysisEngineSettings.from_env()
+        install_settings(settings)
+        configure_logging(settings.log_dir)
+        model_registry.configure_pool_sizes(settings)
         model_registry.preload_all()
     except Exception:
-        logger.exception("모델 프리로딩에 실패했습니다.")
+        logger.exception("Analysis Engine 설정 검증 또는 모델 프리로딩에 실패했습니다.")
         model_registry.close_all()
+        clear_settings()
         raise
 
     try:
         yield
     finally:
         model_registry.close_all()
+        clear_settings()
         logger.info("모델 풀을 정상 종료했습니다.")
 
 

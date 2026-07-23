@@ -2,6 +2,13 @@
 
 작성일: 2026-07-16
 
+**2026-07-23 실패 정책 갱신**: 런타임 정책을 `VIDEO_LLM_POLICY=STRICT|DEGRADED|DISABLED`로
+명시했다. STRICT는 실제 모델 실패 시 엔진이 502를 반환해 backend 작업도 실패시키며,
+DEGRADED만 `generationMode=FALLBACK` 샘플 대체를 허용한다. DISABLED는 의도된 MOCK
+모드다. 기존 `VIDEO_LLM_ENABLED`는 정책 값이 비었을 때만 사용하는 하위 호환 스위치다.
+운영 정확성을 우선하는 기본 권고는 STRICT이며, DEGRADED는 샘플 대체를 제품이 명시적으로
+허용한 환경에서만 선택한다.
+
 **2026-07-20 활성화 및 A-4 결정 갱신**: 사용자가 실제 NVIDIA API 키(`nvapi-...`)를
 제공해 로컬 `.env`(git-ignored)에 설정하고 `VIDEO_LLM_ENABLED=true`로 전환했다.
 `readiness` 엔드포인트(`mode: REAL, realModelReady: true`)와 실제 업로드→분석
@@ -41,15 +48,22 @@ PrivacyPage 고지로 대체"로 판정을 변경한다. 향후 이 결정을 �
 - **A-4 업로드 동의 UI**: 안내 문구 + 동의 체크를 추가한다. 단 실제 삽입/활성화는 Video LLM을 켜는 시점에 함께 반영(지금 켜지도 않았는데 "외부 전송 동의"를 받으면 사실과 어긋나므로 미리 넣지 않는다). (2026-07-20: 여전히 미구현, 의도된 상태.)
 - **A-5 롤아웃**: 내부·베타부터.
 
-즉 지금 당장의 코드 변경은 없고, 켜기로 결정하는 순간 A-3(고지 삽입) → A-4(동의 UI) → staging `VIDEO_LLM_ENABLED=true` 순으로 진행하면 된다.
+위 항목은 2026-07-16 당시 계획이다. 현재 절차는 상단의 2026-07-20 결정과
+2026-07-23 정책 갱신을 우선하며, staging에서 `VIDEO_LLM_POLICY=STRICT|DEGRADED`를
+명시한 뒤 검증한다.
 
 ## 무엇이 이미 준비됐나 (코드)
 
 - NVIDIA NIM(`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`) 실호출 코드 완성: 에셋 업로드/202 폴링/JSON 정규화/타임아웃(`NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS`=120s).
 - 대용량 영상은 MinIO에서 임시 파일로 스트리밍하고 NVIDIA Asset API에도 1MB 청크로 전송합니다. `VIDEO_LLM_MAX_VIDEO_SIZE_MB`(기본 500MB)를 다운로드 헤더·실제 바이트·로컬 파일에 강제해 동시 분석의 메모리 급증과 과대 파일 전송을 막습니다.
-- 실패 시 mock으로 자동 폴백(`generationMode=FALLBACK`).
+- STRICT는 외부 제공자 호출 실패를 502로 반환하고, DEGRADED만 mock으로 자동
+  폴백(`generationMode=FALLBACK`)한다.
+- 정책이 STRICT/DEGRADED인데 키·URL·timeout·크기 제한이 잘못되면 시작 단계에서 실패해
+  설정 오류를 숨기지 않는다.
 - 월간 예산 가드(`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`=500, 보수적 기본값) + 서킷브레이커.
-- **관측성(이번에 추가)**: `video_llm_generation_total{mode=REAL|FALLBACK|MOCK}` 메트릭과, 폴백률 50% 초과 시 발동하는 `VideoLlmFallbackRateHigh` Prometheus 알림.
+- **관측성(이번에 추가)**: `video_llm_generation_total{mode=REAL|FALLBACK|MOCK}` 메트릭과,
+  실제 시도(REAL+FALLBACK) 중 폴백률 50% 초과 시 발동하는
+  `VideoLlmFallbackRateHigh` Prometheus 알림. DISABLED의 의도된 MOCK은 분모에서 제외한다.
 - **사용자 오해 방지(이번에 추가)**: 결과 화면(`FeedbackSection.jsx`)에서 `generationMode`가 MOCK/FALLBACK이면 "이 결과는 실제 영상 분석이 아닌 예시(샘플) 데이터"라는 경고 문구를 노출.
 
 ## 켜기 전 확정해야 할 것 (결정 항목)
@@ -65,8 +79,9 @@ PrivacyPage 고지로 대체"로 판정을 변경한다. 향후 이 결정을 �
 ```bash
 # staging에서만. video-llm-engine에 실제 키와 함께:
 VIDEO_LLM_ENABLED=true
+VIDEO_LLM_POLICY=STRICT            # 샘플 대체를 허용할 때만 DEGRADED
 NVIDIA_API_KEY=nvapi-...          # build.nvidia.com에서 발급
-VIDEO_LLM_BACKEND=external-api     # 이미지 빌드 시(런타임 동작은 VIDEO_LLM_ENABLED가 결정)
+VIDEO_LLM_BACKEND=external-api     # 이미지 build arg와 런타임 식별값을 일치시킴
 ```
 
 1. staging에서 실영상 1~2건 업로드→분석 E2E 실행.
@@ -77,7 +92,8 @@ VIDEO_LLM_BACKEND=external-api     # 이미지 빌드 시(런타임 동작은 VI
 
 ## 롤백
 
-- `VIDEO_LLM_ENABLED=false`로 되돌리면 즉시 mock으로 복귀(코드 변경/재배포 불필요, 환경변수만).
+- `VIDEO_LLM_POLICY=DISABLED`와 `VIDEO_LLM_ENABLED=false`로 되돌리면 즉시 MOCK 모드로
+  복귀한다(코드 변경 없이 환경변수와 서비스 재기동만 필요).
 
 ---
 

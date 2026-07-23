@@ -8,6 +8,7 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -60,7 +61,7 @@ class PasswordResetEmailSenderTest {
     }
 
     @Test
-    void silentlySkipsSendingWhenSmtpHostIsBlankInProdProfile() {
+    void throwsWhenSmtpHostIsBlankInProdProfile() {
         JavaMailSender mailSender = mock(JavaMailSender.class);
         Environment environment = mock(Environment.class);
         when(environment.getActiveProfiles()).thenReturn(new String[] {"prod"});
@@ -70,7 +71,9 @@ class PasswordResetEmailSenderTest {
         );
         User user = User.create("prod-user@example.com", "hashed-password");
 
-        sender.sendPasswordResetLink(user, RESET_LINK);
+        assertThatIllegalStateException()
+                .isThrownBy(() -> sender.sendPasswordResetLink(user, RESET_LINK))
+                .withMessageContaining("PASSWORD_RESET_EMAIL_NOT_SENT");
 
         verify(mailSender, never()).send(any(SimpleMailMessage.class));
     }

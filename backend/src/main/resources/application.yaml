@@ -32,6 +32,9 @@ spring:
       mail:
         smtp:
           auth: ${SMTP_AUTH:true}
+          connectiontimeout: ${SMTP_CONNECTION_TIMEOUT_MS:10000}
+          timeout: ${SMTP_READ_TIMEOUT_MS:10000}
+          writetimeout: ${SMTP_WRITE_TIMEOUT_MS:10000}
           starttls:
             enable: ${SMTP_STARTTLS_ENABLE:true}
 
@@ -67,6 +70,9 @@ security:
     expiration-minutes: ${SECURITY_JWT_EXPIRATION_MINUTES:30}
     # local/dev HTTP 환경은 각 프로필에서 false로 낮춥니다. 운영은 HTTPS 전제이므로 기본 true입니다.
     cookie-secure: ${SECURITY_JWT_COOKIE_SECURE:true}
+    revocation:
+      # Redis는 폐기 토큰 양성 캐시이며, 이 DB 원장의 만료 행은 worker가 주기적으로 정리합니다.
+      cleanup-cron: ${JWT_REVOCATION_CLEANUP_CRON:0 15 * * * *}
   client-ip:
     # 직접 인터넷에 노출된 backend에서는 클라이언트가 X-Forwarded-For를 조작할 수 있으므로
     # 기본값은 false입니다. 신뢰 가능한 reverse proxy가 헤더를 덮어쓰는 배포에서만 true로 켭니다.
@@ -129,10 +135,24 @@ openai:
   timeout-ms: ${OPENAI_TIMEOUT_MS:15000}
 
 password-reset:
+  # false로 명시하면 SMTP 설정 여부와 무관하게 요청/확인 API를 항상 거절합니다(기능을
+  # 의도적으로 쓰지 않는 운영 배포용). true(기본값)인데 prod에서 SMTP_HOST가 비어 있으면
+  # PasswordResetMailStartupValidator가 기동 자체를 막습니다.
+  enabled: ${PASSWORD_RESET_ENABLED:true}
   # 재설정 링크는 계정 탈취로 이어질 수 있는 일회용 권한이므로 JWT 만료와 같은 30분 기본값을 사용합니다.
   token-expiration-minutes: ${PASSWORD_RESET_TOKEN_EXPIRATION_MINUTES:30}
   reset-url-base: ${PASSWORD_RESET_URL_BASE:http://localhost:5173/reset-password}
   mail-from-address: ${MAIL_FROM_ADDRESS:no-reply@example.com}
+  outbox:
+    # 재설정 링크 평문을 DB에 남기지 않도록 AES-GCM 암호화에 사용하는 별도 비밀값입니다.
+    # prod에서는 로컬 기본값을 허용하지 않으며, 배포 중 queued task가 있으면 키를 먼저
+    # 교체하지 말고 모두 처리/취소한 뒤 회전해야 합니다.
+    encryption-key: ${PASSWORD_RESET_OUTBOX_ENCRYPTION_KEY:local-password-reset-outbox-key-change-me}
+    poll-interval-ms: ${PASSWORD_RESET_OUTBOX_POLL_INTERVAL_MS:5000}
+    max-attempts: ${PASSWORD_RESET_OUTBOX_MAX_ATTEMPTS:5}
+    base-backoff-seconds: ${PASSWORD_RESET_OUTBOX_BASE_BACKOFF_SECONDS:30}
+    max-backoff-seconds: ${PASSWORD_RESET_OUTBOX_MAX_BACKOFF_SECONDS:300}
+    claim-lease-seconds: ${PASSWORD_RESET_OUTBOX_CLAIM_LEASE_SECONDS:60}
   cleanup:
     # 만료된 지 오래된(사용/무효화 여부 무관) 토큰 행을 주기적으로 삭제합니다.
     cron: "${PASSWORD_RESET_CLEANUP_CRON:0 30 3 * * *}"
@@ -194,6 +214,19 @@ storage:
     original-video-days: ${STORAGE_RETENTION_ORIGINAL_VIDEO_DAYS:30}
   backfill:
     enabled: ${STORAGE_BACKFILL_ENABLED:false}
+  deletion:
+    # MinIO 프리픽스 삭제 outbox(StorageDeletionTask) 재시도 정책입니다. 실패할 때마다
+    # base-backoff-minutes * 2^attempt분(최대 max-backoff-minutes)만큼 미뤘다가 재시도하고,
+    # max-attempts를 넘기면 DEAD_LETTER로 표시해 관리자가 수동으로 재큐잉하게 합니다.
+    worker-cron: "${STORAGE_DELETION_WORKER_CRON:0 */2 * * * *}"
+    max-attempts: ${STORAGE_DELETION_MAX_ATTEMPTS:8}
+    base-backoff-minutes: ${STORAGE_DELETION_BASE_BACKOFF_MINUTES:2}
+    max-backoff-minutes: ${STORAGE_DELETION_MAX_BACKOFF_MINUTES:240}
+    # 처리 lease 동안 다른 인스턴스는 같은 행을 선점하지 않습니다. 프로세스가 죽으면 lease
+    # 만료 뒤 재시도하며, MinIO 호출은 이 시간 동안 DB transaction 밖에서 실행됩니다.
+    claim-lease-minutes: ${STORAGE_DELETION_CLAIM_LEASE_MINUTES:5}
+    completed-retention-days: ${STORAGE_DELETION_COMPLETED_RETENTION_DAYS:30}
+    completed-cleanup-cron: "${STORAGE_DELETION_COMPLETED_CLEANUP_CRON:0 30 3 * * *}"
   object-storage:
     # local/dev는 기존 로컬 fallback을 유지합니다. prod에서는 Compose 오버레이가 둘 다 true로
     # 강제해 새 파일이 MinIO 없이 성공하지 않고, API가 결과 JSON을 MinIO에서 먼저 읽습니다.
@@ -203,8 +236,11 @@ storage:
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
-  access-key: ${MINIO_ACCESS_KEY:minioadmin}
-  secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+  # Compose는 ROOT 변수를 ACCESS/SECRET으로 명시적으로 매핑하지만, IDE·systemd처럼
+  # application.yaml을 직접 사용하는 실행 경로도 .env.example의 ROOT 변수만으로 같은
+  # 자격 증명을 쓰도록 중첩 fallback을 둡니다. ACCESS/SECRET이 있으면 항상 우선합니다.
+  access-key: ${MINIO_ACCESS_KEY:${MINIO_ROOT_USER:minioadmin}}
+  secret-key: ${MINIO_SECRET_KEY:${MINIO_ROOT_PASSWORD:minioadmin123}}
   bucket-name: ${MINIO_BUCKET_NAME:hanium-storage}
 
 video:
@@ -282,4 +318,18 @@ scheduler:
     storage-cleanup-ttl-minutes: ${SCHEDULER_LOCK_STORAGE_CLEANUP_TTL_MINUTES:10}
     stuck-job-watchdog-ttl-minutes: ${SCHEDULER_LOCK_STUCK_JOB_WATCHDOG_TTL_MINUTES:5}
     original-video-retention-ttl-minutes: ${SCHEDULER_LOCK_ORIGINAL_VIDEO_RETENTION_TTL_MINUTES:10}
-    queued-job-resume-ttl-minutes: ${SCHEDULER_LOCK_QUEUED_JOB_RESUME_TTL_MINUTES:2}
+    # resume-cron 기본값(매 분)보다 짧아야 합니다(자세한 이유는 QueuedAnalysisJobResumeService 참고).
+    queued-job-resume-ttl-seconds: ${SCHEDULER_LOCK_QUEUED_JOB_RESUME_TTL_SECONDS:45}
+    # password-reset.cleanup용 락 TTL도 여기 일관되게 모아둡니다(이전에는 코드 기본값(10분)에만
+    # 의존해 이 파일만 보고는 값을 알 수 없었습니다).
+    password-reset-cleanup-ttl-minutes: ${SCHEDULER_LOCK_PASSWORD_RESET_CLEANUP_TTL_MINUTES:10}
+    # password-reset.outbox.poll-interval-ms 기본값(5초)보다 짧아야 합니다. tryLock에는 명시적
+    # unlock이 없어 TTL이 다 돼야 풀리므로, TTL이 실행 간격보다 길면 같은(유일한) 인스턴스가
+    # 스스로 잠금을 쥔 채라 다음 틱을 매번 건너뛰게 됩니다(2026-07-23 코드 리뷰 후속 발견).
+    password-reset-email-worker-ttl-seconds: ${SCHEDULER_LOCK_PASSWORD_RESET_EMAIL_WORKER_TTL_SECONDS:4}
+    jwt-revocation-cleanup-ttl-minutes: ${SCHEDULER_LOCK_JWT_REVOCATION_CLEANUP_TTL_MINUTES:10}
+    # storage.deletion.worker-cron 기본값(2분 간격)보다 짧아야 합니다. tryLock에는 명시적
+    # unlock이 없어 TTL이 다 돼야 풀리므로, TTL이 실행 간격보다 길면 같은(유일한) 인스턴스가
+    # 스스로 잠금을 쥔 채라 다음 틱을 매번 건너뛰게 됩니다.
+    storage-deletion-worker-ttl-minutes: ${SCHEDULER_LOCK_STORAGE_DELETION_WORKER_TTL_MINUTES:1}
+    storage-deletion-retention-ttl-minutes: ${SCHEDULER_LOCK_STORAGE_DELETION_RETENTION_TTL_MINUTES:10}

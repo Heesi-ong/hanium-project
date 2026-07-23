@@ -34,18 +34,20 @@ public class PasswordResetEmailSender {
     }
 
     public void sendPasswordResetLink(User user, String resetLink) {
+        sendPasswordResetLink(user.getEmail(), user.getId(), resetLink);
+    }
+
+    public void sendPasswordResetLink(String recipientEmail, Long userId, String resetLink) {
         if (smtpHost == null || smtpHost.isBlank()) {
             if (isProdProfile()) {
-                log.error(
-                        "PASSWORD_RESET_EMAIL_NOT_SENT smtpHost is empty in prod profile. userId={}",
-                        user.getId()
+                throw new IllegalStateException(
+                        "PASSWORD_RESET_EMAIL_NOT_SENT smtpHost is empty in prod profile. userId=" + userId
                 );
-                return;
             }
 
             log.warn(
                     "PASSWORD_RESET_DEV_FALLBACK 개발용 폴백: SMTP_HOST가 없어 비밀번호 재설정 링크를 로그로 출력합니다. userId={} resetLink={}",
-                    user.getId(),
+                    userId,
                     resetLink
             );
             return;
@@ -53,12 +55,12 @@ public class PasswordResetEmailSender {
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(mailFromAddress);
-        message.setTo(user.getEmail());
+        message.setTo(recipientEmail);
         message.setSubject("AI Presentation Coach 비밀번호 재설정");
         message.setText("""
                 비밀번호 재설정을 요청하셨습니다.
 
-                아래 링크에서 30분 이내에 새 비밀번호를 설정하세요.
+                아래 링크가 만료되기 전에 새 비밀번호를 설정하세요.
                 %s
 
                 본인이 요청하지 않았다면 이 메일을 무시하세요.

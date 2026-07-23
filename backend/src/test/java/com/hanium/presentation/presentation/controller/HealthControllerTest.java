@@ -19,7 +19,9 @@ class HealthControllerTest {
         VideoLlmEngineClient videoLlmEngineClient = mock(VideoLlmEngineClient.class);
         HealthController healthController = new HealthController(
                 analysisEngineClient,
-                videoLlmEngineClient
+                videoLlmEngineClient,
+                true,
+                "smtp.example.com"
         );
 
         when(analysisEngineClient.getBaseUrl()).thenReturn("http://analysis-engine:8001");
@@ -95,6 +97,41 @@ class HealthControllerTest {
                                                     .contains("NVIDIA_API_KEY is missing");
                                         });
                             });
+                });
+    }
+
+    @Test
+    void healthCheckExposesPasswordResetFeatureAndSmtpStatus() {
+        HealthController enabledWithSmtpController = new HealthController(
+                mock(AnalysisEngineClient.class),
+                mock(VideoLlmEngineClient.class),
+                true,
+                "smtp.example.com"
+        );
+
+        ApiResponse<Map<String, Object>> enabledResponse = enabledWithSmtpController.healthCheck();
+
+        assertThat(enabledResponse.data())
+                .extractingByKey("passwordReset")
+                .isInstanceOfSatisfying(Map.class, passwordReset -> {
+                    assertThat(passwordReset.get("enabled")).isEqualTo(true);
+                    assertThat(passwordReset.get("smtpConfigured")).isEqualTo(true);
+                });
+
+        HealthController disabledWithoutSmtpController = new HealthController(
+                mock(AnalysisEngineClient.class),
+                mock(VideoLlmEngineClient.class),
+                false,
+                ""
+        );
+
+        ApiResponse<Map<String, Object>> disabledResponse = disabledWithoutSmtpController.healthCheck();
+
+        assertThat(disabledResponse.data())
+                .extractingByKey("passwordReset")
+                .isInstanceOfSatisfying(Map.class, passwordReset -> {
+                    assertThat(passwordReset.get("enabled")).isEqualTo(false);
+                    assertThat(passwordReset.get("smtpConfigured")).isEqualTo(false);
                 });
     }
 }

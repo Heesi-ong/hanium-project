@@ -110,6 +110,7 @@ storage/temp/*
 storage/logs/*
 storage/backups/*
 storage/metrics/*
+storage/models/*
 
 !storage/uploads/.gitkeep
 !storage/results/.gitkeep

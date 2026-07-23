@@ -7,8 +7,10 @@ import com.hanium.presentation.application.video.dto.VideoUploadCommand;
 import com.hanium.presentation.common.util.JobIdGenerator;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.analysis.type.AnalysisStep;
+import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.config.UserRateLimiter;
@@ -169,7 +171,8 @@ public class AnalysisCommandService {
                 storedVideoInfo.fileSize()
         );
 
-        uploadedVideoRepository.save(uploadedVideo);
+        UploadedVideo savedVideo = uploadedVideoRepository.save(uploadedVideo);
+        savedJob.linkVideoAsset(savedVideo.getId());
 
         return AnalysisUploadResponse.of(
                 savedJob.getJobId(),
@@ -367,6 +370,24 @@ public class AnalysisCommandService {
         return AnalysisStatusResponse.from(savedJob);
     }
 
+    AnalysisStatusResponse acceptVideoLlmReanalysis(
+            AnalysisJob reanalysisJob,
+            boolean useOpenAi
+    ) {
+        if (reanalysisJob.getAnalysisKind() != AnalysisKind.VIDEO_LLM_REANALYSIS
+                || reanalysisJob.getSourceJobId() == null
+                || reanalysisJob.getVideoAssetId() == null) {
+            throw new IllegalArgumentException("유효한 Video LLM 재분석 child job이 아닙니다.");
+        }
+
+        return acceptAndDispatch(
+                reanalysisJob,
+                true,
+                useOpenAi,
+                "video-llm-reanalysis"
+        );
+    }
+
     // 사전 점검(rejectIfExecutorSaturated) 이후에도, 점검과 실제 제출 사이의 아주 짧은
     // 순간에 다른 요청이 대기열을 마저 채우면 여기서 RejectedExecutionException이 날 수
     // 있습니다. 이 경우 커밋은 이미 끝나 job이 "시작됨"으로 남아 있으므로, 곧바로 실패
@@ -516,7 +537,7 @@ public class AnalysisCommandService {
         UploadedVideo uploadedVideo;
 
         try {
-            uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
+            uploadedVideo = findVideoAsset(jobId)
                     .orElseThrow(() -> new BusinessException(
                             ErrorCode.FILE_NOT_FOUND,
                             "업로드된 영상 정보를 찾을 수 없습니다."
@@ -552,7 +573,10 @@ public class AnalysisCommandService {
                     lastPercent, "영상/음성 기본 분석을 실행하는 중입니다."
             );
 
-            String videoDownloadUrl = videoFileCommandService.resolveDownloadUrl(jobId, uploadedVideo.getStoredFilePath());
+            String videoDownloadUrl = videoFileCommandService.resolveDownloadUrl(
+                    uploadedVideo.getJobId(),
+                    uploadedVideo.getStoredFilePath()
+            );
 
             AnalysisEngineResponse analysisEngineResponse = analysisEngineClient.analyze(
                     new AnalysisEngineRequest(
@@ -564,12 +588,25 @@ public class AnalysisCommandService {
             log.info("[{}] 기본 분석 응답을 받았습니다.", jobId);
 
             VideoLlmEngineResponse videoLlmEngineResponse;
+            boolean requireRealVideoLlm = analysisJobRepository.findByJobId(jobId)
+                    .map(AnalysisJob::getAnalysisKind)
+                    .filter(AnalysisKind.VIDEO_LLM_REANALYSIS::equals)
+                    .isPresent();
 
             VideoLlmSkipReason budgetSkipReason = useVideoLlm
                     ? reserveVideoLlmBudgetOrSkipReason(jobId)
                     : VideoLlmSkipReason.DISABLED;
 
             if (budgetSkipReason != null) {
+                if (requireRealVideoLlm) {
+                    ErrorCode errorCode = budgetSkipReason == VideoLlmSkipReason.DISABLED
+                            ? ErrorCode.VIDEO_LLM_REAL_REQUIRED
+                            : ErrorCode.VIDEO_LLM_USAGE_LIMIT_EXCEEDED;
+                    throw new BusinessException(
+                            errorCode,
+                            "실제 Video LLM 재분석을 실행할 수 없습니다. reason=" + budgetSkipReason
+                    );
+                }
                 log.info("[{}] Video LLM 분석을 건너뜁니다. ({})", jobId, budgetSkipReason);
                 videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, budgetSkipReason);
             } else {
@@ -590,9 +627,19 @@ public class AnalysisCommandService {
                                 jobId,
                                 uploadedVideo.getStoredFilePath(),
                                 resolveDurationSec(jobId, uploadedVideo.getStoredFilePath()),
-                                videoDownloadUrl
+                                videoDownloadUrl,
+                                requireRealVideoLlm
                         )
                 );
+                VideoLlmGenerationMode responseMode =
+                        resolveVideoLlmGenerationMode(videoLlmEngineResponse);
+                if (requireRealVideoLlm && responseMode != VideoLlmGenerationMode.REAL) {
+                    throw new BusinessException(
+                            ErrorCode.VIDEO_LLM_REAL_REQUIRED,
+                            "실제 Video LLM 재분석이 REAL 응답을 반환하지 않았습니다. generationMode="
+                                    + responseMode
+                    );
+                }
                 log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);
             }
 
@@ -670,7 +717,10 @@ public class AnalysisCommandService {
                 return;
             }
 
-            analysisJobStatusService.completeStatus(jobId);
+            analysisJobStatusService.completeStatus(
+                    jobId,
+                    resolveVideoLlmGenerationMode(videoLlmEngineResponse)
+            );
             meterRegistry.counter("analysis.job.completed").increment();
             stopDurationTimer(sample, "completed");
             analysisProgressService.complete(jobId);
@@ -694,6 +744,23 @@ public class AnalysisCommandService {
             meterRegistry.counter("analysis.job.failed", "reason", "unexpected").increment();
             stopDurationTimer(sample, "failed");
         }
+    }
+
+    private Optional<UploadedVideo> findVideoAsset(String jobId) {
+        Optional<UploadedVideo> linkedAsset = analysisJobRepository.findByJobId(jobId)
+                .map(AnalysisJob::getVideoAssetId)
+                .flatMap(uploadedVideoRepository::findById);
+
+        return linkedAsset.or(() -> uploadedVideoRepository.findByJobId(jobId));
+    }
+
+    private VideoLlmGenerationMode resolveVideoLlmGenerationMode(
+            VideoLlmEngineResponse videoLlmEngineResponse
+    ) {
+        Object rawMode = videoLlmEngineResponse == null || videoLlmEngineResponse.model() == null
+                ? null
+                : videoLlmEngineResponse.model().get("generationMode");
+        return VideoLlmGenerationMode.from(rawMode);
     }
 
     private Double resolveDurationSec(String jobId, String storedFilePath) {

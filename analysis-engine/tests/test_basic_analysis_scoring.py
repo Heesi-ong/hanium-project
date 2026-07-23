@@ -417,6 +417,18 @@ def test_resolve_video_path_finds_absolute_and_relative_files(tmp_path, monkeypa
     assert basic.resolve_video_path("missing.mp4") is None
 
 
+def test_resolve_video_path_rejects_file_outside_allowed_base_dir(tmp_path, monkeypatch):
+    allowed_dir = tmp_path / "allowed"
+    allowed_dir.mkdir()
+    monkeypatch.setenv("ANALYSIS_ENGINE_ALLOWED_VIDEO_BASE_DIR", str(allowed_dir))
+
+    outside_file = tmp_path / "outside" / "sample.mp4"
+    outside_file.parent.mkdir()
+    outside_file.write_bytes(b"video")
+
+    assert basic.resolve_video_path(str(outside_file)) is None
+
+
 class FakeDownloadResponse:
     def __init__(self, chunks, status_code=200, headers=None):
         self._chunks = chunks
@@ -444,7 +456,7 @@ def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypat
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: response,
+        lambda url, stream, timeout, allow_redirects: response,
     )
 
     downloaded_path = basic.download_video_from_url(
@@ -462,7 +474,7 @@ def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypat
 def test_download_video_from_url_returns_none_when_request_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
 
-    def raise_error(url, stream, timeout):
+    def raise_error(url, stream, timeout, allow_redirects):
         raise basic.requests.ConnectionError("connection failed")
 
     monkeypatch.setattr(basic.requests, "get", raise_error)
@@ -488,7 +500,7 @@ def test_download_video_from_url_removes_partial_file_and_closes_response(
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: response,
+        lambda url, stream, timeout, allow_redirects: response,
     )
 
     downloaded_path = basic.download_video_from_url(
@@ -515,7 +527,7 @@ def test_download_video_from_url_rejects_oversized_content_length(tmp_path, monk
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: response,
+        lambda url, stream, timeout, allow_redirects: response,
     )
 
     downloaded_path = basic.download_video_from_url(
@@ -538,7 +550,7 @@ def test_download_video_from_url_rejects_oversized_stream_and_removes_file(
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: response,
+        lambda url, stream, timeout, allow_redirects: response,
     )
 
     downloaded_path = basic.download_video_from_url(
@@ -564,7 +576,7 @@ def test_download_video_from_url_rejects_empty_response_and_removes_file(
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: response,
+        lambda url, stream, timeout, allow_redirects: response,
     )
 
     downloaded_path = basic.download_video_from_url(
@@ -578,6 +590,45 @@ def test_download_video_from_url_rejects_empty_response_and_removes_file(
     )
     assert downloaded_path is None
     assert expected_path.exists() is False
+    assert response.closed is True
+
+
+def test_download_video_from_url_rejects_host_outside_allowlist_without_calling_requests(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setenv("ANALYSIS_ENGINE_ALLOWED_DOWNLOAD_HOSTS", "minio.local:443")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("requests.get must not be called for a disallowed host")
+
+    monkeypatch.setattr(basic.requests, "get", fail_if_called)
+
+    downloaded_path = basic.download_video_from_url(
+        "job-ssrf-attempt",
+        "http://169.254.169.254/latest/meta-data/",
+        "/storage/uploads/job-ssrf-attempt/original.mp4",
+    )
+
+    assert downloaded_path is None
+
+
+def test_download_video_from_url_rejects_redirect_response(tmp_path, monkeypatch):
+    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    response = FakeDownloadResponse([b"not-written"], status_code=302)
+    monkeypatch.setattr(
+        basic.requests,
+        "get",
+        lambda url, stream, timeout, allow_redirects: response,
+    )
+
+    downloaded_path = basic.download_video_from_url(
+        "job-redirect",
+        "https://minio.local/uploads/job-redirect/original.mp4",
+        "/storage/uploads/job-redirect/original.mp4",
+    )
+
+    assert downloaded_path is None
     assert response.closed is True
 
 
@@ -597,7 +648,7 @@ def test_resolve_or_download_video_path_prefers_download_url(tmp_path, monkeypat
     monkeypatch.setattr(
         basic.requests,
         "get",
-        lambda url, stream, timeout: FakeDownloadResponse([b"video-bytes"]),
+        lambda url, stream, timeout, allow_redirects: FakeDownloadResponse([b"video-bytes"]),
     )
 
     resolved_path = basic.resolve_or_download_video_path(
@@ -613,7 +664,7 @@ def test_resolve_or_download_video_path_prefers_download_url(tmp_path, monkeypat
 def test_resolve_or_download_video_path_falls_back_to_local_path_when_download_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
 
-    def raise_error(url, stream, timeout):
+    def raise_error(url, stream, timeout, allow_redirects):
         raise basic.requests.ConnectionError("connection failed")
 
     monkeypatch.setattr(basic.requests, "get", raise_error)

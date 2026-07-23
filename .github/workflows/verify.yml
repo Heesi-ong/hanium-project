@@ -374,6 +374,87 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  analysis-pipeline-e2e:
+    # 인증·페이지 렌더링 E2E와 별개로 실제 영상 업로드→DB 큐→독립 worker→
+    # analysis-engine→결과/영상 토큰 조회까지 전체 비동기 파이프라인을 검증한다.
+    # 외부 Video LLM/OpenAI 호출은 끄므로 벤더 키·비용·외부 API 상태에는 의존하지 않는다.
+    needs: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE_PROJECT_NAME: hanium-ci
+      INTERNAL_ENGINE_API_KEY: ci-pipeline-internal-key
+      SECURITY_JWT_SECRET: ci-pipeline-jwt-secret-not-a-placeholder-value
+      MINIO_ROOT_USER: ci-pipeline-minio-admin
+      MINIO_ROOT_PASSWORD: ci-pipeline-minio-password12345
+      DB_PASSWORD: ci-pipeline-db-password
+      DB_ROOT_PASSWORD: ci-pipeline-db-root-password
+      REDIS_PASSWORD: ci-pipeline-redis-password
+      OPENAI_ENABLED: "false"
+      VIDEO_LLM_POLICY: "DISABLED"
+      VIDEO_LLM_ENABLED: "false"
+      ANALYSIS_ENGINE_WHISPER_POOL_SIZE: "1"
+      ANALYSIS_ENGINE_POSE_POOL_SIZE: "1"
+      ANALYSIS_ENGINE_FACE_POOL_SIZE: "1"
+      ANALYSIS_EXECUTOR_CORE_POOL_SIZE: "1"
+      ANALYSIS_EXECUTOR_MAX_POOL_SIZE: "1"
+      ANALYSIS_EXECUTOR_QUEUE_CAPACITY: "5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: docker/setup-buildx-action@v3
+      - name: Restore analysis model cache
+        uses: actions/cache@v4
+        with:
+          path: storage/models
+          key: analysis-models-${{ runner.os }}-${{ hashFiles('analysis-engine/requirements.txt', 'analysis-engine/app/core/model_registry.py') }}
+      - name: Prepare writable runtime storage
+        run: |
+          mkdir -p storage/uploads storage/results storage/temp storage/logs storage/models
+          chmod -R a+rwx storage
+      - name: Build backend and analysis engine images
+        run: |
+          docker buildx build --load \
+            -t hanium-ci-backend:latest \
+            --cache-from type=gha,scope=backend \
+            --cache-to type=gha,mode=max,scope=backend \
+            backend
+          docker tag hanium-ci-backend:latest hanium-ci-analysis-worker:latest
+          docker buildx build --load \
+            -t hanium-ci-analysis-engine:latest \
+            --cache-from type=gha,scope=analysis-engine \
+            --cache-to type=gha,mode=max,scope=analysis-engine \
+            analysis-engine
+      - name: Start database/cache/object-storage dependencies
+        run: docker compose up -d --wait mysql redis minio
+      - name: Create MinIO buckets
+        run: docker compose up minio-init
+      - name: Boot analysis engine and wait for model readiness
+        run: docker compose up -d --wait --wait-timeout 900 --no-deps analysis-engine
+      - name: Boot API and analysis worker
+        run: docker compose up -d --wait --wait-timeout 180 --no-deps backend analysis-worker
+      - name: Install Playwright test runner
+        working-directory: frontend
+        run: npm ci
+      - name: Run real analysis pipeline E2E
+        working-directory: frontend
+        env:
+          E2E_ANALYSIS_PIPELINE: "true"
+          BASE_URL: http://localhost:8080
+          API_BASE_URL: http://localhost:8080
+          E2E_ANALYSIS_MAX_WAIT_MS: "900000"
+        run: npm run test:e2e -- e2e/analysis-pipeline.spec.js
+      - name: Dump pipeline service logs on failure
+        if: failure()
+        run: docker compose logs backend analysis-worker analysis-engine mysql redis minio
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
   compose-validate:
     runs-on: ubuntu-latest
     env:
@@ -382,6 +463,7 @@ jobs:
       MINIO_PUBLIC_ENDPOINT: https://storage.example.com
       CORS_ALLOWED_ORIGINS: https://example.com
       PASSWORD_RESET_URL_BASE: https://example.com/reset-password
+      PASSWORD_RESET_OUTBOX_ENCRYPTION_KEY: ci-password-reset-outbox-encryption-key-32
       SECURITY_JWT_SECRET: ci-compose-validate-jwt-secret-not-a-placeholder
       DB_PASSWORD: ci-compose-db-password
       DB_ROOT_PASSWORD: ci-compose-db-root-password
@@ -429,6 +511,99 @@ jobs:
                   assert condition == 'service_healthy', (
                       f'{consumer} must wait for {dependency} service_healthy, got {condition!r}'
                   )
+
+          storage_deletion_settings = (
+              'STORAGE_DELETION_WORKER_CRON',
+              'STORAGE_DELETION_MAX_ATTEMPTS',
+              'STORAGE_DELETION_BASE_BACKOFF_MINUTES',
+              'STORAGE_DELETION_MAX_BACKOFF_MINUTES',
+              'STORAGE_DELETION_CLAIM_LEASE_MINUTES',
+              'STORAGE_DELETION_COMPLETED_RETENTION_DAYS',
+              'STORAGE_DELETION_COMPLETED_CLEANUP_CRON',
+              'SCHEDULER_LOCK_STORAGE_DELETION_WORKER_TTL_MINUTES',
+              'SCHEDULER_LOCK_STORAGE_DELETION_RETENTION_TTL_MINUTES',
+          )
+          backend_environment = services['backend'].get('environment', {})
+          worker_environment = services['analysis-worker'].get('environment', {})
+          for setting in storage_deletion_settings:
+              assert setting in backend_environment, f'backend is missing {setting}'
+              assert setting in worker_environment, f'analysis-worker is missing {setting}'
+              assert backend_environment[setting] == worker_environment[setting], (
+                  f'{setting} must match across backend and analysis-worker'
+              )
+
+          password_reset_outbox_settings = (
+              'PASSWORD_RESET_OUTBOX_ENCRYPTION_KEY',
+              'PASSWORD_RESET_OUTBOX_POLL_INTERVAL_MS',
+              'PASSWORD_RESET_OUTBOX_MAX_ATTEMPTS',
+              'PASSWORD_RESET_OUTBOX_BASE_BACKOFF_SECONDS',
+              'PASSWORD_RESET_OUTBOX_MAX_BACKOFF_SECONDS',
+              'PASSWORD_RESET_OUTBOX_CLAIM_LEASE_SECONDS',
+              'SCHEDULER_LOCK_PASSWORD_RESET_EMAIL_WORKER_TTL_SECONDS',
+              'SMTP_CONNECTION_TIMEOUT_MS',
+              'SMTP_READ_TIMEOUT_MS',
+              'SMTP_WRITE_TIMEOUT_MS',
+          )
+          for setting in password_reset_outbox_settings:
+              assert setting in backend_environment, f'backend is missing {setting}'
+              assert setting in worker_environment, f'analysis-worker is missing {setting}'
+              assert backend_environment[setting] == worker_environment[setting], (
+                  f'{setting} must match across backend and analysis-worker'
+              )
+
+          jwt_revocation_settings = (
+              'JWT_REVOCATION_CLEANUP_CRON',
+              'SCHEDULER_LOCK_JWT_REVOCATION_CLEANUP_TTL_MINUTES',
+          )
+          for setting in jwt_revocation_settings:
+              assert setting in backend_environment, f'backend is missing {setting}'
+              assert setting in worker_environment, f'analysis-worker is missing {setting}'
+              assert backend_environment[setting] == worker_environment[setting], (
+                  f'{setting} must match across backend and analysis-worker'
+              )
+
+          analysis_engine_settings = (
+              'INTERNAL_ENGINE_API_KEY',
+              'ANALYSIS_ENGINE_WHISPER_POOL_SIZE',
+              'ANALYSIS_ENGINE_POSE_POOL_SIZE',
+              'ANALYSIS_ENGINE_FACE_POOL_SIZE',
+              'ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB',
+              'ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS',
+              'ANALYSIS_ENGINE_ALLOWED_DOWNLOAD_HOSTS',
+              'ANALYSIS_ENGINE_ALLOWED_VIDEO_BASE_DIR',
+              'LOG_DIR',
+          )
+          analysis_engine_environment = services['analysis-engine'].get('environment', {})
+          for setting in analysis_engine_settings:
+              assert setting in analysis_engine_environment, (
+                  f'analysis-engine is missing validated setting {setting}'
+              )
+
+          video_llm_engine_settings = (
+              'INTERNAL_ENGINE_API_KEY',
+              'VIDEO_LLM_POLICY',
+              'VIDEO_LLM_ENABLED',
+              'VIDEO_LLM_BACKEND',
+              'NVIDIA_API_KEY',
+              'NVIDIA_VIDEO_LLM_MODEL',
+              'NVIDIA_API_BASE_URL',
+              'NVIDIA_ASSET_API_BASE_URL',
+              'NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS',
+              'VIDEO_LLM_MAX_VIDEO_SIZE_MB',
+              'VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR',
+              'VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS',
+              'VIDEO_LLM_REAL_MODEL_MAX_CONCURRENCY',
+              'VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS',
+              'VIDEO_LLM_CHUNK_DURATION_SECONDS',
+              'VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS',
+              'VIDEO_LLM_MAX_DURATION_SECONDS',
+              'LOG_DIR',
+          )
+          video_llm_environment = services['video-llm-engine'].get('environment', {})
+          for setting in video_llm_engine_settings:
+              assert setting in video_llm_environment, (
+                  f'video-llm-engine is missing validated setting {setting}'
+              )
 
           frontend_backend_condition = services['frontend']['depends_on'].get('backend', {}).get('condition')
           assert frontend_backend_condition == 'service_healthy', (

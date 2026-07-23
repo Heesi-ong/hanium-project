@@ -45,3 +45,29 @@ def test_lifespan_rejects_invalid_video_size_before_model_preload(monkeypatch):
             pass
 
     assert events == ["close"]
+
+
+def test_lifespan_rejects_invalid_whisper_timeout_before_model_preload(monkeypatch):
+    events = []
+    monkeypatch.setenv("ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS", "0")
+    monkeypatch.setattr(main.model_registry, "preload_all", lambda: events.append("preload"))
+    monkeypatch.setattr(main.model_registry, "close_all", lambda: events.append("close"))
+
+    with pytest.raises(ValueError, match="ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS"):
+        with TestClient(main.app):
+            pass
+
+    assert events == ["close"]
+
+
+def test_lifespan_rejects_empty_allowed_download_hosts_before_model_preload(monkeypatch):
+    events = []
+    monkeypatch.setenv("ANALYSIS_ENGINE_ALLOWED_DOWNLOAD_HOSTS", "")
+    monkeypatch.setattr(main.model_registry, "preload_all", lambda: events.append("preload"))
+    monkeypatch.setattr(main.model_registry, "close_all", lambda: events.append("close"))
+
+    with pytest.raises(RuntimeError, match="ANALYSIS_ENGINE_ALLOWED_DOWNLOAD_HOSTS"):
+        with TestClient(main.app):
+            pass
+
+    assert events == ["close"]

@@ -15,7 +15,8 @@ video-llm-engine 실제 모델 연동 현황)
 - `backend/`: Spring Boot API 서버. 인증, 업로드, 분석 job, 결과 저장/조회, OpenAI 피드백 orchestration 담당.
 - `frontend/`: Vite/React 클라이언트.
 - `analysis-engine/`: FastAPI 기반 정량 분석 엔진. 음성/자세/표정 등 기본 분석 담당.
-- `video-llm-engine/`: FastAPI 기반 Video LLM 경계 서비스. 현재는 mock 응답 중심.
+- `video-llm-engine/`: FastAPI 기반 Video LLM 경계 서비스. DISABLED mock, DEGRADED fallback,
+  STRICT 실패 및 NVIDIA hosted API 실제 호출을 정책으로 분리한다.
 - `docs/`: 설계/운영/서비스화 문서 (`analysis-criteria/`, `api/`, `architecture/`, `database/`, `llm/`, `presentation/`, `service-plan/`).
 - `infra/`: Docker, nginx, MySQL, env, 모니터링(Prometheus/Alertmanager/Grafana) 등 배포 보조 설정 (`docker/`, `env/`, `mysql/`, `nginx/`, `prometheus/`, `alertmanager/`, `grafana/`). `infra/nginx/Dockerfile`은 운영 TLS 부트스트랩에 필요한 `openssl` 포함 nginx 이미지를 만든다.
 - `scripts/`: 운영/백업 스크립트 (현재 `backup-mysql.sh`).
@@ -41,7 +42,7 @@ video-llm-engine 실제 모델 연동 현황)
 
 - JWT 인증/인가
 - 영상 업로드와 파일 저장
-- 분석 job 생성/실행/재시도/취소
+- 분석 job 생성/실행/재시도/취소와 보존형 Video LLM 재분석 child 접수
 - analysis-engine, video-llm-engine 호출
 - OpenAI 피드백 생성/재사용
 - 최종 결과 병합/조회/삭제
@@ -108,9 +109,19 @@ video-llm-engine 실제 모델 연동 현황)
 ### 현재 상태
 
 - backend가 기대하는 Video LLM 응답 스키마를 제공한다.
-- `VIDEO_LLM_ENABLED` 기본값은 `false`(mock)다. `true`로 켜고 `NVIDIA_API_KEY`를 설정하면
-  NVIDIA hosted API(`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`)를 실제로 호출한다
-  (`call_real_video_llm_model()`). 실패 시 mock으로 폴백(`FALLBACK`)한다.
+- `VIDEO_LLM_POLICY` 기본값은 `DISABLED`다. `STRICT` 또는 `DEGRADED`와
+  `NVIDIA_API_KEY`를 설정하면 NVIDIA hosted API
+  (`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`)를 실제로 호출한다.
+  `STRICT`는 실패 시 502로 backend 작업을 실패시키고, `DEGRADED`만 명시적
+  `FALLBACK` 샘플 결과를 허용한다. `VIDEO_LLM_ENABLED`는 정책 값이 비었을 때의
+  하위 호환 스위치다.
+- backend 재분석 요청은 `requireReal=true`를 보내므로 DEGRADED에서도 FALLBACK을 허용하지
+  않고, 엔진과 backend가 모두 `generationMode=REAL`인지 검증한다.
+- 결과 목록·상세 응답은 `analysisKind`, `sourceJobId`, 저장된
+  `videoLlmGenerationMode`를 노출한다. STANDARD 상세는 최신 재분석 job을 함께 알려주며,
+  결과 파일이 아직 없는 child도 상태 shell로 조회되어 프론트 polling이 끊기지 않는다.
+- 프론트 결과 상세는 STANDARD+COMPLETED+FALLBACK에서만 비용 재소비 확인 후 재분석을
+  접수하고 child 상세로 이동한다. 원본과 재분석 상세 사이의 lineage 링크를 제공한다.
 - 동시 호출 수 제한(세마포어), 긴 영상 구간 분할(ffmpeg chunking) 후 병합, 구간 길이에 따른
   프롬프트 분기(30초 미만은 3구간 강제 분할 프롬프트 미적용)까지 구현되어 있다. 다만 실제
   NVIDIA 응답 품질은 API 키 없이는 검증하지 못했다.

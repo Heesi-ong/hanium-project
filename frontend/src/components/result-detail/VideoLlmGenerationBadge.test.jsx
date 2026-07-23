@@ -63,6 +63,9 @@ describe("VideoLlmGenerationBadge", () => {
         expect(
             screen.getByText("Video LLM · video-llm-engine fallback mock")
         ).toBeInTheDocument();
+        expect(screen.getByRole("alert")).toHaveTextContent(
+            "실제 영상 분석에 실패해 샘플 데이터로 대체된 결과입니다."
+        );
     });
 
     it("renders UNKNOWN when visual generation metadata is missing", () => {

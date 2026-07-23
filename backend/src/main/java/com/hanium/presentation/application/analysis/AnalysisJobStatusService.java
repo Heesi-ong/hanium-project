@@ -3,6 +3,7 @@ package com.hanium.presentation.application.analysis;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -126,12 +127,17 @@ public class AnalysisJobStatusService {
     // 감싸는 큰 트랜잭션이 없습니다. 그래서 완료/실패도 updateStatus와 동일하게
     // 그 자리에서 바로 커밋하는 메서드가 필요합니다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void completeStatus(String jobId) {
+    public void completeStatus(String jobId, VideoLlmGenerationMode videoLlmGenerationMode) {
         analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
                 analysisJob -> {
+                    analysisJob.recordVideoLlmGenerationMode(videoLlmGenerationMode);
                     analysisJob.complete();
                     analysisJobRepository.save(analysisJob);
-                    log.info("[{}] 상태 즉시 반영: COMPLETED", jobId);
+                    log.info(
+                            "[{}] 상태 즉시 반영: COMPLETED (videoLlmGenerationMode={})",
+                            jobId,
+                            videoLlmGenerationMode
+                    );
                 },
                 () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
         );

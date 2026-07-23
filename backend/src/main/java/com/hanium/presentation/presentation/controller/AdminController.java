@@ -4,14 +4,20 @@ import com.hanium.presentation.application.admin.AdminAnalysisJobActionService;
 import com.hanium.presentation.application.admin.AdminAuditLogService;
 import com.hanium.presentation.application.admin.AdminDashboardService;
 import com.hanium.presentation.application.admin.AdminResultActionService;
+import com.hanium.presentation.application.admin.AdminStorageDeletionTaskActionService;
+import com.hanium.presentation.application.admin.AdminPasswordResetEmailTaskActionService;
 import com.hanium.presentation.application.admin.AdminUserActionService;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
+import com.hanium.presentation.presentation.dto.response.AdminStorageDeletionTaskResponse;
+import com.hanium.presentation.presentation.dto.response.AdminPasswordResetEmailTaskResponse;
 import com.hanium.presentation.presentation.dto.response.AdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedAdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedAdminAuditLogResponse;
+import com.hanium.presentation.presentation.dto.response.PagedAdminStorageDeletionTaskResponse;
+import com.hanium.presentation.presentation.dto.response.PagedAdminPasswordResetEmailTaskResponse;
 import com.hanium.presentation.presentation.dto.response.PagedAdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
@@ -43,19 +49,25 @@ public class AdminController {
     private final AdminUserActionService adminUserActionService;
     private final AdminResultActionService adminResultActionService;
     private final AdminAnalysisJobActionService adminAnalysisJobActionService;
+    private final AdminStorageDeletionTaskActionService adminStorageDeletionTaskActionService;
+    private final AdminPasswordResetEmailTaskActionService adminPasswordResetEmailTaskActionService;
 
     public AdminController(
             AdminDashboardService adminDashboardService,
             AdminAuditLogService adminAuditLogService,
             AdminUserActionService adminUserActionService,
             AdminResultActionService adminResultActionService,
-            AdminAnalysisJobActionService adminAnalysisJobActionService
+            AdminAnalysisJobActionService adminAnalysisJobActionService,
+            AdminStorageDeletionTaskActionService adminStorageDeletionTaskActionService,
+            AdminPasswordResetEmailTaskActionService adminPasswordResetEmailTaskActionService
     ) {
         this.adminDashboardService = adminDashboardService;
         this.adminAuditLogService = adminAuditLogService;
         this.adminUserActionService = adminUserActionService;
         this.adminResultActionService = adminResultActionService;
         this.adminAnalysisJobActionService = adminAnalysisJobActionService;
+        this.adminStorageDeletionTaskActionService = adminStorageDeletionTaskActionService;
+        this.adminPasswordResetEmailTaskActionService = adminPasswordResetEmailTaskActionService;
     }
 
     @GetMapping("/ping")
@@ -171,6 +183,64 @@ public class AdminController {
         );
 
         return ApiResponse.success("분석 작업을 다시 큐에 넣었습니다.");
+    }
+
+    @GetMapping("/storage-deletion-tasks/dead-letter")
+    public ApiResponse<PagedAdminStorageDeletionTaskResponse> getDeadLetterStorageDeletionTasks(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Page<AdminStorageDeletionTaskResponse> tasks = adminDashboardService.getDeadLetterStorageDeletionTasks(
+                createPageable(page, size)
+        );
+
+        return ApiResponse.success(
+                "재시도 소진 스토리지 삭제 작업 목록 조회가 완료되었습니다.",
+                PagedAdminStorageDeletionTaskResponse.from(tasks)
+        );
+    }
+
+    @PostMapping("/storage-deletion-tasks/{taskId}/requeue")
+    public ApiResponse<Void> requeueDeadLetterStorageDeletionTask(
+            @PathVariable Long taskId,
+            Authentication authentication
+    ) {
+        adminStorageDeletionTaskActionService.requeueDeadLetterTask(
+                getCurrentUserId(authentication),
+                authentication.getName(),
+                taskId
+        );
+
+        return ApiResponse.success("스토리지 삭제 작업을 다시 큐에 넣었습니다.");
+    }
+
+    @GetMapping("/password-reset-email-tasks/dead-letter")
+    public ApiResponse<PagedAdminPasswordResetEmailTaskResponse> getDeadLetterPasswordResetEmailTasks(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Page<AdminPasswordResetEmailTaskResponse> tasks =
+                adminDashboardService.getDeadLetterPasswordResetEmailTasks(
+                        createPageable(page, size)
+                );
+
+        return ApiResponse.success(
+                "재시도 소진 비밀번호 재설정 이메일 작업 목록 조회가 완료되었습니다.",
+                PagedAdminPasswordResetEmailTaskResponse.from(tasks)
+        );
+    }
+
+    @PostMapping("/password-reset-email-tasks/{taskId}/requeue")
+    public ApiResponse<Void> requeueDeadLetterPasswordResetEmailTask(
+            @PathVariable Long taskId,
+            Authentication authentication
+    ) {
+        adminPasswordResetEmailTaskActionService.requeueDeadLetter(
+                getCurrentUserId(authentication),
+                authentication.getName(),
+                taskId
+        );
+        return ApiResponse.success("비밀번호 재설정 이메일 작업을 다시 큐에 넣었습니다.");
     }
 
     @DeleteMapping("/results/{jobId}")

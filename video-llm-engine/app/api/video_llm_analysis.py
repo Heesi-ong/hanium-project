@@ -4,7 +4,6 @@ import json
 import logging
 import math
 import mimetypes
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,11 +15,16 @@ from urllib.parse import urlparse
 
 import httpx
 import imageio_ffmpeg
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from app.core.logging_config import bind_job_id, bind_request_id
 from app.core.security import verify_internal_api_key
+from app.core.settings import (
+    NVIDIA_DEFAULT_MODEL as NVIDIA_DEFAULT_MODEL,
+    VideoLlmSettings,
+    get_settings,
+)
 
 logger = logging.getLogger("video-llm-engine")
 
@@ -38,10 +42,11 @@ class VideoLlmAnalysisRequest(BaseModel):
     maxFrames: int = 90
     durationSec: float | None = None
     videoDownloadUrl: str | None = None
+    requireReal: bool = False
 
 
 def resolve_video_llm_enabled() -> bool:
-    return os.getenv("VIDEO_LLM_ENABLED", "false").strip().lower() == "true"
+    return get_settings().enabled
 
 
 # 이 이미지가 어떤 의존성 세트로 빌드되었는지(Dockerfile의 VIDEO_LLM_BACKEND build arg와
@@ -50,15 +55,11 @@ def resolve_video_llm_enabled() -> bool:
 # 런타임 동작 자체는 여전히 VIDEO_LLM_ENABLED(위)로 켜고 끕니다 — 이 값은 "실제로 어떤
 # 방식의 구현을 기대할 수 있는 이미지인지"를 알려주는 관측용 정보입니다.
 def resolve_video_llm_backend() -> str:
-    return os.getenv("VIDEO_LLM_BACKEND", "mock").strip().lower()
+    return get_settings().installed_backend
 
 
-NVIDIA_DEFAULT_API_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_DEFAULT_ASSET_BASE_URL = "https://api.nvcf.nvidia.com/v2/nvcf"
-NVIDIA_DEFAULT_MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
 NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES = 180 * 1024
 VIDEO_STREAM_CHUNK_SIZE_BYTES = 1024 * 1024
-DEFAULT_VIDEO_MAX_SIZE_MB = 500
 NVIDIA_STATUS_POLL_MAX_ATTEMPTS = 10
 NVIDIA_STATUS_POLL_INTERVAL_SECONDS = 1
 
@@ -69,26 +70,16 @@ NVIDIA_STATUS_POLL_INTERVAL_SECONDS = 1
 # 실행하므로 threading.Semaphore를 씁니다. 세마포어의 초기 permit 수는 객체 생성
 # 시점에 고정되는 값이라(다른 resolve_* 함수들과 달리) 프로세스 기동 시 한 번만
 # 읽습니다. 대기 timeout은 호출마다 다시 읽을 수 있어 resolve 함수로 분리했습니다.
-_REAL_MODEL_SEMAPHORE = threading.Semaphore(
-    max(1, int(os.getenv("VIDEO_LLM_REAL_MODEL_MAX_CONCURRENCY", "3")))
-)
+_REAL_MODEL_SEMAPHORE = threading.Semaphore(3)
+
+
+def configure_runtime(settings: VideoLlmSettings) -> None:
+    global _REAL_MODEL_SEMAPHORE
+    _REAL_MODEL_SEMAPHORE = threading.Semaphore(settings.real_model_max_concurrency)
 
 
 def resolve_real_model_semaphore_timeout_seconds() -> float:
-    raw_value = os.getenv("VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS", "30").strip()
-    try:
-        timeout_seconds = float(raw_value)
-    except ValueError as exception:
-        raise RuntimeError(
-            "VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS must be a positive number."
-        ) from exception
-
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise RuntimeError(
-            "VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS must be a positive number."
-        )
-
-    return timeout_seconds
+    return get_settings().real_model_semaphore_timeout_seconds
 
 
 # 라이브 테스트에서 성공이 확인된 안전 구간(120초)보다 여유를 둔 기본값입니다. 이보다
@@ -97,33 +88,11 @@ def resolve_real_model_semaphore_timeout_seconds() -> float:
 # 보고 답하게 하는 쪽이 더 정직한 시간 구간화 품질을 기대할 수 있습니다
 # (docs/service-plan/video-llm-model-options.md의 3구간 프롬프트 한계 참고).
 def resolve_video_llm_chunk_duration_seconds() -> float:
-    raw_value = os.getenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "100").strip()
-    try:
-        chunk_duration_seconds = float(raw_value)
-    except ValueError as exception:
-        raise RuntimeError(
-            "VIDEO_LLM_CHUNK_DURATION_SECONDS must be a positive number."
-        ) from exception
-
-    if not math.isfinite(chunk_duration_seconds) or chunk_duration_seconds <= 0:
-        raise RuntimeError("VIDEO_LLM_CHUNK_DURATION_SECONDS must be a positive number.")
-
-    return chunk_duration_seconds
+    return get_settings().chunk_duration_seconds
 
 
 def resolve_video_llm_segment_split_timeout_seconds() -> float:
-    raw_value = os.getenv("VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS", "30").strip()
-    try:
-        timeout_seconds = float(raw_value)
-    except ValueError as exception:
-        raise RuntimeError(
-            "VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS must be a positive number."
-        ) from exception
-
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise RuntimeError("VIDEO_LLM_SEGMENT_SPLIT_TIMEOUT_SECONDS must be a positive number.")
-
-    return timeout_seconds
+    return get_settings().segment_split_timeout_seconds
 
 
 # backend가 업로드 시점에 이미 VIDEO_MAX_DURATION_MINUTES(기본 30분)로 영상 길이를
@@ -132,18 +101,7 @@ def resolve_video_llm_segment_split_timeout_seconds() -> float:
 # 세그먼트 수가 비정상적으로 커져 sync 스레드풀을 고갈시킬 수 있어, 방어적으로 한 번
 # 더 상한을 둔다. 업로드 정책보다 넉넉하게 잡아 정상적인 긴 영상은 막지 않는다.
 def resolve_video_llm_max_duration_seconds() -> float:
-    raw_value = os.getenv("VIDEO_LLM_MAX_DURATION_SECONDS", "7200").strip()
-    try:
-        max_duration_seconds = float(raw_value)
-    except ValueError as exception:
-        raise RuntimeError(
-            "VIDEO_LLM_MAX_DURATION_SECONDS must be a positive number."
-        ) from exception
-
-    if not math.isfinite(max_duration_seconds) or max_duration_seconds <= 0:
-        raise RuntimeError("VIDEO_LLM_MAX_DURATION_SECONDS must be a positive number.")
-
-    return max_duration_seconds
+    return get_settings().max_duration_seconds
 
 
 def validate_duration_sec(duration_sec: float | None) -> None:
@@ -174,47 +132,13 @@ SUMMARY_FIELDS = (
 
 
 def resolve_video_max_size_bytes() -> int:
-    raw_value = os.getenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", str(DEFAULT_VIDEO_MAX_SIZE_MB)).strip()
-    try:
-        max_size_mb = int(raw_value)
-    except ValueError as exception:
-        raise RuntimeError("VIDEO_LLM_MAX_VIDEO_SIZE_MB must be a positive integer.") from exception
-
-    if max_size_mb <= 0:
-        raise RuntimeError("VIDEO_LLM_MAX_VIDEO_SIZE_MB must be a positive integer.")
-
-    return max_size_mb * 1024 * 1024
+    return get_settings().max_video_size_bytes
 
 
 def resolve_nvidia_timeout_seconds() -> float:
-    raw_value = os.getenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "120").strip()
-    try:
-        timeout_seconds = float(raw_value)
-    except ValueError as exception:
-        raise RuntimeError("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number.") from exception
-
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise RuntimeError("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number.")
-
-    return timeout_seconds
-
-
-def resolve_env_with_default(name: str, default_value: str) -> str:
-    return os.getenv(name, default_value).strip() or default_value
-
-
-def resolve_absolute_http_url(name: str, default_value: str) -> str:
-    value = resolve_env_with_default(name, default_value).rstrip("/")
-    parsed = urlparse(value)
-
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise RuntimeError(f"{name} must be an absolute http(s) URL.")
-
-    return value
-
-
+    return get_settings().nvidia_timeout_seconds
 def resolve_allowed_video_base_dir() -> Path:
-    return Path(resolve_env_with_default("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", "/storage")).resolve()
+    return get_settings().allowed_video_base_dir
 
 
 # request.videoPath는 backend가 만들어 보내는 값이라 지금은 항상 안전한 경로만 들어오지만,
@@ -233,21 +157,16 @@ def validate_local_video_path(video_path: Path) -> None:
 
 
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
-    api_key = os.getenv("NVIDIA_API_KEY", "").strip()
+    settings = get_settings()
+    api_key = settings.nvidia_api_key
     if not api_key:
         raise RuntimeError("NVIDIA_API_KEY is required when VIDEO_LLM_ENABLED=true.")
 
-    model = (
-        os.getenv("NVIDIA_VIDEO_LLM_MODEL", NVIDIA_DEFAULT_MODEL).strip()
-        or NVIDIA_DEFAULT_MODEL
-    )
-    base_url = resolve_absolute_http_url("NVIDIA_API_BASE_URL", NVIDIA_DEFAULT_API_BASE_URL)
-    asset_base_url = resolve_absolute_http_url(
-        "NVIDIA_ASSET_API_BASE_URL",
-        NVIDIA_DEFAULT_ASSET_BASE_URL,
-    )
-    timeout_seconds = resolve_nvidia_timeout_seconds()
-    chunk_duration_seconds = resolve_video_llm_chunk_duration_seconds()
+    model = settings.nvidia_model
+    base_url = settings.nvidia_api_base_url
+    asset_base_url = settings.nvidia_asset_api_base_url
+    timeout_seconds = settings.nvidia_timeout_seconds
+    chunk_duration_seconds = settings.chunk_duration_seconds
 
     validate_duration_sec(request.durationSec)
 
@@ -734,17 +653,37 @@ def resolve_video_file(request: VideoLlmAnalysisRequest) -> Iterator[tuple[Path,
         downloaded_path.unlink(missing_ok=True)
 
 
+def resolve_allowed_download_hosts() -> set[str]:
+    return set(get_settings().allowed_download_hosts)
+
+
+def _download_url_host_port(parsed) -> str:
+    default_port = 443 if parsed.scheme == "https" else 80
+    port = parsed.port or default_port
+    return f"{parsed.hostname}:{port}".lower()
+
+
+# videoDownloadUrl(backend가 만드는 MinIO presigned URL)이 신뢰할 수 있는 내부 MinIO
+# 엔드포인트만 가리키도록 강제한다. scheme/netloc만 확인하던 기존 검증은 backend가
+# 침해되거나 버그로 임의 URL을 보낼 경우 이 엔진이 내부망 스캔이나 클라우드 메타데이터
+# 엔드포인트 접근에 악용되는 것을 막지 못했다(2026-07-23 코드 리뷰 P1-04). 이 값은 항상
+# 고정된 MinIO 엔드포인트 하나만 가리켜야 정상이므로, host:port 허용 목록으로 제한한다
+# (analysis-engine의 app/core/network_security.py와 동일한 검증 방식).
 def validate_video_download_url(video_download_url: str) -> None:
-    # resolve_absolute_http_url()과 같은 수준의 검증입니다. 다만 그 함수는 설정(env var)에
-    # 박힌 고정 URL을 검증하는 반면, 이 값은 요청마다 달라지는 videoDownloadUrl(보통
-    # backend가 만드는 MinIO presigned URL)입니다. scheme/host가 없는 값(예: file://,
-    # 상대 경로처럼 보이는 문자열)을 걸러 httpx가 예상 밖의 프로토콜로 요청을 보내지
-    # 않게 합니다.
     parsed = urlparse(video_download_url)
 
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError(
             f"videoDownloadUrl must be an absolute http(s) URL, got {video_download_url!r}."
+        )
+
+    allowed_hosts = resolve_allowed_download_hosts()
+    host_port = _download_url_host_port(parsed)
+
+    if host_port not in allowed_hosts:
+        raise ValueError(
+            f"videoDownloadUrl host {host_port!r} is not in VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS "
+            f"({sorted(allowed_hosts)!r})."
         )
 
 
@@ -767,8 +706,19 @@ def download_video_to_temp_file(
         ) as temp_file:
             temp_path = Path(temp_file.name)
 
-            with httpx.Client(timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS) as client:
+            # follow_redirects=False(명시): 리다이렉트를 자동으로 따라가면 허용 목록
+            # 검증을 우회해 다른 호스트로 요청이 새어나갈 수 있으므로, 라이브러리 기본값에
+            # 기대는 대신 명시적으로 끄고 리다이렉트 응답 자체를 아래에서 거부한다.
+            with httpx.Client(
+                timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=False
+            ) as client:
                 with client.stream("GET", video_download_url) as response:
+                    if 300 <= response.status_code < 400:
+                        raise ValueError(
+                            f"videoDownloadUrl returned a redirect ({response.status_code}), "
+                            "which is not allowed."
+                        )
+
                     response.raise_for_status()
                     content_length = response.headers.get("content-length")
                     if content_length is not None and int(content_length) > max_size:
@@ -1195,15 +1145,44 @@ def analyze_video(
         x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
 ) -> Dict[str, Any]:
     with bind_job_id(request.jobId), bind_request_id(x_request_id):
-        if resolve_video_llm_enabled():
+        settings = get_settings()
+        if settings.enabled:
             try:
                 return call_real_video_llm_model(request)
-            except Exception:
+            except Exception as exception:
+                if settings.policy == "STRICT" or request.requireReal:
+                    logger.exception(
+                        "(%s) 실제 Video LLM 호출 실패, fallback 금지 요청으로 실패 처리합니다. "
+                        "policy=%s requireReal=%s",
+                        request.jobId,
+                        settings.policy,
+                        request.requireReal,
+                    )
+                    raise HTTPException(
+                        status_code=502,
+                        detail={
+                            "code": "VIDEO_LLM_REAL_MODEL_FAILED",
+                            "message": "실제 Video LLM 분석에 실패했습니다.",
+                        },
+                    ) from exception
                 logger.exception(
-                    "(%s) 실제 Video LLM 호출 실패, mock 응답으로 폴백합니다.",
+                    "(%s) 실제 Video LLM 호출 실패, DEGRADED 정책에 따라 mock 응답으로 폴백합니다.",
                     request.jobId,
                 )
                 return build_mock_response(request, "FALLBACK")
+
+        if request.requireReal:
+            logger.warning(
+                "(%s) requireReal 요청이지만 Video LLM 정책이 DISABLED라 요청을 거부합니다.",
+                request.jobId,
+            )
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "VIDEO_LLM_REAL_MODEL_DISABLED",
+                    "message": "현재 실제 Video LLM 분석을 사용할 수 없습니다.",
+                },
+            )
 
         logger.info("(%s) Mock 영상 관찰 결과를 생성하는 중...", request.jobId)
         return build_mock_response(request, "MOCK")

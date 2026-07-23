@@ -3,9 +3,10 @@ import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
 from logging.handlers import TimedRotatingFileHandler
-from os import getenv
 from pathlib import Path
 from typing import Iterator
+
+from app.core.settings import get_settings
 
 LOGGER_NAME = "video-llm-engine"
 LOG_FORMAT = (
@@ -75,7 +76,7 @@ def bind_request_id(request_id: str | None) -> Iterator[None]:
         request_id_var.reset(token)
 
 
-def configure_logging() -> logging.Logger:
+def configure_logging(log_dir: Path | None = None) -> logging.Logger:
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(logging.INFO)
     logger.propagate = False
@@ -91,11 +92,11 @@ def configure_logging() -> logging.Logger:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    log_dir = Path(getenv("LOG_DIR", "../storage/logs"))
-    log_dir.mkdir(parents=True, exist_ok=True)
+    resolved_log_dir = log_dir or get_settings().log_dir
+    resolved_log_dir.mkdir(parents=True, exist_ok=True)
 
     file_handler = DailySizeRotatingFileHandler(
-        log_dir / "video-llm-engine.log",
+        resolved_log_dir / "video-llm-engine.log",
         when="midnight",
         backupCount=LOG_RETENTION_DAYS,
         encoding="utf-8",

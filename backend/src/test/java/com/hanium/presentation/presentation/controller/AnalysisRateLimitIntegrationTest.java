@@ -122,6 +122,23 @@ class AnalysisRateLimitIntegrationTest {
     }
 
     @Test
+    void uploadLinksAnalysisJobToPersistedVideoAsset() throws Exception {
+        String token = signupAndLogin("video-asset-link@example.com");
+
+        ResponseEntity<String> response = upload(token, "linked-video.mp4");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        String jobId = objectMapper.readTree(response.getBody())
+                .path("data")
+                .path("jobId")
+                .asText();
+        AnalysisJob job = analysisJobRepository.findByJobId(jobId).orElseThrow();
+        UploadedVideo videoAsset = uploadedVideoRepository.findByJobId(jobId).orElseThrow();
+
+        assertThat(job.getVideoAssetId()).isEqualTo(videoAsset.getId());
+    }
+
+    @Test
     void runAndRetryApisShareAnalysisRateLimitBucket() throws Exception {
         String token = signupAndLogin("rate-analysis@example.com");
         Long ownerId = userRepository.findByEmail("rate-analysis@example.com")

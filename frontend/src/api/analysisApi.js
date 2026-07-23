@@ -58,6 +58,24 @@ export async function retryAnalysis(jobId, options = {}) {
     return unwrapApiResponse(response);
 }
 
+export async function requestVideoLlmReanalysis(
+    sourceJobId,
+    { useOpenAi = true, idempotencyKey } = {}
+) {
+    const response = await apiClient.post(
+        `/api/analysis/${sourceJobId}/video-llm-reanalysis`,
+        { useOpenAi },
+        {
+            headers: {
+                "Idempotency-Key": idempotencyKey,
+            },
+            timeout: ANALYSIS_COMMAND_TIMEOUT_MS,
+        }
+    );
+
+    return unwrapApiResponse(response);
+}
+
 export async function cancelAnalysis(jobId) {
     const response = await apiClient.post(
         `/api/analysis/${jobId}/cancel`,

@@ -1,6 +1,5 @@
 import logging
 import math
-import os
 import queue
 import shutil
 import subprocess
@@ -19,8 +18,10 @@ from pydantic import BaseModel, Field
 
 from app.core import model_registry
 from app.core.logging_config import bind_job_id, bind_request_id
+from app.core.network_security import validate_local_video_path, validate_video_download_url
 from app.core.paths import resolve_project_root
 from app.core.security import verify_internal_api_key
+from app.core.settings import get_settings
 
 logger = logging.getLogger("analysis-engine")
 
@@ -295,6 +296,14 @@ def resolve_video_path(video_path: str) -> Path | None:
         normalized_path = candidate_path.resolve()
 
         if normalized_path.exists() and normalized_path.is_file():
+            try:
+                validate_local_video_path(normalized_path)
+            except ValueError as exception:
+                logger.warning(
+                    "허용된 스토리지 경로 밖의 videoPath라 거부합니다: %s", exception
+                )
+                return None
+
             return normalized_path
 
     return None
@@ -306,23 +315,7 @@ DEFAULT_ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB = 500
 
 
 def resolve_analysis_engine_max_video_size_bytes() -> int:
-    raw_value = os.getenv(
-        "ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB",
-        str(DEFAULT_ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB),
-    ).strip()
-    try:
-        max_size_mb = int(raw_value)
-    except ValueError as exception:
-        raise RuntimeError(
-            "ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB must be a positive integer."
-        ) from exception
-
-    if max_size_mb <= 0:
-        raise RuntimeError(
-            "ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB must be a positive integer."
-        )
-
-    return max_size_mb * 1024 * 1024
+    return get_settings().max_video_size_bytes
 
 
 def resolve_or_download_video_path(
@@ -356,6 +349,8 @@ def download_video_from_url(
     download_path: Path | None = None
     response = None
     try:
+        validate_video_download_url(video_download_url)
+
         project_root = resolve_project_root()
         download_directory = project_root / "storage" / "temp" / job_id / "download"
         download_directory.mkdir(parents=True, exist_ok=True)
@@ -364,11 +359,20 @@ def download_video_from_url(
         download_path = download_directory / f"original{extension}"
         max_size = resolve_analysis_engine_max_video_size_bytes()
 
+        # allow_redirects=False: 리다이렉트를 자동으로 따라가면 허용 목록 검증을 우회해
+        # 다른 호스트로 요청이 새어나갈 수 있으므로, 리다이렉트 자체를 거부한다.
         response = requests.get(
             video_download_url,
             stream=True,
             timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
+            allow_redirects=False,
         )
+
+        if 300 <= response.status_code < 400:
+            raise ValueError(
+                f"videoDownloadUrl returned a redirect ({response.status_code}), which is not allowed."
+            )
+
         response.raise_for_status()
 
         content_length = response.headers.get("content-length")
@@ -642,22 +646,7 @@ def extract_audio_from_video(
 
 
 def resolve_whisper_transcribe_timeout_seconds() -> float:
-    raw_value = os.environ.get("ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS", "600")
-
-    try:
-        timeout_seconds = float(raw_value)
-    except ValueError as exception:
-        raise ValueError(
-            "ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS must be a positive number, "
-            f"got {raw_value!r}."
-        ) from exception
-
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise ValueError(
-            "ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS must be a positive number."
-        )
-
-    return timeout_seconds
+    return get_settings().whisper_transcribe_timeout_seconds
 
 
 def _run_whisper_transcription(

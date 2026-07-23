@@ -149,8 +149,14 @@ public class MinioObjectStorage implements ObjectStorage {
                             .build()
             );
 
+            // removeObjects()는 배치 호출 자체는 성공(예외 없음)해도 개별 오브젝트별 삭제는
+            // 실패할 수 있다(권한, object lock 등). 이걸 로그만 남기고 정상 반환하면 호출자는
+            // "삭제가 끝났다"고 착각하게 되므로(2026-07-23 코드 리뷰 P1-03), 하나라도 실패하면
+            // 예외를 던져 호출자(outbox 워커)가 재시도하도록 한다.
+            List<String> failedObjectNames = new ArrayList<>();
             for (Result<DeleteResult.Error> deleteResult : deleteResults) {
                 DeleteResult.Error error = deleteResult.get();
+                failedObjectNames.add(error.objectName());
                 log.warn(
                         "MINIO_DELETE_PREFIX_PARTIAL_FAILURE prefix={} object={} message={}",
                         prefix,
@@ -158,6 +164,17 @@ public class MinioObjectStorage implements ObjectStorage {
                         error.message()
                 );
             }
+
+            if (!failedObjectNames.isEmpty()) {
+                throw new BusinessException(
+                        ErrorCode.FILE_DELETE_FAILED,
+                        "일부 오브젝트 삭제에 실패했습니다. prefix=" + prefix
+                                + " failedCount=" + failedObjectNames.size()
+                                + " total=" + objectsToDelete.size()
+                );
+            }
+        } catch (BusinessException exception) {
+            throw exception;
         } catch (Exception exception) {
             log.error("MINIO_DELETE_PREFIX_FAILED prefix={}", prefix, exception);
             throw new BusinessException(ErrorCode.FILE_DELETE_FAILED, "오브젝트 일괄 삭제에 실패했습니다. prefix=" + prefix);

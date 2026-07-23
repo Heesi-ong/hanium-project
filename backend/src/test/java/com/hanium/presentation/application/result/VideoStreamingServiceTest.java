@@ -128,6 +128,29 @@ class VideoStreamingServiceTest {
     }
 
     @Test
+    void resolveVideoUsesLinkedAssetBeforeLegacyJobIdLookup() throws Exception {
+        Path videoPath = tempDir.resolve("shared-original.mp4");
+        java.nio.file.Files.writeString(videoPath, "video-bytes");
+        AnalysisJob reanalysisJob = AnalysisJob.create(JOB_ID, OWNER_ID);
+        reanalysisJob.linkVideoAsset(99L);
+        UploadedVideo sharedAsset = UploadedVideo.create(
+                "20260707090000-source01",
+                "shared-original.mp4",
+                videoPath.toString(),
+                VideoFileType.MP4,
+                10L
+        );
+
+        when(videoAccessTokenProvider.validate("valid-token", JOB_ID))
+                .thenReturn(Optional.of(new VideoAccessTokenProvider.VideoAccessClaims(JOB_ID, OWNER_ID)));
+        when(analysisJobRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(reanalysisJob));
+        when(uploadedVideoRepository.findById(99L)).thenReturn(Optional.of(sharedAsset));
+
+        assertThat(videoStreamingService.resolveVideoForStreaming(JOB_ID, "valid-token"))
+                .isSameAs(sharedAsset);
+    }
+
+    @Test
     void resolvePresignedStreamingUrlDelegatesToVideoFileCommandService() {
         UploadedVideo uploadedVideo = UploadedVideo.create(
                 JOB_ID,
@@ -161,5 +184,25 @@ class VideoStreamingServiceTest {
         String url = videoStreamingService.resolvePresignedStreamingUrl(JOB_ID, uploadedVideo);
 
         assertThat(url).isNull();
+    }
+
+    @Test
+    void resolvePresignedStreamingUrlUsesAssetStorageNamespace() {
+        String sourceJobId = "20260707090000-source01";
+        UploadedVideo sharedAsset = UploadedVideo.create(
+                sourceJobId,
+                "original.mp4",
+                tempDir.resolve("original.mp4").toString(),
+                VideoFileType.MP4,
+                10L
+        );
+        when(videoFileCommandService.resolveStreamingUrl(
+                sourceJobId,
+                sharedAsset.getStoredFilePath()
+        )).thenReturn("https://minio.local/shared");
+
+        String url = videoStreamingService.resolvePresignedStreamingUrl(JOB_ID, sharedAsset);
+
+        assertThat(url).isEqualTo("https://minio.local/shared");
     }
 }

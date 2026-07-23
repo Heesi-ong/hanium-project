@@ -141,6 +141,21 @@ public class VideoFileCommandService {
         }
     }
 
+    /**
+     * 재분석 접수 전에 원본 영상이 로컬 또는 MinIO 중 적어도 한 곳에 실제 존재하는지 확인합니다.
+     * 로컬이 있으면 MinIO 장애와 무관하게 true이며, 로컬이 없을 때 MinIO 상태 확인 실패는
+     * "만료됨(false)"으로 숨기지 않고 예외를 전파해 일시 장애를 410으로 오인하지 않게 합니다.
+     */
+    public boolean sourceExists(String storageJobId, String storedFilePath) {
+        Path localPath = Path.of(storedFilePath);
+        if (Files.isRegularFile(localPath) && Files.isReadable(localPath)) {
+            return true;
+        }
+
+        String objectKey = buildUploadObjectKey(storageJobId, storedFilePath);
+        return objectStorage.exists(objectKey);
+    }
+
     // 재생 URL은 앱 자체의 영상 접근 토큰(5분, ResultController.VIDEO_ACCESS_TOKEN_EXPIRES_IN_SECONDS)
     // 검증을 통과해야만 발급되지만, 일단 발급되면 그 뒤로는 별도 인증 없이 쓸 수 있는
     // 링크입니다. 짧게 두고 싶지만, 영상을 끊김 없이 끝까지(일시정지 후 이어보기 포함)

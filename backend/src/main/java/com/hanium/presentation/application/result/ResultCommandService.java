@@ -1,7 +1,9 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.application.storage.StorageDeletionTaskService;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.storage.type.StorageDeletionReason;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.exception.BusinessException;
@@ -12,7 +14,6 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.infrastructure.storage.LocalFileStorage;
-import com.hanium.presentation.infrastructure.storage.ObjectStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,7 @@ public class ResultCommandService {
     private final FilePathGenerator filePathGenerator;
     private final JsonFileStorage jsonFileStorage;
     private final LocalFileStorage localFileStorage;
-    private final ObjectStorage objectStorage;
+    private final StorageDeletionTaskService storageDeletionTaskService;
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
 
@@ -45,7 +46,7 @@ public class ResultCommandService {
             FilePathGenerator filePathGenerator,
             JsonFileStorage jsonFileStorage,
             LocalFileStorage localFileStorage,
-            ObjectStorage objectStorage,
+            StorageDeletionTaskService storageDeletionTaskService,
             AnalysisJobRepository analysisJobRepository,
             UploadedVideoRepository uploadedVideoRepository
     ) {
@@ -54,7 +55,7 @@ public class ResultCommandService {
         this.filePathGenerator = filePathGenerator;
         this.jsonFileStorage = jsonFileStorage;
         this.localFileStorage = localFileStorage;
-        this.objectStorage = objectStorage;
+        this.storageDeletionTaskService = storageDeletionTaskService;
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
     }
@@ -193,7 +194,9 @@ public class ResultCommandService {
 
     @Transactional
     public void deleteResult(String jobId, Long ownerId) {
-        AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
+        // 재분석 접수도 source job 행을 잠그므로, 결과 삭제와 child 생성이 같은 source에서
+        // 동시에 진행돼 "마지막 참조" 판정 뒤 새 child가 생기는 race를 막습니다.
+        AnalysisJob analysisJob = analysisJobRepository.findByJobIdForUpdate(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
         if (!ownerId.equals(analysisJob.getOwnerId())) {
@@ -207,44 +210,85 @@ public class ResultCommandService {
             );
         }
 
-        UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
-                .orElse(null);
-
-        if (uploadedVideo != null) {
-            uploadedVideoRepository.delete(uploadedVideo);
+        // source를 먼저 지우면 자식의 source_job_id가 더 이상 존재하지 않는 job을 가리켜
+        // lineage 링크가 깨지고, 실행 중인 재분석은 source 검증 계약도 잃는다. 재분석 생성과
+        // 마찬가지로 source 행을 잠근 상태에서 참조 존재 여부를 확인하므로, 이 판정 뒤 새
+        // child가 끼어드는 race도 없다. 회원탈퇴는 createdAt 내림차순으로 삭제해 최신 child가
+        // source보다 먼저 처리되므로 전체 삭제 흐름은 유지된다.
+        if (analysisJobRepository.existsBySourceJobId(jobId)) {
+            throw new BusinessException(
+                    ErrorCode.ANALYSIS_DELETE_NOT_ALLOWED,
+                    "이 결과를 원본으로 사용하는 재분석 결과가 남아 있습니다. 재분석 결과를 먼저 삭제한 뒤 다시 시도해주세요."
+            );
         }
 
+        Long videoAssetId = analysisJob.getVideoAssetId();
+        UploadedVideo videoAsset = videoAssetId == null
+                ? uploadedVideoRepository.findByJobIdForUpdate(jobId).orElse(null)
+                : uploadedVideoRepository.findByIdForUpdate(videoAssetId)
+                        .or(() -> uploadedVideoRepository.findByJobIdForUpdate(jobId))
+                        .orElse(null);
+        String videoStorageJobId = videoAsset == null ? jobId : videoAsset.getJobId();
         analysisJobRepository.delete(analysisJob);
+        analysisJobRepository.flush();
 
-        // 실제 파일 삭제는 이 트랜잭션이 커밋된 뒤에만 실행합니다. 회원탈퇴처럼 여러 job을
+        boolean deleteVideoAsset = videoAssetId == null
+                || analysisJobRepository.countByVideoAssetId(videoAssetId) == 0;
+        if (deleteVideoAsset && videoAsset != null) {
+            uploadedVideoRepository.delete(videoAsset);
+        }
+
+        // MinIO 프리픽스 삭제는 outbox(StorageDeletionTask) 행을 만드는 것으로 대신하고,
+        // 이 행을 지금 이 트랜잭션 안에서(=업무 데이터 삭제와 원자적으로) 커밋합니다. 실제
+        // 오브젝트 삭제는 StorageDeletionOutboxWorker가 요청과 무관하게 재시도하며 수행하므로,
+        // 요청 처리 중 MinIO가 느리거나 실패해도 삭제 자체가 유실되지 않습니다
+        // (2026-07-23 코드 리뷰 P1-03 — 이전에는 best-effort 호출 실패 시 로그만 남기고
+        // 다시 시도할 방법이 없었습니다).
+        if (deleteVideoAsset) {
+            storageDeletionTaskService.enqueue(
+                    videoStorageJobId,
+                    "uploads/" + videoStorageJobId + "/",
+                    StorageDeletionReason.RESULT_DELETE
+            );
+        }
+        storageDeletionTaskService.enqueue(jobId, "results/" + jobId + "/", StorageDeletionReason.RESULT_DELETE);
+
+        // 로컬 디스크 파일 삭제는 이 트랜잭션이 커밋된 뒤에만 실행합니다. 회원탈퇴처럼 여러 job을
         // 한 트랜잭션 안에서 순회 삭제하다가 뒤에 나온 job이 실패해 전체가 롤백되면, 커밋
         // 전에 파일부터 지웠을 경우 이미 처리된 앞선 job들의 물리 파일은 사라졌는데 DB
         // 행만 롤백으로 되살아나는 불일치가 생깁니다(실제 재현된 문제). 파일 삭제를
         // 커밋 이후로 미루면 트랜잭션이 롤백될 때 파일 삭제 자체가 실행되지 않습니다.
-        scheduleFileDeletionAfterCommit(jobId);
+        scheduleLocalFileDeletionAfterCommit(
+                jobId,
+                deleteVideoAsset ? videoStorageJobId : null
+        );
     }
 
-    private void scheduleFileDeletionAfterCommit(String jobId) {
+    private void scheduleLocalFileDeletionAfterCommit(
+            String resultJobId,
+            String videoStorageJobId
+    ) {
         Runnable deleteFiles = () -> {
             try {
-                Path uploadDirectory = filePathGenerator.generateUploadDirectory(jobId);
-                Path resultDirectory = filePathGenerator.generateResultDirectory(jobId);
+                if (videoStorageJobId != null) {
+                    Path uploadDirectory = filePathGenerator.generateUploadDirectory(videoStorageJobId);
+                    localFileStorage.deleteDirectoryIfExists(uploadDirectory);
+                }
+                Path resultDirectory = filePathGenerator.generateResultDirectory(resultJobId);
 
-                localFileStorage.deleteDirectoryIfExists(uploadDirectory);
                 localFileStorage.deleteDirectoryIfExists(resultDirectory);
             } catch (Exception exception) {
                 // 이 시점에는 DB 삭제가 이미 커밋되어 되돌릴 수 없으므로, 로컬 파일 삭제
                 // 실패는 예외를 던지는 대신 로그만 남깁니다(고아 파일이 남을 뿐 DB와의
-                // 불일치로 이어지지는 않습니다).
+                // 불일치로 이어지지는 않습니다). 로컬 고아 디렉터리는 StorageCleanupService가
+                // 별도로 발견해 정리합니다.
                 log.warn(
-                        "RESULT_DELETE_LOCAL_FILE_FAILED_AFTER_COMMIT jobId={} reason={}",
-                        jobId,
+                        "RESULT_DELETE_LOCAL_FILE_FAILED_AFTER_COMMIT jobId={} videoStorageJobId={} reason={}",
+                        resultJobId,
+                        videoStorageJobId,
                         exception.toString()
                 );
             }
-
-            deleteObjectStoragePrefixQuietly("uploads/" + jobId + "/");
-            deleteObjectStoragePrefixQuietly("results/" + jobId + "/");
         };
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -257,17 +301,6 @@ public class ResultCommandService {
         } else {
             // 트랜잭션 없이 호출되는 경우(예: 단위 테스트)를 대비한 안전장치입니다.
             deleteFiles.run();
-        }
-    }
-
-    // 로컬 삭제와 별개로 MinIO에 미러링된 오브젝트도 정리합니다(StorageCleanupService,
-    // OriginalVideoRetentionService와 동일한 best-effort 패턴). 이 호출이 실패해도 사용자
-    // 요청 삭제/회원탈퇴 자체는 이미 로컬 정리와 DB 삭제가 끝난 뒤이므로 막지 않습니다.
-    private void deleteObjectStoragePrefixQuietly(String prefix) {
-        try {
-            objectStorage.deleteObjectsWithPrefix(prefix);
-        } catch (Exception exception) {
-            log.warn("OBJECT_STORAGE_RESULT_DELETE_FAILED prefix={} reason={}", prefix, exception.toString());
         }
     }
 }

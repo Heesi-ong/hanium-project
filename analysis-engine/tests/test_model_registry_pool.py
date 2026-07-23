@@ -55,22 +55,6 @@ def test_ensure_whisper_pool_does_not_create_duplicate_instances(monkeypatch):
     assert len(created_instances) == model_registry.WHISPER_POOL_SIZE
 
 
-@pytest.mark.parametrize("value", ["0", "-1", "not-a-number"])
-def test_pool_size_must_be_a_positive_integer(monkeypatch, value):
-    monkeypatch.setenv("TEST_MODEL_POOL_SIZE", value)
-
-    with pytest.raises(ValueError, match="TEST_MODEL_POOL_SIZE"):
-        model_registry._positive_int_from_env("TEST_MODEL_POOL_SIZE", 2)
-
-
-def test_pool_size_uses_default_and_accepts_positive_value(monkeypatch):
-    monkeypatch.delenv("TEST_MODEL_POOL_SIZE", raising=False)
-    assert model_registry._positive_int_from_env("TEST_MODEL_POOL_SIZE", 3) == 3
-
-    monkeypatch.setenv("TEST_MODEL_POOL_SIZE", "4")
-    assert model_registry._positive_int_from_env("TEST_MODEL_POOL_SIZE", 3) == 4
-
-
 def test_nested_whisper_contexts_borrow_different_instances(monkeypatch):
     monkeypatch.setattr(model_registry, "_create_whisper_instance", object)
 

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { engineHealthCheck, healthCheck } from "../api/analysisApi";
@@ -49,6 +49,7 @@ describe("StatusPage", () => {
                         ready: false,
                         response: {
                             mode: "FALLBACK",
+                            policy: "DEGRADED",
                             realModelReady: false,
                             reason: "VIDEO_LLM_ENABLED=true but NVIDIA_API_KEY is missing; analysis will fall back to mock responses.",
                         },
@@ -72,6 +73,8 @@ describe("StatusPage", () => {
         await screen.findByText("Analysis 엔진 내부 API 키 인증에 실패했습니다.");
         expect(screen.getAllByText("degraded")).toHaveLength(2);
         expect(screen.getByText("FALLBACK")).toBeInTheDocument();
+        expect(screen.getByText("DEGRADED")).toBeInTheDocument();
+        expect(screen.getByText("Policy")).toBeInTheDocument();
         expect(screen.getByText("Real Model")).toBeInTheDocument();
         expect(screen.getAllByText("Reason")).toHaveLength(2);
         expect(screen.getByText(/NVIDIA_API_KEY is missing/)).toBeInTheDocument();
@@ -81,6 +84,64 @@ describe("StatusPage", () => {
             expect(healthCheck).toHaveBeenCalledTimes(1);
             expect(engineHealthCheck).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it("shows the password reset feature as ok when enabled and SMTP is configured", async () => {
+        healthCheck.mockResolvedValue({
+            data: {
+                status: "ok",
+                passwordReset: {
+                    enabled: true,
+                    smtpConfigured: true,
+                },
+            },
+        });
+
+        render(<StatusPage />);
+
+        expect(await screen.findByText("비밀번호 재설정")).toBeInTheDocument();
+        const passwordResetCard = screen.getByText("비밀번호 재설정").closest("article");
+        expect(within(passwordResetCard).getByText("ok")).toBeInTheDocument();
+    });
+
+    it("shows the password reset feature as down when SMTP is missing and explains why", async () => {
+        healthCheck.mockResolvedValue({
+            data: {
+                status: "ok",
+                passwordReset: {
+                    enabled: true,
+                    smtpConfigured: false,
+                },
+            },
+        });
+
+        render(<StatusPage />);
+
+        const passwordResetCard = (await screen.findByText("비밀번호 재설정")).closest("article");
+        expect(within(passwordResetCard).getByText("down")).toBeInTheDocument();
+        expect(
+            within(passwordResetCard).getByText("SMTP가 설정되지 않아 재설정 이메일을 보낼 수 없습니다.")
+        ).toBeInTheDocument();
+    });
+
+    it("shows the password reset feature as degraded when explicitly disabled", async () => {
+        healthCheck.mockResolvedValue({
+            data: {
+                status: "ok",
+                passwordReset: {
+                    enabled: false,
+                    smtpConfigured: false,
+                },
+            },
+        });
+
+        render(<StatusPage />);
+
+        const passwordResetCard = (await screen.findByText("비밀번호 재설정")).closest("article");
+        expect(within(passwordResetCard).getByText("degraded")).toBeInTheDocument();
+        expect(
+            within(passwordResetCard).getByText("관리자가 이 기능을 의도적으로 비활성화했습니다.")
+        ).toBeInTheDocument();
     });
 
     it("resolves the backend base URL from config and falls back to the current origin", () => {

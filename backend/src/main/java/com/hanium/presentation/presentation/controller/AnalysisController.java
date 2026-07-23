@@ -3,12 +3,17 @@ package com.hanium.presentation.presentation.controller;
 import com.hanium.presentation.application.analysis.AnalysisCommandService;
 import com.hanium.presentation.application.analysis.AnalysisProgressService;
 import com.hanium.presentation.application.analysis.AnalysisQueryService;
+import com.hanium.presentation.application.analysis.VideoLlmReanalysisService;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.request.AnalysisRunRequest;
+import com.hanium.presentation.presentation.dto.request.VideoLlmReanalysisRequest;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisUploadResponse;
+import com.hanium.presentation.presentation.dto.response.VideoLlmReanalysisResponse;
 import jakarta.validation.constraints.Pattern;
 import org.springframework.security.core.Authentication;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,15 +34,18 @@ public class AnalysisController {
     private final AnalysisCommandService analysisCommandService;
     private final AnalysisQueryService analysisQueryService;
     private final AnalysisProgressService analysisProgressService;
+    private final VideoLlmReanalysisService videoLlmReanalysisService;
 
     public AnalysisController(
             AnalysisCommandService analysisCommandService,
             AnalysisQueryService analysisQueryService,
-            AnalysisProgressService analysisProgressService
+            AnalysisProgressService analysisProgressService,
+            VideoLlmReanalysisService videoLlmReanalysisService
     ) {
         this.analysisCommandService = analysisCommandService;
         this.analysisQueryService = analysisQueryService;
         this.analysisProgressService = analysisProgressService;
+        this.videoLlmReanalysisService = videoLlmReanalysisService;
     }
 
     @PostMapping("/upload")
@@ -181,6 +189,35 @@ public class AnalysisController {
                 "분석 재시도가 완료되었습니다.",
                 response
         );
+    }
+
+    @PostMapping("/{sourceJobId}/video-llm-reanalysis")
+    public ResponseEntity<ApiResponse<VideoLlmReanalysisResponse>> requestVideoLlmReanalysis(
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String sourceJobId,
+            @RequestHeader("Idempotency-Key")
+            @Pattern(
+                    regexp = "^[A-Za-z0-9._:-]{16,128}$",
+                    message = "Idempotency-Key는 16~128자의 영문, 숫자, '.', '_', ':', '-'만 사용할 수 있습니다."
+            )
+            String idempotencyKey,
+            @RequestBody(required = false) VideoLlmReanalysisRequest request,
+            Authentication authentication
+    ) {
+        VideoLlmReanalysisRequest reanalysisRequest = request == null
+                ? new VideoLlmReanalysisRequest(true)
+                : request;
+        VideoLlmReanalysisResponse response = videoLlmReanalysisService.requestReanalysis(
+                sourceJobId,
+                getCurrentUserId(authentication),
+                idempotencyKey,
+                reanalysisRequest.isUseOpenAi()
+        );
+
+        HttpStatus status = response.reused() ? HttpStatus.OK : HttpStatus.ACCEPTED;
+        String message = response.reused()
+                ? "동일한 실제 Video LLM 재분석 요청을 반환했습니다."
+                : "실제 Video LLM 재분석 요청이 접수되었습니다.";
+        return ResponseEntity.status(status).body(ApiResponse.success(message, response));
     }
 
     @PostMapping("/{jobId}/cancel")

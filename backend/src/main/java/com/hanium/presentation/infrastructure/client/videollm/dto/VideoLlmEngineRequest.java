@@ -6,7 +6,8 @@ public record VideoLlmEngineRequest(
         Integer sampleFps,
         Integer maxFrames,
         Double durationSec,
-        String videoDownloadUrl
+        String videoDownloadUrl,
+        boolean requireReal
 ) {
 
     public static VideoLlmEngineRequest defaultOption(
@@ -19,7 +20,8 @@ public record VideoLlmEngineRequest(
                 1,
                 90,
                 null,
-                null
+                null,
+                false
         );
     }
 
@@ -34,7 +36,8 @@ public record VideoLlmEngineRequest(
                 1,
                 90,
                 durationSec,
-                null
+                null,
+                false
         );
     }
 
@@ -44,13 +47,24 @@ public record VideoLlmEngineRequest(
             Double durationSec,
             String videoDownloadUrl
     ) {
+        return defaultOption(jobId, videoPath, durationSec, videoDownloadUrl, false);
+    }
+
+    public static VideoLlmEngineRequest defaultOption(
+            String jobId,
+            String videoPath,
+            Double durationSec,
+            String videoDownloadUrl,
+            boolean requireReal
+    ) {
         return new VideoLlmEngineRequest(
                 jobId,
                 videoPath,
                 1,
                 90,
                 durationSec,
-                videoDownloadUrl
+                videoDownloadUrl,
+                requireReal
         );
     }
 }

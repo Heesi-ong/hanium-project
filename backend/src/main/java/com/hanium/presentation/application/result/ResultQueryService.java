@@ -2,6 +2,7 @@ package com.hanium.presentation.application.result;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
@@ -21,8 +22,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.function.Function;
 import java.util.Map;
+import java.util.Set;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -55,6 +59,7 @@ public class ResultQueryService {
     @Transactional(readOnly = true)
     public AnalysisResultResponse getFinalResult(String jobId, Long ownerId) {
         AnalysisJob analysisJob = validateOwnership(jobId, ownerId);
+        String latestReanalysisJobId = findLatestReanalysisJobId(analysisJob);
 
         Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
 
@@ -69,10 +74,13 @@ public class ResultQueryService {
                         jobId,
                         exception.toString()
                 );
-                return AnalysisResultResponse.resultDataUnavailable(jobId);
+                return AnalysisResultResponse.resultDataUnavailable(
+                        analysisJob,
+                        latestReanalysisJobId
+                );
             }
 
-            throw exception;
+            return AnalysisResultResponse.statusOnly(analysisJob, latestReanalysisJobId);
         }
 
         if (analysisJob.getStatus() == AnalysisStatus.COMPLETED && (result == null || result.isEmpty())) {
@@ -81,10 +89,17 @@ public class ResultQueryService {
                     "[{}] 완료된 작업의 결과 상세 파일이 비어 있어 손상 응답으로 반환합니다.",
                     jobId
             );
-            return AnalysisResultResponse.resultDataUnavailable(jobId);
+            return AnalysisResultResponse.resultDataUnavailable(
+                    analysisJob,
+                    latestReanalysisJobId
+            );
         }
 
-        AnalysisResultResponse response = AnalysisResultResponse.of(jobId, result);
+        AnalysisResultResponse response = AnalysisResultResponse.of(
+                analysisJob,
+                result,
+                latestReanalysisJobId
+        );
 
         if (response.dataIssue() != null) {
             recordDataIssue("detail", response.dataIssue());
@@ -96,6 +111,19 @@ public class ResultQueryService {
         }
 
         return response;
+    }
+
+    private String findLatestReanalysisJobId(AnalysisJob analysisJob) {
+        if (analysisJob.getAnalysisKind() != AnalysisKind.STANDARD) {
+            return null;
+        }
+        return analysisJobRepository
+                .findFirstBySourceJobIdAndAnalysisKindOrderByCreatedAtDesc(
+                        analysisJob.getJobId(),
+                        AnalysisKind.VIDEO_LLM_REANALYSIS
+                )
+                .map(AnalysisJob::getJobId)
+                .orElse(null);
     }
 
     @Transactional(readOnly = true)
@@ -115,19 +143,48 @@ public class ResultQueryService {
     }
 
     private Map<String, UploadedVideo> getUploadedVideosByJobId(List<AnalysisJob> analysisJobs) {
-        List<String> jobIds = analysisJobs.stream()
-                .map(AnalysisJob::getJobId)
-                .toList();
-
-        if (jobIds.isEmpty()) {
+        if (analysisJobs.isEmpty()) {
             return Map.of();
         }
 
-        return uploadedVideoRepository.findAllByJobIdIn(jobIds).stream()
-                .collect(Collectors.toMap(
-                        UploadedVideo::getJobId,
-                        Function.identity()
-                ));
+        Set<Long> linkedAssetIds = analysisJobs.stream()
+                .map(AnalysisJob::getVideoAssetId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, UploadedVideo> linkedAssetsById = linkedAssetIds.isEmpty()
+                ? Map.of()
+                : uploadedVideoRepository.findAllById(linkedAssetIds).stream()
+                        .collect(Collectors.toMap(UploadedVideo::getId, Function.identity()));
+
+        Map<String, UploadedVideo> resolvedByJobId = new HashMap<>();
+        Set<String> legacyOrMissingJobIds = new LinkedHashSet<>();
+
+        for (AnalysisJob analysisJob : analysisJobs) {
+            Long videoAssetId = analysisJob.getVideoAssetId();
+            UploadedVideo linkedAsset = videoAssetId == null
+                    ? null
+                    : linkedAssetsById.get(videoAssetId);
+            if (linkedAsset != null) {
+                resolvedByJobId.put(analysisJob.getJobId(), linkedAsset);
+            } else {
+                legacyOrMissingJobIds.add(analysisJob.getJobId());
+            }
+        }
+
+        if (!legacyOrMissingJobIds.isEmpty()) {
+            Map<String, UploadedVideo> legacyAssets = uploadedVideoRepository
+                    .findAllByJobIdIn(List.copyOf(legacyOrMissingJobIds))
+                    .stream()
+                    .collect(Collectors.toMap(UploadedVideo::getJobId, Function.identity()));
+            legacyOrMissingJobIds.forEach(jobId -> {
+                UploadedVideo legacyAsset = legacyAssets.get(jobId);
+                if (legacyAsset != null) {
+                    resolvedByJobId.put(jobId, legacyAsset);
+                }
+            });
+        }
+
+        return resolvedByJobId;
     }
 
     // 목록 조회는 한 작업의 데이터 정합성이 깨졌다고 전체를 실패시키지 않습니다. 업로드 영상

@@ -23,11 +23,28 @@ BASE_URL=http://localhost:5173 npm run test:e2e
 E2E_FULL_STACK=true API_BASE_URL=http://localhost:8080 npm run test:e2e
 ```
 
+실제 분석 파이프라인은 backend, analysis-worker, analysis-engine, MySQL, Redis, MinIO가
+모두 healthy인 상태에서 별도로 실행합니다. 저장소 루트의 `sample-demo.mp4`를 기본 입력으로
+사용하며 Video LLM/OpenAI 외부 호출은 끄고 정량 분석 엔진과 워커는 실제 구현을 사용합니다.
+
+```bash
+E2E_ANALYSIS_PIPELINE=true \
+BASE_URL=http://localhost:8080 \
+API_BASE_URL=http://localhost:8080 \
+npm run test:e2e -- e2e/analysis-pipeline.spec.js
+```
+
+기본 완료 대기 시간은 10분입니다. 느린 CI/ARM 환경에서는
+`E2E_ANALYSIS_MAX_WAIT_MS`, 폴링 간격은 `E2E_ANALYSIS_POLL_INTERVAL_MS`, 다른 영상은
+`E2E_VIDEO_PATH`로 조정할 수 있습니다. 테스트 계정과 생성된 분석 데이터는 종료 시
+회원탈퇴 API로 정리합니다.
+
 ## 스펙
 
 - `public-flow.spec.js` — 랜딩/네비게이션/약관/404. **히어로 제목의 명암비를 실측**해 2026-07-16 P0("제목이 다크-온-다크로 안 보임") 유형 회귀를 잡습니다. 백엔드 없이 실행됩니다.
 - `auth-api.spec.js` — 회원가입→로그인→현재 사용자 조회→로그아웃을 API로 검증. `E2E_FULL_STACK=true`일 때만 실행. UI 셀렉터에 의존하지 않아 견고합니다.
 - `protected-pages.spec.js` — 로그인 후 `/onboarding · /upload · /results · /account · /status`를 순회하며 (1) 로그인으로 튕기지 않는지, (2) 제목 명암비, (3) 콘솔 오류를 감사. `E2E_FULL_STACK=true`이고 **앱과 `/api`가 같은 출처**(운영 nginx 구성)일 때만 실행됩니다(쿠키 인증 때문). 관리자 페이지는 관리자 계정이 필요해 별도 확장 대상입니다.
+- `analysis-pipeline.spec.js` — 실제 영상 업로드→DB 큐→analysis-worker→analysis-engine→완료 상태→결과/영상 토큰 조회를 API로 검증하고 테스트 데이터를 정리합니다. `E2E_ANALYSIS_PIPELINE=true`일 때만 실행됩니다.
 
 ## CI 연동 (권장)
 

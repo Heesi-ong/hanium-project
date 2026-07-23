@@ -1,7 +1,9 @@
 package com.hanium.presentation.presentation.dto.response;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 
 import java.time.LocalDateTime;
@@ -22,6 +24,9 @@ public record ResultSummaryResponse(
         Map<String, Object> feedback,
         Map<String, Object> visualAnalysis,
         Map<String, Object> pipeline,
+        AnalysisKind analysisKind,
+        String sourceJobId,
+        VideoLlmGenerationMode videoLlmGenerationMode,
         // 정상 항목은 null입니다. UploadedVideo 레코드가 없는 등 데이터 부분 손상이 있을 때만
         // 값이 채워지며, 목록 조회는 이 항목을 실패시키지 않고 손상 사실만 표시한 채 반환합니다.
         String dataIssue,
@@ -66,6 +71,9 @@ public record ResultSummaryResponse(
                 feedback,
                 visualAnalysis,
                 pipeline,
+                analysisJob.getAnalysisKind(),
+                analysisJob.getSourceJobId(),
+                analysisJob.getVideoLlmGenerationMode(),
                 dataIssue,
                 resolveDataIssueDescription(dataIssue)
         );
@@ -93,6 +101,9 @@ public record ResultSummaryResponse(
                 extractFeedback(finalResult, pipeline),
                 extractVisualAnalysisSummary(finalResult, pipeline),
                 pipeline,
+                analysisJob.getAnalysisKind(),
+                analysisJob.getSourceJobId(),
+                analysisJob.getVideoLlmGenerationMode(),
                 "MISSING_VIDEO",
                 "업로드된 영상 정보를 찾을 수 없습니다. 관리자에게 문의하세요."
         );
@@ -120,6 +131,9 @@ public record ResultSummaryResponse(
                 createUnknownFeedback(),
                 createUnknownVisualAnalysis(),
                 createUnknownPipeline(),
+                analysisJob.getAnalysisKind(),
+                analysisJob.getSourceJobId(),
+                analysisJob.getVideoLlmGenerationMode(),
                 "RESULT_DATA_UNAVAILABLE",
                 "분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요."
         );

@@ -9,8 +9,11 @@ const analysisApiMock = vi.hoisted(() => ({
     deleteResult: vi.fn(),
     getAnalysisStatus: vi.fn(),
     getResult: vi.fn(),
+    requestVideoLlmReanalysis: vi.fn(),
     retryAnalysis: vi.fn(),
 }));
+
+const confirmMock = vi.hoisted(() => vi.fn());
 
 const coachApiMock = vi.hoisted(() => ({
     getCoachMessages: vi.fn(),
@@ -22,6 +25,7 @@ vi.mock("../api/analysisApi", () => ({
     deleteResult: analysisApiMock.deleteResult,
     getAnalysisStatus: analysisApiMock.getAnalysisStatus,
     getResult: analysisApiMock.getResult,
+    requestVideoLlmReanalysis: analysisApiMock.requestVideoLlmReanalysis,
     retryAnalysis: analysisApiMock.retryAnalysis,
 }));
 
@@ -47,7 +51,7 @@ vi.mock("../components/result-detail/VideoPlayerSection", () => ({
 }));
 
 vi.mock("../context/ConfirmContext", () => ({
-    useConfirm: () => vi.fn(),
+    useConfirm: () => confirmMock,
 }));
 
 function renderResultDetailPage() {
@@ -103,7 +107,10 @@ describe("ResultDetailPage", () => {
         analysisApiMock.deleteResult.mockReset();
         analysisApiMock.getAnalysisStatus.mockReset();
         analysisApiMock.getResult.mockReset();
+        analysisApiMock.requestVideoLlmReanalysis.mockReset();
         analysisApiMock.retryAnalysis.mockReset();
+        confirmMock.mockReset();
+        confirmMock.mockResolvedValue(true);
         coachApiMock.getCoachMessages.mockReset();
         coachApiMock.sendCoachMessage.mockReset();
         analysisApiMock.getResult.mockResolvedValue(createCompletedResult());
@@ -218,5 +225,80 @@ describe("ResultDetailPage", () => {
         expect(analysisApiMock.getResult).toHaveBeenCalledTimes(2);
 
         expect(screen.getByText("분석이 완료되었습니다. 최신 결과가 화면에 반영되었습니다.")).toBeInTheDocument();
+    });
+
+    it("requests real Video LLM reanalysis with a stable key and opens the child job", async () => {
+        const fallbackResult = createCompletedResult();
+        fallbackResult.data.analysisKind = "STANDARD";
+        fallbackResult.data.videoLlmGenerationMode = "FALLBACK";
+        analysisApiMock.getResult
+            .mockResolvedValueOnce(fallbackResult)
+            .mockResolvedValueOnce({
+                data: {
+                    analysisKind: "VIDEO_LLM_REANALYSIS",
+                    sourceJobId: "job-print-test",
+                    result: {
+                        ...createCompletedResult().data.result,
+                        status: "QUEUED",
+                    },
+                },
+            });
+        analysisApiMock.requestVideoLlmReanalysis
+            .mockRejectedValueOnce({ error: "NETWORK_ERROR" })
+            .mockResolvedValueOnce({
+                data: {
+                    reanalysisJobId: "job-reanalysis-child",
+                },
+            });
+
+        renderResultDetailPage();
+
+        fireEvent.click(await screen.findByRole("button", {
+            name: "실제 Video LLM으로 다시 분석",
+        }));
+
+        await waitFor(() => {
+            expect(analysisApiMock.requestVideoLlmReanalysis).toHaveBeenCalledTimes(1);
+        });
+
+        const [firstSourceJobId, firstOptions] =
+            analysisApiMock.requestVideoLlmReanalysis.mock.calls[0];
+        expect(firstSourceJobId).toBe("job-print-test");
+        expect(firstOptions.useOpenAi).toBe(true);
+        expect(firstOptions.idempotencyKey).toMatch(
+            /^video-llm-reanalysis:[A-Za-z0-9._:-]+$/
+        );
+
+        fireEvent.click(await screen.findByRole("button", {
+            name: "실제 Video LLM으로 다시 분석",
+        }));
+
+        await waitFor(() => {
+            expect(analysisApiMock.requestVideoLlmReanalysis).toHaveBeenCalledTimes(2);
+        });
+        const [secondSourceJobId, secondOptions] =
+            analysisApiMock.requestVideoLlmReanalysis.mock.calls[1];
+        expect(secondSourceJobId).toBe(firstSourceJobId);
+        expect(secondOptions.idempotencyKey).toBe(firstOptions.idempotencyKey);
+        expect(confirmMock).toHaveBeenCalledWith(
+            expect.stringContaining("일일·월간 사용 한도")
+        );
+
+        await waitFor(() => {
+            expect(analysisApiMock.getResult)
+                .toHaveBeenCalledWith("job-reanalysis-child");
+        });
+    });
+
+    it("shows links between a source result and its reanalysis result", async () => {
+        const sourceResult = createCompletedResult();
+        sourceResult.data.latestReanalysisJobId = "job-reanalysis-latest";
+        analysisApiMock.getResult.mockResolvedValue(sourceResult);
+
+        renderResultDetailPage();
+
+        expect(await screen.findByRole("link", {
+            name: "최신 재분석 결과 보기",
+        })).toHaveAttribute("href", "/results/job-reanalysis-latest");
     });
 });

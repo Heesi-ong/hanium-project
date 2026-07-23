@@ -297,6 +297,33 @@ class VideoFileCommandServiceTest {
     }
 
     @Test
+    void sourceExistsUsesLocalFileWithoutCallingObjectStorage() throws Exception {
+        Path localVideo = tempDir.resolve("uploads/job-source-local/original.mp4");
+        Files.createDirectories(localVideo.getParent());
+        Files.write(localVideo, mp4Header());
+
+        assertThat(videoFileCommandService.sourceExists("job-source-local", localVideo.toString()))
+                .isTrue();
+        verify(objectStorage, never()).exists(any());
+    }
+
+    @Test
+    void sourceExistsFallsBackToObjectStorageWhenLocalFileIsMissing() {
+        String path = tempDir.resolve("uploads/job-source-minio/original.mp4").toString();
+        when(objectStorage.exists("uploads/job-source-minio/original.mp4")).thenReturn(true);
+
+        assertThat(videoFileCommandService.sourceExists("job-source-minio", path)).isTrue();
+    }
+
+    @Test
+    void sourceExistsReturnsFalseWhenNeitherStorageHasTheVideo() {
+        String path = tempDir.resolve("uploads/job-source-missing/original.mp4").toString();
+        when(objectStorage.exists("uploads/job-source-missing/original.mp4")).thenReturn(false);
+
+        assertThat(videoFileCommandService.sourceExists("job-source-missing", path)).isFalse();
+    }
+
+    @Test
     void resolveStreamingUrlReturnsPresignedUrlWhenObjectExists() {
         when(objectStorage.exists("uploads/job-stream/original.mp4")).thenReturn(true);
         when(objectStorage.generatePublicPresignedUrl(eq("uploads/job-stream/original.mp4"), any()))

@@ -77,4 +77,24 @@ class QueuedAnalysisJobResumeServiceTest {
         verify(analysisCommandService, never())
                 .redispatchQueuedJob(anyString(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyBoolean());
     }
+
+    // resume-cron 기본값(매 분)보다 짧아야 하는 락 TTL이 실수로 다시 분 단위로(Duration.ofMinutes)
+    // 해석되지 않는지 확인한다. 예전 버그(TTL 2분 > 실행 간격 1분)가 재발하면 이 값이
+    // Duration.ofMinutes(45)(45분!)로 잘못 넘어가게 되므로, 정확히 초 단위인지 검증한다
+    // (2026-07-23 코드 리뷰 P1-05).
+    @Test
+    void passesLockTtlAsSecondsNotMinutes() {
+        QueuedAnalysisJobResumeService serviceWithDefaultTtl = new QueuedAnalysisJobResumeService(
+                analysisJobRepository,
+                analysisCommandService,
+                schedulerDistributedLock,
+                60,
+                45
+        );
+        when(schedulerDistributedLock.tryLock(anyString(), any(Duration.class))).thenReturn(false);
+
+        serviceWithDefaultTtl.resumeStaleQueuedJobs();
+
+        verify(schedulerDistributedLock).tryLock("queued-job-resume", Duration.ofSeconds(45));
+    }
 }

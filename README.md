@@ -156,14 +156,15 @@ uvicorn app.main:app --reload --port 8002
 
 ### 5.1 Video LLM 실제 모델 활성화
 
-기본 설정은 안전하게 mock 경로입니다. 루트 `.env.example:78-81`, `video-llm-engine/.env.example:12-15`,
-`docker-compose.yml:126` 모두 `VIDEO_LLM_ENABLED=false`를 기본값으로 둡니다. 실제 NVIDIA hosted
-Video LLM 호출을 운영에서 켜려면 아래 값을 운영 환경에 명시적으로 설정해야 합니다.
+기본 정책은 실제 외부 모델을 호출하지 않는 `VIDEO_LLM_POLICY=DISABLED`입니다. 기존
+`VIDEO_LLM_ENABLED`는 이전 배포 호환용이며, 정책 값이 비어 있을 때만
+`true=DEGRADED`, `false=DISABLED`로 해석됩니다. 새 배포에서는 아래 정책을 명시해야 합니다.
 
 | 환경변수 | 위치 | 의미 |
 | --- | --- | --- |
-| `VIDEO_LLM_ENABLED=true` | 루트 `.env` 또는 video-llm-engine 실행 환경 | 실제 NVIDIA hosted API 호출 경로를 켭니다. 필수 설정이 빠지면 readiness는 `ready=false`, `mode=FALLBACK`으로 노출되고 분석 호출은 mock으로 폴백합니다. |
-| `NVIDIA_API_KEY` | video-llm-engine 실행 환경 | NVIDIA API Catalog(build.nvidia.com)에서 발급받은 `nvapi-` 키입니다. 비어 있으면 `/api/internal/readiness`의 `reason`에 누락 사유가 표시됩니다. |
+| `VIDEO_LLM_POLICY` | 루트 `.env` 또는 video-llm-engine 실행 환경 | `STRICT`: 실제 호출 실패 시 502로 작업 실패, `DEGRADED`: 실패 시 명시적 FALLBACK 샘플 결과, `DISABLED`: 실제 호출 없이 MOCK 결과. 운영 정확성을 우선하면 `STRICT`를 권장합니다. |
+| `VIDEO_LLM_ENABLED` | 같은 위치 | 이전 배포 호환용입니다. `VIDEO_LLM_POLICY`가 비어 있을 때만 정책을 유도합니다. |
+| `NVIDIA_API_KEY` | video-llm-engine 실행 환경 | NVIDIA API Catalog(build.nvidia.com)에서 발급받은 `nvapi-` 키입니다. 정책이 STRICT/DEGRADED인데 비어 있으면 엔진이 기동 단계에서 실패합니다. |
 | `NVIDIA_VIDEO_LLM_MODEL` | video-llm-engine 실행 환경 | 기본값은 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`입니다. API Catalog의 모델 ID가 바뀐 경우에만 덮어씁니다. |
 | `NVIDIA_API_BASE_URL` | video-llm-engine 실행 환경 | 기본값은 `https://integrate.api.nvidia.com/v1`입니다. |
 | `NVIDIA_ASSET_API_BASE_URL` | video-llm-engine 실행 환경 | 180KB 초과 영상을 업로드하는 NVCF Asset API base URL입니다. 기본값은 `https://api.nvcf.nvidia.com/v2/nvcf`입니다. |
@@ -178,6 +179,7 @@ Video LLM 호출을 운영에서 켜려면 아래 값을 운영 환경에 명시
 cd ~/Desktop/hanium\ project/video-llm-engine
 
 export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
+export VIDEO_LLM_POLICY=STRICT
 export VIDEO_LLM_ENABLED=true
 export NVIDIA_API_KEY=nvapi-...
 export NVIDIA_VIDEO_LLM_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
@@ -197,12 +199,14 @@ export VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES=44640
 Docker Compose 운영 배포는 `docker-compose.yml`과 `docker-compose.prod.yml`을 함께 사용합니다.
 `docker-compose.prod.yml`은 nginx/TLS 오버레이만 추가하므로, Video LLM 관련 런타임 값은 기본
 `docker-compose.yml`의 `video-llm-engine` 및 `backend` 서비스 환경으로 전달됩니다.
-compose 기반 운영에서 실제 모델을 켜려면 루트 `.env`에 `VIDEO_LLM_ENABLED=true`,
+compose 기반 운영에서 실제 모델을 켜려면 루트 `.env`에
+`VIDEO_LLM_POLICY=STRICT`(또는 제품 승인을 받은 `DEGRADED`), `VIDEO_LLM_ENABLED=true`,
 `NVIDIA_API_KEY`, 필요한 `NVIDIA_*` override, `VIDEO_LLM_MONTHLY_RATE_LIMIT_*` 값을 채운 뒤
 배포하세요. 키 값은 저장소에 커밋하지 말고 운영 환경변수 또는 시크릿으로 관리해야 합니다.
 배포 후에는 백엔드의 `GET /api/health/engines` 또는 프론트엔드 `/status`에서 Video LLM
-readiness가 `ready=true`, `mode=REAL`, `realModelReady=true`인지 확인하세요. `health`가 `up`이어도
-readiness가 `ready=false`이면 실제 모델 설정은 아직 완료되지 않은 상태입니다.
+readiness가 `ready=true`, `mode=REAL`, `policy=<선택한 정책>`,
+`realModelReady=true`인지 확인하세요. `health`가 `up`이어도 readiness가 `ready=false`이면 실제
+모델 설정은 아직 완료되지 않은 상태입니다.
 
 비용과 한도 측면에서는 backend가 실제 Video LLM 호출 전에 월간 카운터를 확인합니다.
 `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`를 초과하면 NVIDIA 호출을 보내지 않고 Video LLM 분석을
@@ -215,13 +219,12 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
 3구간 프롬프트 적용 후 시간 구간화가 개선됐지만, 일부 라벨은 실제 시각 변화보다 프롬프트 구조를
 따른 추정일 가능성이 있어 품질 검수 없이 최종 사용자 판단 근거로 과신하면 안 됩니다.
 
-#### 운영에서 `VIDEO_LLM_ENABLED=true`로 켜기 전 결정 체크리스트
+#### 운영에서 `VIDEO_LLM_POLICY=STRICT|DEGRADED`로 켜기 전 결정 체크리스트
 
-현재 기본값은 안전하게 `false`(mock)이며, 아래 항목은 이 값을 운영에서 `true`로 바꾸기 전에
-확인/결정해야 합니다. 코드는 이미 timeout(120초 기본)·실패 시 mock 폴백·월간 비용 상한
-(`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`, 기본 500회)·초과 시 `SKIPPED` 표시까지 갖추고
-있으므로, 아래는 "구현이 안 됐다"가 아니라 "실제 운영값으로 확정해야 하는 미확인/미결정
-항목"입니다.
+현재 기본값은 `DISABLED`이며, 실제 활성화 전에 실패 시 전체 작업을 실패시킬지(`STRICT`),
+샘플 대체 결과를 허용할지(`DEGRADED`)를 제품 정책으로 결정해야 합니다. 코드는 timeout
+(120초 기본)·정책별 실패 처리·월간 비용 상한(`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`,
+기본 500회)·초과 시 `SKIPPED` 표시까지 갖추고 있습니다.
 
 1. **NVIDIA 무료 엔드포인트의 정확한 rate limit이 아직 공식 문서로 확인되지 않았습니다.**
    `docs/service-plan/video-llm-model-options.md`의 라이브 테스트는 4초 영상 10회 연속 호출까지만
@@ -230,7 +233,7 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
    1시간 동안 100회 호출)를 먼저 진행하는 것을 권장합니다.
 2. **영상 길이 상한(`VIDEO_MAX_DURATION_MINUTES`, 기본 30분)이 NVIDIA 실측 성공 범위(120초)보다
    훨씬 큽니다.** 120초를 넘는 영상에서 NVIDIA 호출이 성공하는지, 실패해 mock으로 계속
-   폴백되는지는 확인되지 않았습니다. 운영에서 `VIDEO_LLM_ENABLED=true`로 켤 경우, 실제 업로드
+   처리되는지는 확인되지 않았습니다. 운영에서 실제 모델을 켤 경우, 실제 업로드
    허용 길이 상한과 NVIDIA 검증 범위를 맞추거나(예: Video LLM 전용 별도 길이 제한 도입), 긴
    영상은 처음부터 mock/SKIPPED로 처리되는 것을 감수할지 결정해야 합니다.
 3. **시간 구간화 품질 한계가 사용자에게 어떻게 노출되는지 확인이 필요합니다.** 3구간 프롬프트
@@ -674,7 +677,35 @@ Request Body:
 }
 ```
 
-### 9.6 분석 상태 조회
+### 9.6 실제 Video LLM 재분석
+
+`DEGRADED` 정책에서 `FALLBACK`으로 완료된 본인 소유 결과만, 기존 결과를 덮어쓰지 않고
+새 child job으로 재분석합니다.
+
+```http
+POST /api/analysis/{sourceJobId}/video-llm-reanalysis
+Authorization: Bearer {accessToken}
+Idempotency-Key: {16~128자 고유 요청 키}
+Content-Type: application/json
+```
+
+```json
+{
+  "useOpenAi": true
+}
+```
+
+최초 접수는 202, 같은 `Idempotency-Key` replay는 같은 child를 200으로 반환합니다.
+활성 재분석이 이미 있으면 409, 원본 영상이 만료됐으면 410, Video LLM 한도 초과는 429입니다.
+이 경로는 전역 정책이 `DEGRADED`여도 `REAL` 응답만 성공으로 인정하며 FALLBACK/MOCK/SKIPPED는
+작업 실패로 기록합니다.
+
+프론트 결과 상세는 저장된 mode가 `FALLBACK`인 완료된 기본 분석에만 재분석 버튼을
+표시합니다. 비용·사용 한도 재소비를 확인한 뒤 새 child 상세로 이동하며, 결과 파일이 아직
+없는 QUEUED/RUNNING 단계부터 기존 상태 polling을 이어갑니다. 원본과 재분석 상세에는 서로
+이동할 수 있는 lineage 링크가 표시됩니다.
+
+### 9.7 분석 상태 조회
 
 ```http
 GET /api/analysis/{jobId}/status
@@ -686,7 +717,7 @@ GET /api/analysis/{jobId}/status
 Authorization: Bearer {accessToken}
 ```
 
-### 9.7 결과 목록 조회
+### 9.8 결과 목록 조회
 
 ```http
 GET /api/results
@@ -706,7 +737,7 @@ page: 0부터 시작하는 페이지 번호 (기본값 0)
 size: 페이지 크기 (기본값 50, 최대 100)
 ```
 
-### 9.8 결과 상세 조회
+### 9.9 결과 상세 조회
 
 ```http
 GET /api/results/{jobId}
@@ -718,7 +749,7 @@ GET /api/results/{jobId}
 Authorization: Bearer {accessToken}
 ```
 
-### 9.9 결과 삭제
+### 9.10 결과 삭제
 
 ```http
 DELETE /api/results/{jobId}
@@ -980,7 +1011,7 @@ CI의 `docker-build` job은 서비스/운영 보조 이미지(`backend`, `fronte
 - 외부 Python 엔진 연동(analysis-engine은 OpenCV/MediaPipe/faster-whisper 기반 실제 분석,
   아래 "현재 실제 분석으로 반영된 범위" 참고)
 - 내부 엔진 API 키 인증
-- Video LLM 분석(기본은 안전한 mock, `VIDEO_LLM_ENABLED=true`로 NVIDIA hosted 모델 실제 연동 가능 — 5.1절 참고)
+- Video LLM 분석(기본은 `VIDEO_LLM_POLICY=DISABLED`, STRICT/DEGRADED 정책으로 NVIDIA hosted 모델 실제 연동 가능 — 5.1절 참고)
 - OpenAI 피드백 생성(기본은 안전한 mock 폴백, `OPENAI_ENABLED=true`로 실제 API 연동 가능 — "OpenAI 호출 및 비용 제어 정책" 절 참고)
 - 결과 JSON 저장
 - 결과 목록 조회 및 페이지네이션

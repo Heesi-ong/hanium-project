@@ -324,24 +324,131 @@ def test_analyze_uses_mock_generation_mode_when_video_llm_disabled(monkeypatch, 
     assert response.json()["model"]["generationMode"] == "MOCK"
 
 
-def test_analyze_falls_back_to_mock_when_real_video_llm_is_enabled_but_not_configured(
+def test_analyze_returns_502_when_real_model_fails_under_strict_policy(
     monkeypatch,
     tmp_path,
 ):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_POLICY", "STRICT")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    def fail_real_model(_request):
+        raise RuntimeError("vendor unavailable")
+
+    monkeypatch.setattr(
+        video_llm_analysis,
+        "call_real_video_llm_model",
+        fail_real_model,
+    )
     client = create_client(monkeypatch, tmp_path)
 
     response = client.post(
         "/api/video-llm/analyze",
         headers={"X-Internal-Api-Key": "shared-secret"},
-        json=analysis_payload("fallback-mode-job"),
+        json=analysis_payload("strict-failure-job"),
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": {
+            "code": "VIDEO_LLM_REAL_MODEL_FAILED",
+            "message": "실제 Video LLM 분석에 실패했습니다.",
+        }
+    }
+
+
+def test_analyze_returns_fallback_when_real_model_fails_under_degraded_policy(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("VIDEO_LLM_POLICY", "DEGRADED")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    def fail_real_model(_request):
+        raise RuntimeError("vendor unavailable")
+
+    monkeypatch.setattr(
+        video_llm_analysis,
+        "call_real_video_llm_model",
+        fail_real_model,
+    )
+    client = create_client(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=analysis_payload("degraded-failure-job"),
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["jobId"] == "fallback-mode-job"
-    assert body["status"] == "success"
-    assert body["model"]["generationMode"] == "FALLBACK"
+    assert response.json()["model"]["generationMode"] == "FALLBACK"
+
+
+def test_analyze_require_real_rejects_fallback_under_degraded_policy(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("VIDEO_LLM_POLICY", "DEGRADED")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    def fail_real_model(_request):
+        raise RuntimeError("vendor unavailable")
+
+    monkeypatch.setattr(
+        video_llm_analysis,
+        "call_real_video_llm_model",
+        fail_real_model,
+    )
+    client = create_client(monkeypatch, tmp_path)
+    payload = {**analysis_payload("require-real-degraded-job"), "requireReal": True}
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=payload,
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "VIDEO_LLM_REAL_MODEL_FAILED"
+
+
+def test_analyze_require_real_rejects_mock_when_policy_is_disabled(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("VIDEO_LLM_POLICY", "DISABLED")
+    client = create_client(monkeypatch, tmp_path)
+    payload = {**analysis_payload("require-real-disabled-job"), "requireReal": True}
+
+    response = client.post(
+        "/api/video-llm/analyze",
+        headers={"X-Internal-Api-Key": "shared-secret"},
+        json=payload,
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "code": "VIDEO_LLM_REAL_MODEL_DISABLED",
+            "message": "현재 실제 Video LLM 분석을 사용할 수 없습니다.",
+        }
+    }
+
+
+def test_startup_rejects_real_video_llm_when_api_key_is_not_configured(
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    client = create_client(monkeypatch, tmp_path)
+
+    with pytest.raises(RuntimeError, match="NVIDIA_API_KEY is missing"):
+        with client:
+            pass
 
 
 def test_call_real_video_llm_model_normalizes_nvidia_response(monkeypatch, tmp_path):
@@ -557,6 +664,7 @@ def test_analyze_falls_back_to_mock_when_duration_exceeds_configured_max(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
     monkeypatch.setenv("VIDEO_LLM_MAX_DURATION_SECONDS", "3600")
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
@@ -1105,6 +1213,7 @@ def test_analyze_falls_back_when_nvidia_response_is_missing_required_fields(
         }),
     )
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
 
     client = create_client(monkeypatch, tmp_path)
@@ -1158,8 +1267,9 @@ class FakeDownloadClient:
     response_headers = None
     raised_exception = None
 
-    def __init__(self, timeout):
+    def __init__(self, timeout, follow_redirects=False):
         self.timeout = timeout
+        self.follow_redirects = follow_redirects
 
     def __enter__(self):
         return self
@@ -1250,6 +1360,64 @@ def test_validate_video_download_url_rejects_non_http_urls(bad_url):
 def test_validate_video_download_url_accepts_http_and_https():
     video_llm_analysis.validate_video_download_url("https://minio.local/uploads/x/original.mp4")
     video_llm_analysis.validate_video_download_url("http://minio.local/uploads/x/original.mp4")
+
+
+def test_validate_video_download_url_rejects_host_outside_allowlist(monkeypatch):
+    monkeypatch.setenv("VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS", "minio:9000")
+
+    with pytest.raises(ValueError, match="not in VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS"):
+        video_llm_analysis.validate_video_download_url("https://attacker.example.com/steal.mp4")
+
+
+def test_validate_video_download_url_rejects_internal_metadata_endpoint(monkeypatch):
+    # 클라우드 메타데이터 엔드포인트(169.254.169.254)로 향하는 SSRF 시도를 막는다.
+    monkeypatch.setenv("VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS", "minio:9000")
+
+    with pytest.raises(ValueError, match="not in VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS"):
+        video_llm_analysis.validate_video_download_url("http://169.254.169.254/latest/meta-data/")
+
+
+def test_resolve_video_file_falls_back_to_local_path_for_disallowed_host(monkeypatch, tmp_path):
+    monkeypatch.setenv("VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS", "minio.local:443")
+    request_attempted = {"called": False}
+
+    class TrackingFakeDownloadClient(FakeDownloadClient):
+        def stream(self, method, url):
+            request_attempted["called"] = True
+            return super().stream(method, url)
+
+    monkeypatch.setattr(video_llm_analysis.httpx, "Client", TrackingFakeDownloadClient)
+
+    video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-ssrf-allowlist-job",
+        videoPath=video_path,
+        videoDownloadUrl="https://attacker.example.com/steal.mp4",
+    )
+
+    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(video_path)
+
+    assert request_attempted["called"] is False
+
+
+def test_resolve_video_file_falls_back_to_local_path_on_redirect_response(monkeypatch, tmp_path):
+    FakeDownloadClient.response_status = 302
+    FakeDownloadClient.response_content = b""
+    FakeDownloadClient.response_headers = {"location": "https://attacker.example.com/steal.mp4"}
+    FakeDownloadClient.raised_exception = None
+    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+
+    video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-redirect-job",
+        videoPath=video_path,
+        videoDownloadUrl="https://minio.local/uploads/video-llm-redirect-job/original.mp4",
+    )
+
+    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(video_path)
+        assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
 
 def test_resolve_video_file_falls_back_to_local_path_without_attempting_request_for_bad_url(

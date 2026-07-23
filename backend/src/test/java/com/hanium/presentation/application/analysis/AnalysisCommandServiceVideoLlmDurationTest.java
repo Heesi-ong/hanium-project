@@ -5,6 +5,7 @@ import com.hanium.presentation.application.video.VideoFileCommandService;
 import com.hanium.presentation.common.util.JobIdGenerator;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
@@ -50,6 +51,8 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     private VideoLlmEngineClient videoLlmEngineClient;
     private ResultCommandService resultCommandService;
     private UserRateLimiter userRateLimiter;
+    private AnalysisJob analysisJob;
+    private AnalysisJobStatusService analysisJobStatusService;
 
     @BeforeEach
     void setUp() {
@@ -68,7 +71,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
             return null;
         }).when(analysisTaskExecutor).execute(any(Runnable.class));
 
-        AnalysisJob analysisJob = mock(AnalysisJob.class);
+        analysisJob = mock(AnalysisJob.class);
         when(analysisJob.getJobId()).thenReturn(JOB_ID);
         when(analysisJob.getOwnerId()).thenReturn(1L);
         when(analysisJob.getStatus()).thenReturn(AnalysisStatus.BASIC_ANALYZING);
@@ -83,7 +86,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         when(uploadedVideo.getStoredFilePath()).thenReturn(VIDEO_PATH);
         when(uploadedVideoRepository.findByJobId(JOB_ID)).thenReturn(Optional.of(uploadedVideo));
 
-        AnalysisJobStatusService analysisJobStatusService = mock(AnalysisJobStatusService.class);
+        analysisJobStatusService = mock(AnalysisJobStatusService.class);
         when(analysisJobStatusService.claimForExecution(JOB_ID)).thenReturn(true);
 
         when(analysisEngineClient.analyze(any(AnalysisEngineRequest.class)))
@@ -220,6 +223,36 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         verify(videoLlmEngineClient).analyze(any(VideoLlmEngineRequest.class));
     }
 
+    @Test
+    void requiresRealVideoLlmForReanalysisJob() {
+        when(analysisJob.getAnalysisKind()).thenReturn(AnalysisKind.VIDEO_LLM_REANALYSIS);
+        when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
+                .thenAnswer(invocation -> videoLlmResponse(
+                        invocation.getArgument(0, VideoLlmEngineRequest.class).jobId(),
+                        "REAL"
+                ));
+
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        ArgumentCaptor<VideoLlmEngineRequest> captor =
+                ArgumentCaptor.forClass(VideoLlmEngineRequest.class);
+        verify(videoLlmEngineClient).analyze(captor.capture());
+        assertThat(captor.getValue().requireReal()).isTrue();
+    }
+
+    @Test
+    void failsReanalysisJobWhenEngineReturnsNonRealResponse() {
+        when(analysisJob.getAnalysisKind()).thenReturn(AnalysisKind.VIDEO_LLM_REANALYSIS);
+
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        verify(analysisJobStatusService).failStatus(
+                eq(JOB_ID),
+                org.mockito.ArgumentMatchers.contains("REAL 응답")
+        );
+        verify(resultCommandService, never()).saveEngineResultsAndCompact(anyString(), any(), any());
+    }
+
     private AnalysisEngineResponse successEngineResponse() {
         return new AnalysisEngineResponse(
                 JOB_ID,
@@ -238,10 +271,14 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     }
 
     private VideoLlmEngineResponse videoLlmResponse(String jobId) {
+        return videoLlmResponse(jobId, "MOCK");
+    }
+
+    private VideoLlmEngineResponse videoLlmResponse(String jobId, String generationMode) {
         return new VideoLlmEngineResponse(
                 jobId,
                 "success",
-                Map.of("generationMode", "MOCK"),
+                Map.of("generationMode", generationMode),
                 Map.of(),
                 Map.of()
         );

@@ -31,6 +31,7 @@ import {
     deleteResult,
     getAnalysisStatus,
     getResult,
+    requestVideoLlmReanalysis,
     retryAnalysis,
 } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
@@ -59,6 +60,7 @@ function ResultDetailPage() {
     const confirm = useConfirm();
 
     const cooldownTimerRef = useRef(null);
+    const reanalysisIdempotencyKeyRef = useRef(null);
     // VideoPlayerSection이 등록하는 영상 시크 함수. 시각 분석 관찰 항목을 클릭하면
     // 이 함수를 통해 영상을 해당 구간(startSec)으로 이동시킵니다.
     const videoSeekControllerRef = useRef(null);
@@ -70,6 +72,7 @@ function ResultDetailPage() {
     const [analysisStatus, setAnalysisStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState(false);
+    const [reanalyzing, setReanalyzing] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [error, setError] = useState("");
@@ -95,6 +98,14 @@ function ResultDetailPage() {
     const timelineFeedback = result.timelineFeedback || EMPTY_ARRAY;
     const notableMoments = result.notableMoments || EMPTY_ARRAY;
     const pipeline = result.pipeline || EMPTY_OBJECT;
+    const analysisKind = resultData?.analysisKind || "STANDARD";
+    const sourceJobId = resultData?.sourceJobId || null;
+    const latestReanalysisJobId = resultData?.latestReanalysisJobId || null;
+    // 재분석 API도 DB에 저장된 mode를 사전 조건으로 사용합니다. 구형 결과 JSON의
+    // pipeline 값만 보고 버튼을 노출하면 DB mode backfill이 없는 결과에서 요청이
+    // 반드시 409가 되므로, UI 자격 판정도 최상위 저장값과 동일하게 맞춥니다.
+    const storedVideoLlmGenerationMode =
+        resultData?.videoLlmGenerationMode || "UNKNOWN";
 
     const videoInfo = basicAnalysis.videoInfo || EMPTY_OBJECT;
     const frameInfo = basicAnalysis.frame || EMPTY_OBJECT;
@@ -144,6 +155,10 @@ function ResultDetailPage() {
     const isQueued = currentStatus === "QUEUED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
     const isRateLimited = rateLimitedUntil > clockTick;
+    const canRequestVideoLlmReanalysis =
+        isCompleted &&
+        analysisKind === "STANDARD" &&
+        storedVideoLlmGenerationMode === "FALLBACK";
 
     const scoreItems = useMemo(
         () => [
@@ -395,13 +410,62 @@ function ResultDetailPage() {
         }
     }
 
+    function getOrCreateReanalysisIdempotencyKey() {
+        if (!reanalysisIdempotencyKeyRef.current) {
+            const randomPart = globalThis.crypto?.randomUUID?.() ||
+                `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            reanalysisIdempotencyKeyRef.current = `video-llm-reanalysis:${randomPart}`;
+        }
+
+        return reanalysisIdempotencyKeyRef.current;
+    }
+
+    async function handleVideoLlmReanalysis() {
+        if (!jobId || !canRequestVideoLlmReanalysis) {
+            return;
+        }
+
+        const confirmed = await confirm(
+            "실제 Video LLM을 다시 호출하며 일일·월간 사용 한도를 다시 사용합니다. 기존 결과는 유지되고 새 결과가 생성됩니다. 진행하시겠습니까?"
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setReanalyzing(true);
+            setError("");
+
+            const response = await requestVideoLlmReanalysis(jobId, {
+                useOpenAi: true,
+                idempotencyKey: getOrCreateReanalysisIdempotencyKey(),
+            });
+            const reanalysisJobId = response.data?.reanalysisJobId;
+
+            if (!reanalysisJobId) {
+                throw new Error("재분석 작업 ID가 응답에 없습니다.");
+            }
+
+            reanalysisIdempotencyKeyRef.current = null;
+            navigate(`/results/${reanalysisJobId}`);
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "실제 Video LLM 재분석 요청 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setReanalyzing(false);
+        }
+    }
+
     async function handleDelete() {
         if (!jobId) {
             return;
         }
 
         const confirmed = await confirm(
-            "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 JSON 파일도 함께 삭제됩니다."
+            "이 분석 결과를 삭제하시겠습니까? 같은 원본을 사용하는 다른 분석이 있으면 원본 영상은 유지됩니다."
         );
 
         if (!confirmed) {
@@ -626,6 +690,19 @@ function ResultDetailPage() {
                         </button>
                     )}
 
+                    {canRequestVideoLlmReanalysis && (
+                        <button
+                            type="button"
+                            className="primary-button"
+                            onClick={handleVideoLlmReanalysis}
+                            disabled={reanalyzing || deleting || cancelling}
+                        >
+                            {reanalyzing
+                                ? "실제 Video LLM 재분석 요청 중..."
+                                : "실제 Video LLM으로 다시 분석"}
+                        </button>
+                    )}
+
                     {isRunning && (
                         <button
                             type="button"
@@ -645,7 +722,7 @@ function ResultDetailPage() {
                         type="button"
                         className="danger-button"
                         onClick={handleDelete}
-                        disabled={retrying || polling || deleting || cancelling || isRunning}
+                        disabled={retrying || reanalyzing || polling || deleting || cancelling || isRunning}
                     >
                         {deleting ? "삭제 중..." : "삭제"}
                     </button>
@@ -653,6 +730,32 @@ function ResultDetailPage() {
             </AnimatedSection>
 
             <StateMessage type="error">{error}</StateMessage>
+
+            {(sourceJobId || latestReanalysisJobId) && (
+                <AnimatedSection className="result-lineage-card no-print">
+                    <div>
+                        <strong>분석 연결 정보</strong>
+                        <p>
+                            원본 결과와 실제 Video LLM 재분석 결과는 각각 보존됩니다.
+                        </p>
+                    </div>
+                    <div className="button-row">
+                        {sourceJobId && (
+                            <Link to={`/results/${sourceJobId}`} className="secondary-button">
+                                원본 결과 보기
+                            </Link>
+                        )}
+                        {latestReanalysisJobId && latestReanalysisJobId !== jobId && (
+                            <Link
+                                to={`/results/${latestReanalysisJobId}`}
+                                className="secondary-button"
+                            >
+                                최신 재분석 결과 보기
+                            </Link>
+                        )}
+                    </div>
+                </AnimatedSection>
+            )}
 
             {dataIssue && (
                 <p className="result-data-issue" role="alert">

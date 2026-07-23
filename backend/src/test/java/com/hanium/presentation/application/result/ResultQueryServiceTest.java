@@ -2,6 +2,8 @@ package com.hanium.presentation.application.result;
 
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
+import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.domain.video.type.VideoFileType;
@@ -20,6 +22,7 @@ import org.springframework.data.domain.PageRequest;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -81,6 +84,35 @@ class ResultQueryServiceTest {
                 .containsExactly("first.mp4", "second.mp4");
         verify(uploadedVideoRepository).findAllByJobIdIn(jobIds);
         verify(uploadedVideoRepository, never()).findByJobId(any());
+    }
+
+    @Test
+    void getResultSummariesResolvesSharedVideoAssetByLinkedIdWithoutJobIdFallback() {
+        Long ownerId = 1L;
+        PageRequest pageRequest = PageRequest.of(0, 1);
+        AnalysisJob reanalysisJob = AnalysisJob.create("20260703090020-rean0001", ownerId);
+        reanalysisJob.linkVideoAsset(99L);
+        UploadedVideo sharedAsset = mock(UploadedVideo.class);
+
+        when(sharedAsset.getId()).thenReturn(99L);
+        when(sharedAsset.getOriginalFileName()).thenReturn("shared-source.mp4");
+        when(sharedAsset.getFileSize()).thenReturn(1024L);
+        when(analysisJobRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId, pageRequest))
+                .thenReturn(new PageImpl<>(List.of(reanalysisJob), pageRequest, 1));
+        when(uploadedVideoRepository.findAllById(Set.of(99L)))
+                .thenReturn(List.of(sharedAsset));
+        when(filePathGenerator.generateFinalResultPath(reanalysisJob.getJobId()))
+                .thenReturn(Path.of("results", reanalysisJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of());
+
+        Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
+
+        assertThat(response.getContent()).singleElement()
+                .extracting(ResultSummaryResponse::originalFileName)
+                .isEqualTo("shared-source.mp4");
+        verify(uploadedVideoRepository).findAllById(Set.of(99L));
+        verify(uploadedVideoRepository, never()).findAllByJobIdIn(any());
     }
 
     @Test
@@ -468,6 +500,66 @@ class ResultQueryServiceTest {
         assertThat(response.dataIssue()).isEqualTo("RESULT_DATA_UNAVAILABLE");
         assertThat(response.dataIssueDescription()).contains("결과 파일");
         assertThat(dataIssueCount("detail", "RESULT_DATA_UNAVAILABLE")).isEqualTo(1.0);
+    }
+
+    @Test
+    void getFinalResultReturnsStatusShellWhenQueuedJobHasNoResultFileYet() {
+        Long ownerId = 1L;
+        AnalysisJob queuedJob = AnalysisJob.create("20260703090016-qqqqqqqq", ownerId);
+        queuedJob.enqueue(false, false);
+
+        when(analysisJobRepository.findByJobId(queuedJob.getJobId()))
+                .thenReturn(java.util.Optional.of(queuedJob));
+        when(filePathGenerator.generateFinalResultPath(queuedJob.getJobId()))
+                .thenReturn(Path.of("results", queuedJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenThrow(new com.hanium.presentation.global.exception.BusinessException(
+                        com.hanium.presentation.global.exception.ErrorCode.FILE_NOT_FOUND
+                ));
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(queuedJob.getJobId(), ownerId);
+
+        assertThat(response.result())
+                .containsEntry("status", "QUEUED")
+                .containsEntry("failReason", null);
+        assertThat(response.analysisKind()).isEqualTo(AnalysisKind.STANDARD);
+        assertThat(response.dataIssue()).isNull();
+    }
+
+    @Test
+    void getFinalResultExposesStoredGenerationModeAndLatestReanalysisLineage() {
+        Long ownerId = 1L;
+        AnalysisJob sourceJob = AnalysisJob.create("20260703090017-rrrrrrrr", ownerId);
+        sourceJob.linkVideoAsset(77L);
+        sourceJob.recordVideoLlmGenerationMode(VideoLlmGenerationMode.FALLBACK);
+        sourceJob.complete();
+        AnalysisJob reanalysisJob = AnalysisJob.createVideoLlmReanalysis(
+                "20260703090018-ssssssss",
+                sourceJob,
+                "a".repeat(64)
+        );
+
+        when(analysisJobRepository.findByJobId(sourceJob.getJobId()))
+                .thenReturn(java.util.Optional.of(sourceJob));
+        when(analysisJobRepository.findFirstBySourceJobIdAndAnalysisKindOrderByCreatedAtDesc(
+                sourceJob.getJobId(),
+                AnalysisKind.VIDEO_LLM_REANALYSIS
+        )).thenReturn(java.util.Optional.of(reanalysisJob));
+        when(filePathGenerator.generateFinalResultPath(sourceJob.getJobId()))
+                .thenReturn(Path.of("results", sourceJob.getJobId(), "final-result.json"));
+        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+                .thenReturn(Map.of(
+                        "status", "COMPLETED",
+                        "scoreSummary", Map.of("level", "GOOD"),
+                        "feedback", Map.of("generationMode", "REAL", "overall", "피드백")
+                ));
+
+        AnalysisResultResponse response = resultQueryService.getFinalResult(sourceJob.getJobId(), ownerId);
+
+        assertThat(response.analysisKind()).isEqualTo(AnalysisKind.STANDARD);
+        assertThat(response.sourceJobId()).isNull();
+        assertThat(response.latestReanalysisJobId()).isEqualTo(reanalysisJob.getJobId());
+        assertThat(response.videoLlmGenerationMode()).isEqualTo(VideoLlmGenerationMode.FALLBACK);
     }
 
     @Test

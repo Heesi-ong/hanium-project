@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 
 @Service
 @Transactional(readOnly = true)
@@ -51,7 +52,11 @@ public class VideoStreamingService {
             throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
         }
 
-        UploadedVideo uploadedVideo = uploadedVideoRepository.findByJobId(jobId)
+        Optional<UploadedVideo> linkedAsset = analysisJobRepository.findByJobId(jobId)
+                .map(AnalysisJob::getVideoAssetId)
+                .flatMap(uploadedVideoRepository::findById);
+        UploadedVideo uploadedVideo = linkedAsset
+                .or(() -> uploadedVideoRepository.findByJobId(jobId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.FILE_NOT_FOUND));
 
         if (!Files.exists(Path.of(uploadedVideo.getStoredFilePath()))) {
@@ -67,6 +72,9 @@ public class VideoStreamingService {
      * 기존처럼 로컬 디스크 기반 Range 스트리밍으로 계속 동작하게 합니다.
      */
     public String resolvePresignedStreamingUrl(String jobId, UploadedVideo uploadedVideo) {
-        return videoFileCommandService.resolveStreamingUrl(jobId, uploadedVideo.getStoredFilePath());
+        return videoFileCommandService.resolveStreamingUrl(
+                uploadedVideo.getJobId(),
+                uploadedVideo.getStoredFilePath()
+        );
     }
 }

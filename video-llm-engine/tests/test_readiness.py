@@ -1,4 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
+
+from app.core.settings import SettingsError
 
 
 def create_client(monkeypatch, tmp_path, api_key: str = "shared-secret") -> TestClient:
@@ -47,6 +50,7 @@ def test_readiness_reports_ready_in_mock_mode_with_valid_internal_api_key(monkey
         "service": "video-llm-engine",
         "ready": True,
         "mode": "MOCK",
+        "policy": "DISABLED",
         "installedBackend": "mock",
         "realModeRequested": False,
         "realModelReady": False,
@@ -54,30 +58,20 @@ def test_readiness_reports_ready_in_mock_mode_with_valid_internal_api_key(monkey
     }
 
 
-def test_readiness_reports_fallback_when_real_mode_lacks_required_credentials(monkeypatch, tmp_path):
+def test_startup_rejects_real_mode_without_required_credentials(monkeypatch, tmp_path):
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     client = create_client(monkeypatch, tmp_path)
 
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModeRequested"] is True
-    assert body["realModelReady"] is False
-    assert body["reason"] == (
-        "VIDEO_LLM_ENABLED=true but NVIDIA_API_KEY is missing; "
-        "analysis will fall back to mock responses."
-    )
+    with pytest.raises(SettingsError, match="NVIDIA_API_KEY is missing"):
+        with client:
+            pass
 
 
 def test_readiness_reports_real_mode_when_video_llm_enabled_and_configured(monkeypatch, tmp_path):
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
     client = create_client(monkeypatch, tmp_path)
 
@@ -90,14 +84,15 @@ def test_readiness_reports_real_mode_when_video_llm_enabled_and_configured(monke
     body = response.json()
     assert body["ready"] is True
     assert body["mode"] == "REAL"
+    assert body["policy"] == "DEGRADED"
     assert body["realModeRequested"] is True
     assert body["realModelReady"] is True
 
 
-def test_readiness_reports_fallback_when_real_mode_timeout_is_invalid(monkeypatch, tmp_path):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+def test_readiness_reports_strict_policy(monkeypatch, tmp_path):
+    monkeypatch.setenv("VIDEO_LLM_POLICY", "STRICT")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "not-a-number")
     client = create_client(monkeypatch, tmp_path)
 
     response = client.get(
@@ -106,130 +101,66 @@ def test_readiness_reports_fallback_when_real_mode_timeout_is_invalid(monkeypatc
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModeRequested"] is True
-    assert body["realModelReady"] is False
-    assert "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number" in body["reason"]
+    assert response.json()["policy"] == "STRICT"
 
 
-def test_readiness_reports_fallback_when_real_mode_timeout_is_not_positive(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "name,value,error_pattern",
+    [
+        (
+            "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS",
+            "not-a-number",
+            "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS",
+        ),
+        (
+            "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS",
+            "0",
+            "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS",
+        ),
+        (
+            "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS",
+            "nan",
+            "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS",
+        ),
+        (
+            "VIDEO_LLM_MAX_VIDEO_SIZE_MB",
+            "not-a-number",
+            "VIDEO_LLM_MAX_VIDEO_SIZE_MB",
+        ),
+        (
+            "VIDEO_LLM_MAX_VIDEO_SIZE_MB",
+            "0",
+            "VIDEO_LLM_MAX_VIDEO_SIZE_MB",
+        ),
+        ("NVIDIA_API_BASE_URL", "not-a-url", "NVIDIA_API_BASE_URL"),
+        (
+            "NVIDIA_ASSET_API_BASE_URL",
+            "/relative/path",
+            "NVIDIA_ASSET_API_BASE_URL",
+        ),
+    ],
+)
+def test_invalid_real_mode_settings_fail_before_readiness(
+    monkeypatch,
+    tmp_path,
+    name,
+    value,
+    error_pattern,
+):
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "0")
+    monkeypatch.setenv(name, value)
     client = create_client(monkeypatch, tmp_path)
 
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModelReady"] is False
-    assert "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number" in body["reason"]
-
-
-def test_readiness_reports_fallback_when_real_mode_timeout_is_not_finite(monkeypatch, tmp_path):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "nan")
-    client = create_client(monkeypatch, tmp_path)
-
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModelReady"] is False
-    assert "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS must be a positive number" in body["reason"]
-
-
-def test_readiness_reports_fallback_when_real_mode_max_video_size_is_invalid(monkeypatch, tmp_path):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "not-a-number")
-    client = create_client(monkeypatch, tmp_path)
-
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModelReady"] is False
-    assert "VIDEO_LLM_MAX_VIDEO_SIZE_MB must be a positive integer" in body["reason"]
-
-
-def test_readiness_reports_fallback_when_real_mode_max_video_size_is_not_positive(monkeypatch, tmp_path):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "0")
-    client = create_client(monkeypatch, tmp_path)
-
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModelReady"] is False
-    assert "VIDEO_LLM_MAX_VIDEO_SIZE_MB must be a positive integer" in body["reason"]
-
-
-def test_readiness_reports_fallback_when_real_mode_api_base_url_is_invalid(monkeypatch, tmp_path):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("NVIDIA_API_BASE_URL", "not-a-url")
-    client = create_client(monkeypatch, tmp_path)
-
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModelReady"] is False
-    assert "NVIDIA_API_BASE_URL must be an absolute http(s) URL" in body["reason"]
-
-
-def test_readiness_reports_fallback_when_real_mode_asset_base_url_is_invalid(monkeypatch, tmp_path):
-    monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setenv("NVIDIA_ASSET_API_BASE_URL", "/relative/path")
-    client = create_client(monkeypatch, tmp_path)
-
-    response = client.get(
-        "/api/internal/readiness",
-        headers={"X-Internal-Api-Key": "shared-secret"},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ready"] is False
-    assert body["mode"] == "FALLBACK"
-    assert body["realModelReady"] is False
-    assert "NVIDIA_ASSET_API_BASE_URL must be an absolute http(s) URL" in body["reason"]
+    with pytest.raises(SettingsError, match=error_pattern):
+        with client:
+            pass
 
 
 def test_readiness_uses_default_base_urls_when_real_mode_base_urls_are_blank(monkeypatch, tmp_path):
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
+    monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
     monkeypatch.setenv("NVIDIA_API_BASE_URL", "")
     monkeypatch.setenv("NVIDIA_ASSET_API_BASE_URL", "  ")

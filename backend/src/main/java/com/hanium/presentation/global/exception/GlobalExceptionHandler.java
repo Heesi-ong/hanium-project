@@ -1,5 +1,6 @@
 package com.hanium.presentation.global.exception;
 
+import com.hanium.presentation.global.config.JwtRevocationUnavailableException;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -7,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -81,6 +83,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({
             MethodArgumentTypeMismatchException.class,
             MissingServletRequestParameterException.class,
+            MissingRequestHeaderException.class,
             MissingServletRequestPartException.class
     })
     public ResponseEntity<ErrorResponse> handleRequestBindingException() {
@@ -103,6 +106,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceededException() {
         ErrorCode errorCode = ErrorCode.FILE_TOO_LARGE;
+
+        return ResponseEntity
+                .status(errorCode.getStatus())
+                .body(ErrorResponse.of(errorCode));
+    }
+
+    @ExceptionHandler(JwtRevocationUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleJwtRevocationUnavailableException(
+            JwtRevocationUnavailableException exception
+    ) {
+        ErrorCode errorCode = ErrorCode.AUTH_SESSION_SERVICE_UNAVAILABLE;
+        log.error("JWT_REVOCATION_UNAVAILABLE message={}", exception.getMessage(), exception);
 
         return ResponseEntity
                 .status(errorCode.getStatus())

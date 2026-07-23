@@ -3,17 +3,20 @@ package com.hanium.presentation.presentation.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.application.auth.PasswordResetEmailSender;
+import com.hanium.presentation.application.auth.PasswordResetOutboxCrypto;
 import com.hanium.presentation.domain.user.TermsVersion;
+import com.hanium.presentation.domain.user.entity.PasswordResetEmailTask;
 import com.hanium.presentation.domain.user.entity.PasswordResetToken;
 import com.hanium.presentation.domain.user.entity.User;
+import com.hanium.presentation.domain.user.repository.PasswordResetEmailTaskRepository;
 import com.hanium.presentation.domain.user.repository.PasswordResetTokenRepository;
+import com.hanium.presentation.domain.user.type.PasswordResetEmailTaskStatus;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.config.JwtBlacklist;
 import com.hanium.presentation.global.config.JwtCookieSupport;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -53,6 +56,12 @@ class AuthControllerIntegrationTest {
     private PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Autowired
+    private PasswordResetEmailTaskRepository passwordResetEmailTaskRepository;
+
+    @Autowired
+    private PasswordResetOutboxCrypto passwordResetOutboxCrypto;
+
+    @Autowired
     private UserRateLimiter userRateLimiter;
 
     @Autowired
@@ -68,6 +77,7 @@ class AuthControllerIntegrationTest {
     void setUp() {
         Mockito.reset(jwtBlacklist, passwordResetEmailSender);
         when(jwtBlacklist.isBlacklisted(anyString())).thenReturn(false);
+        passwordResetEmailTaskRepository.deleteAll();
         passwordResetTokenRepository.deleteAll();
         userRepository.deleteAll();
         userRateLimiter.resetForTest();
@@ -75,6 +85,7 @@ class AuthControllerIntegrationTest {
 
     @org.junit.jupiter.api.AfterEach
     void tearDown() {
+        passwordResetEmailTaskRepository.deleteAll();
         passwordResetTokenRepository.deleteAll();
     }
 
@@ -429,6 +440,45 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
+    void logoutReturnsServiceUnavailableWhenDatabaseRevocationCannotBePersisted() throws Exception {
+        Map<String, Object> request = Map.of(
+                "email", "logout-revocation-db-down@example.com",
+                "password", "password123",
+                "agreedToTerms", true
+        );
+        restTemplate.postForEntity("/api/auth/signup", request, String.class);
+        ResponseEntity<String> loginResponse = restTemplate.postForEntity(
+                "/api/auth/login",
+                request,
+                String.class
+        );
+        String accessToken = objectMapper.readTree(loginResponse.getBody())
+                .path("data")
+                .path("accessToken")
+                .asText();
+        org.mockito.Mockito.doThrow(new com.hanium.presentation.global.config.JwtRevocationUnavailableException(
+                "revocation database down",
+                new IllegalStateException("db down")
+        )).when(jwtBlacklist).blacklist(
+                eq(accessToken),
+                org.mockito.ArgumentMatchers.any()
+        );
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/auth/logout",
+                HttpMethod.POST,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody()).contains("인증 세션 상태를 확인할 수 없습니다");
+        assertThat(response.getHeaders().get(HttpHeaders.SET_COOKIE)).isNullOrEmpty();
+    }
+
+    @Test
     void passwordResetRequestDoesNotRevealWhetherEmailExists() throws Exception {
         signup("reset-existing@example.com", "password123");
 
@@ -439,10 +489,12 @@ class AuthControllerIntegrationTest {
         assertThat(missingResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(objectMapper.readTree(existingResponse.getBody()).path("message").asText())
                 .isEqualTo(objectMapper.readTree(missingResponse.getBody()).path("message").asText());
-        verify(passwordResetEmailSender).sendPasswordResetLink(
-                org.mockito.ArgumentMatchers.any(User.class),
-                org.mockito.ArgumentMatchers.anyString()
-        );
+        assertThat(passwordResetEmailTaskRepository.findAll()).hasSize(1);
+        verify(passwordResetEmailSender, org.mockito.Mockito.never())
+                .sendPasswordResetLink(
+                        org.mockito.ArgumentMatchers.any(User.class),
+                        org.mockito.ArgumentMatchers.anyString()
+                );
     }
 
     @Test
@@ -656,12 +708,16 @@ class AuthControllerIntegrationTest {
     }
 
     private String capturePasswordResetLink() {
-        ArgumentCaptor<String> linkCaptor = ArgumentCaptor.forClass(String.class);
-        verify(passwordResetEmailSender).sendPasswordResetLink(
-                org.mockito.ArgumentMatchers.any(User.class),
-                linkCaptor.capture()
+        PasswordResetEmailTask task = passwordResetEmailTaskRepository.findAll().stream()
+                .filter(candidate -> candidate.getStatus() == PasswordResetEmailTaskStatus.PENDING)
+                .findFirst()
+                .orElseThrow();
+        return passwordResetOutboxCrypto.decrypt(
+                task.getEncryptedResetLink(),
+                passwordResetTokenRepository.findById(task.getPasswordResetToken().getId())
+                        .orElseThrow()
+                        .getTokenHash()
         );
-        return linkCaptor.getValue();
     }
 
     private String sha256(String token) {

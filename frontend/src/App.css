@@ -833,6 +833,23 @@ pre {
   gap: 10px;
 }
 
+.result-lineage-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.result-lineage-card p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.result-lineage-card .button-row {
+  margin: 0;
+}
+
 .card-header-row {
   display: flex;
   flex-wrap: wrap;
@@ -2061,6 +2078,11 @@ button.observation-seek::before {
   color: #B7ADA4;
   font-size: 12px;
   word-break: break-word;
+}
+
+.ai-mode-meta .ai-mode-warning {
+  color: #F4B04A;
+  font-weight: 700;
 }
 
 .print-only {

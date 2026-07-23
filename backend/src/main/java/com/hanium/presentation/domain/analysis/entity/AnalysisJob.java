@@ -1,6 +1,8 @@
 package com.hanium.presentation.domain.analysis.entity;
 
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
@@ -24,6 +26,34 @@ public class AnalysisJob {
 
     @Column(name = "owner_id")
     private Long ownerId;
+
+    // 업로드 원본의 생명주기를 분석 실행과 분리하기 위한 점진 migration 필드입니다.
+    // 기존 데이터는 Flyway V22가 uploaded_videos.job_id 일치 행으로 backfill합니다.
+    // 원본 retention이 끝난 과거 결과도 유지해야 하므로 nullable이며, 물리 asset 삭제 시
+    // DB FK의 ON DELETE SET NULL 정책으로 참조만 제거됩니다.
+    @Column(name = "video_asset_id")
+    private Long videoAssetId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "analysis_kind", nullable = false, length = 30)
+    private AnalysisKind analysisKind;
+
+    @Column(name = "source_job_id", length = 50)
+    private String sourceJobId;
+
+    // 클라이언트가 접수 응답을 받지 못해 같은 요청을 다시 보내더라도 동일 child job을
+    // 돌려주기 위한 SHA-256 해시입니다. 원문 Idempotency-Key는 로그/DB에 저장하지 않습니다.
+    // STANDARD job에는 null이고 VIDEO_LLM_REANALYSIS에만 존재합니다.
+    @Column(
+            name = "reanalysis_idempotency_key_hash",
+            length = 64,
+            columnDefinition = "CHAR(64)"
+    )
+    private String reanalysisIdempotencyKeyHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "video_llm_generation_mode", length = 20)
+    private VideoLlmGenerationMode videoLlmGenerationMode;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
@@ -64,6 +94,7 @@ public class AnalysisJob {
     private AnalysisJob(String jobId, Long ownerId) {
         this.jobId = jobId;
         this.ownerId = ownerId;
+        this.analysisKind = AnalysisKind.STANDARD;
         this.status = AnalysisStatus.UPLOADED;
         this.retryCount = 0;
         this.cancelRequested = false;
@@ -78,6 +109,41 @@ public class AnalysisJob {
         return new AnalysisJob(jobId, ownerId);
     }
 
+    public static AnalysisJob createVideoLlmReanalysis(
+            String jobId,
+            AnalysisJob sourceJob,
+            String idempotencyKeyHash
+    ) {
+        if (sourceJob == null) {
+            throw new IllegalArgumentException("sourceJob은 null일 수 없습니다.");
+        }
+        if (sourceJob.analysisKind != AnalysisKind.STANDARD) {
+            throw new IllegalStateException("STANDARD 원본 작업에서만 Video LLM 재분석을 생성할 수 있습니다.");
+        }
+        if (!sourceJob.isCompleted()) {
+            throw new IllegalStateException("완료된 원본 작업에서만 Video LLM 재분석을 생성할 수 있습니다.");
+        }
+        if (sourceJob.videoLlmGenerationMode != VideoLlmGenerationMode.FALLBACK) {
+            throw new IllegalStateException("FALLBACK 결과에서만 Video LLM 재분석을 생성할 수 있습니다.");
+        }
+        if (sourceJob.videoAssetId == null) {
+            throw new IllegalStateException("보존된 원본 영상 asset이 없어 Video LLM 재분석을 생성할 수 없습니다.");
+        }
+        if (sourceJob.ownerId == null) {
+            throw new IllegalStateException("소유자가 없는 원본 작업에서는 Video LLM 재분석을 생성할 수 없습니다.");
+        }
+        if (idempotencyKeyHash == null || !idempotencyKeyHash.matches("^[0-9a-f]{64}$")) {
+            throw new IllegalArgumentException("idempotencyKeyHash는 소문자 SHA-256 hex 형식이어야 합니다.");
+        }
+
+        AnalysisJob reanalysisJob = new AnalysisJob(jobId, sourceJob.ownerId);
+        reanalysisJob.analysisKind = AnalysisKind.VIDEO_LLM_REANALYSIS;
+        reanalysisJob.sourceJobId = sourceJob.jobId;
+        reanalysisJob.videoAssetId = sourceJob.videoAssetId;
+        reanalysisJob.reanalysisIdempotencyKeyHash = idempotencyKeyHash;
+        return reanalysisJob;
+    }
+
     public Long getId() {
         return id;
     }
@@ -88,6 +154,42 @@ public class AnalysisJob {
 
     public Long getOwnerId() {
         return ownerId;
+    }
+
+    public Long getVideoAssetId() {
+        return videoAssetId;
+    }
+
+    public void linkVideoAsset(Long videoAssetId) {
+        if (videoAssetId == null) {
+            throw new IllegalArgumentException("videoAssetId는 null일 수 없습니다.");
+        }
+        if (this.videoAssetId != null && !this.videoAssetId.equals(videoAssetId)) {
+            throw new IllegalStateException("분석 작업에 연결된 원본 영상 asset은 변경할 수 없습니다.");
+        }
+        this.videoAssetId = videoAssetId;
+    }
+
+    public AnalysisKind getAnalysisKind() {
+        return analysisKind;
+    }
+
+    public String getSourceJobId() {
+        return sourceJobId;
+    }
+
+    public String getReanalysisIdempotencyKeyHash() {
+        return reanalysisIdempotencyKeyHash;
+    }
+
+    public VideoLlmGenerationMode getVideoLlmGenerationMode() {
+        return videoLlmGenerationMode;
+    }
+
+    public void recordVideoLlmGenerationMode(VideoLlmGenerationMode generationMode) {
+        this.videoLlmGenerationMode = generationMode == null
+                ? VideoLlmGenerationMode.UNKNOWN
+                : generationMode;
     }
 
     public AnalysisStatus getStatus() {
@@ -146,6 +248,7 @@ public class AnalysisJob {
         this.completedAt = null;
         this.failReason = null;
         this.cancelRequested = false;
+        this.videoLlmGenerationMode = null;
     }
 
     // QUEUED 상태일 때만 실행(BASIC_ANALYZING)으로 전이합니다. 재시작 복구로 같은 작업이
@@ -237,6 +340,7 @@ public class AnalysisJob {
         this.startedAt = null;
         this.completedAt = null;
         this.cancelRequested = false;
+        this.videoLlmGenerationMode = null;
     }
 
     // 관리자가 DEAD_LETTER 작업을 검토 후 다시 실행 대기열에 올릴 때 호출합니다. 사용자
@@ -249,6 +353,7 @@ public class AnalysisJob {
         this.startedAt = null;
         this.completedAt = null;
         this.cancelRequested = false;
+        this.videoLlmGenerationMode = null;
     }
 
     public boolean isQueued() {

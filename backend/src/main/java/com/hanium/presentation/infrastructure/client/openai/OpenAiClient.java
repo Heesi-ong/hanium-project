@@ -4,13 +4,17 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.properties.FeedbackLlmProperties;
 import com.hanium.presentation.global.properties.OpenAiProperties;
+import com.hanium.presentation.infrastructure.client.openai.dto.ChatCompletionApiRequest;
+import com.hanium.presentation.infrastructure.client.openai.dto.ChatCompletionApiResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiResponsesApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -27,30 +31,42 @@ public class OpenAiClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiClient.class);
     private static final String RESPONSES_API_PATH = "/v1/responses";
+    private static final String CHAT_COMPLETIONS_PATH = "/chat/completions";
+    private static final double NVIDIA_TEMPERATURE = 0.3;
+    private static final int NVIDIA_MAX_TOKENS = 2000;
 
     private final OpenAiProperties openAiProperties;
+    private final FeedbackLlmProperties feedbackLlmProperties;
     private final OpenAiPromptBuilder openAiPromptBuilder;
     private final RestClient openAiRestClient;
+    private final RestClient feedbackLlmRestClient;
     private final ObjectMapper objectMapper;
     private final UserRateLimiter userRateLimiter;
 
     public OpenAiClient(
             OpenAiProperties openAiProperties,
+            FeedbackLlmProperties feedbackLlmProperties,
             OpenAiPromptBuilder openAiPromptBuilder,
             RestClient openAiRestClient,
+            @Qualifier("feedbackLlmRestClient") RestClient feedbackLlmRestClient,
             ObjectMapper objectMapper,
             UserRateLimiter userRateLimiter
     ) {
         this.openAiProperties = openAiProperties;
+        this.feedbackLlmProperties = feedbackLlmProperties;
         this.openAiPromptBuilder = openAiPromptBuilder;
         this.openAiRestClient = openAiRestClient;
+        this.feedbackLlmRestClient = feedbackLlmRestClient;
         this.objectMapper = objectMapper;
         this.userRateLimiter = userRateLimiter;
     }
 
     public OpenAiFeedbackResponse generateFeedback(OpenAiFeedbackRequest request) {
-        if (openAiProperties.canUseRealApi()) {
-            if (!userRateLimiter.tryConsume("openai-monthly", currentMonthKey())) {
+        if (canUseRealApi()) {
+            // NVIDIA로 임시 대체 중일 때는 OpenAI 전용 월간 예산("openai-monthly")과 무관한
+            // 호출이므로 그 버킷을 소비/검사하지 않는다.
+            if (!feedbackLlmProperties.isNvidiaProvider()
+                    && !userRateLimiter.tryConsume("openai-monthly", currentMonthKey())) {
                 return generateMockFeedback(
                         request,
                         "MOCK",
@@ -59,13 +75,24 @@ public class OpenAiClient {
             }
 
             try {
-                return generateRealOpenAiFeedback(request);
-            } catch (RuntimeException exception) {
-                return generateMockFeedback(
-                        request,
-                        "FALLBACK",
-                        resolveFallbackReason(exception)
+                return generateRealFeedback(request);
+            } catch (RestClientException firstAttemptException) {
+                // 컨테이너 기동 직후 첫 외부 HTTPS 호출이 콜드 DNS/TLS 협상으로 타임아웃되는
+                // 경우를 코치 채팅에서 실제로 관찰했다(2026-07-23). 네트워크 오류에 한해
+                // 한 번만 재시도한다.
+                log.warn(
+                        "FEEDBACK_LLM_RETRY_AFTER_NETWORK_ERROR jobId={} provider={} reason={}",
+                        request.jobId(),
+                        feedbackLlmProperties.isNvidiaProvider() ? "nvidia" : "openai",
+                        firstAttemptException.getMessage()
                 );
+                try {
+                    return generateRealFeedback(request);
+                } catch (RuntimeException retryException) {
+                    return fallbackToMockFeedback(request, retryException);
+                }
+            } catch (RuntimeException exception) {
+                return fallbackToMockFeedback(request, exception);
             }
         }
 
@@ -76,8 +103,44 @@ public class OpenAiClient {
         );
     }
 
+    private OpenAiFeedbackResponse fallbackToMockFeedback(
+            OpenAiFeedbackRequest request,
+            RuntimeException exception
+    ) {
+        String fallbackReason = resolveFallbackReason(exception);
+        log.warn(
+                "FEEDBACK_LLM_FALLBACK_TO_MOCK jobId={} provider={} reason={}",
+                request.jobId(),
+                feedbackLlmProperties.isNvidiaProvider() ? "nvidia" : "openai",
+                fallbackReason
+        );
+        return generateMockFeedback(request, "FALLBACK", fallbackReason);
+    }
+
+    private boolean canUseRealApi() {
+        if (feedbackLlmProperties.isNvidiaProvider()) {
+            return feedbackLlmProperties.hasNvidiaApiKey();
+        }
+
+        return openAiProperties.canUseRealApi();
+    }
+
+    private String resolveModel() {
+        return feedbackLlmProperties.isNvidiaProvider()
+                ? feedbackLlmProperties.getNvidiaModel()
+                : openAiProperties.getModel();
+    }
+
     private String currentMonthKey() {
         return YearMonth.now().toString();
+    }
+
+    private OpenAiFeedbackResponse generateRealFeedback(OpenAiFeedbackRequest request) {
+        if (feedbackLlmProperties.isNvidiaProvider()) {
+            return generateRealNvidiaFeedback(request);
+        }
+
+        return generateRealOpenAiFeedback(request);
     }
 
     private OpenAiFeedbackResponse generateRealOpenAiFeedback(OpenAiFeedbackRequest request) {
@@ -118,7 +181,79 @@ public class OpenAiClient {
             throw new IllegalStateException("OpenAI API 응답 텍스트가 비어 있습니다.");
         }
 
-        return parseRealOpenAiFeedbackResponse(request.jobId(), outputText);
+        return parseRealOpenAiFeedbackResponse(request.jobId(), outputText, openAiProperties.getModel());
+    }
+
+    // NVIDIA NIM(build.nvidia.com)은 OpenAI Responses API의 strict json_schema를 지원하지
+    // 않는 모델이 많아, 표준 Chat Completions + json_object 모드(문법적으로 유효한 JSON만
+    // 보장)를 대신 쓴다. 필드 이름/형태는 OpenAiPromptBuilder의 시스템 프롬프트 지시로
+    // 유도하고, 파싱은 기존 parseRealOpenAiFeedbackResponse()의 방어적 파싱을 그대로 재사용한다.
+    private OpenAiFeedbackResponse generateRealNvidiaFeedback(OpenAiFeedbackRequest request) {
+        String systemPrompt = openAiPromptBuilder.buildSystemPrompt();
+        String userPrompt = openAiPromptBuilder.buildUserPrompt(request);
+        String model = resolveModel();
+
+        ChatCompletionApiRequest apiRequest = new ChatCompletionApiRequest(
+                model,
+                List.of(
+                        ChatCompletionApiRequest.Message.system(systemPrompt),
+                        ChatCompletionApiRequest.Message.user(userPrompt)
+                ),
+                NVIDIA_TEMPERATURE,
+                NVIDIA_MAX_TOKENS
+        );
+
+        ChatCompletionApiResponse apiResponse = feedbackLlmRestClient
+                .post()
+                .uri(CHAT_COMPLETIONS_PATH)
+                .body(apiRequest)
+                .retrieve()
+                .onStatus(
+                        HttpStatusCode::isError,
+                        (httpRequest, httpResponse) -> {
+                            throw new IllegalStateException(
+                                    "피드백 LLM API 호출 실패: HTTP "
+                                            + httpResponse.getStatusCode().value()
+                            );
+                        }
+                )
+                .body(ChatCompletionApiResponse.class);
+
+        if (apiResponse == null) {
+            throw new IllegalStateException("피드백 LLM API 응답이 비어 있습니다.");
+        }
+
+        String content = apiResponse.extractContent();
+
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("피드백 LLM API 응답 텍스트가 비어 있습니다.");
+        }
+
+        logNvidiaUsage(request, model, apiResponse);
+
+        return parseRealOpenAiFeedbackResponse(request.jobId(), content, model);
+    }
+
+    private void logNvidiaUsage(
+            OpenAiFeedbackRequest request,
+            String model,
+            ChatCompletionApiResponse apiResponse
+    ) {
+        ChatCompletionApiResponse.Usage usage = apiResponse.usage();
+
+        if (usage == null) {
+            log.info("FEEDBACK_LLM_USAGE provider=nvidia jobId={} model={} usage=none", request.jobId(), model);
+            return;
+        }
+
+        log.info(
+                "FEEDBACK_LLM_USAGE provider=nvidia jobId={} model={} promptTokens={} completionTokens={} totalTokens={}",
+                request.jobId(),
+                model,
+                usage.prompt_tokens(),
+                usage.completion_tokens(),
+                usage.total_tokens()
+        );
     }
 
     private void logOpenAiUsage(
@@ -161,7 +296,8 @@ public class OpenAiClient {
 
     private OpenAiFeedbackResponse parseRealOpenAiFeedbackResponse(
             String jobId,
-            String outputText
+            String outputText,
+            String model
     ) {
         try {
             Map<String, Object> parsed = objectMapper.readValue(
@@ -170,17 +306,38 @@ public class OpenAiClient {
                     }
             );
 
+            String overall = getString(parsed, "overall");
+            List<String> strengths = getStringList(parsed, "strengths");
+            List<String> improvements = getStringList(parsed, "improvements");
+            List<Map<String, Object>> practicePlan = getMapList(parsed, "practicePlan");
+            List<Map<String, Object>> timelineFeedback = getMapList(parsed, "timelineFeedback");
+
+            // 실제 OpenAI(json_schema strict)는 필드 누락이 사실상 없지만, NVIDIA의
+            // json_object 모드는 스키마를 강제하지 않아 필드를 통째로 생략하는 경우를
+            // 실제로 관찰했다(2026-07-23) - overall만 채우고 나머지는 빈 응답. 이를 그대로
+            // 사용자에게 보여주면 결과 페이지가 반쪽짜리가 되므로, 필수 필드가 비어 있으면
+            // 실패로 간주해 (호출부의) 재시도/mock 폴백 경로를 타게 한다.
+            if (overall.isBlank()
+                    || strengths.isEmpty()
+                    || improvements.isEmpty()
+                    || practicePlan.isEmpty()
+                    || timelineFeedback.isEmpty()) {
+                throw new IllegalStateException(
+                        "LLM 응답에 필수 필드가 비어 있습니다(overall/strengths/improvements/practicePlan/timelineFeedback)."
+                );
+            }
+
             return OpenAiFeedbackResponse.real(
                     jobId,
-                    openAiProperties.getModel(),
-                    getString(parsed, "overall"),
-                    getStringList(parsed, "strengths"),
-                    getStringList(parsed, "improvements"),
-                    getMapList(parsed, "practicePlan"),
-                    getMapList(parsed, "timelineFeedback")
+                    model,
+                    overall,
+                    strengths,
+                    improvements,
+                    practicePlan,
+                    timelineFeedback
             );
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("OpenAI 응답 JSON 파싱에 실패했습니다.", exception);
+            throw new IllegalStateException("LLM 응답 JSON 파싱에 실패했습니다.", exception);
         }
     }
 
@@ -259,7 +416,7 @@ public class OpenAiClient {
         if ("FALLBACK".equals(generationMode)) {
             return OpenAiFeedbackResponse.fallback(
                     request.jobId(),
-                    openAiProperties.getModel(),
+                    resolveModel(),
                     fallbackReason,
                     overallFeedback,
                     strengths,
@@ -271,7 +428,7 @@ public class OpenAiClient {
 
         return OpenAiFeedbackResponse.mock(
                 request.jobId(),
-                openAiProperties.getModel(),
+                resolveModel(),
                 fallbackReason,
                 overallFeedback,
                 strengths,
@@ -282,6 +439,10 @@ public class OpenAiClient {
     }
 
     private String resolveMockReason() {
+        if (feedbackLlmProperties.isNvidiaProvider()) {
+            return feedbackLlmProperties.hasNvidiaApiKey() ? "mock mode" : "NVIDIA_API_KEY is empty";
+        }
+
         if (!openAiProperties.isEnabled()) {
             return "openai.enabled=false";
         }
@@ -295,7 +456,7 @@ public class OpenAiClient {
 
     private String resolveFallbackReason(RuntimeException exception) {
         if (exception instanceof RestClientException) {
-            return "OpenAI HTTP client error: " + exception.getMessage();
+            return "LLM HTTP client error: " + exception.getMessage();
         }
 
         if (exception.getMessage() == null || exception.getMessage().isBlank()) {

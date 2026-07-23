@@ -302,6 +302,10 @@ services:
       # 스위치입니다(coach.llm.provider). video-llm-engine과 같은 NVIDIA_API_KEY를 재사용합니다.
       COACH_LLM_PROVIDER: ${COACH_LLM_PROVIDER:-openai}
       COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      # 분석 피드백 생성도 같은 방식으로 임시 대체할 수 있습니다.
+      FEEDBACK_LLM_PROVIDER: ${FEEDBACK_LLM_PROVIDER:-openai}
+      FEEDBACK_LLM_NVIDIA_MODEL: ${FEEDBACK_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      FEEDBACK_LLM_NVIDIA_TIMEOUT_MS: ${FEEDBACK_LLM_NVIDIA_TIMEOUT_MS:-90000}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_API_BASE_URL: ${NVIDIA_API_BASE_URL:-https://integrate.api.nvidia.com/v1}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -472,6 +476,10 @@ services:
       # 스위치입니다(coach.llm.provider). video-llm-engine과 같은 NVIDIA_API_KEY를 재사용합니다.
       COACH_LLM_PROVIDER: ${COACH_LLM_PROVIDER:-openai}
       COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      # 분석 피드백 생성도 같은 방식으로 임시 대체할 수 있습니다.
+      FEEDBACK_LLM_PROVIDER: ${FEEDBACK_LLM_PROVIDER:-openai}
+      FEEDBACK_LLM_NVIDIA_MODEL: ${FEEDBACK_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      FEEDBACK_LLM_NVIDIA_TIMEOUT_MS: ${FEEDBACK_LLM_NVIDIA_TIMEOUT_MS:-90000}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_API_BASE_URL: ${NVIDIA_API_BASE_URL:-https://integrate.api.nvidia.com/v1}
       SMTP_HOST: ${SMTP_HOST:-}

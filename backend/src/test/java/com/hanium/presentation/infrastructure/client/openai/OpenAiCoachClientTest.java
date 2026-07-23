@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -37,6 +38,7 @@ class OpenAiCoachClientTest {
                         "job-1",
                         Map.of("totalScore", 80),
                         List.of(),
+                        List.of(),
                         "말이 너무 빠른가요?"
                 )
         );
@@ -47,11 +49,36 @@ class OpenAiCoachClientTest {
     }
 
     @Test
+    void generateReplyIncludesHistorySummaryInRequestBody() {
+        Fixture fixture = createFixture(true, true);
+        fixture.server.expect(requestTo("/v1/responses"))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("과거 발표 점수 이력")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("74")))
+                .andRespond(withSuccess(
+                        completedResponse("지난번보다 발음이 또렷해졌어요."),
+                        MediaType.APPLICATION_JSON
+                ));
+
+        OpenAiCoachReplyResponse response = fixture.client.generateReply(
+                new OpenAiCoachChatRequest(
+                        "job-1",
+                        Map.of("totalScore", 80),
+                        List.of(Map.of("jobId", "job-0", "scoreSummary", Map.of("totalScore", 74))),
+                        List.of(),
+                        "저번보다 나아졌나요?"
+                )
+        );
+
+        assertThat(response.generationMode()).isEqualTo("REAL");
+        fixture.server.verify();
+    }
+
+    @Test
     void generateReplyFallsBackToMockWhenMonthlyBudgetExceeded() {
         Fixture fixture = createFixture(true, false);
 
         OpenAiCoachReplyResponse response = fixture.client.generateReply(
-                new OpenAiCoachChatRequest("job-2", Map.of(), List.of(), "질문입니다.")
+                new OpenAiCoachChatRequest("job-2", Map.of(), List.of(), List.of(), "질문입니다.")
         );
 
         assertThat(response.generationMode()).isEqualTo("MOCK");
@@ -76,7 +103,7 @@ class OpenAiCoachClientTest {
         );
 
         OpenAiCoachReplyResponse response = client.generateReply(
-                new OpenAiCoachChatRequest("job-3", Map.of(), List.of(), "질문입니다.")
+                new OpenAiCoachChatRequest("job-3", Map.of(), List.of(), List.of(), "질문입니다.")
         );
 
         assertThat(response.generationMode()).isEqualTo("MOCK");

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.coach.repository.CoachConversationRepository;
 import com.hanium.presentation.domain.coach.repository.CoachMessageRepository;
 import com.hanium.presentation.domain.user.entity.User;
@@ -22,6 +23,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Map;
 
@@ -113,6 +115,32 @@ class CoachChatIntegrationTest {
         );
         JsonNode historyBody = objectMapper.readTree(historyResponse.getBody());
         assertThat(historyBody.path("data").path("messages")).hasSize(2);
+    }
+
+    // loadHistorySummary()/readScoreSummary()가 실제 Spring/JPA/파일 저장소 위에서 올바르게
+    // 동작하는지 확인합니다: 같은 사용자의 다른 완료된 STANDARD 발표(점수 이력에 포함되어야
+    // 함)와 VIDEO_LLM_REANALYSIS 발표(제외되어야 함)가 섞여 있어도 메시지 전송이 정상
+    // 동작해야 합니다. OpenAI가 비활성화된 테스트 환경이라 실제로 어떤 프롬프트가 전송됐는지는
+    // 여기서 검증하지 않고(CoachPromptBuilderTest/OpenAiCoachClientTest가 담당), 배선 자체가
+    // 깨지지 않는지만 확인합니다.
+    @Test
+    void sendMessageSucceedsWhenOwnerHasPastCompletedAndReanalysisJobs() throws Exception {
+        String token = signupAndLogin("coach-history-owner@example.com");
+        Long ownerId = userRepository.findByEmail("coach-history-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        String pastStandardJobId = "20260701090000-11111111";
+        String pastReanalysisJobId = "20260702090000-22222222";
+        createCompletedJobFixture(COMPLETED_JOB_ID, ownerId);
+        createCompletedJobFixtureWithFinalResult(pastStandardJobId, ownerId, 74);
+        createCompletedReanalysisJobFixture(pastReanalysisJobId, ownerId);
+
+        ResponseEntity<String> sendResponse = sendMessage(token, COMPLETED_JOB_ID, "저번보다 나아졌나요?");
+
+        assertThat(sendResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode sendBody = objectMapper.readTree(sendResponse.getBody());
+        assertThat(sendBody.path("data").path("messages")).hasSize(2);
     }
 
     @Test
@@ -329,6 +357,34 @@ class CoachChatIntegrationTest {
                                 "scoreSummary", Map.of("totalScore", 82)
                         )
                 )
+        );
+    }
+
+    // 과거 발표 이력용 fixture: final-result.json에 scoreSummary를 심어둡니다
+    // (readScoreSummary()가 참고하는 파일).
+    private void createCompletedJobFixtureWithFinalResult(String jobId, Long ownerId, int totalScore) {
+        AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
+        analysisJob.complete();
+        analysisJobRepository.save(analysisJob);
+
+        jsonFileStorage.saveJson(
+                filePathGenerator.generateFinalResultPath(jobId),
+                Map.of("scoreSummary", Map.of("totalScore", totalScore))
+        );
+    }
+
+    // 과거 발표 이력에서 제외돼야 하는 재분석(VIDEO_LLM_REANALYSIS) 발표 fixture입니다.
+    // createVideoLlmReanalysis()의 소스 job 전제조건(FALLBACK 결과 등)을 모두 갖추는 대신,
+    // 완료된 STANDARD job을 만든 뒤 analysisKind만 직접 바꿔 이 쿼리가 보는 필드만 검증합니다.
+    private void createCompletedReanalysisJobFixture(String jobId, Long ownerId) {
+        AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
+        analysisJob.complete();
+        ReflectionTestUtils.setField(analysisJob, "analysisKind", AnalysisKind.VIDEO_LLM_REANALYSIS);
+        analysisJobRepository.save(analysisJob);
+
+        jsonFileStorage.saveJson(
+                filePathGenerator.generateFinalResultPath(jobId),
+                Map.of("scoreSummary", Map.of("totalScore", 99))
         );
     }
 

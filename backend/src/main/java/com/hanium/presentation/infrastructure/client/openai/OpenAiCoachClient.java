@@ -69,6 +69,7 @@ public class OpenAiCoachClient {
     private OpenAiCoachReplyResponse generateRealReply(OpenAiCoachChatRequest request) {
         List<OpenAiResponsesApiRequest.InputMessage> messages = coachPromptBuilder.buildMessages(
                 request.compactAnalysis(),
+                request.historySummary(),
                 request.history(),
                 request.newUserMessage()
         );

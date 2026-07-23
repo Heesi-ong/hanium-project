@@ -6,6 +6,7 @@ import java.util.Map;
 public record OpenAiCoachChatRequest(
         String jobId,
         Map<String, Object> compactAnalysis,
+        List<Map<String, Object>> historySummary,
         List<ChatTurn> history,
         String newUserMessage
 ) {

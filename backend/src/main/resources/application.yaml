@@ -158,6 +158,12 @@ password-reset:
     cron: "${PASSWORD_RESET_CLEANUP_CRON:0 30 3 * * *}"
     retention-days: ${PASSWORD_RESET_CLEANUP_RETENTION_DAYS:7}
 
+coach:
+  # AI 코치가 "저번보다 좋아졌나요?" 같은 진행 상황 질문에 답할 수 있도록, 현재 발표 외에
+  # 같은 사용자의 다른 완료된 발표(재분석 제외) 점수 요약을 최근 순으로 이 개수만큼 함께
+  # 참고합니다. 점수만 담아 토큰 비용을 억제합니다(원시 지표/자막/Video LLM 관찰 제외).
+  history-summary-size: ${COACH_HISTORY_SUMMARY_SIZE:5}
+
 analysis:
   retry:
     max-count: ${ANALYSIS_RETRY_MAX_COUNT:3}

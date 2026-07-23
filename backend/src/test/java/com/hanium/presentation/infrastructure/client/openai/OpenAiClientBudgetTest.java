@@ -2,6 +2,7 @@ package com.hanium.presentation.infrastructure.client.openai;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.properties.FeedbackLlmProperties;
 import com.hanium.presentation.global.properties.OpenAiProperties;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
@@ -29,10 +30,15 @@ class OpenAiClientBudgetTest {
         UserRateLimiter userRateLimiter = mock(UserRateLimiter.class);
         when(userRateLimiter.tryConsume(eq("openai-monthly"), anyString())).thenReturn(false);
 
+        FeedbackLlmProperties feedbackLlmProperties = new FeedbackLlmProperties();
+        feedbackLlmProperties.setProvider("openai");
+
         OpenAiClient client = new OpenAiClient(
                 properties,
+                feedbackLlmProperties,
                 promptBuilder,
                 restClient,
+                mock(RestClient.class),
                 objectMapper,
                 userRateLimiter
         );
@@ -54,10 +60,15 @@ class OpenAiClientBudgetTest {
         ObjectMapper objectMapper = mock(ObjectMapper.class);
         UserRateLimiter userRateLimiter = mock(UserRateLimiter.class);
 
+        FeedbackLlmProperties feedbackLlmProperties = new FeedbackLlmProperties();
+        feedbackLlmProperties.setProvider("openai");
+
         OpenAiClient client = new OpenAiClient(
                 properties,
+                feedbackLlmProperties,
                 promptBuilder,
                 restClient,
+                mock(RestClient.class),
                 objectMapper,
                 userRateLimiter
         );

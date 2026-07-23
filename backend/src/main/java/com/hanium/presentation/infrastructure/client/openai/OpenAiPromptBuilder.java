@@ -36,13 +36,16 @@ public class OpenAiPromptBuilder {
                 - 코드블록을 사용하지 않습니다.
                 - 불필요한 설명 문장을 JSON 밖에 붙이지 않습니다.
                 - schema에 정의된 필드만 반환합니다.
+                - 아래 5개 필드를 절대 생략하지 않고 모두 채웁니다. 특히 strengths, improvements,
+                  practicePlan, timelineFeedback을 빈 배열([])로 두지 말고 각각 최소 2개 이상
+                  작성합니다. 다섯 필드 중 하나라도 비어 있으면 잘못된 응답입니다.
 
-                출력 JSON 필드:
-                - overall: 발표 전체 종합 피드백
-                - strengths: 강점 목록
-                - improvements: 개선점 목록
-                - practicePlan: 연습 계획 목록
-                - timelineFeedback: 영역별 타임라인 피드백 목록
+                출력 JSON 필드 (다른 필드는 절대 추가하지 않습니다):
+                - overall: 발표 전체 종합 피드백 (string)
+                - strengths: 강점 목록 (string 배열)
+                - improvements: 개선점 목록 (string 배열)
+                - practicePlan: 연습 계획 목록. 각 항목은 {"title": string, "description": string, "duration": string} 형태
+                - timelineFeedback: 영역별 타임라인 피드백 목록. 각 항목은 {"category": string, "title": string, "summary": string, "recommendation": string} 형태
 
                 피드백 작성 기준:
                 - totalScore는 전체 수준 판단에 사용합니다.

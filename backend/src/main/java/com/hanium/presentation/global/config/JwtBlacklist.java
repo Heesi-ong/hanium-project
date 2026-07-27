@@ -1,6 +1,7 @@
 package com.hanium.presentation.global.config;
 
 import com.hanium.presentation.application.auth.RevokedAccessTokenWriter;
+import com.hanium.presentation.domain.auth.entity.RevokedAccessToken;
 import com.hanium.presentation.domain.auth.repository.RevokedAccessTokenRepository;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -17,6 +18,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Optional;
 
 @Component
 public class JwtBlacklist {
@@ -60,14 +62,7 @@ public class JwtBlacklist {
         String tokenHash = sha256(token);
         Instant expiresAt = Instant.now().plus(ttl);
         persistRevocation(tokenHash, expiresAt);
-
-        try {
-            redisTemplate.opsForValue().set(buildKey(tokenHash), "true", ttl);
-            onRedisSuccess();
-        } catch (RuntimeException exception) {
-            redisWriteFailureCounter.increment();
-            onRedisFailure("write", exception);
-        }
+        cacheRevocation(tokenHash, ttl);
     }
 
     public boolean isBlacklisted(String token) {
@@ -89,18 +84,39 @@ public class JwtBlacklist {
         }
 
         try {
-            boolean revoked = revokedAccessTokenRepository
-                    .existsByTokenHashAndExpiresAtAfter(tokenHash, Instant.now());
-            if (revoked) {
-                databaseHitCounter.increment();
+            Instant now = Instant.now();
+            Optional<RevokedAccessToken> revokedAccessToken =
+                    revokedAccessTokenRepository.findByTokenHashAndExpiresAtAfter(tokenHash, now);
+            if (revokedAccessToken.isEmpty()) {
+                return false;
             }
-            return revoked;
+
+            databaseHitCounter.increment();
+            cacheRevocation(
+                    tokenHash,
+                    Duration.between(now, revokedAccessToken.orElseThrow().getExpiresAt())
+            );
+            return true;
         } catch (DataAccessException exception) {
             databaseReadFailureCounter.increment();
             throw new JwtRevocationUnavailableException(
                     "JWT 폐기 상태를 확인할 수 없습니다.",
                     exception
             );
+        }
+    }
+
+    private void cacheRevocation(String tokenHash, Duration ttl) {
+        if (ttl == null || ttl.compareTo(Duration.ZERO) <= 0) {
+            return;
+        }
+
+        try {
+            redisTemplate.opsForValue().set(buildKey(tokenHash), "true", ttl);
+            onRedisSuccess();
+        } catch (RuntimeException exception) {
+            redisWriteFailureCounter.increment();
+            onRedisFailure("write", exception);
         }
     }
 

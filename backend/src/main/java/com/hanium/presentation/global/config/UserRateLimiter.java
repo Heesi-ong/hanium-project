@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class UserRateLimiter {
 
@@ -33,6 +34,23 @@ public class UserRateLimiter {
             Long.class
     );
 
+    // 공급자 비용처럼 한 번에 여러 단위를 예약하는 버킷은 용량을 넘는 요청을 카운터에
+    // 더하면 안 된다. GET+판정+INCRBY를 Lua 한 번으로 묶어 동시 요청도 capacity를 넘지
+    // 못하게 한다. 기존 단일 API rate limit은 거절 시도도 사용량에 포함하는 계약이므로
+    // 위의 별도 스크립트를 계속 사용한다.
+    private static final RedisScript<Long> RESERVE_WITHIN_LIMIT_SCRIPT = new DefaultRedisScript<>(
+            "local current = tonumber(redis.call('GET', KEYS[1]) or '0') "
+                    + "local permits = tonumber(ARGV[2]) "
+                    + "local capacity = tonumber(ARGV[3]) "
+                    + "if current + permits > capacity then return -1 end "
+                    + "local next = redis.call('INCRBY', KEYS[1], permits) "
+                    + "if current == 0 then "
+                    + "redis.call('EXPIRE', KEYS[1], ARGV[1]) "
+                    + "end "
+                    + "return next",
+            Long.class
+    );
+
     private final StringRedisTemplate redisTemplate;
     private final RateLimitProperties rateLimitProperties;
     private final Map<String, LocalWindow> localFallbackWindows = new ConcurrentHashMap<>();
@@ -48,10 +66,42 @@ public class UserRateLimiter {
     }
 
     public boolean tryConsume(String bucketName, Long userId) {
-        return tryConsume(bucketName, "user:" + userId);
+        return tryConsumeSingle(bucketName, "user:" + userId);
     }
 
     public boolean tryConsume(String bucketName, String key) {
+        return tryConsumeSingle(bucketName, key);
+    }
+
+    public boolean tryConsume(String bucketName, Long userId, int permits) {
+        return tryConsume(bucketName, "user:" + userId, permits);
+    }
+
+    public boolean tryConsume(String bucketName, String key, int permits) {
+        RateLimitProperties.Limit limit = resolveLimit(bucketName);
+        validateLimit(bucketName, limit);
+        validatePermits(permits);
+
+        String rateLimitKey = buildKey(bucketName, key);
+
+        try {
+            Long count = redisTemplate.execute(
+                    RESERVE_WITHIN_LIMIT_SCRIPT,
+                    Collections.singletonList(rateLimitKey),
+                    String.valueOf(Duration.ofMinutes(limit.refillMinutes()).toSeconds()),
+                    String.valueOf(permits),
+                    String.valueOf(limit.capacity())
+            );
+
+            onRedisSuccess();
+            return count != null && count >= 0;
+        } catch (RuntimeException exception) {
+            onRedisFailure(exception);
+            return tryConsumeLocalFallback(rateLimitKey, limit, permits);
+        }
+    }
+
+    private boolean tryConsumeSingle(String bucketName, String key) {
         RateLimitProperties.Limit limit = resolveLimit(bucketName);
         validateLimit(bucketName, limit);
 
@@ -68,7 +118,7 @@ public class UserRateLimiter {
             return count != null && count <= limit.capacity();
         } catch (RuntimeException exception) {
             onRedisFailure(exception);
-            return tryConsumeLocalFallback(rateLimitKey, limit);
+            return tryConsumeSingleLocalFallback(rateLimitKey, limit);
         }
     }
 
@@ -77,14 +127,24 @@ public class UserRateLimiter {
     // 된다. wouldAllow는 실제로 소비하지 않고 "지금 소비하면 허용될지"만 확인해,
     // 모든 예산을 먼저 peek한 뒤 실제 소비는 전부 통과했을 때만 하도록 한다.
     public boolean wouldAllow(String bucketName, Long userId) {
-        return wouldAllow(bucketName, "user:" + userId);
+        return wouldAllow(bucketName, "user:" + userId, 1);
     }
 
     public boolean wouldAllow(String bucketName, String key) {
+        return wouldAllow(bucketName, key, 1);
+    }
+
+    public boolean wouldAllow(String bucketName, Long userId, int permits) {
+        return wouldAllow(bucketName, "user:" + userId, permits);
+    }
+
+    public boolean wouldAllow(String bucketName, String key, int permits) {
         RateLimitProperties.Limit limit = resolveLimit(bucketName);
         validateLimit(bucketName, limit);
+        validatePermits(permits);
 
-        return getCurrentCount(bucketName, key) < limit.capacity();
+        long used = getCurrentCount(bucketName, key);
+        return used <= (long) limit.capacity() - permits;
     }
 
     public Usage getUsage(String bucketName, Long userId) {
@@ -151,7 +211,45 @@ public class UserRateLimiter {
         }
     }
 
-    private boolean tryConsumeLocalFallback(String key, RateLimitProperties.Limit limit) {
+    private void validatePermits(int permits) {
+        if (permits < 1) {
+            throw new IllegalArgumentException("permits must be at least 1: " + permits);
+        }
+    }
+
+    private boolean tryConsumeLocalFallback(
+            String key,
+            RateLimitProperties.Limit limit,
+            int permits
+    ) {
+        Instant now = Instant.now();
+        AtomicBoolean reserved = new AtomicBoolean(false);
+        localFallbackWindows.compute(key, (ignored, current) -> {
+            if (current == null || !now.isBefore(current.expiresAt())) {
+                if (permits > limit.capacity()) {
+                    return new LocalWindow(0, now.plus(Duration.ofMinutes(limit.refillMinutes())));
+                }
+                reserved.set(true);
+                return new LocalWindow(
+                        permits,
+                        now.plus(Duration.ofMinutes(limit.refillMinutes()))
+                );
+            }
+
+            if ((long) current.count() + permits > limit.capacity()) {
+                return current;
+            }
+            reserved.set(true);
+            return new LocalWindow(current.count() + permits, current.expiresAt());
+        });
+
+        return reserved.get();
+    }
+
+    private boolean tryConsumeSingleLocalFallback(
+            String key,
+            RateLimitProperties.Limit limit
+    ) {
         Instant now = Instant.now();
         LocalWindow window = localFallbackWindows.compute(key, (ignored, current) -> {
             if (current == null || !now.isBefore(current.expiresAt())) {

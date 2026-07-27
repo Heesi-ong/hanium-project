@@ -22,6 +22,12 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      # Redis는 JWT 폐기 양성 캐시와 진행률·분산 락에 사용한다. 장애 시 DB 원장 fallback이
+      # 있어도 Lettuce 기본 명령 timeout(약 60초)을 그대로 쓰면 API 요청 스레드가 장시간
+      # 묶인다. 짧은 timeout으로 실패를 빨리 감지해 DB fallback 또는 fail-open 정책으로
+      # 넘어가며, 네트워크 여건에 따라 환경변수로 조정한다.
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT_MS:2000}ms
+      timeout: ${REDIS_COMMAND_TIMEOUT_MS:2000}ms
 
   mail:
     host: ${SMTP_HOST:}
@@ -275,6 +281,12 @@ video:
   # 기본값은 기존 호환을 위해 fail-open입니다. 운영에서 ffprobe 실패 시 길이 제한 우회를
   # 허용하지 않으려면 true로 설정해 업로드를 실패시킵니다.
   duration-probe-required: ${VIDEO_DURATION_PROBE_REQUIRED:false}
+
+video-llm:
+  budget:
+    # video-llm-engine의 실제 세그먼트 길이와 반드시 같은 값을 사용한다. backend는
+    # ceil(duration/chunk)만큼 월간 NVIDIA 호출 예산을 원자적으로 예약한다.
+    chunk-duration-seconds: ${VIDEO_LLM_CHUNK_DURATION_SECONDS:100}
 
 cors:
   # 쉼표로 구분된 허용 origin 목록. 배포 도메인이 생기면 코드 수정 없이 이 값만 바꾸면 됩니다.

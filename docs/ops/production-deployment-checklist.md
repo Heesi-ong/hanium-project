@@ -20,6 +20,11 @@
 | `SECURITY_JWT_SECRET` | `change-me-to-a-strong-random-secret-in-production` | JWT 서명 키. 기본값 유지 시 백엔드가 기동을 거부함(fail-fast) |
 | `BACKUP_ENCRYPTION_PASSPHRASE` | (빈 값) | 원격 반출되는 MySQL 백업 암호화 키. 백업 파일과 분리된 비밀 관리자에 보관 |
 
+Redis 장애 시 JWT 폐기 원장의 DB fallback이 장시간 대기하지 않도록
+`REDIS_CONNECT_TIMEOUT_MS`와 `REDIS_COMMAND_TIMEOUT_MS`는 기본 2000ms로 설정된다.
+두 값은 0보다 커야 하며 잘못된 값이면 backend가 기동 단계에서 실패한다. 운영 네트워크
+지연을 반영해 조정하더라도 JWT 인증 요청의 허용 지연과 함께 검토한다.
+
 `docker-compose.prod.yml`을 함께 쓰는 운영 배포에서는 `SPRING_PROFILES_ACTIVE=prod`가 강제되며,
 DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정 단계에서 바로 실패한다.
 또한 `BACKUP_ENCRYPTION_REQUIRED=true`와 `BACKUP_REMOTE_REQUIRED=true`가 강제되므로 평문 MySQL 덤프가 생성되지 않고, MinIO 원격 반출 실패도 백업 프로세스 실패로 처리된다.
@@ -73,6 +78,9 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
   `analysis_jobs.reanalysis_idempotency_key_hash`)이 MySQL `CHAR(64)`이며 JPA schema validate와
   일치하는지 확인한다. 빈 MySQL 8.4에 V1부터 전체 적용하는 CI `backend-boot-smoke`를
   생략하지 않는다.
+- MySQL 8.4 기동 로그에서 현재 Flyway의 공식 검증 범위가 8.1까지라는 경고가 남는다.
+  운영에서는 MySQL을 검증된 버전으로 고정하거나 Flyway 호환 버전을 올린 뒤 빈 DB에
+  V1부터 전체 migration과 `ddl-auto: validate`를 다시 통과시킨다.
 - 재분석 child가 남은 source 결과 삭제가 HTTP 409로 거부되는지 확인한다. 삭제는 child부터
   수행하며, child 삭제 때는 공유 원본 asset과 upload prefix가 유지되고 마지막 source 삭제
   때만 asset과 upload 삭제 Outbox가 생성되어야 한다.
@@ -87,6 +95,11 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 - Redis도 비밀번호 인증을 포함한 healthcheck가 `healthy`가 된 뒤 backend와 analysis-worker가
   시작되어야 한다. `unhealthy`이면 `REDIS_PASSWORD`가 Redis 컨테이너와 두 Spring 서비스에
   동일하게 전달됐는지 먼저 확인한다.
+- Redis를 중단한 상태에서 기존 폐기 토큰이 계속 401인지, 신규 로그아웃이 DB
+  `revoked_access_tokens` 원장에 기록되는지, 정상 토큰은 DB 확인 후 200인지 검증한다.
+  각 요청이 설정한 Redis timeout 안팎에서 끝나야 하며 60초 기본 timeout으로 대기하면 안 된다.
+  Redis 복구 후 장애 중 폐기된 토큰을 두 번 조회해 첫 요청이 DB 원장을 Redis에 다시 적재하고
+  다음 요청이 `security_jwt_revocation_total{result="redis_hit"}`를 증가시키는지도 확인한다.
 - 운영 nginx는 backend가 rate limit용으로 신뢰하는 `X-Forwarded-For`를 `$remote_addr`로
   덮어쓴다. 별도 로드밸런서/CDN을 nginx 앞에 둘 경우 nginx real-ip 설정을 먼저 확정하지 않으면
   모든 사용자가 로드밸런서 IP로 집계될 수 있다.
@@ -100,6 +113,9 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
   `policy=STRICT|DEGRADED`, `realModelReady=true`인지 확인한다. `health`가 `up`이어도
   readiness가 `ready=false`이면 API 키, timeout, 영상 크기 상한, NVIDIA base URL 설정을
   먼저 수정한다.
+- `VIDEO_LLM_CHUNK_DURATION_SECONDS`가 backend, analysis-worker,
+  video-llm-engine 세 서비스에 같은 값으로 전달되는지 `docker compose config`에서
+  확인한다. 값이 어긋나면 월간 예산 예약 단위와 실제 NVIDIA 세그먼트 호출 수가 달라진다.
 - MySQL 백업/복구가 실제로 동작하는지: `docs/ops/backup-restore-runbook.md`의 리허설 절차를 운영
   DB 인스턴스 기준으로 최소 1회 재현한다.
 - `backup` 서비스는 전용 멀티 아키텍처 이미지를 빌드해 `mysqldump`, `openssl`, `mc`를 포함한다.

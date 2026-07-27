@@ -28,11 +28,13 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.YearMonth;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -93,9 +95,17 @@ class AnalysisCommandServiceVideoLlmDurationTest {
                 .thenReturn(successEngineResponse());
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenAnswer(invocation -> videoLlmResponse(invocation.getArgument(0, VideoLlmEngineRequest.class).jobId()));
-        when(userRateLimiter.wouldAllow(eq("video-llm-monthly"), anyString())).thenReturn(true);
+        when(userRateLimiter.wouldAllow(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        )).thenReturn(true);
         when(userRateLimiter.wouldAllow(eq("video-llm-daily"), any(Long.class))).thenReturn(true);
-        when(userRateLimiter.tryConsume(eq("video-llm-monthly"), anyString())).thenReturn(true);
+        when(userRateLimiter.tryConsume(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        )).thenReturn(true);
         when(userRateLimiter.tryConsume(eq("video-llm-daily"), any(Long.class))).thenReturn(true);
         when(resultCommandService.saveEngineResultsAndCompact(anyString(), any(), any()))
                 .thenReturn(Map.of());
@@ -146,7 +156,11 @@ class AnalysisCommandServiceVideoLlmDurationTest {
 
     @Test
     void skipsVideoLlmEngineCallWhenMonthlyBudgetExceeded() {
-        when(userRateLimiter.wouldAllow(eq("video-llm-monthly"), anyString())).thenReturn(false);
+        when(userRateLimiter.wouldAllow(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        )).thenReturn(false);
 
         analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
 
@@ -155,7 +169,11 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         // 소비(tryConsume)하지 않아야 합니다 - 사용자의 일일 한도를 헛되이 낭비하지
         // 않는 것이 이번 수정의 핵심입니다.
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
-        verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter, never()).tryConsume(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        );
 
         ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
         verify(resultCommandService).saveEngineResultsAndCompact(eq(JOB_ID), any(), captor.capture());
@@ -177,9 +195,17 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
         // 일일 한도로 이미 막혔으므로(peek 단계) 공용 월간 카운터는 peek조차 하지 않고,
         // 어느 쪽도 실제로 소비하지 않아야 합니다.
-        verify(userRateLimiter, never()).wouldAllow(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter, never()).wouldAllow(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        );
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
-        verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter, never()).tryConsume(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        );
 
         ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
         verify(resultCommandService).saveEngineResultsAndCompact(eq(JOB_ID), any(), captor.capture());
@@ -197,9 +223,17 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         analysisCommandService.runAnalysis(JOB_ID, 1L, false, false);
 
         verify(userRateLimiter, never()).wouldAllow(eq("video-llm-daily"), any(Long.class));
-        verify(userRateLimiter, never()).wouldAllow(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter, never()).wouldAllow(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        );
         verify(userRateLimiter, never()).tryConsume(eq("video-llm-daily"), any(Long.class));
-        verify(userRateLimiter, never()).tryConsume(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter, never()).tryConsume(
+                eq("video-llm-monthly"),
+                anyString(),
+                anyInt()
+        );
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
 
         ArgumentCaptor<VideoLlmEngineResponse> captor = ArgumentCaptor.forClass(VideoLlmEngineResponse.class);
@@ -213,13 +247,27 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     }
 
     @Test
-    void consumesMonthlyBudgetAndCallsVideoLlmEngineWhenBudgetAllows() {
+    void reservesMaximumMonthlyCallUnitsWhenDurationProbeFailsOpen() {
         analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
 
         verify(userRateLimiter).wouldAllow(eq("video-llm-daily"), any(Long.class));
-        verify(userRateLimiter).wouldAllow(eq("video-llm-monthly"), anyString());
+        String currentMonth = YearMonth.now().toString();
+        verify(userRateLimiter).wouldAllow("video-llm-monthly", currentMonth, 18);
         verify(userRateLimiter).tryConsume(eq("video-llm-daily"), any(Long.class));
-        verify(userRateLimiter).tryConsume(eq("video-llm-monthly"), anyString());
+        verify(userRateLimiter).tryConsume("video-llm-monthly", currentMonth, 18);
+        verify(videoLlmEngineClient).analyze(any(VideoLlmEngineRequest.class));
+    }
+
+    @Test
+    void reservesOneMonthlyCallUnitPerExpectedVideoSegment() {
+        when(videoDurationProbe.probe(Path.of(VIDEO_PATH)))
+                .thenReturn(Optional.of(Duration.ofSeconds(250)));
+
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        String currentMonth = YearMonth.now().toString();
+        verify(userRateLimiter).wouldAllow("video-llm-monthly", currentMonth, 3);
+        verify(userRateLimiter).tryConsume("video-llm-monthly", currentMonth, 3);
         verify(videoLlmEngineClient).analyze(any(VideoLlmEngineRequest.class));
     }
 

@@ -79,4 +79,20 @@ class UserRateLimiterIntegrationTest {
 
         redisTemplate.delete(redisKey);
     }
+
+    @Test
+    void weightedReservationIsAtomicAndDoesNotExceedCapacity() {
+        String testKey = "atomic-weighted:" + System.nanoTime();
+        String redisKey = "rate-limit:login-ip:" + testKey;
+        redisTemplate.delete(redisKey);
+
+        assertThat(userRateLimiter.tryConsume("login-ip", testKey, 7)).isTrue();
+        assertThat(userRateLimiter.tryConsume("login-ip", testKey, 13)).isTrue();
+        assertThat(userRateLimiter.tryConsume("login-ip", testKey, 1)).isFalse();
+
+        assertThat(redisTemplate.opsForValue().get(redisKey)).isEqualTo("20");
+        assertThat(redisTemplate.getExpire(redisKey)).isPositive();
+
+        redisTemplate.delete(redisKey);
+    }
 }

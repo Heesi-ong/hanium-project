@@ -9,6 +9,13 @@ DEGRADED만 `generationMode=FALLBACK` 샘플 대체를 허용한다. DISABLED는
 운영 정확성을 우선하는 기본 권고는 STRICT이며, DEGRADED는 샘플 대체를 제품이 명시적으로
 허용한 환경에서만 선택한다.
 
+**2026-07-27 긴 영상 부분 성공 정책 갱신**: 구간 분할된 긴 영상은 모든 세그먼트의
+생성·NVIDIA 분석이 성공해야만 `generationMode=REAL`을 반환한다. 이전에는 한 구간만
+성공해도 누락 구간이 있는 결과를 REAL로 표시할 수 있어 STRICT와 `requireReal` 계약을
+위반했다. 이제 일부 실패도 전체 실제 호출 실패로 승격되어 STRICT/재분석은 502,
+DEGRADED 일반 분석만 전체 FALLBACK으로 처리된다. 비-live 엔진 테스트 177건으로
+정책·분할·정규화 회귀를 확인했다.
+
 **2026-07-20 활성화 및 A-4 결정 갱신**: 사용자가 실제 NVIDIA API 키(`nvapi-...`)를
 제공해 로컬 `.env`(git-ignored)에 설정하고 `VIDEO_LLM_ENABLED=true`로 전환했다.
 `readiness` 엔드포인트(`mode: REAL, realModelReady: true`)와 실제 업로드→분석
@@ -58,9 +65,12 @@ PrivacyPage 고지로 대체"로 판정을 변경한다. 향후 이 결정을 �
 - 대용량 영상은 MinIO에서 임시 파일로 스트리밍하고 NVIDIA Asset API에도 1MB 청크로 전송합니다. `VIDEO_LLM_MAX_VIDEO_SIZE_MB`(기본 500MB)를 다운로드 헤더·실제 바이트·로컬 파일에 강제해 동시 분석의 메모리 급증과 과대 파일 전송을 막습니다.
 - STRICT는 외부 제공자 호출 실패를 502로 반환하고, DEGRADED만 mock으로 자동
   폴백(`generationMode=FALLBACK`)한다.
+- 긴 영상은 모든 세그먼트 생성·실제 호출이 성공한 경우에만 REAL이다. 빈 세그먼트나
+  부분 네트워크 실패가 있으면 불완전한 결과를 REAL로 표시하지 않는다.
 - 정책이 STRICT/DEGRADED인데 키·URL·timeout·크기 제한이 잘못되면 시작 단계에서 실패해
   설정 오류를 숨기지 않는다.
-- 월간 예산 가드(`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`=500, 보수적 기본값) + 서킷브레이커.
+- 영상 길이와 공통 청크 길이로 예상 세그먼트 호출 수를 계산해 원자적으로 예약하는
+  월간 예산 가드(`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`=500, 보수적 기본값) + 서킷브레이커.
 - **관측성(이번에 추가)**: `video_llm_generation_total{mode=REAL|FALLBACK|MOCK}` 메트릭과,
   실제 시도(REAL+FALLBACK) 중 폴백률 50% 초과 시 발동하는
   `VideoLlmFallbackRateHigh` Prometheus 알림. DISABLED의 의도된 MOCK은 분모에서 제외한다.
@@ -86,7 +96,9 @@ VIDEO_LLM_BACKEND=external-api     # 이미지 build arg와 런타임 식별값�
 
 1. staging에서 실영상 1~2건 업로드→분석 E2E 실행.
 2. 결과의 `generationMode`가 `REAL`인지 확인(FALLBACK이면 키/네트워크 점검).
-3. Grafana에서 `video_llm_generation_total{mode="REAL"}` 증가, `video_llm_monthly_usage` 증가, `NVIDIA_VIDEO_LLM_USAGE` 로그의 elapsedMs/비용 관찰.
+3. Grafana에서 `video_llm_generation_total{mode="REAL"}` 증가, `video_llm_monthly_usage` 증가,
+   세그먼트별 `NVIDIA_VIDEO_LLM_USAGE` 로그의 elapsedMs/status를 관찰한다. 월간 카운터는
+   예상 세그먼트 수를 선예약하며, 공급자 응답·정리 실패 등 실제 시도 결과는 로그와 함께 본다.
 4. 폴백률·예산 알림이 정상 동작하는지 확인.
 5. 개인정보 고지·동의 반영 확인 후에만 운영 활성화.
 

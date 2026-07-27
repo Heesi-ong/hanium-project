@@ -170,7 +170,8 @@ uvicorn app.main:app --reload --port 8002
 | `NVIDIA_ASSET_API_BASE_URL` | video-llm-engine 실행 환경 | 180KB 초과 영상을 업로드하는 NVCF Asset API base URL입니다. 기본값은 `https://api.nvcf.nvidia.com/v2/nvcf`입니다. |
 | `NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS` | video-llm-engine 실행 환경 | 외부 영상 분석 호출 timeout입니다. 기본값은 `120`초입니다. |
 | `VIDEO_LLM_MAX_VIDEO_SIZE_MB` | video-llm-engine 실행 환경 | 다운로드·로컬 파일·NVIDIA Asset 업로드에 허용할 단일 영상 최대 크기입니다. backend 업로드 상한과 같은 `500`MB가 기본입니다. |
-| `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY` | backend 실행 환경 또는 루트 `.env` | NVIDIA 실제 호출 월간 예산 가드입니다. 기본값은 `500`회입니다. 정확한 NVIDIA 무료 한도가 아직 확인되지 않아 OpenAI 기본값보다 보수적으로 둔 추정값입니다. |
+| `VIDEO_LLM_CHUNK_DURATION_SECONDS` | backend와 video-llm-engine 공통 | 긴 영상을 나누는 구간 길이이자 월간 예산 예약 단위 계산 기준입니다. 두 서비스에 반드시 같은 값을 주입해야 하며 기본값은 `100`초입니다. |
+| `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY` | backend 실행 환경 또는 루트 `.env` | NVIDIA 실제 세그먼트 호출 월간 예산 가드입니다. 기본값은 `500`회입니다. 정확한 NVIDIA 무료 한도가 아직 확인되지 않아 보수적으로 둔 추정값입니다. |
 | `VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES` | backend 실행 환경 또는 루트 `.env` | 월간 카운터 refill 주기입니다. 기본값은 `44640`분입니다. |
 
 로컬에서 직접 실행할 때는 video-llm-engine 터미널에 다음처럼 지정합니다.
@@ -186,6 +187,7 @@ export NVIDIA_VIDEO_LLM_MODEL=nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
 export NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1
 export NVIDIA_ASSET_API_BASE_URL=https://api.nvcf.nvidia.com/v2/nvcf
 export NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS=120
+export VIDEO_LLM_CHUNK_DURATION_SECONDS=100
 uvicorn app.main:app --reload --port 8002
 ```
 
@@ -208,7 +210,11 @@ readiness가 `ready=true`, `mode=REAL`, `policy=<선택한 정책>`,
 `realModelReady=true`인지 확인하세요. `health`가 `up`이어도 readiness가 `ready=false`이면 실제
 모델 설정은 아직 완료되지 않은 상태입니다.
 
-비용과 한도 측면에서는 backend가 실제 Video LLM 호출 전에 월간 카운터를 확인합니다.
+비용과 한도 측면에서는 backend가 실제 Video LLM 호출 전에
+`ceil(durationSec / VIDEO_LLM_CHUNK_DURATION_SECONDS)`만큼 월간 카운터를 원자적으로
+예약합니다. 영상 길이를 다시 확인하지 못하면 업로드 최대 길이(기본 30분)를 기준으로
+18회를 보수적으로 예약합니다. 일일 사용자 한도는 NVIDIA 세그먼트 수가 아니라 분석 작업
+건수 기준을 유지합니다.
 `VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`를 초과하면 NVIDIA 호출을 보내지 않고 Video LLM 분석을
 생략하며, 결과 화면에는 `SKIPPED` 상태와 생략 사유가 표시됩니다. 이 동작은 서비스 장애를 막는
 안전장치이지, NVIDIA의 실제 무료 rate limit이 500회라는 뜻은 아닙니다.
@@ -242,7 +248,8 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
    그대로 안내할지, 추가 품질 검수 후 켤지 결정해야 합니다.
 4. **월간 비용 상한(`VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY`, 기본 500회)이 실제 예상 트래픽
    대비 적정한지 재검토가 필요합니다.** 이 값은 NVIDIA의 실제 무료 한도를 아는 상태에서 정한
-   것이 아니라, OpenAI 기본값보다 보수적으로 잡은 추정값입니다.
+   것이 아니라, OpenAI 기본값보다 보수적으로 잡은 추정값입니다. 카운터 자체는 긴 영상의
+   예상 세그먼트 호출 수만큼 예약하도록 보완됐습니다.
 
 영상 데이터를 NVIDIA로 전송하는 것 자체는 이미 `frontend/src/pages/PrivacyPage.jsx`의
 "외부 AI 처리"·"국외 이전에 관한 사항" 절에 이전받는 자, 이전 항목, 이전 국가, 이전 목적,

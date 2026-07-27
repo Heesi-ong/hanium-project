@@ -209,8 +209,10 @@ def call_real_video_llm_model_in_chunks(
     chunk_duration_seconds: float,
 ) -> Dict[str, Any]:
     """긴 영상을 chunk_duration_seconds 단위로 실제로 잘라(ffmpeg) NVIDIA를 구간마다
-    호출하고 결과를 하나로 합칩니다. 세그먼트 일부가 실패해도 나머지로 계속 진행하고,
-    전부 실패했을 때만 예외를 던져 analyze_video()의 기존 FALLBACK 경로를 타게 합니다.
+    호출하고 결과를 하나로 합칩니다. 세그먼트 하나라도 생성 또는 분석에 실패하면 전체
+    호출을 실패시킵니다. 누락 구간이 있는 부분 결과를 REAL로 표시하면 STRICT/requireReal
+    계약을 위반하므로, 상위 analyze_video()가 정책에 따라 502 또는 전체 FALLBACK으로
+    처리하게 합니다.
     """
     total_segment_count = math.ceil(request.durationSec / chunk_duration_seconds)
 
@@ -222,45 +224,38 @@ def call_real_video_llm_model_in_chunks(
                 category: [] for category in OBSERVATION_CATEGORIES
             }
             summary_parts: Dict[str, list] = {field: [] for field in SUMMARY_FIELDS}
-            succeeded_segment_count = 0
 
-            # segment_paths는 (원래 청크 인덱스, 파일 경로) 튜플 목록입니다. ffmpeg가 일부
-            # 구간 생성에 실패하면 그 구간은 목록에서 통째로 빠지므로, enumerate()로 다시
-            # 매긴 위치가 아니라 이 원래 인덱스로 시간 오프셋을 계산해야 이후 구간들의
-            # startSec/endSec이 조용히 앞으로 밀리지 않습니다.
+            if len(segment_paths) != total_segment_count:
+                raise RuntimeError(
+                    "Video LLM 세그먼트 생성 결과가 예상 개수와 다릅니다. "
+                    f"expected={total_segment_count}, actual={len(segment_paths)}"
+                )
+
+            # segment_paths는 (원래 청크 인덱스, 파일 경로) 튜플 목록입니다. 원래 인덱스로
+            # 시간 오프셋을 계산해 startSec/endSec이 정확한 전체 영상 시각을 유지합니다.
             for original_index, segment_path in segment_paths:
                 segment_start_offset = original_index * chunk_duration_seconds
                 segment_local_duration = min(
                     chunk_duration_seconds, request.durationSec - segment_start_offset
                 )
 
-                try:
-                    segment_model_json = call_nvidia_chat_completion(
-                        api_key=api_key,
-                        model=model,
-                        base_url=base_url,
-                        asset_base_url=asset_base_url,
-                        timeout_seconds=timeout_seconds,
-                        job_id=f"{request.jobId}-segment-{original_index}",
-                        video_path=segment_path,
-                        content_type=content_type,
-                        duration_hint_sec=segment_local_duration,
-                        sample_fps=request.sampleFps,
-                        max_frames=request.maxFrames,
-                    )
-                    segment_normalized = normalize_video_llm_response(
-                        request.jobId, model, segment_model_json, segment_local_duration
-                    )
-                except Exception:
-                    logger.exception(
-                        "(%s) Video LLM 세그먼트 %d/%d 호출에 실패해 이 구간은 건너뜁니다.",
-                        request.jobId,
-                        original_index + 1,
-                        total_segment_count,
-                    )
-                    continue
+                segment_model_json = call_nvidia_chat_completion(
+                    api_key=api_key,
+                    model=model,
+                    base_url=base_url,
+                    asset_base_url=asset_base_url,
+                    timeout_seconds=timeout_seconds,
+                    job_id=f"{request.jobId}-segment-{original_index}",
+                    video_path=segment_path,
+                    content_type=content_type,
+                    duration_hint_sec=segment_local_duration,
+                    sample_fps=request.sampleFps,
+                    max_frames=request.maxFrames,
+                )
+                segment_normalized = normalize_video_llm_response(
+                    request.jobId, model, segment_model_json, segment_local_duration
+                )
 
-                succeeded_segment_count += 1
                 for category in OBSERVATION_CATEGORIES:
                     for item in segment_normalized["observations"][category]:
                         offset_item = dict(item)
@@ -274,11 +269,6 @@ def call_real_video_llm_model_in_chunks(
                         f"[{segment_start_offset:.0f}-{segment_end_offset:.0f}s] "
                         f"{segment_normalized['globalSummary'][field]}"
                     )
-
-    if succeeded_segment_count == 0:
-        raise RuntimeError(
-            f"Video LLM 구간 분할 호출이 {len(segment_paths)}개 세그먼트 모두 실패했습니다."
-        )
 
     merged_model_json = {
         "observations": merged_observations,
@@ -338,10 +328,9 @@ def split_video_into_segments(
             if output_path.exists() and output_path.stat().st_size > 0:
                 segment_paths.append((index, output_path))
             else:
-                logger.warning(
-                    "ffmpeg가 세그먼트 %d/%d를 만들지 못했습니다(빈 출력). 이 구간은 건너뜁니다.",
-                    index + 1,
-                    segment_count,
+                raise RuntimeError(
+                    "ffmpeg가 세그먼트를 만들지 못했습니다(빈 출력). "
+                    f"segment={index + 1}/{segment_count}"
                 )
 
         if not segment_paths:

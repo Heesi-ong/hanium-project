@@ -1635,7 +1635,7 @@ def test_call_real_video_llm_model_splits_long_video_and_merges_segment_results(
     assert response["globalSummary"]["visualDelivery"].count("전반적으로 안정적인 발표 태도입니다.") == 2
 
 
-def test_call_real_video_llm_model_in_chunks_continues_when_one_segment_fails(
+def test_call_real_video_llm_model_in_chunks_rejects_partial_real_result_when_one_segment_fails(
     monkeypatch, tmp_path
 ):
     video_path = create_real_video_file(tmp_path, duration_seconds=5)
@@ -1658,22 +1658,22 @@ def test_call_real_video_llm_model_in_chunks_continues_when_one_segment_fails(
 
     monkeypatch.setattr(FakeNvidiaClient, "post", flaky_post)
 
-    response = video_llm_analysis.call_real_video_llm_model(
-        VideoLlmAnalysisRequest(
-            jobId="partial-failure-job",
-            videoPath=video_path,
-            durationSec=5.0,
-            sampleFps=1,
-            maxFrames=90,
+    with pytest.raises(httpx.ConnectError, match="simulated segment network failure"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="partial-failure-job",
+                videoPath=video_path,
+                durationSec=5.0,
+                sampleFps=1,
+                maxFrames=90,
+            )
         )
-    )
 
-    assert response["status"] == "success"
-    # 세그먼트 2개 중 1개만 성공했으므로 카테고리별 관찰이 1개씩만 있어야 합니다.
-    assert len(response["observations"]["eyeContact"]) == 1
+    # 첫 세그먼트 실패 즉시 전체 REAL 호출이 실패하므로 누락 구간을 숨긴 부분 결과가 없다.
+    assert call_count["n"] == 1
 
 
-def test_call_real_video_llm_model_in_chunks_keeps_correct_offsets_when_a_middle_segment_split_is_empty(
+def test_call_real_video_llm_model_in_chunks_rejects_missing_middle_segment(
     monkeypatch, tmp_path
 ):
     video_path = create_real_video_file(tmp_path, duration_seconds=7.5)
@@ -1696,26 +1696,19 @@ def test_call_real_video_llm_model_in_chunks_keeps_correct_offsets_when_a_middle
 
     monkeypatch.setattr(video_llm_analysis.subprocess, "run", flaky_split_run)
 
-    response = video_llm_analysis.call_real_video_llm_model(
-        VideoLlmAnalysisRequest(
-            jobId="middle-segment-empty-job",
-            videoPath=video_path,
-            durationSec=7.5,
-            sampleFps=1,
-            maxFrames=90,
+    with pytest.raises(RuntimeError, match="빈 출력"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="middle-segment-empty-job",
+                videoPath=video_path,
+                durationSec=7.5,
+                sampleFps=1,
+                maxFrames=90,
+            )
         )
-    )
 
-    assert response["status"] == "success"
-    # 실제로 NVIDIA까지 호출된 건 세그먼트 0, 2뿐입니다(세그먼트 1은 빈 파일이라 건너뜀).
-    assert len(FakeNvidiaClient.instances) == 2
-
-    eye_contact = response["observations"]["eyeContact"]
-    # 세그먼트 2는 목록상 두 번째 항목(position=1)이지만 원래 청크 인덱스는 2이므로,
-    # 시간 오프셋은 반드시 2 * 2.5 = 5.0으로 계산되어야 합니다. enumerate() 위치(1)로
-    # 잘못 계산하면 2.5가 되어 세그먼트 0과 겹치는 시간대로 밀려버립니다.
-    offsets = sorted(item["startSec"] for item in eye_contact)
-    assert offsets == [pytest.approx(1.0), pytest.approx(6.0)]
+    # 분할이 완전하지 않으면 NVIDIA 호출 전에 실패해 비용과 부분 REAL 결과 생성을 막는다.
+    assert FakeNvidiaClient.instances == []
 
 
 def test_call_real_video_llm_model_in_chunks_raises_when_all_segments_fail(
@@ -1729,7 +1722,7 @@ def test_call_real_video_llm_model_in_chunks_raises_when_all_segments_fail(
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
     monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "2.5")
 
-    with pytest.raises(RuntimeError, match="모두 실패"):
+    with pytest.raises(httpx.ConnectError, match="simulated total failure"):
         video_llm_analysis.call_real_video_llm_model(
             VideoLlmAnalysisRequest(
                 jobId="total-failure-job",

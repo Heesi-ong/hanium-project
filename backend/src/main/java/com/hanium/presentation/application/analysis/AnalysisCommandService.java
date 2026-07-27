@@ -112,6 +112,16 @@ public class AnalysisCommandService {
     // 실행 중에 능동적으로 예산을 강제합니다. (watchdog max-running-minutes보다 작게 두세요.)
     @Value("${analysis.job.timeout-minutes:20}")
     private long jobTimeoutMinutes = 20;
+
+    // video-llm-engine과 같은 청크 길이를 사용해 작업 1건이 실제로 만들 NVIDIA 호출 수를
+    // 월간 예산에서 예약한다. 영상 길이를 다시 확인하지 못하면 업로드 허용 최대 길이로
+    // 보수적으로 계산해, 비용 가드가 실제 호출 수보다 작아지는 fail-open을 막는다.
+    @Value("${video-llm.budget.chunk-duration-seconds:100}")
+    private double videoLlmChunkDurationSeconds = 100;
+
+    @Value("${video.max-duration-minutes:30}")
+    private long videoMaxDurationMinutes = 30;
+
     private final AnalysisRetryProperties analysisRetryProperties;
     private final AnalysisQueueProperties analysisQueueProperties;
     private final MeterRegistry meterRegistry;
@@ -593,8 +603,11 @@ public class AnalysisCommandService {
                     .filter(AnalysisKind.VIDEO_LLM_REANALYSIS::equals)
                     .isPresent();
 
+            Double videoDurationSec = useVideoLlm
+                    ? resolveDurationSec(jobId, uploadedVideo.getStoredFilePath())
+                    : null;
             VideoLlmSkipReason budgetSkipReason = useVideoLlm
-                    ? reserveVideoLlmBudgetOrSkipReason(jobId)
+                    ? reserveVideoLlmBudgetOrSkipReason(jobId, videoDurationSec)
                     : VideoLlmSkipReason.DISABLED;
 
             if (budgetSkipReason != null) {
@@ -626,7 +639,7 @@ public class AnalysisCommandService {
                         VideoLlmEngineRequest.defaultOption(
                                 jobId,
                                 uploadedVideo.getStoredFilePath(),
-                                resolveDurationSec(jobId, uploadedVideo.getStoredFilePath()),
+                                videoDurationSec,
                                 videoDownloadUrl,
                                 requireRealVideoLlm
                         )
@@ -778,18 +791,31 @@ public class AnalysisCommandService {
     // 일일 예산과 월간 예산을 모두 먼저 peek(wouldAllow)해 어느 한쪽이라도 이미
     // 소진되어 있으면 실제 소비(tryConsume) 없이 즉시 건너뛴다. 이렇게 하면 일일
     // 한도로 어차피 막힐 호출이 공용 월간 카운터를 헛되이 소비하는 일이 없다.
-    private VideoLlmSkipReason reserveVideoLlmBudgetOrSkipReason(String jobId) {
+    private VideoLlmSkipReason reserveVideoLlmBudgetOrSkipReason(
+            String jobId,
+            Double durationSec
+    ) {
         Long ownerId = analysisJobRepository.findByJobId(jobId)
                 .map(AnalysisJob::getOwnerId)
                 .orElse(null);
+        int estimatedNvidiaCallUnits = estimateNvidiaCallUnits(durationSec);
 
         if (ownerId != null && !userRateLimiter.wouldAllow("video-llm-daily", ownerId)) {
             log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
             return VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED;
         }
 
-        if (!userRateLimiter.wouldAllow("video-llm-monthly", currentMonthKey())) {
-            log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
+        if (!userRateLimiter.wouldAllow(
+                "video-llm-monthly",
+                currentMonthKey(),
+                estimatedNvidiaCallUnits
+        )) {
+            log.warn(
+                    "[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다. "
+                            + "estimatedNvidiaCallUnits={}",
+                    jobId,
+                    estimatedNvidiaCallUnits
+            );
             return VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED;
         }
 
@@ -800,12 +826,39 @@ public class AnalysisCommandService {
             return VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED;
         }
 
-        if (!userRateLimiter.tryConsume("video-llm-monthly", currentMonthKey())) {
-            log.warn("[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다.", jobId);
+        if (!userRateLimiter.tryConsume(
+                "video-llm-monthly",
+                currentMonthKey(),
+                estimatedNvidiaCallUnits
+        )) {
+            log.warn(
+                    "[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다. "
+                            + "estimatedNvidiaCallUnits={}",
+                    jobId,
+                    estimatedNvidiaCallUnits
+            );
             return VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED;
         }
 
+        log.info(
+                "[{}] Video LLM 월간 예산에서 NVIDIA 예상 호출 {}회를 예약했습니다. durationSec={}",
+                jobId,
+                estimatedNvidiaCallUnits,
+                durationSec
+        );
         return null;
+    }
+
+    private int estimateNvidiaCallUnits(Double durationSec) {
+        double budgetedDurationSec = durationSec != null
+                && Double.isFinite(durationSec)
+                && durationSec > 0
+                ? durationSec
+                : Math.multiplyExact(videoMaxDurationMinutes, 60L);
+        return Math.max(
+                1,
+                (int) Math.ceil(budgetedDurationSec / videoLlmChunkDurationSeconds)
+        );
     }
 
     private String currentMonthKey() {

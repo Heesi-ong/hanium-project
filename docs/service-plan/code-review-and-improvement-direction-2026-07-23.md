@@ -45,7 +45,7 @@ P2 보완도 현재 작업 트리에서 시작했다.
 
 | 항목 | 현재 상태 | 구현·확인 내용 | 남은 운영 게이트 |
 |---|---|---|---|
-| P2-01 JWT 강제 무효화 | 코드 완료 | SHA-256 DB 폐기 원장, Redis 양성 캐시, DB fallback, DB 판정 실패 시 503 fail-closed, 만료 행 정리, 메트릭·경보 | 실제 MySQL V21 migration과 Redis 중단/복구 rehearsal |
+| P2-01 JWT 강제 무효화 | 코드·장애 복구 실측 완료 | SHA-256 DB 폐기 원장, Redis 양성·read-through 캐시, DB fallback, DB 판정 실패 시 503 fail-closed, 만료 행 정리, 메트릭·경보. 실제 MySQL V1→V24와 Redis 중단/복구를 확인 | 배포 환경별 장애 훈련과 경보 수신 확인 |
 | P2-03 Video LLM 실패 정책 | 핵심 정책 코드 완료 | STRICT/DEGRADED/DISABLED, STRICT 502→작업 실패, DEGRADED만 FALLBACK, readiness/UI 정책 노출, MOCK 제외 fallback 경보 | 실제 NVIDIA 장애 rehearsal |
 | P2-03 R1~R4 보존형 재분석 | 코드 완료, R5 주요 DB·스토리지 실측 완료 | V22 asset FK, V23 lineage/mode, V24 멱등·active unique guard, 공유 asset 참조 안전 삭제/retention 잠금, source 선삭제 차단, 202 접수·200 replay·403/409/410/429, 엔진/backend `requireReal` 이중 검증, 상세/목록 lineage 응답, FALLBACK 확인 dialog·child 이동/polling UI. MySQL 8.4 fresh V1→V24, MinIO-only 원본, 동시 10요청, child→source 삭제와 Outbox DEAD_LETTER 관리자 복구 실측 통과 | 실제 NVIDIA REAL·timeout/5xx, 500MB 경계, 원본/재분석 직접 비교 UX |
 
@@ -246,6 +246,12 @@ P2 보완도 현재 작업 트리에서 시작했다.
   DB 조회를 반복 유발하지 못하게 한다.
 - Redis는 폐기된 토큰만 빠르게 판정하는 양성 캐시로 사용한다. Redis miss 또는 장애 시
   DB 원장을 조회하므로 Redis 재시작·장애 중에도 로그아웃 무효화가 유지된다.
+- DB 원장에서 폐기 토큰을 확인하면 남은 JWT 수명만큼 Redis 양성 캐시를 다시 채운다.
+  따라서 장애 중 로그아웃된 토큰도 Redis 복구 후 첫 요청만 DB를 사용하고 다음 요청부터
+  Redis에서 판정한다.
+- Redis 연결·명령 timeout을 각각 `REDIS_CONNECT_TIMEOUT_MS`,
+  `REDIS_COMMAND_TIMEOUT_MS`로 명시하고 기본값을 2초로 제한한다. 0 또는 음수이면
+  backend가 기동을 거부한다.
 - DB 원장 읽기까지 실패하면 JWT 필터가 인증을 허용하지 않고 구조화된 503
   `AUTH_SESSION_SERVICE_UNAVAILABLE` 응답을 반환한다.
 - DB 원장 쓰기가 실패한 로그아웃도 성공으로 표시하지 않고 503을 반환하며, 클라이언트가
@@ -255,11 +261,25 @@ P2 보완도 현재 작업 트리에서 시작했다.
 - 운영 비용은 Redis miss마다 기존 사용자 조회 외에 DB 존재 확인 쿼리 한 건이 추가되는
   것이다. refresh token·세션 테이블 전환 전까지 보안 보장과 변경 범위를 절충한 구조다.
 
+**2026-07-27 실제 장애·복구 검증**
+
+- 격리 MySQL 8.4에 V1부터 V24까지 적용하고 `ddl-auto: validate` 기동을 확인했다.
+- timeout 명시 전 Redis 중단 요청은 Lettuce 기본 명령 timeout 때문에 약 60초 동안
+  응답하지 않았다. 코드의 DB fallback만으로는 운영 가능한 장애 대응이 아니었다.
+- 기본 timeout을 2초로 제한한 뒤 Redis 중단 상태에서 기존 폐기 토큰 401(0.572초),
+  신규 로그아웃 200(0.067초), 해당 토큰 재사용 401(0.013초), 정상 토큰 200(0.048초)을
+  확인했다.
+- DB에는 서로 다른 64자 SHA-256 해시 두 건이 원래 만료시각과 함께 남았고,
+  `redis_read_failure=4`, `redis_write_failure=1`, `database_hit=3` 메트릭이 증가했다.
+- Redis 복구 후 장애 중 폐기된 토큰의 첫 요청은 DB hit로 캐시를 1건 추가했고
+  두 번째 요청은 Redis hit로 처리됐다. 응답은 각각 401(0.051초), 401(0.006초)이었다.
+- 검증에 사용한 backend 프로세스, 격리 MySQL·Redis 컨테이너와 토큰 응답 임시 파일은
+  검증 후 제거했다. 기존 Compose 볼륨과 사용자 DB는 수정하지 않았다.
+
 **남은 검증**
 
-- 실제 MySQL에 V21을 적용하고 `ddl-auto: validate`를 확인한다.
-- Redis를 중단한 상태에서 기존 로그아웃 토큰이 계속 401인지, 신규 로그아웃이 DB 원장에
-  기록되는지, Redis 복구 뒤 캐시가 다시 사용되는지를 Compose 환경에서 rehearsal한다.
+- staging에서 동일 훈련을 반복하고 `JwtRevocationDatabaseUnavailable`,
+  `JwtRevocationRedisCacheFailure` 경보가 실제 온콜 채널에 도착하는지 확인한다.
 
 ### P2-02. 핵심 로직이 초대형 파일에 집중돼 변경 위험이 높다
 
@@ -301,6 +321,10 @@ P2 보완도 현재 작업 트리에서 시작했다.
   `VIDEO_LLM_ENGINE_ERROR`로 작업을 실패 처리한다.
 - DEGRADED만 FALLBACK 샘플 응답을 허용하며 결과 목록·비교·관리 화면에 실제 분석 실패와
   샘플 대체 경고를 표시한다.
+- 2026-07-27 후속 리뷰에서 긴 영상 세그먼트 일부만 성공해도 불완전한 결과가 REAL로
+  반환되는 계약 위반을 확인했다. 모든 세그먼트 생성·NVIDIA 호출이 성공해야만 REAL로
+  병합하며, 하나라도 실패하면 STRICT/requireReal은 실패하고 DEGRADED 일반 분석만
+  전체 FALLBACK으로 전환하도록 수정했다.
 - readiness와 상태 화면에 policy를 노출한다. fallback 경보는 의도된 DISABLED/MOCK을 제외하고
   REAL+FALLBACK 시도 중 FALLBACK 비율만 계산한다.
 
@@ -308,6 +332,15 @@ P2 보완도 현재 작업 트리에서 시작했다.
 
 - 배포 환경별 정책을 확정하고 실제 NVIDIA timeout/5xx를 주입해 STRICT 작업 실패와 DEGRADED
   샘플 대체를 E2E로 검증해야 한다.
+- 2026-07-27 후속 보완으로 backend가 영상 길이와 엔진 공통 청크 길이로 예상 NVIDIA
+  세그먼트 호출 수를 계산해 Redis Lua로 월간 잔여 용량 안에서 원자 예약한다. 길이
+  재확인이 실패하면 업로드 최대 길이 기준으로 보수 예약하며, 실제 Redis에서 7+13 단위
+  예약 후 추가 1단위가 거부되고 카운터가 20에 유지되는 것을 확인했다.
+- 가중 예약 전용 API만 용량 초과 시 카운터를 유지하고, 로그인·코치 등 기존 단일 rate
+  limit은 거절 시도도 카운트하는 기존 보안·UI 계약을 보존했다.
+- Video LLM 비-live 테스트 177건, backend 전체 테스트 436건(외부 연동 9건 skip),
+  개발·운영 Compose config와 세 서비스의 공통 청크 값 전달을 확인했다. 가중 예약
+  검증용 격리 Redis 컨테이너는 종료·제거했다.
 - 완료된 DEGRADED 결과는 일반 `/retry` 대신 보존형 재분석 API를 사용한다. 원본 결과는
   유지하고, 비용·사용 한도를 다시 소비하는 새 child job을 생성한다.
 - 보존형 재분석의 권장 모델과 단계별 migration/API/retention 계약은
@@ -550,10 +583,9 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 - 첫 기본 복구 검증에 사용한 backend, MySQL, MinIO 객체·컨테이너는 제거했고 기존 Compose
   데이터 볼륨과 사용자 DB는 수정하지 않았다.
 
-> 2026-07-23 마지막 DEAD_LETTER 리허설의 backend 프로세스는 종료했지만, 자동 승인 한도
-> 초과로 종료 명령이 거부돼 격리 MySQL·Redis·MinIO 컨테이너와
-> `/private/tmp/hanium-r5-deadletter-*` 파일의 최종 제거 여부는 아직 확인하지 못했다.
-> 다음 실행에서 가장 먼저 정리·확인해야 한다.
+> 2026-07-27 후속 확인에서 `/private/tmp/hanium-r5-deadletter-*` 파일과 검증용
+> 18085·18086·13318·9000·6379 리스너가 남아 있지 않고 작업 트리도 clean인 것을 확인했다.
+> 마지막 DEAD_LETTER 리허설의 격리 자원 정리는 완료된 상태다.
 
 ## 7. 검증하지 못한 항목과 남은 위험
 
@@ -563,19 +595,21 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 - 공개 도메인의 TLS 최초 발급과 자동 갱신
 - 원격 MinIO 백업을 빈 MySQL에 복원하는 이번 시점의 리허설
 - Redis/worker 강제 종료를 포함한 전체 chaos test
+- 현재 Flyway가 MySQL 8.4를 공식 검증 범위(MySQL 8.1까지)보다 새 버전으로 경고한다.
+  운영 MySQL을 검증된 버전으로 고정하거나 Flyway를 호환 버전으로 올린 뒤 fresh migration을 반복해야 한다.
+- `spring.jpa.open-in-view`가 기본 활성화돼 있다. API 직렬화 중 지연 로딩과 예기치 않은
+  DB 접근을 막으려면 명시적으로 끄고 결과·관리자 API 회귀 테스트를 수행해야 한다.
 - 정식 침투 테스트와 개인정보/법률 준수 검토
 
 정적 리뷰와 현재 테스트가 통과했다는 사실은 위 실환경 검증을 대체하지 않는다.
 
 ## 8. 다음 우선순위
 
-다음 우선순위는 **P1 실환경 gate와 P2 인증 세션 무효화 정책**이다.
+다음 우선순위는 **P1 실환경 gate와 Video LLM 실제 모델 검증**이다.
 
 1. staging 정책을 STRICT 또는 DEGRADED로 확정하고 NVIDIA timeout/5xx 장애를 주입해
    child FAILED, REAL 복구 성공, 비용·quota 메트릭을 rehearsal한다.
 2. 500MB 경계 영상의 asset 공유 시 저장 중복이 없는지 확인한다.
 3. 테스트 SMTP에서 정상 발송과 연결 실패 → backoff → DEAD_LETTER → 관리자 재큐잉 흐름을 rehearsal한다.
 4. 잘못된 Python 설정을 의도적으로 주입해 두 엔진이 readiness 전에 종료되는지 Compose에서 확인한다.
-5. Redis 중단 중 기존 폐기 토큰 401, 신규 로그아웃 DB 기록, Redis 복구 뒤 캐시 사용을
-   Compose에서 rehearsal한다.
-6. 원본/재분석 직접 비교 UX를 보완한다.
+5. 원본/재분석 직접 비교 UX를 보완한다.

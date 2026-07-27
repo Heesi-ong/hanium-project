@@ -1,6 +1,7 @@
 package com.hanium.presentation.global.config;
 
 import com.hanium.presentation.application.auth.RevokedAccessTokenWriter;
+import com.hanium.presentation.domain.auth.entity.RevokedAccessToken;
 import com.hanium.presentation.domain.auth.repository.RevokedAccessTokenRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,7 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -89,27 +91,43 @@ class JwtBlacklistTest {
         boolean blacklisted = jwtBlacklist.isBlacklisted("access-token");
 
         assertThat(blacklisted).isTrue();
-        verify(repository, never()).existsByTokenHashAndExpiresAtAfter(anyString(), any());
+        verify(repository, never()).findByTokenHashAndExpiresAtAfter(anyString(), any());
         assertThat(counter("redis_hit")).isEqualTo(1.0);
     }
 
     @Test
-    void isBlacklistedChecksDatabaseWhenRedisDoesNotContainToken() {
+    void isBlacklistedRestoresRedisCacheWhenDatabaseContainsToken() {
         when(redisTemplate.hasKey(anyString())).thenReturn(false);
-        when(repository.existsByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
-                .thenReturn(true);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(repository.findByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
+                .thenReturn(Optional.of(revokedToken()));
+
+        boolean blacklisted = jwtBlacklist.isBlacklisted("access-token");
+
+        assertThat(blacklisted).isTrue();
+        verify(valueOperations).set(anyString(), eq("true"), any(Duration.class));
+        assertThat(counter("database_hit")).isEqualTo(1.0);
+    }
+
+    @Test
+    void isBlacklistedStillReturnsTrueWhenRedisCacheRestoreFails() {
+        when(redisTemplate.hasKey(anyString())).thenReturn(false);
+        when(repository.findByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
+                .thenReturn(Optional.of(revokedToken()));
+        when(redisTemplate.opsForValue()).thenThrow(new IllegalStateException("redis down"));
 
         boolean blacklisted = jwtBlacklist.isBlacklisted("access-token");
 
         assertThat(blacklisted).isTrue();
         assertThat(counter("database_hit")).isEqualTo(1.0);
+        assertThat(counter("redis_write_failure")).isEqualTo(1.0);
     }
 
     @Test
     void isBlacklistedReturnsFalseOnlyWhenRedisAndDatabaseBothConfirmNotRevoked() {
         when(redisTemplate.hasKey(anyString())).thenReturn(false);
-        when(repository.existsByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
-                .thenReturn(false);
+        when(repository.findByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
+                .thenReturn(Optional.empty());
 
         boolean blacklisted = jwtBlacklist.isBlacklisted("access-token");
 
@@ -119,8 +137,8 @@ class JwtBlacklistTest {
     @Test
     void isBlacklistedFallsBackToDatabaseWhenRedisReadFails() {
         when(redisTemplate.hasKey(anyString())).thenThrow(new IllegalStateException("redis down"));
-        when(repository.existsByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
-                .thenReturn(true);
+        when(repository.findByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
+                .thenReturn(Optional.of(revokedToken()));
 
         boolean blacklisted = jwtBlacklist.isBlacklisted("access-token");
 
@@ -132,7 +150,7 @@ class JwtBlacklistTest {
     @Test
     void isBlacklistedFailsClosedWhenDatabaseFallbackAlsoFails() {
         when(redisTemplate.hasKey(anyString())).thenThrow(new IllegalStateException("redis down"));
-        when(repository.existsByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
+        when(repository.findByTokenHashAndExpiresAtAfter(anyString(), any(Instant.class)))
                 .thenThrow(new DataAccessResourceFailureException("db down"));
 
         assertThatThrownBy(() -> jwtBlacklist.isBlacklisted("access-token"))
@@ -150,6 +168,13 @@ class JwtBlacklistTest {
         assertThat(jwtBlacklist.isBlacklisted(" ")).isFalse();
         verify(writer, never()).store(anyString(), any(Instant.class));
         verify(redisTemplate, never()).hasKey(anyString());
+    }
+
+    private RevokedAccessToken revokedToken() {
+        return RevokedAccessToken.create(
+                "a".repeat(64),
+                Instant.now().plus(Duration.ofMinutes(30))
+        );
     }
 
     private double counter(String result) {

@@ -38,7 +38,16 @@ import static org.mockito.Mockito.when;
         "password-reset.outbox.base-backoff-seconds=1",
         "password-reset.outbox.max-backoff-seconds=10",
         "password-reset.outbox.claim-lease-seconds=10",
-        "scheduler.lock.password-reset-email-worker-ttl-seconds=4"
+        "scheduler.lock.password-reset-email-worker-ttl-seconds=4",
+        // 이 테스트는 worker.processPendingEmails()를 직접 호출해 결정론적으로 검증한다.
+        // 기본값(5초)을 그대로 두면 @SpringBootTest가 띄운 실제 @Scheduled 백그라운드
+        // 폴링이 테스트 도중에도 같은 메서드를 호출해, 테스트가 attemptCount를 세팅하고
+        // (makeDue) 직접 호출하는 사이에 끼어들어 작업을 먼저 처리/재예약해버릴 수 있다
+        // (실제로 movesToDeadLetterAfterRetryBudgetIsExhausted()가 전체 스위트 실행 중에만
+        // 간헐적으로 DEAD_LETTER 대신 PENDING으로 남는 형태로 관찰됨, 2026-07-27). 컨텍스트
+        // 기동 직후 최초 1회 실행은 해도 무해하므로(테이블이 비어 있음), 다음 실행만
+        // 사실상 일어나지 않도록 매우 크게 늦춘다.
+        "password-reset.outbox.poll-interval-ms=3600000"
 })
 class PasswordResetEmailOutboxWorkerTest {
 

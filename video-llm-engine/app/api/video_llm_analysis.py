@@ -137,6 +137,40 @@ def resolve_video_max_size_bytes() -> int:
 
 def resolve_nvidia_timeout_seconds() -> float:
     return get_settings().nvidia_timeout_seconds
+
+
+def resolve_video_llm_total_timeout_seconds() -> float:
+    return get_settings().total_timeout_seconds
+
+
+def remaining_deadline_timeout_seconds(
+    deadline_monotonic: float | None,
+    configured_timeout_seconds: float,
+    operation: str,
+) -> float:
+    if deadline_monotonic is None:
+        return configured_timeout_seconds
+
+    remaining_seconds = deadline_monotonic - time.monotonic()
+    if remaining_seconds <= 0:
+        raise TimeoutError(
+            "Video LLM 전체 요청 deadline을 초과했습니다. "
+            f"operation={operation}"
+        )
+    return min(configured_timeout_seconds, remaining_seconds)
+
+
+def ensure_within_deadline(
+    deadline_monotonic: float | None,
+    operation: str,
+) -> None:
+    remaining_deadline_timeout_seconds(
+        deadline_monotonic,
+        float("inf"),
+        operation,
+    )
+
+
 def resolve_allowed_video_base_dir() -> Path:
     return get_settings().allowed_video_base_dir
 
@@ -167,6 +201,7 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
     asset_base_url = settings.nvidia_asset_api_base_url
     timeout_seconds = settings.nvidia_timeout_seconds
     chunk_duration_seconds = settings.chunk_duration_seconds
+    deadline_monotonic = time.monotonic() + resolve_video_llm_total_timeout_seconds()
 
     validate_duration_sec(request.durationSec)
 
@@ -179,9 +214,10 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
             asset_base_url,
             timeout_seconds,
             chunk_duration_seconds,
+            deadline_monotonic,
         )
 
-    with resolve_video_file(request) as (video_path, content_type):
+    with resolve_video_file(request, deadline_monotonic) as (video_path, content_type):
         model_json = call_nvidia_chat_completion(
             api_key=api_key,
             model=model,
@@ -194,6 +230,7 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
             duration_hint_sec=request.durationSec,
             sample_fps=request.sampleFps,
             max_frames=request.maxFrames,
+            deadline_monotonic=deadline_monotonic,
         )
 
     return normalize_video_llm_response(request.jobId, model, model_json, request.durationSec)
@@ -207,6 +244,7 @@ def call_real_video_llm_model_in_chunks(
     asset_base_url: str,
     timeout_seconds: float,
     chunk_duration_seconds: float,
+    deadline_monotonic: float | None = None,
 ) -> Dict[str, Any]:
     """긴 영상을 chunk_duration_seconds 단위로 실제로 잘라(ffmpeg) NVIDIA를 구간마다
     호출하고 결과를 하나로 합칩니다. 세그먼트 하나라도 생성 또는 분석에 실패하면 전체
@@ -216,9 +254,12 @@ def call_real_video_llm_model_in_chunks(
     """
     total_segment_count = math.ceil(request.durationSec / chunk_duration_seconds)
 
-    with resolve_video_file(request) as (video_path, content_type):
+    with resolve_video_file(request, deadline_monotonic) as (video_path, content_type):
         with split_video_into_segments(
-            video_path, chunk_duration_seconds, request.durationSec
+            video_path,
+            chunk_duration_seconds,
+            request.durationSec,
+            deadline_monotonic,
         ) as segment_paths:
             merged_observations: Dict[str, list] = {
                 category: [] for category in OBSERVATION_CATEGORIES
@@ -251,6 +292,7 @@ def call_real_video_llm_model_in_chunks(
                     duration_hint_sec=segment_local_duration,
                     sample_fps=request.sampleFps,
                     max_frames=request.maxFrames,
+                    deadline_monotonic=deadline_monotonic,
                 )
                 segment_normalized = normalize_video_llm_response(
                     request.jobId, model, segment_model_json, segment_local_duration
@@ -289,6 +331,7 @@ def split_video_into_segments(
     video_path: Path,
     chunk_duration_seconds: float,
     total_duration_sec: float,
+    deadline_monotonic: float | None = None,
 ) -> Iterator[list[tuple[int, Path]]]:
     """ffmpeg -c copy로 원본을 재인코딩 없이 chunk_duration_seconds 단위로 잘라, 생성된
     세그먼트의 (원래 청크 인덱스, 파일 경로) 목록을 만듭니다. 임시 디렉터리는 이 컨텍스트를
@@ -308,6 +351,11 @@ def split_video_into_segments(
         for index in range(segment_count):
             start_sec = index * chunk_duration_seconds
             output_path = output_dir / f"segment-{index}{suffix}"
+            effective_split_timeout_seconds = remaining_deadline_timeout_seconds(
+                deadline_monotonic,
+                split_timeout_seconds,
+                f"segment_split_{index}",
+            )
 
             subprocess.run(
                 [
@@ -322,7 +370,11 @@ def split_video_into_segments(
                 ],
                 check=True,
                 capture_output=True,
-                timeout=split_timeout_seconds,
+                timeout=effective_split_timeout_seconds,
+            )
+            ensure_within_deadline(
+                deadline_monotonic,
+                f"segment_split_{index}",
             )
 
             if output_path.exists() and output_path.stat().st_size > 0:
@@ -353,6 +405,7 @@ def call_nvidia_chat_completion(
     duration_hint_sec: float | None,
     sample_fps: int,
     max_frames: int,
+    deadline_monotonic: float | None = None,
 ) -> Dict[str, Any]:
     """세마포어로 보호된 단일 NVIDIA chat/completions 호출입니다. video_path가 가리키는
     파일(전체 영상 또는 분할된 세그먼트) 하나를 보내고, 정규화 이전의 원본 model_json을
@@ -364,7 +417,11 @@ def call_nvidia_chat_completion(
     # 작업(과 한 작업 안의 여러 세그먼트)이 동시에 부딪히지 않도록, 실제 모델 호출 자체를
     # 세마포어로 감쌉니다. 순번을 제한 시간 안에 확보하지 못하면 예외를 던져, 호출부의
     # 기존 FALLBACK 폴백 경로를 그대로 타게 합니다.
-    semaphore_timeout_seconds = resolve_real_model_semaphore_timeout_seconds()
+    semaphore_timeout_seconds = remaining_deadline_timeout_seconds(
+        deadline_monotonic,
+        resolve_real_model_semaphore_timeout_seconds(),
+        "real_model_semaphore",
+    )
     acquired = _REAL_MODEL_SEMAPHORE.acquire(timeout=semaphore_timeout_seconds)
     if not acquired:
         raise RuntimeError(
@@ -378,7 +435,12 @@ def call_nvidia_chat_completion(
         asset_id = None
 
         try:
-            with httpx.Client(timeout=timeout_seconds) as client:
+            effective_request_timeout_seconds = remaining_deadline_timeout_seconds(
+                deadline_monotonic,
+                timeout_seconds,
+                "nvidia_request",
+            )
+            with httpx.Client(timeout=effective_request_timeout_seconds) as client:
                 video_input = build_nvidia_video_input_from_local_file(
                     client=client,
                     api_key=api_key,
@@ -386,8 +448,11 @@ def call_nvidia_chat_completion(
                     video_path=video_path,
                     content_type=content_type,
                     description=f"video-llm-analysis jobId={job_id}",
+                    timeout_seconds=timeout_seconds,
+                    deadline_monotonic=deadline_monotonic,
                 )
                 asset_id = video_input.get("asset_id")
+                ensure_within_deadline(deadline_monotonic, "nvidia_asset_upload")
                 payload = build_nvidia_chat_completion_payload(
                     duration_hint_sec, sample_fps, max_frames, model, video_input
                 )
@@ -402,6 +467,11 @@ def call_nvidia_chat_completion(
                     url,
                     headers=headers,
                     json=payload,
+                    timeout=remaining_deadline_timeout_seconds(
+                        deadline_monotonic,
+                        timeout_seconds,
+                        "nvidia_chat_completion",
+                    ),
                 )
                 response_status = str(response.status_code)
                 if response.status_code == 202:
@@ -410,17 +480,33 @@ def call_nvidia_chat_completion(
                         base_url=base_url,
                         api_key=api_key,
                         initial_response=response,
+                        timeout_seconds=timeout_seconds,
+                        deadline_monotonic=deadline_monotonic,
                     )
                     response_status = f"202->{response.status_code}"
                 else:
                     response.raise_for_status()
+                ensure_within_deadline(deadline_monotonic, "nvidia_response")
         finally:
             if asset_id:
-                with httpx.Client(timeout=timeout_seconds) as cleanup_client:
-                    delete_nvidia_asset(
-                        cleanup_client,
-                        api_key,
-                        asset_base_url,
+                try:
+                    cleanup_timeout_seconds = remaining_deadline_timeout_seconds(
+                        deadline_monotonic,
+                        timeout_seconds,
+                        "nvidia_asset_cleanup",
+                    )
+                    with httpx.Client(timeout=cleanup_timeout_seconds) as cleanup_client:
+                        delete_nvidia_asset(
+                            cleanup_client,
+                            api_key,
+                            asset_base_url,
+                            asset_id,
+                            cleanup_timeout_seconds,
+                            deadline_monotonic,
+                        )
+                except TimeoutError:
+                    logger.warning(
+                        "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_SKIPPED_DEADLINE assetId=%s",
                         asset_id,
                     )
             elapsed_ms = int((time.monotonic() - started_at) * 1000)
@@ -534,6 +620,8 @@ def build_nvidia_video_input_from_local_file(
     video_path: Path,
     content_type: str,
     description: str,
+    timeout_seconds: float = 120,
+    deadline_monotonic: float | None = None,
 ) -> Dict[str, str | None]:
     video_size = video_path.stat().st_size
     max_size = resolve_video_max_size_bytes()
@@ -557,11 +645,34 @@ def build_nvidia_video_input_from_local_file(
         asset_base_url,
         content_type,
         description,
+        timeout_seconds,
+        deadline_monotonic,
     )
     try:
-        upload_video_to_asset(client, upload_url, video_path, content_type, description)
+        upload_video_to_asset(
+            client,
+            upload_url,
+            video_path,
+            content_type,
+            description,
+            timeout_seconds,
+            deadline_monotonic,
+        )
     except Exception:
-        delete_nvidia_asset(client, api_key, asset_base_url, asset_id)
+        try:
+            delete_nvidia_asset(
+                client,
+                api_key,
+                asset_base_url,
+                asset_id,
+                timeout_seconds,
+                deadline_monotonic,
+            )
+        except TimeoutError:
+            logger.warning(
+                "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_SKIPPED_DEADLINE assetId=%s",
+                asset_id,
+            )
         raise
 
     return {
@@ -615,7 +726,10 @@ VIDEO_DOWNLOAD_TIMEOUT_SECONDS = 60.0
 
 
 @contextmanager
-def resolve_video_file(request: VideoLlmAnalysisRequest) -> Iterator[tuple[Path, str]]:
+def resolve_video_file(
+    request: VideoLlmAnalysisRequest,
+    deadline_monotonic: float | None = None,
+) -> Iterator[tuple[Path, str]]:
     """MinIO 영상은 임시 파일로 스트리밍하고 사용 직후 삭제합니다.
 
     URL 다운로드가 실패하면 공유 스토리지의 기존 로컬 경로를 사용합니다.
@@ -626,9 +740,11 @@ def resolve_video_file(request: VideoLlmAnalysisRequest) -> Iterator[tuple[Path,
             request.jobId,
             request.videoDownloadUrl,
             request.videoPath,
+            deadline_monotonic,
         )
 
     if downloaded is None:
+        ensure_within_deadline(deadline_monotonic, "video_file_resolution")
         local_path = Path(request.videoPath)
         validate_local_video_path(local_path)
         content_type = mimetypes.guess_type(local_path.name)[0] or "video/mp4"
@@ -680,6 +796,7 @@ def download_video_to_temp_file(
     job_id: str,
     video_download_url: str,
     original_video_path: str,
+    deadline_monotonic: float | None = None,
 ) -> tuple[Path, str] | None:
     suffix = Path(original_video_path).suffix or ".mp4"
     temp_path: Path | None = None
@@ -698,8 +815,13 @@ def download_video_to_temp_file(
             # follow_redirects=False(명시): 리다이렉트를 자동으로 따라가면 허용 목록
             # 검증을 우회해 다른 호스트로 요청이 새어나갈 수 있으므로, 라이브러리 기본값에
             # 기대는 대신 명시적으로 끄고 리다이렉트 응답 자체를 아래에서 거부한다.
+            effective_download_timeout_seconds = remaining_deadline_timeout_seconds(
+                deadline_monotonic,
+                VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
+                "video_download",
+            )
             with httpx.Client(
-                timeout=VIDEO_DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=False
+                timeout=effective_download_timeout_seconds, follow_redirects=False
             ) as client:
                 with client.stream("GET", video_download_url) as response:
                     if 300 <= response.status_code < 400:
@@ -718,6 +840,7 @@ def download_video_to_temp_file(
 
                     downloaded_size = 0
                     for chunk in response.iter_bytes(chunk_size=VIDEO_STREAM_CHUNK_SIZE_BYTES):
+                        ensure_within_deadline(deadline_monotonic, "video_download")
                         if not chunk:
                             continue
                         downloaded_size += len(chunk)
@@ -754,6 +877,8 @@ def create_nvidia_asset(
     asset_base_url: str,
     content_type: str,
     description: str,
+    timeout_seconds: float = 120,
+    deadline_monotonic: float | None = None,
 ) -> tuple[str, str]:
     response = client.post(
         f"{asset_base_url}/assets",
@@ -765,6 +890,11 @@ def create_nvidia_asset(
             "contentType": content_type,
             "description": description,
         },
+        timeout=remaining_deadline_timeout_seconds(
+            deadline_monotonic,
+            timeout_seconds,
+            "nvidia_asset_create",
+        ),
     )
     response.raise_for_status()
     response_json = response.json()
@@ -785,6 +915,8 @@ def upload_video_to_asset(
     video_path: Path,
     content_type: str,
     description: str,
+    timeout_seconds: float = 120,
+    deadline_monotonic: float | None = None,
 ) -> None:
     video_size = video_path.stat().st_size
     response = client.put(
@@ -795,6 +927,11 @@ def upload_video_to_asset(
             "x-amz-meta-nvcf-asset-description": description,
         },
         content=iter_file_chunks(video_path),
+        timeout=remaining_deadline_timeout_seconds(
+            deadline_monotonic,
+            timeout_seconds,
+            "nvidia_asset_upload",
+        ),
     )
     response.raise_for_status()
 
@@ -810,6 +947,8 @@ def delete_nvidia_asset(
     api_key: str,
     asset_base_url: str,
     asset_id: str,
+    timeout_seconds: float = 120,
+    deadline_monotonic: float | None = None,
 ) -> None:
     try:
         response = client.delete(
@@ -817,8 +956,15 @@ def delete_nvidia_asset(
             headers={
                 "Authorization": f"Bearer {api_key}",
             },
+            timeout=remaining_deadline_timeout_seconds(
+                deadline_monotonic,
+                timeout_seconds,
+                "nvidia_asset_cleanup",
+            ),
         )
         response.raise_for_status()
+    except TimeoutError:
+        raise
     except Exception:
         logger.warning(
             "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_FAILED assetId=%s",
@@ -832,18 +978,31 @@ def poll_nvidia_chat_completion_result(
     base_url: str,
     api_key: str,
     initial_response: httpx.Response,
+    timeout_seconds: float = 120,
+    deadline_monotonic: float | None = None,
 ) -> httpx.Response:
     request_id = extract_nvidia_request_id(initial_response)
     poll_url = f"{base_url}/status/{request_id}"
 
     for _ in range(NVIDIA_STATUS_POLL_MAX_ATTEMPTS):
-        time.sleep(NVIDIA_STATUS_POLL_INTERVAL_SECONDS)
+        poll_sleep_seconds = remaining_deadline_timeout_seconds(
+            deadline_monotonic,
+            NVIDIA_STATUS_POLL_INTERVAL_SECONDS,
+            "nvidia_status_poll",
+        )
+        time.sleep(poll_sleep_seconds)
+        ensure_within_deadline(deadline_monotonic, "nvidia_status_poll")
         poll_response = client.get(
             poll_url,
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Accept": "application/json",
             },
+            timeout=remaining_deadline_timeout_seconds(
+                deadline_monotonic,
+                timeout_seconds,
+                "nvidia_status_poll_request",
+            ),
         )
         if poll_response.status_code == 200:
             return poll_response

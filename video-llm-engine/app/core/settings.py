@@ -155,6 +155,7 @@ class VideoLlmSettings:
     nvidia_api_base_url: str
     nvidia_asset_api_base_url: str
     nvidia_timeout_seconds: float
+    total_timeout_seconds: float
     max_video_size_mb: int
     allowed_video_base_dir: Path
     allowed_download_hosts: frozenset[str]
@@ -241,6 +242,9 @@ class VideoLlmSettings:
             ),
             nvidia_timeout_seconds=_positive_float(
                 env, "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", 120
+            ),
+            total_timeout_seconds=_positive_float(
+                env, "VIDEO_LLM_TOTAL_TIMEOUT_SECONDS", 540
             ),
             max_video_size_mb=_positive_int(
                 env, "VIDEO_LLM_MAX_VIDEO_SIZE_MB", 500

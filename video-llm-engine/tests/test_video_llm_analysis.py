@@ -107,7 +107,7 @@ class FakeNvidiaClient:
     def __exit__(self, exc_type, exc_value, traceback):
         return False
 
-    def post(self, url, headers, json):
+    def post(self, url, headers, json, timeout=None):
         self.requests.append({
             "method": "POST",
             "url": url,
@@ -142,7 +142,7 @@ class FakeNvidiaClient:
             request=httpx.Request("POST", url),
         )
 
-    def put(self, url, headers, content):
+    def put(self, url, headers, content, timeout=None):
         uploaded_content = (
             bytes(content)
             if isinstance(content, (bytes, bytearray))
@@ -159,7 +159,7 @@ class FakeNvidiaClient:
             request=httpx.Request("PUT", url),
         )
 
-    def get(self, url, headers):
+    def get(self, url, headers, timeout=None):
         self.requests.append({
             "method": "GET",
             "url": url,
@@ -174,7 +174,7 @@ class FakeNvidiaClient:
             request=httpx.Request("GET", url),
         )
 
-    def delete(self, url, headers):
+    def delete(self, url, headers, timeout=None):
         self.requests.append({
             "method": "DELETE",
             "url": url,
@@ -1635,6 +1635,54 @@ def test_call_real_video_llm_model_splits_long_video_and_merges_segment_results(
     assert response["globalSummary"]["visualDelivery"].count("전반적으로 안정적인 발표 태도입니다.") == 2
 
 
+def test_call_real_video_llm_model_stops_chunk_processing_at_total_deadline(
+    monkeypatch,
+    tmp_path,
+):
+    video_path = create_real_video_file(tmp_path, duration_seconds=5)
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("VIDEO_LLM_CHUNK_DURATION_SECONDS", "2.5")
+    monkeypatch.setenv("VIDEO_LLM_TOTAL_TIMEOUT_SECONDS", "1")
+
+    monotonic_clock = {"seconds": 0.0}
+    monkeypatch.setattr(
+        video_llm_analysis.time,
+        "monotonic",
+        lambda: monotonic_clock["seconds"],
+    )
+
+    original_post = FakeNvidiaClient.post
+    provider_call_count = {"value": 0}
+
+    def post_that_exhausts_deadline(self, url, headers, json, timeout=None):
+        response = original_post(self, url, headers, json, timeout=timeout)
+        if url.endswith("/chat/completions"):
+            provider_call_count["value"] += 1
+            monotonic_clock["seconds"] = 2.0
+        return response
+
+    monkeypatch.setattr(FakeNvidiaClient, "post", post_that_exhausts_deadline)
+
+    with pytest.raises(
+        TimeoutError,
+        match="operation=nvidia_response",
+    ):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="total-deadline-job",
+                videoPath=video_path,
+                durationSec=5.0,
+                sampleFps=1,
+                maxFrames=90,
+            )
+        )
+
+    # 첫 세그먼트 응답이 전체 deadline을 넘긴 즉시 중단되어, 두 번째 공급자 호출과
+    # 추가 비용이 발생하지 않아야 합니다.
+    assert provider_call_count["value"] == 1
+
+
 def test_call_real_video_llm_model_in_chunks_rejects_partial_real_result_when_one_segment_fails(
     monkeypatch, tmp_path
 ):
@@ -1646,7 +1694,7 @@ def test_call_real_video_llm_model_in_chunks_rejects_partial_real_result_when_on
     call_count = {"n": 0}
     original_post = FakeNvidiaClient.post
 
-    def flaky_post(self, url, headers, json):
+    def flaky_post(self, url, headers, json, timeout=None):
         if url.endswith("/chat/completions"):
             call_count["n"] += 1
             if call_count["n"] == 1:
@@ -1654,7 +1702,7 @@ def test_call_real_video_llm_model_in_chunks_rejects_partial_real_result_when_on
                     "simulated segment network failure",
                     request=httpx.Request("POST", url),
                 )
-        return original_post(self, url, headers, json)
+        return original_post(self, url, headers, json, timeout=timeout)
 
     monkeypatch.setattr(FakeNvidiaClient, "post", flaky_post)
 

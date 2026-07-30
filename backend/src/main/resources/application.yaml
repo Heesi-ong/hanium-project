@@ -126,7 +126,10 @@ resilience4j:
         sliding-window-size: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE:10}
         minimum-number-of-calls: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_MINIMUM_NUMBER_OF_CALLS:5}
         failure-rate-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_FAILURE_RATE_THRESHOLD:50}
-        slow-call-duration-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_DURATION_THRESHOLD:110s}
+        # Video LLM은 100초 초과 영상을 여러 세그먼트로 잘라 순차 호출하므로 단일 NVIDIA
+        # 호출 timeout(120초)을 기준으로 잡으면 정상 장기 요청도 slow call로 오인한다.
+        # 공통 HTTP read timeout(10분) 직전인 9분부터 실제 지연 장애로 집계한다.
+        slow-call-duration-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_DURATION_THRESHOLD:9m}
         slow-call-rate-threshold: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_SLOW_CALL_RATE_THRESHOLD:100}
         wait-duration-in-open-state: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_WAIT_DURATION_IN_OPEN_STATE:30s}
         permitted-number-of-calls-in-half-open-state: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_HALF_OPEN_PERMITTED_CALLS:3}

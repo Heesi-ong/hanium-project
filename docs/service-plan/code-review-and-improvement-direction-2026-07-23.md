@@ -613,3 +613,31 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 3. 테스트 SMTP에서 정상 발송과 연결 실패 → backoff → DEAD_LETTER → 관리자 재큐잉 흐름을 rehearsal한다.
 4. 잘못된 Python 설정을 의도적으로 주입해 두 엔진이 readiness 전에 종료되는지 Compose에서 확인한다.
 5. 원본/재분석 직접 비교 UX를 보완한다.
+
+## 9. 2026-07-31 추가 리뷰: 구간 분할과 회로 차단기 시간 기준 불일치
+
+### 확인한 문제
+
+Video LLM 엔진은 100초를 초과하는 영상을 여러 세그먼트로 잘라 NVIDIA API를 순차
+호출한다. 그러나 backend의 `video-llm-engine` 회로 차단기는 단일 NVIDIA 호출
+timeout(120초)에 가까운 110초부터 전체 엔진 요청을 slow call로 집계하고 있었다.
+따라서 긴 영상이 정상적으로 세그먼트를 처리해 110초를 넘으면 성공 응답도 slow call로
+누적되고, 5건 이후 회로가 열려 후속 작업이 실제 호출 없이 실패할 수 있었다.
+
+### 개선 방향과 반영 내용
+
+- 전체 엔진 HTTP read timeout(10분)과 같은 요청 경계를 기준으로 삼아 slow-call
+  임계치를 9분으로 조정했다.
+- `application.yaml`, 두 backend Compose 실행 단위와 `.env.example` 기본값을 모두
+  `9m`으로 맞췄다.
+- `VideoLlmEngineClientCircuitBreakerTest`가 실제 등록된 9분 임계치를 검증하도록
+  변경했다.
+
+### 남은 위험
+
+이 변경은 정상 장기 요청을 회로 차단기가 장애로 오인하는 문제를 막지만,
+video-llm-engine 내부에는 아직 여러 세그먼트 전체를 아우르는 단일 deadline이 없다.
+각 세그먼트의 ffmpeg 분할 timeout과 NVIDIA 호출 timeout이 개별 적용되므로 최악의
+경우 backend의 10분 read timeout을 넘긴 뒤에도 엔진 스레드가 작업을 계속할 수 있다.
+후속 단계에서는 `VIDEO_LLM_TOTAL_TIMEOUT_SECONDS` 같은 전체 deadline을 두고 분할,
+세마포어 대기, asset 처리, API 호출·폴링이 남은 시간을 공유하도록 해야 한다.

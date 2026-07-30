@@ -63,7 +63,7 @@ class VideoLlmEngineClientCircuitBreakerTest {
     void slowCallThresholdAllowsExpectedLongRunningAnalysis() {
         var config = circuitBreakerRegistry.circuitBreaker("video-llm-engine").getCircuitBreakerConfig();
 
-        assertThat(config.getSlowCallDurationThreshold()).isEqualTo(Duration.ofSeconds(110));
+        assertThat(config.getSlowCallDurationThreshold()).isEqualTo(Duration.ofMinutes(9));
         assertThat(config.getSlowCallRateThreshold()).isEqualTo(100.0f);
     }
 }

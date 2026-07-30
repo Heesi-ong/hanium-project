@@ -641,3 +641,24 @@ video-llm-engine 내부에는 아직 여러 세그먼트 전체를 아우르는 
 경우 backend의 10분 read timeout을 넘긴 뒤에도 엔진 스레드가 작업을 계속할 수 있다.
 후속 단계에서는 `VIDEO_LLM_TOTAL_TIMEOUT_SECONDS` 같은 전체 deadline을 두고 분할,
 세마포어 대기, asset 처리, API 호출·폴링이 남은 시간을 공유하도록 해야 한다.
+
+## 10. 2026-07-31 후속 보완: Video LLM 전체 요청 deadline
+
+위 9절의 남은 위험을 같은 리뷰 회차에서 후속 보완했다.
+
+- `VIDEO_LLM_TOTAL_TIMEOUT_SECONDS`를 추가하고 기본값을 540초로 두어 backend의
+  10분 HTTP read timeout보다 먼저 엔진 작업이 끝나도록 했다.
+- 요청 시작 시 한 번 계산한 monotonic deadline을 MinIO 다운로드, ffmpeg 세그먼트
+  분할, 실제 모델 세마포어 대기, NVIDIA Asset 처리, chat completion과 202 상태
+  폴링 전체에 전파했다.
+- 각 하위 작업은 독립 timeout과 남은 전체 시간 중 더 짧은 값만 사용한다. 공급자
+  응답이 도착했더라도 전체 deadline을 이미 넘겼다면 REAL 결과로 반환하지 않고
+  STRICT/`requireReal`은 502, DEGRADED 일반 요청은 전체 FALLBACK 정책을 따른다.
+- deadline 만료 뒤 Asset 삭제를 다시 장시간 기다리지는 않는다. 삭제를 건너뛴 경우
+  `NVIDIA_VIDEO_LLM_ASSET_CLEANUP_SKIPPED_DEADLINE` 경고 로그를 남긴다.
+- 2개 세그먼트 중 첫 공급자 응답에서 deadline이 만료되면 두 번째 호출을 하지 않는
+  회귀 테스트를 추가해 불필요한 비용 발생도 함께 차단했다.
+
+남은 실환경 gate는 8절의 NVIDIA timeout/5xx 장애 주입과 복구 후 REAL 성공,
+500MB 경계 Asset 경로 확인이다. 정적 테스트는 실제 공급자와 staging 네트워크의
+지연·정리 동작을 대체하지 않는다.

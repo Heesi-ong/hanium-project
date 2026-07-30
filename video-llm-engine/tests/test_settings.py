@@ -16,6 +16,7 @@ def test_settings_loads_and_normalizes_all_engine_environment_values(tmp_path):
             "NVIDIA_API_BASE_URL": "https://api.example.com/v1/",
             "NVIDIA_ASSET_API_BASE_URL": "https://assets.example.com/v2/",
             "NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS": "45.5",
+            "VIDEO_LLM_TOTAL_TIMEOUT_SECONDS": "300",
             "VIDEO_LLM_MAX_VIDEO_SIZE_MB": "600",
             "VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR": str(tmp_path),
             "VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS": "MinIO:9000, media:9443",
@@ -37,6 +38,7 @@ def test_settings_loads_and_normalizes_all_engine_environment_values(tmp_path):
     assert settings.nvidia_api_base_url == "https://api.example.com/v1"
     assert settings.nvidia_asset_api_base_url == "https://assets.example.com/v2"
     assert settings.nvidia_timeout_seconds == 45.5
+    assert settings.total_timeout_seconds == 300
     assert settings.max_video_size_bytes == 600 * 1024 * 1024
     assert settings.allowed_video_base_dir == tmp_path.resolve()
     assert settings.allowed_download_hosts == frozenset(
@@ -138,6 +140,7 @@ def test_settings_treats_blank_installed_backend_as_mock():
     "name,value",
     [
         ("NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS", "0"),
+        ("VIDEO_LLM_TOTAL_TIMEOUT_SECONDS", "-1"),
         ("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "-1"),
         ("VIDEO_LLM_REAL_MODEL_MAX_CONCURRENCY", "invalid"),
         ("VIDEO_LLM_REAL_MODEL_SEMAPHORE_TIMEOUT_SECONDS", "nan"),

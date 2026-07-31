@@ -68,6 +68,15 @@ function createVideoFile(name = "presentation.mp4", content = "video") {
     return new File([content], name, { type: "video/mp4" });
 }
 
+function createVideoFileWithSize(size, name = "presentation.mp4") {
+    const file = createVideoFile(name);
+    Object.defineProperty(file, "size", {
+        configurable: true,
+        value: size,
+    });
+    return file;
+}
+
 function dropFile(dropZone, file) {
     fireEvent.drop(dropZone, {
         dataTransfer: {
@@ -104,6 +113,30 @@ describe("UploadPage", () => {
         expect(previewVideo).toBeInTheDocument();
         expect(previewVideo.getAttribute("src")).toBe("blob:presentation.mp4");
         expect(createObjectURLMock).toHaveBeenCalledWith(file);
+    });
+
+    it("accepts an exact 500 MiB file at the documented upload boundary", async () => {
+        const file = createVideoFileWithSize(500 * 1024 * 1024, "boundary.mp4");
+        renderUploadPage();
+
+        dropFile(getDropZone(), file);
+
+        expect(await screen.findByText("boundary.mp4")).toBeInTheDocument();
+        expect(screen.getByText("500.00MB")).toBeInTheDocument();
+        expect(screen.queryByText(/파일 크기는 최대 500MB/)).not.toBeInTheDocument();
+    });
+
+    it("rejects a file one byte above the 500 MiB upload boundary", async () => {
+        const file = createVideoFileWithSize(500 * 1024 * 1024 + 1, "oversize.mp4");
+        const { container } = renderUploadPage();
+
+        dropFile(getDropZone(), file);
+
+        expect(
+            await screen.findByText("파일 크기는 최대 500MB까지 업로드할 수 있습니다.")
+        ).toBeInTheDocument();
+        expect(container.querySelector("video")).not.toBeInTheDocument();
+        expect(createObjectURLMock).not.toHaveBeenCalled();
     });
 
     it("shows the existing extension error and does not render preview for unsupported dropped files", async () => {

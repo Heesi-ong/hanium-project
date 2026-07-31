@@ -47,7 +47,7 @@ P2 보완도 현재 작업 트리에서 시작했다.
 |---|---|---|---|
 | P2-01 JWT 강제 무효화 | 코드·장애 복구 실측 완료 | SHA-256 DB 폐기 원장, Redis 양성·read-through 캐시, DB fallback, DB 판정 실패 시 503 fail-closed, 만료 행 정리, 메트릭·경보. 실제 MySQL V1→V24와 Redis 중단/복구를 확인 | 배포 환경별 장애 훈련과 경보 수신 확인 |
 | P2-03 Video LLM 실패 정책 | 핵심 정책 코드 완료 | STRICT/DEGRADED/DISABLED, STRICT 502→작업 실패, DEGRADED만 FALLBACK, readiness/UI 정책 노출, MOCK 제외 fallback 경보 | 실제 NVIDIA 장애 rehearsal |
-| P2-03 R1~R4 보존형 재분석 | 코드 완료, R5 주요 DB·스토리지 실측 완료 | V22 asset FK, V23 lineage/mode, V24 멱등·active unique guard, 공유 asset 참조 안전 삭제/retention 잠금, source 선삭제 차단, 202 접수·200 replay·403/409/410/429, 엔진/backend `requireReal` 이중 검증, 상세/목록 lineage 응답, FALLBACK 확인 dialog·child 이동/polling UI. MySQL 8.4 fresh V1→V24, MinIO-only 원본, 동시 10요청, child→source 삭제와 Outbox DEAD_LETTER 관리자 복구 실측 통과 | 실제 NVIDIA REAL·timeout/5xx, 500MB 경계, 원본/재분석 직접 비교 UX |
+| P2-03 R1~R4 보존형 재분석 | 코드 완료, R5 주요 DB·스토리지 실측 완료 | V22 asset FK, V23 lineage/mode, V24 멱등·active unique guard, 공유 asset 참조 안전 삭제/retention 잠금, source 선삭제 차단, 202 접수·200 replay·403/409/410/429, 엔진/backend `requireReal` 이중 검증, 상세/목록 lineage 응답, FALLBACK 확인 dialog·child 이동/polling UI. MySQL 8.4 fresh V1→V24, MinIO-only 원본, 동시 10요청, child→source 삭제와 Outbox DEAD_LETTER 관리자 복구 실측 통과. 500MiB 파일 경계와 multipart 1MiB 여유를 자동 검증 | 실제 NVIDIA REAL·timeout/5xx, nginx→backend→MinIO 500MiB 실전송 |
 
 추가 감사에서 발견한 두 회귀 가능성도 현재 작업 트리에서 보완했다.
 
@@ -609,7 +609,8 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 
 1. staging 정책을 STRICT 또는 DEGRADED로 확정하고 NVIDIA timeout/5xx 장애를 주입해
    child FAILED, REAL 복구 성공, 비용·quota 메트릭을 rehearsal한다.
-2. 500MB 경계 영상의 asset 공유 시 저장 중복이 없는지 확인한다.
+2. 500MiB 영상을 nginx→backend→MinIO로 실제 전송해 edge·네트워크·스토리지
+   조합에서도 경계가 유지되는지 확인한다.
 3. 실제 SMTP provider에서 TLS/인증 송신과 반송·장애 알림을 rehearsal한다.
 4. 잘못된 Python 설정을 의도적으로 주입해 두 엔진이 readiness 전에 종료되는지 Compose에서 확인한다.
 5. 원본/재분석 직접 비교 UX를 보완한다.
@@ -764,3 +765,51 @@ V1→V24 통과 근거와 모순되어 수정했다. 해당 migration 체인의 
 격리 MySQL 재실행도 시도했으나 Docker daemon이 30초 이상 응답하지 않아 중단하고
 Docker Desktop을 종료했다. 따라서 실제 MySQL의 worker 잠금·동시성과 운영 SMTP
 provider의 TLS/인증·반송 정책은 여전히 외부 운영 gate다.
+
+## 15. 2026-07-31 500MiB multipart 경계와 재분석 asset 공유 감사
+
+### 확인한 문제
+
+프론트와 두 Python 엔진은 정확히 500MiB인 파일을 허용하지만 Spring multipart의
+`max-file-size`와 `max-request-size`, nginx의 `client_max_body_size`가 모두 같은
+500MB였다. 파일 자체가 500MiB이면 multipart boundary와 헤더가 더해진 HTTP 요청은
+500MiB보다 커진다. 따라서 UI 검증을 통과한 경계 파일이 애플리케이션 검증 전에
+nginx 또는 Spring에서 거부될 수 있었다.
+
+### 개선 방향과 반영 내용
+
+- 실제 영상 파일 상한은 기존 정책대로 `500MB`로 유지했다.
+- HTTP 요청 상한만 `501MB`로 늘려 multipart envelope에 1MiB 여유를 부여했다.
+- nginx도 `501m`으로 맞춰 edge가 backend보다 먼저 정상 경계 파일을 차단하지 않게 했다.
+- `VIDEO_MAX_FILE_SIZE`, `VIDEO_MAX_REQUEST_SIZE`를 `.env.example`과 API/worker
+  Compose 실행 단위에 명시했다.
+- backend 기동 검증기가 두 값이 양수이고 request 상한이 file 상한보다 최소 1MiB
+  큰지 확인한다. 잘못된 배포 설정은 첫 업로드가 아니라 기동 단계에서 실패한다.
+- 프론트 회귀 테스트는 실제 500MiB 메모리를 할당하지 않고 `File.size` 경계만
+  모델링해 정확히 500MiB는 허용하고 1바이트 초과는 거부함을 확인한다.
+
+### 재분석 저장 중복 감사
+
+재분석은 새 영상을 저장하지 않는다. `AnalysisJob.createVideoLlmReanalysis()`가 원본
+작업의 동일한 `video_asset_id`를 child에 연결하고, 실행 단계의
+`AnalysisCommandService.findVideoAsset()`가 이 asset의 `storedFilePath`와 원래
+storage job id를 사용한다. Video LLM 접수 전 `sourceExists()`도 같은 두 값을
+검증한다.
+
+삭제와 retention도 job id 하나만 보고 물리 영상을 지우지 않는다. 같은 asset을
+참조하는 작업 수와 완료 시각을 잠근 상태로 확인하고, 다른 child가 남아 있으면 asset
+삭제를 보류한다. 기존 재분석 서비스, source 삭제 guard, retention 통합 테스트가 이
+참조 관계를 검증한다.
+
+### 검증 범위와 남은 위험
+
+- backend 전체 회귀 441 tests, 9 skipped, 0 failures/errors
+- Compose 렌더링에서 API/worker 모두 `500MB/501MB` 확인
+- 프론트 500MiB 및 500MiB+1 byte 경계 테스트를 포함한 전체 45 files,
+  220 tests 통과
+- 프론트 ESLint와 Vite production build 통과
+
+현재 Docker daemon이 비활성 상태이므로 실제 500MiB 영상을
+nginx→backend→MinIO→재분석까지 전송하지는 못했다. 이번 수정은 코드·설정 경계와
+저장 참조 구조의 정합성을 보장하지만, proxy buffering, 요청 시간, 네트워크 대역폭,
+MinIO 저장 및 이후 원본 정리는 staging 실전송으로 별도 확인해야 한다.

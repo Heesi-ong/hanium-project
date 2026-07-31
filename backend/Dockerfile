@@ -4,8 +4,16 @@ WORKDIR /app
 
 COPY gradlew ./
 COPY gradle ./gradle
-COPY build.gradle settings.gradle ./
 RUN chmod +x gradlew
+
+# Gradle 배포본은 wrapper 버전이 바뀔 때만 다시 받는다.
+RUN ./gradlew --version --no-daemon
+
+# Maven 의존성은 애플리케이션 소스보다 변경 빈도가 낮다. 소스를 복사하기
+# 전에 별도 레이어로 받아 두면 Java 파일 한 줄 변경만으로 전체 의존성을
+# 다시 내려받지 않는다.
+COPY build.gradle settings.gradle gradle.properties ./
+RUN ./gradlew dependencies --no-daemon
 
 COPY src ./src
 RUN ./gradlew clean bootJar --no-daemon -x test

@@ -148,10 +148,8 @@ class AnalysisCancelIntegrationTest {
 
         verify(openAiClient, never()).generateFeedback(any(OpenAiFeedbackRequest.class));
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> finalResult = jsonFileStorage.readJson(
-                filePathGenerator.generateFinalResultPath(CANCEL_JOB_ID),
-                Map.class
+        Map<String, Object> finalResult = jsonFileStorage.readObjectMap(
+                filePathGenerator.generateFinalResultPath(CANCEL_JOB_ID)
         );
         assertThat(finalResult.get("status")).isEqualTo("CANCELLED");
         assertThat(finalResult.get("failedStep")).isEqualTo("CANCELLED");

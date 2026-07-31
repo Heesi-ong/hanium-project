@@ -26,7 +26,6 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -71,7 +70,7 @@ class ResultQueryServiceTest {
                 .thenReturn(Path.of("results", firstJob.getJobId(), "final-result.json"));
         when(filePathGenerator.generateFinalResultPath(secondJob.getJobId()))
                 .thenReturn(Path.of("results", secondJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of());
 
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
@@ -103,7 +102,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(sharedAsset));
         when(filePathGenerator.generateFinalResultPath(reanalysisJob.getJobId()))
                 .thenReturn(Path.of("results", reanalysisJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of());
 
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
@@ -134,7 +133,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(healthyJob.getJobId(), "healthy.mp4")));
         when(filePathGenerator.generateFinalResultPath(any()))
                 .thenReturn(Path.of("results", "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of());
 
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
@@ -168,7 +167,7 @@ class ResultQueryServiceTest {
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
         // final_result.json이 없거나 읽기 실패한 상황을 흉내내, readFinalResultSafely가
         // 실제로 반환하는 빈 맵을 그대로 재현합니다.
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of());
 
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
@@ -193,7 +192,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(queuedJob.getJobId(), "queued.mp4")));
         when(filePathGenerator.generateFinalResultPath(queuedJob.getJobId()))
                 .thenReturn(Path.of("results", queuedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of());
 
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
@@ -214,7 +213,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "placeholder.mp4")));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "scoreSummary", Map.of(
                                 "totalScore", 0,
@@ -252,7 +251,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "video-llm.mp4")));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "scoreSummary", Map.of(
                                 "totalScore", 91,
@@ -314,7 +313,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "pipeline-only.mp4")));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "scoreSummary", Map.of(
                                 "totalScore", 77,
@@ -362,7 +361,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "openai-pipeline.mp4")));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "scoreSummary", Map.of(
                                 "totalScore", 88,
@@ -408,7 +407,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "missing-feedback.mp4")));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "scoreSummary", Map.of(
                                 "totalScore", 88,
@@ -451,7 +450,7 @@ class ResultQueryServiceTest {
                 .thenReturn(List.of(createUploadedVideo(completedJob.getJobId(), "strengths.mp4")));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "scoreSummary", Map.of("totalScore", 88, "level", "A"),
                         "feedback", Map.of(
@@ -483,7 +482,7 @@ class ResultQueryServiceTest {
                 .thenReturn(java.util.Optional.of(completedJob));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "status", "COMPLETED",
                         "scoreSummary", Map.of("level", "-"),
@@ -507,7 +506,7 @@ class ResultQueryServiceTest {
                 .thenReturn(java.util.Optional.of(completedJob));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenThrow(new com.hanium.presentation.global.exception.BusinessException(
                         com.hanium.presentation.global.exception.ErrorCode.FILE_NOT_FOUND
                 ));
@@ -530,7 +529,7 @@ class ResultQueryServiceTest {
                 .thenReturn(java.util.Optional.of(completedJob));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of());
 
         AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
@@ -550,7 +549,7 @@ class ResultQueryServiceTest {
                 .thenReturn(java.util.Optional.of(queuedJob));
         when(filePathGenerator.generateFinalResultPath(queuedJob.getJobId()))
                 .thenReturn(Path.of("results", queuedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenThrow(new com.hanium.presentation.global.exception.BusinessException(
                         com.hanium.presentation.global.exception.ErrorCode.FILE_NOT_FOUND
                 ));
@@ -585,7 +584,7 @@ class ResultQueryServiceTest {
         )).thenReturn(java.util.Optional.of(reanalysisJob));
         when(filePathGenerator.generateFinalResultPath(sourceJob.getJobId()))
                 .thenReturn(Path.of("results", sourceJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "status", "COMPLETED",
                         "scoreSummary", Map.of("level", "GOOD"),
@@ -611,7 +610,7 @@ class ResultQueryServiceTest {
                 .thenReturn(java.util.Optional.of(completedJob));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "status", "COMPLETED",
                         "scoreSummary", Map.of(
@@ -672,7 +671,7 @@ class ResultQueryServiceTest {
                 .thenReturn(java.util.Optional.of(completedJob));
         when(filePathGenerator.generateFinalResultPath(completedJob.getJobId()))
                 .thenReturn(Path.of("results", completedJob.getJobId(), "final-result.json"));
-        when(jsonFileStorage.readJson(any(Path.class), eq(Map.class)))
+        when(jsonFileStorage.readObjectMap(any(Path.class)))
                 .thenReturn(Map.of(
                         "status", "COMPLETED",
                         "scoreSummary", Map.of("level", "GOOD"),

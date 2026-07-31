@@ -1123,3 +1123,60 @@ AssertJ 3.27.7 공식 API 문서는 실행 람다를 먼저 받는 overload 대�
   안정성을 해치지 않는 범위에서 제거한다.
 - 이번 변경은 테스트 소스에만 있으므로 production application artifact와 실행
   설정은 바뀌지 않는다.
+
+## 23. 2026-07-31 Java 제네릭 역직렬화 경계 타입 안전성 개선
+
+### 확인한 문제
+
+`-Xlint:unchecked`를 적용해 운영 코드와 테스트 코드를 강제 재컴파일한 결과, 단순
+요약 메시지 뒤에 가려져 있던 경고 7건을 확인했다.
+
+- `JsonFileStorage.readJson(..., Map.class)` 결과를 `Map<String, Object>`로 받는
+  운영 코드 3건
+- `RestClient.body(Map.class)` 응답을 `Map<String, Object>`로 받는 engine
+  health/readiness 코드 2건
+- Mockito가 raw `RedisScript` matcher를 `RedisScript<Long>` 인자에 전달하는 테스트
+  코드 2건
+
+`Map.class`에는 제네릭 인자 정보가 없어 컴파일러가 실제 key/value 계약을 확인할 수
+없다. 경고만 억제하면 잘못된 타입이 들어왔을 때 문제가 사용 지점의
+`ClassCastException`으로 늦게 나타나고 역직렬화 경계와 원인을 연결하기 어려워진다.
+
+### 개선 방향과 반영 내용
+
+- `JsonFileStorage`에 Jackson
+  [`TypeReference<Map<String, Object>>`](https://www.javadoc.io/static/com.fasterxml.jackson.core/jackson-databind/2.19.1/com/fasterxml/jackson/databind/ObjectMapper.html)
+  기반 `readObjectMap(Path)`를 추가했다.
+- 기존 local 우선 읽기, object storage 우선 읽기와 local fallback 정책을 새 API에도
+  동일하게 적용했다.
+- 결과 상세·목록과 AI 코치의 JSON Map 읽기를 새 타입 안전 API로 전환했다.
+- engine health/readiness HTTP 응답은 Spring
+  [`ParameterizedTypeReference`](https://docs.spring.io/spring-framework/docs/6.2.8/javadoc-api/org/springframework/web/client/RestClient.ResponseSpec.html)
+  기반으로 역직렬화하도록 변경했다.
+- rate limiter 테스트의 matcher는 `RedisScript<Long>` 타입을 명시해 실제 Lua script
+  반환 계약과 일치시켰다.
+- 관련 unit/integration test의 JSON Map 읽기와 mock 계약도 `readObjectMap`으로
+  전환했으며, 이 과정에서 불필요해진 suppression 3개를 제거했다.
+- DTO처럼 reifiable class로 읽는 기존 `readJson(Path, Class<T>)` API는 그대로
+  유지했다.
+
+### 검증과 남은 위험
+
+- 임시 `-Xlint:unchecked` init script를 적용한
+  `compileTestJava --rerun-tasks --warning-mode all`: 성공, 운영·테스트 unchecked
+  경고 0건
+- 저장소·결과 조회·rate limiter·engine readiness 대상 테스트:
+  34 tests, 0 skipped, 0 failures/errors
+- `dependencyInsight`: 실제 runtime의 Jackson Databind 2.19.1과 Spring Web 6.2.8
+  확인
+- `./gradlew test --rerun-tasks --warning-mode all --no-daemon`:
+  444 tests, 9 skipped, 0 failures/errors
+- 전체 회귀 실행 시간은 7분 22초였고 Hikari context 번호는 33까지 생성됐다.
+- 새 `@SuppressWarnings("unchecked")`는 추가하지 않았다. 다만 기존 suppression이
+  운영 코드 7개 파일과 테스트 코드 7개 파일에 남아 있어 일반 Xlint 실행만으로는 그
+  내부의 타입 위험을 증명할 수 없다. 다음 단계에서는 suppression별로 입력 경계를
+  확인하고, `instanceof Map<?, ?>` 검증이나 타입 DTO로 바꿀 수 있는 위치부터 별도
+  단위로 제거한다.
+- JSON object의 내부 value는 계약상 `Object`이므로 이 변경이 payload schema 자체를
+  강제하지는 않는다. 장기적으로 안정된 final result/compact analysis 구조는
+  versioned DTO와 schema validation으로 승격해야 한다.

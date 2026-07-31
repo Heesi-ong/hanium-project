@@ -254,9 +254,8 @@ class AnalysisOpenAiReuseIntegrationTest {
             String expectedGenerationMode,
             String expectedOverall
     ) {
-        Map<String, Object> finalResult = jsonFileStorage.readJson(
-                filePathGenerator.generateFinalResultPath(jobId),
-                Map.class
+        Map<String, Object> finalResult = jsonFileStorage.readObjectMap(
+                filePathGenerator.generateFinalResultPath(jobId)
         );
         Map<String, Object> feedback = (Map<String, Object>) finalResult.get("feedback");
 

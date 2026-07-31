@@ -53,7 +53,7 @@ class JsonFileStorageTest {
 
         jsonFileStorage.saveJson(path, Map.of("score", 88));
 
-        Map<?, ?> loaded = jsonFileStorage.readJson(path, Map.class);
+        Map<String, Object> loaded = jsonFileStorage.readObjectMap(path);
         assertThat(loaded.get("score")).isEqualTo(88);
 
         verify(objectStorage).putObject(
@@ -75,7 +75,7 @@ class JsonFileStorageTest {
         assertThatCode(() -> jsonFileStorage.saveJson(path, Map.of("score", 70)))
                 .doesNotThrowAnyException();
 
-        Map<?, ?> loaded = jsonFileStorage.readJson(path, Map.class);
+        Map<String, Object> loaded = jsonFileStorage.readObjectMap(path);
         assertThat(loaded.get("score")).isEqualTo(70);
     }
 
@@ -104,7 +104,7 @@ class JsonFileStorageTest {
         when(objectStorage.getObject("results/job-object-first/final-result.json"))
                 .thenReturn(new ByteArrayInputStream("{\"score\":95}".getBytes(StandardCharsets.UTF_8)));
 
-        Map<?, ?> loaded = jsonFileStorage.readJson(path, Map.class);
+        Map<String, Object> loaded = jsonFileStorage.readObjectMap(path);
 
         assertThat(loaded.get("score")).isEqualTo(95);
     }
@@ -118,7 +118,7 @@ class JsonFileStorageTest {
         when(objectStorage.getObject("results/job-read-fallback/final-result.json"))
                 .thenThrow(new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "minio down"));
 
-        Map<?, ?> loaded = jsonFileStorage.readJson(path, Map.class);
+        Map<String, Object> loaded = jsonFileStorage.readObjectMap(path);
 
         assertThat(loaded.get("score")).isEqualTo(77);
     }
@@ -128,7 +128,7 @@ class JsonFileStorageTest {
         Path path = tempDir.resolve("results").resolve("job-3").resolve("final-result.json");
         jsonFileStorage.saveJson(path, Map.of("level", "우수"));
 
-        Map<?, ?> loaded = jsonFileStorage.readJson(path, Map.class);
+        Map<String, Object> loaded = jsonFileStorage.readObjectMap(path);
 
         assertThat(loaded.get("level")).isEqualTo("우수");
     }

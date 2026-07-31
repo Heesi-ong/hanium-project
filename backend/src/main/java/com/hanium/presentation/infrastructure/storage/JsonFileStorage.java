@@ -1,5 +1,6 @@
 package com.hanium.presentation.infrastructure.storage;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
@@ -13,11 +14,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 @Component
 public class JsonFileStorage {
 
     private static final Logger log = LoggerFactory.getLogger(JsonFileStorage.class);
+    private static final TypeReference<Map<String, Object>> OBJECT_MAP_TYPE = new TypeReference<>() {
+    };
 
     private final ObjectMapper objectMapper;
     private final ObjectStorage objectStorage;
@@ -58,6 +62,19 @@ public class JsonFileStorage {
         return readLocalJson(path, type);
     }
 
+    public Map<String, Object> readObjectMap(Path path) {
+        if (!objectStoragePolicy.readPreferred() && Files.exists(path)) {
+            return readLocalJson(path, OBJECT_MAP_TYPE);
+        }
+
+        Map<String, Object> objectStorageValue = readObjectStorageJson(path, OBJECT_MAP_TYPE);
+        if (objectStorageValue != null) {
+            return objectStorageValue;
+        }
+
+        return readLocalJson(path, OBJECT_MAP_TYPE);
+    }
+
     private <T> T readLocalJson(Path path, Class<T> type) {
         try {
             if (!Files.exists(path)) {
@@ -70,7 +87,35 @@ public class JsonFileStorage {
         }
     }
 
+    private <T> T readLocalJson(Path path, TypeReference<T> type) {
+        try {
+            if (!Files.exists(path)) {
+                throw new BusinessException(ErrorCode.FILE_NOT_FOUND, "JSON 파일을 찾을 수 없습니다.");
+            }
+
+            return objectMapper.readValue(path.toFile(), type);
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "JSON 파일 읽기에 실패했습니다.");
+        }
+    }
+
     private <T> T readObjectStorageJson(Path path, Class<T> type) {
+        String objectKey = buildObjectKey(path);
+
+        try (InputStream inputStream = objectStorage.getObject(objectKey)) {
+            return objectMapper.readValue(inputStream, type);
+        } catch (IOException | RuntimeException exception) {
+            log.warn(
+                    "OBJECT_STORAGE_READ_FAILED objectKey={} localFallback={} reason={}",
+                    objectKey,
+                    Files.exists(path),
+                    exception.toString()
+            );
+            return null;
+        }
+    }
+
+    private <T> T readObjectStorageJson(Path path, TypeReference<T> type) {
         String objectKey = buildObjectKey(path);
 
         try (InputStream inputStream = objectStorage.getObject(objectKey)) {

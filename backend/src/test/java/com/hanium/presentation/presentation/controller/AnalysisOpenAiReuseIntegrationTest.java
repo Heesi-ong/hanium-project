@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.application.analysis.AnalysisProgressService;
 import com.hanium.presentation.application.result.ResultCommandService;
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.user.entity.User;
@@ -248,7 +249,6 @@ class AnalysisOpenAiReuseIntegrationTest {
         ));
     }
 
-    @SuppressWarnings("unchecked")
     private void assertFinalFeedback(
             String jobId,
             String expectedGenerationMode,
@@ -257,7 +257,9 @@ class AnalysisOpenAiReuseIntegrationTest {
         Map<String, Object> finalResult = jsonFileStorage.readObjectMap(
                 filePathGenerator.generateFinalResultPath(jobId)
         );
-        Map<String, Object> feedback = (Map<String, Object>) finalResult.get("feedback");
+        Map<String, Object> feedback = JsonMapSupport.copyStringKeyedMap(
+                finalResult.get("feedback")
+        );
 
         assertThat(feedback.get("generationMode")).isEqualTo(expectedGenerationMode);
         assertThat(feedback.get("overall")).isEqualTo(expectedOverall);

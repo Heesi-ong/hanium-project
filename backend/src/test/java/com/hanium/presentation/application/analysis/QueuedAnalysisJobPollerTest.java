@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -38,16 +39,14 @@ class QueuedAnalysisJobPollerTest {
     private QueuedAnalysisJobPoller poller;
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
     void setUp() {
         analysisJobStatusService = mock(AnalysisJobStatusService.class);
         analysisCommandService = mock(AnalysisCommandService.class);
         analysisTaskExecutor = mock(ThreadPoolTaskExecutor.class);
-        threadPoolExecutor = mock(ThreadPoolExecutor.class);
-        queue = mock(BlockingQueue.class);
+        threadPoolExecutor = mock(ThreadPoolExecutor.class, RETURNS_DEEP_STUBS);
+        queue = threadPoolExecutor.getQueue();
 
         when(analysisTaskExecutor.getThreadPoolExecutor()).thenReturn(threadPoolExecutor);
-        when(threadPoolExecutor.getQueue()).thenReturn(queue);
 
         poller = new QueuedAnalysisJobPoller(
                 analysisJobStatusService,

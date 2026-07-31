@@ -4,6 +4,7 @@ import com.hanium.presentation.application.auth.RevokedAccessTokenWriter;
 import com.hanium.presentation.domain.auth.entity.RevokedAccessToken;
 import com.hanium.presentation.domain.auth.repository.RevokedAccessTokenRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -18,7 +19,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,10 +29,11 @@ import static org.mockito.Mockito.when;
 
 class JwtBlacklistTest {
 
-    private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-
-    @SuppressWarnings("unchecked")
-    private final ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+    private final StringRedisTemplate redisTemplate = mock(
+            StringRedisTemplate.class,
+            RETURNS_DEEP_STUBS
+    );
+    private final ValueOperations<String, String> valueOperations = redisTemplate.opsForValue();
 
     private final RevokedAccessTokenRepository repository = mock(RevokedAccessTokenRepository.class);
     private final RevokedAccessTokenWriter writer = mock(RevokedAccessTokenWriter.class);
@@ -40,6 +44,11 @@ class JwtBlacklistTest {
             writer,
             meterRegistry
     );
+
+    @BeforeEach
+    void clearDeepStubSetupInteraction() {
+        clearInvocations(redisTemplate);
+    }
 
     @Test
     void blacklistPersistsDatabaseRecordBeforeWritingRedisCache() {

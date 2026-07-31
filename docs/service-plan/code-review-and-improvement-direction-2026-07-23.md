@@ -1237,3 +1237,57 @@ Map보다 우선해서 타입 경계를 명시할 필요가 있었다.
 - 내부 value 타입은 여전히 `Object`다. 문자열 key 검증은 잘못된 Map 캐스트를
   제거하지만 final result 전체 schema를 보장하지 않으므로, 안정된 payload부터 DTO와
   schema version 검증으로 계속 승격해야 한다.
+
+## 25. 2026-07-31 테스트 코드 unchecked suppression 제거
+
+### 확인한 문제
+
+운영 suppression을 제거한 뒤에도 테스트 코드 7개 파일에
+`@SuppressWarnings("unchecked")` annotation 13개가 남아 있었다.
+
+- analysis compactor, result merge/query, OpenAI 재사용 integration test가 중첩
+  Map/List 결과를 바로 캐스팅하는 assertion helper 10개
+- Redis lock·JWT blacklist 테스트가 raw `ValueOperations.class`를
+  `ValueOperations<String, String>`으로 받는 generic mock 2개
+- queued job poller 테스트가 raw `BlockingQueue.class`를
+  `BlockingQueue<Runnable>`으로 받는 generic mock 1개
+
+테스트에만 있는 경고라도 suppression이 fixture 타입 불일치를 숨기면 production
+계약이 바뀌었을 때 테스트가 컴파일 단계에서 이를 감지하지 못한다. 특히 중첩 Map
+assertion은 실제 응답 타입이 달라져도 unchecked cast가 그대로 통과할 수 있었다.
+
+### 개선 방향과 반영 내용
+
+- 중첩 Map/List assertion helper는 24절에서 추가한 `JsonMapSupport`로 문자열 key
+  타입을 확인한 복사본을 사용한다.
+- `StringRedisTemplate`은 Mockito deep stub으로 만들고
+  `opsForValue()` 반환형에서 `ValueOperations<String, String>` 타입을 추론한다.
+- `ThreadPoolExecutor`도 deep stub의 `getQueue()` 반환형을 사용해
+  `BlockingQueue<Runnable>` 계약을 유지한다.
+- JWT blacklist의 “DB 저장 실패 시 Redis 미호출” 검증에는 fixture 생성 과정의
+  `opsForValue()` 호출이 섞이지 않도록 `@BeforeEach`에서 setup invocation만
+  `clearInvocations`한다. stubbing은 유지하므로 production 호출 검증 의미는 바뀌지
+  않는다.
+- 테스트 기대값, Redis 성공·실패 정책, queue headroom 계산과 integration flow는
+  변경하지 않았다.
+
+### 검증과 남은 위험
+
+- 테스트 `@SuppressWarnings("unchecked")`: 13 annotations / 7 files에서 0건
+- 운영+테스트 전체 unchecked suppression 및 raw generic cast 검색: 0건
+- 임시 `-Xlint:unchecked` init script를 적용한
+  `compileTestJava --rerun-tasks --warning-mode all`: 성공, unchecked 경고 0건
+- 첫 7개 대상 클래스 실행은 49개 중 1개가 실패했다. 원인은 deep-stub 생성 시의
+  `opsForValue()` setup 호출이 JWT의 `never()` 검증에 포함된 것이며, setup invocation
+  분리 후 `JwtBlacklistTest` 10개가 모두 통과했다.
+- 수정 후 7개 대상 클래스 재실행: 49 tests, 0 skipped, 0 failures/errors
+- `./gradlew test --rerun-tasks --warning-mode all --no-daemon`:
+  449 tests, 9 skipped, 0 failures/errors
+- 전체 회귀 실행 시간은 6분 50초였고 Hikari context 번호는 33까지 생성됐다.
+- `./gradlew bootJar --rerun-tasks --no-daemon`: 성공
+- deep stub은 fluent API의 중간 객체를 간단히 타입 안전하게 제공하지만 호출 chain
+  자체를 과도하게 mock할 수 있다. Redis 접근 코드가 복잡해지면 adapter interface와
+  작은 fake 구현으로 전환하는 편이 테스트 의도를 더 명확히 한다.
+- Java unchecked/deprecation 경고 정리는 현재 확인 범위에서 완료됐다. 다음 우선순위는
+  로컬 unit 경고가 아니라 staging/NVIDIA 환경의 실제 Video LLM과 업로드→큐→분석→결과
+  E2E gate를 재검증하는 것이다.

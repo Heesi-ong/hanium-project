@@ -9,15 +9,17 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class SchedulerDistributedLockTest {
 
-    private final StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-
-    @SuppressWarnings("unchecked")
-    private final ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+    private final StringRedisTemplate redisTemplate = mock(
+            StringRedisTemplate.class,
+            RETURNS_DEEP_STUBS
+    );
+    private final ValueOperations<String, String> valueOperations = redisTemplate.opsForValue();
     private final SchedulerDistributedLock schedulerDistributedLock = new SchedulerDistributedLock(redisTemplate);
 
     @Test

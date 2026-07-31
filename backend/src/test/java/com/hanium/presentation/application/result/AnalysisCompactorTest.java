@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import org.junit.jupiter.api.Test;
@@ -99,31 +100,32 @@ class AnalysisCompactorTest {
                 .doesNotContain("아직 수행하지 않습니다");
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> dataPolicy(Map<String, Object> compactResult) {
-        return (Map<String, Object>) compactResult.get("dataPolicy");
+        return JsonMapSupport.copyStringKeyedMap(compactResult.get("dataPolicy"));
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> instructionHints(Map<String, Object> compactResult) {
-        return (Map<String, Object>) compactResult.get("llmInstructionHints");
+        return JsonMapSupport.copyStringKeyedMap(compactResult.get("llmInstructionHints"));
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> speechSummary(Map<String, Object> compactResult) {
-        Map<String, Object> modelInputs = (Map<String, Object>) compactResult.get("modelInputs");
-        return (Map<String, Object>) modelInputs.get("speechSummary");
+        Map<String, Object> modelInputs = JsonMapSupport.copyStringKeyedMap(
+                compactResult.get("modelInputs")
+        );
+        return JsonMapSupport.copyStringKeyedMap(modelInputs.get("speechSummary"));
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> transcriptSummary(Map<String, Object> compactResult) {
-        Map<String, Object> modelInputs = (Map<String, Object>) compactResult.get("modelInputs");
-        return (Map<String, Object>) modelInputs.get("transcriptSummary");
+        Map<String, Object> modelInputs = JsonMapSupport.copyStringKeyedMap(
+                compactResult.get("modelInputs")
+        );
+        return JsonMapSupport.copyStringKeyedMap(modelInputs.get("transcriptSummary"));
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> contentStructure(Map<String, Object> compactResult) {
-        return (Map<String, Object>) transcriptSummary(compactResult).get("contentStructure");
+        return JsonMapSupport.copyStringKeyedMap(
+                transcriptSummary(compactResult).get("contentStructure")
+        );
     }
 
     private AnalysisEngineResponse analysisResponse() {

@@ -11,7 +11,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Backend Up",
+      "title": "백엔드 서비스 상태",
+      "description": "backend가 Prometheus 스크레이핑(/actuator/prometheus)에 응답하는지 여부입니다. 중단이 2분 이상 지속되면 BackendDown 알림이 발동합니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
       "targets": [
@@ -27,8 +28,8 @@
             {
               "type": "value",
               "options": {
-                "0": { "text": "DOWN", "color": "red" },
-                "1": { "text": "UP", "color": "green" }
+                "0": { "text": "중단", "color": "red" },
+                "1": { "text": "정상", "color": "green" }
               }
             }
           ],
@@ -52,6 +53,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "분석 작업 시작/완료/실패/취소 비율",
+      "description": "최근 5분간 초당 분석 작업 이벤트 수입니다. 완료/실패/취소 선이 시작 선과 벌어지면 처리 지연이나 적체를 의심할 수 있습니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
       "targets": [
@@ -92,6 +94,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "분석 작업 실패 사유별 비율",
+      "description": "reason 라벨별로 나눈 실패 발생률입니다. 특정 사유가 급증하면 해당 원인(업로드/외부 API/타임아웃 등)을 우선 조사합니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "targets": [
@@ -143,6 +146,7 @@
       "id": 5,
       "type": "stat",
       "title": "OpenAI 월간 사용량",
+      "description": "이번 달 OpenAI 예산 한도 대비 사용률입니다. 90% 이상이면 빨간색으로 표시되며, 한도 도달 시 관련 기능이 제한될 수 있습니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 14 },
       "targets": [
@@ -176,6 +180,7 @@
       "id": 6,
       "type": "stat",
       "title": "Video LLM 월간 사용량",
+      "description": "이번 달 Video LLM(NVIDIA) 예산 한도 대비 사용률입니다. 90% 이상이면 빨간색으로 표시되며, 한도 도달 시 영상 분석 호출이 제한될 수 있습니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 14 },
       "targets": [

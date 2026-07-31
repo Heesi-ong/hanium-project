@@ -12,6 +12,7 @@
       "id": 1,
       "type": "stat",
       "title": "디스크 여유 공간",
+      "description": "루트 파일시스템(/)의 여유 용량 비율입니다. 15% 미만이면 노란색, 그보다 낮으면 빨간색으로 표시되어 용량 부족을 조기에 알립니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
       "targets": [
@@ -45,6 +46,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "CPU 로드 애버리지",
+      "description": "1/5/15분 평균 부하(load average)입니다. 호스트 CPU 코어 수보다 지속적으로 높으면 처리 지연이나 리소스 부족을 의심합니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
       "targets": [
@@ -80,6 +82,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "메모리 사용률",
+      "description": "호스트 전체 메모리 중 사용 중인 비율입니다. 지속적으로 90% 이상이면 OOM(메모리 부족)으로 인한 서비스 중단 위험이 있습니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
       "targets": [
@@ -107,6 +110,7 @@
       "id": 4,
       "type": "stat",
       "title": "마지막 MySQL 백업 상태",
+      "description": "가장 최근에 실행된 MySQL 백업 작업의 성공/실패 여부입니다. 실패가 표시되면 백업 스크립트 로그를 즉시 확인해야 합니다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
       "targets": [

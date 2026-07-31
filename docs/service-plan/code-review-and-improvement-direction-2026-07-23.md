@@ -1081,3 +1081,45 @@ field-level 사용은 이 기본 의미에 대응한다.
   호출 3건이다. 이는 별도 AssertJ API 전환 단위로 남긴다.
 - 이번 변경은 테스트 소스에만 있으므로 production application artifact와 실행 설정은
   바뀌지 않는다.
+
+## 22. 2026-07-31 AssertJ 제거 예정 예외 캡처 API 전환
+
+### 확인한 문제
+
+21절의 `-Xlint:deprecation` 강제 컴파일에서 AssertJ
+`catchThrowableOfType(ThrowingCallable, Class)` 호출 3건이 제거 예정 API로
+확인됐다. 사용 위치는 analysis engine Circuit Breaker 테스트 1건과 Video LLM
+engine의 request ID·Circuit Breaker 테스트 각 1건이었다.
+
+AssertJ 3.27.7 공식 API 문서는 실행 람다를 먼저 받는 overload 대신
+[`catchThrowableOfType(Class, ThrowingCallable)`](https://www.javadoc.io/static/org.assertj/assertj-core/3.27.7/org/assertj/core/api/WithAssertions.html)을
+사용하도록 안내한다. 이 문제를 남겨두면 현재 테스트 동작에는 영향이 없지만, 제거
+시점의 AssertJ로 업그레이드할 때 테스트 소스 컴파일이 차단될 수 있다.
+
+### 개선 방향과 반영 내용
+
+- 세 호출의 인자 순서만 `BusinessException.class` 다음에 실행 람다가 오도록
+  전환했다.
+- 반환형 `BusinessException`, 실행 대상, 후속 error code·message 검증은 그대로
+  유지했다.
+- 테스트 전용 호환성 수정이므로 production 코드, 설정, dependency version은
+  변경하지 않았다.
+
+### 검증과 남은 위험
+
+- 임시 `-Xlint:deprecation` init script를 적용한
+  `compileTestJava --rerun-tasks --warning-mode all`: 성공, deprecated API 경고
+  0건
+- 변경된 3개 테스트 클래스 강제 실행: 7 tests, 0 skipped,
+  0 failures/errors
+- `./gradlew test --rerun-tasks --warning-mode all --no-daemon`:
+  444 tests, 9 skipped, 0 failures/errors
+- 전체 테스트 실행 시간은 5분 49초였으며 Hikari context 번호는 33까지 생성됐다.
+  테스트 컨텍스트 수는 앞선 전체 실행과 동일하지만 장기적으로 CI 실행 시간 추세를
+  관찰해야 한다.
+- Java 컴파일에는 아직 unchecked/unsafe operations 요약 경고가 남아 있으며, 테스트
+  소스에서는 `UserRateLimiterTest`가 구체적 발생 파일로 확인된다. 다음 단계에서는
+  `-Xlint:unchecked`로 운영 코드와 테스트 코드의 정확한 발생 지점을 분리하고, 타입
+  안정성을 해치지 않는 범위에서 제거한다.
+- 이번 변경은 테스트 소스에만 있으므로 production application artifact와 실행
+  설정은 바뀌지 않는다.

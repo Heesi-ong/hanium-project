@@ -80,10 +80,10 @@ class VideoLlmEngineClientRequestIdTest {
                                 """));
 
         BusinessException exception = catchThrowableOfType(
+                BusinessException.class,
                 () -> fixture.client.analyze(
                         VideoLlmEngineRequest.defaultOption("job-strict", "/tmp/video.mp4")
-                ),
-                BusinessException.class
+                )
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VIDEO_LLM_ENGINE_ERROR);

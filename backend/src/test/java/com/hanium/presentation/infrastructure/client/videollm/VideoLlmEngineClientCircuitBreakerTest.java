@@ -44,10 +44,10 @@ class VideoLlmEngineClientCircuitBreakerTest {
                 .contains("to=OPEN");
 
         BusinessException exception = catchThrowableOfType(
+                BusinessException.class,
                 () -> videoLlmEngineClient.analyze(
                         VideoLlmEngineRequest.defaultOption("job-1", "/tmp/video.mp4")
-                ),
-                BusinessException.class
+                )
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VIDEO_LLM_ENGINE_ERROR);

@@ -44,10 +44,10 @@ class AnalysisEngineClientCircuitBreakerTest {
                 .contains("to=OPEN");
 
         BusinessException exception = catchThrowableOfType(
+                BusinessException.class,
                 () -> analysisEngineClient.analyze(
                         new AnalysisEngineRequest("job-1", "/tmp/video.mp4")
-                ),
-                BusinessException.class
+                )
         );
 
         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ANALYSIS_ENGINE_ERROR);

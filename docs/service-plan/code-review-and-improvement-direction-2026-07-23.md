@@ -990,3 +990,52 @@ build stage만 변경했기 때문에 최종 runtime image manifest는 변경 �
 - cold build는 별도 dependency-report 단계를 추가하므로 최초 한 번 약 30초의
   의존성 해석 비용과 더 큰 build cache를 사용한다. 대신 이후 source-only 변경에서는
   동일 캐시를 재사용한다.
+
+## 20. 2026-07-31 Gradle 10 Java toolchain repository 명시
+
+### 확인한 문제
+
+`./gradlew test --dry-run --warning-mode all --no-daemon`으로 일반적인
+“deprecated features” 문구를 실제 발생원까지 펼쳤다. 프로젝트 task graph에서 Gradle
+10이 차단할 Gradle 자체 경고는 한 건이었다.
+
+- JDK 17 toolchain이 과거 Gradle auto-provisioning으로 설치됐지만 현재 build에는
+  toolchain download repository가 등록되지 않았다.
+- 현재 머신의 캐시나 CI의 `setup-java`가 JDK 17을 제공하면 통과하지만, 새 개발
+  환경에 일치하는 JDK가 없으면 Gradle 10에서는 자동 준비가 아니라 build 실패가 된다.
+
+별도로 Java 컴파일러가 Spring Boot의 제거 예정 `@MockBean` 사용 37건을 보고한다.
+이는 toolchain repository 경고와 원인·수정 범위가 다르므로 다음 테스트 마이그레이션
+단위로 분리했다.
+
+### 개선 방향과 반영 내용
+
+Gradle의
+[toolchain download repository 문서](https://docs.gradle.org/current/userguide/toolchains.html#sub:download_repositories)가
+settings plugin 예시로 제공하는
+[`org.gradle.toolchains.foojay-resolver-convention`](https://plugins.gradle.org/plugin/org.gradle.toolchains.foojay-resolver-convention)
+1.0.0을 `settings.gradle`에 등록했다. 이 플러그인은 Foojay Disco API 기반 resolver와
+toolchain management를 함께 구성한다.
+
+`org.gradle.java.installations.auto-download=false`로 경고만 없애는 대안은 선택하지
+않았다. 이 방식은 JDK가 없는 환경을 명확하게 복구하지 않고 수동 설치 실패로 바꿀
+뿐이다. resolver 등록은 `build.gradle`의 Java 17 선언을 유지하면서 로컬 설치가 없을
+때만 명시된 repository를 사용한다. Docker build의 Temurin 17과 GitHub Actions의
+`setup-java`처럼 이미 일치하는 JDK가 있으면 toolchain을 다시 다운로드하지 않는다.
+
+### 검증과 남은 위험
+
+- 적용 전 `test --dry-run --warning-mode all`: Gradle 10에서 실패할 toolchain
+  repository 미등록 경고 재현
+- 적용 후 같은 명령: 해당 경고 0건, task graph 성공
+- `./gradlew -q javaToolchains`: auto-detection/download 활성화와 JDK 17 탐지 확인
+- `./gradlew test --rerun-tasks --warning-mode all --no-daemon`:
+  444 tests, 9 skipped, 0 failures/errors
+- `docker compose build backend`: Gradle ZIP 레이어 cache hit, resolver plugin을
+  포함한 dependency/bootJar 단계 성공
+- 최종 runtime image manifest는 이전과 동일하므로 실행 artifact 내용은 바뀌지 않았다.
+- 로컬 JDK가 없고 Foojay 또는 Gradle Plugin Portal 네트워크도 사용할 수 없는 최초
+  환경에서는 여전히 toolchain/plugin 준비가 실패한다. CI와 Docker는 JDK 17을 먼저
+  제공해 이 런타임 의존을 줄인다.
+- Spring Boot 4에서 제거될 `@MockBean` 37건은 Spring Framework의
+  `@MockitoBean`으로 별도 전환해야 한다.

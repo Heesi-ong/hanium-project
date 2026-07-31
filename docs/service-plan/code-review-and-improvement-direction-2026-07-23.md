@@ -681,3 +681,38 @@ loopback HTTP 서버를 NVIDIA 호환 endpoint로 사용해 FastAPI 라우트 �
 따라서 backend 재분석 child의 `FAILED` 저장, Redis 비용·quota 메트릭, 실제 NVIDIA
 네트워크/계정 정책, 500MB Asset 업로드·정리는 아직 staging에서 별도로 rehearsal해야
 한다.
+
+## 12. 2026-07-31 Compose fail-fast 및 Python 이미지 컨텍스트
+
+### 잘못된 설정의 실제 Compose 기동 검증
+
+현재 소스로 두 엔진 이미지를 다시 빌드한 뒤 의도적으로 잘못된 설정을 주입한
+`docker compose run --rm --no-deps`를 실행했다.
+
+- analysis-engine: `ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB=0`에서 lifespan 설정 검증이
+  `SettingsError`를 내고 readiness 전에 exit code 3으로 종료
+- video-llm-engine: `VIDEO_LLM_TOTAL_TIMEOUT_SECONDS=0`에서 동일하게 readiness
+  전에 exit code 3으로 종료
+- 두 일회성 컨테이너 모두 `--rm`으로 정리되어 잔여 컨테이너 없음
+
+따라서 8절의 “잘못된 Python 설정 Compose fail-fast” 로컬 gate는 완료했다.
+실제 dev/prod 배포 manifest가 같은 환경변수를 전달하는지는 배포 환경에서 다시
+확인해야 한다.
+
+### 같은 빌드에서 발견한 추가 문제
+
+첫 이미지 재빌드의 context 전송량이 analysis-engine 약 873MB,
+video-llm-engine 약 932MB였다. 두 디렉터리에 각각 약 868MB·956MB의
+`.venv.pre-p0-20260722`가 남아 있었고, 기존 `.dockerignore`가 정확히 `.venv/`만
+제외해 이름이 변형된 가상환경을 `COPY . .`에 포함한 것이 원인이었다. 이는 빌드
+시간·이미지 크기 증가뿐 아니라 로컬 캐시나 개발용 파일이 배포 이미지에 들어갈
+위험을 만든다.
+
+두 엔진의 `.dockerignore`를 `.venv*/`로 넓히고 `.pytest_cache`, `.ruff_cache`,
+coverage 산출물과 `.DS_Store`도 제외했다. 백업 가상환경 자체는 사용자 파일이므로
+삭제하지 않았다.
+
+수정 후 같은 두 이미지 재빌드는 BuildKit 표시 기준 analysis-engine 2.76kB,
+video-llm-engine 2.25kB만 전송했고 수초 내 완료됐다. 최종 이미지 내부 `/app`은
+각각 588KB·376KB였으며 `.venv.pre-p0-20260722`, `.pytest_cache`가 존재하지 않음을
+일회성 컨테이너에서 직접 확인했다.

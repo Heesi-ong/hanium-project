@@ -63,7 +63,10 @@ groups:
           description: "최근 15분간 분석 작업 실패 비율이 30%를 초과한 상태가 5분 이상 지속되고 있습니다. analysis-engine/video-llm-engine/OpenAI 연동 상태를 확인하세요."
 
       - alert: OpenAiMonthlyBudgetNearExhaustion
-        expr: openai_monthly_usage / clamp_min(openai_monthly_budget_capacity, 1) > 0.9
+        # 같은 예산 게이지를 backend(api)와 analysis-worker가 각자 인스턴스로 노출하므로
+        # (2026-07-31 role-split 배포에서 실측 확인) max()로 묶지 않으면 job 라벨별로
+        # 동일 값이 중복 발동한다.
+        expr: max(openai_monthly_usage) / clamp_min(max(openai_monthly_budget_capacity), 1) > 0.9
         for: 5m
         labels:
           severity: warning
@@ -72,7 +75,8 @@ groups:
           description: "이번 달 OpenAI 실제 API 호출량이 설정된 한도의 90%를 초과한 상태가 5분 이상 지속되고 있습니다. 한도 상향 또는 비용을 확인하세요."
 
       - alert: VideoLlmMonthlyBudgetNearExhaustion
-        expr: video_llm_monthly_usage / clamp_min(video_llm_monthly_budget_capacity, 1) > 0.9
+        # OpenAiMonthlyBudgetNearExhaustion과 동일한 이유로 max()로 묶는다.
+        expr: max(video_llm_monthly_usage) / clamp_min(max(video_llm_monthly_budget_capacity), 1) > 0.9
         for: 5m
         labels:
           severity: warning

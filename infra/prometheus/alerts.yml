@@ -15,6 +15,22 @@ groups:
           summary: "backend가 응답하지 않습니다"
           description: "Prometheus가 backend(/actuator/prometheus)를 2분 이상 스크레이핑하지 못했습니다. 컨테이너 상태와 로그를 확인하세요."
 
+      - alert: AnalysisWorkerDown
+        # analysis-worker가 죽으면 분석 작업이 전혀 실행되지 않을 뿐 아니라, 이 프로세스가
+        # 직접 노출하는 큐 백로그/DEAD_LETTER 게이지(analysis_queue_backlog,
+        # storage_deletion_dead_letter, password_reset_email_dead_letter 등)도 Prometheus
+        # staleness 처리로 함께 사라져 관련 알림까지 조용히 무력화된다(2026-07-31 발견:
+        # analysis-worker가 3시간 넘게 다운된 상태가 사람이 직접 확인하기 전까지 감지되지
+        # 않았음). DNS SD로 타깃이 아예 0개가 되는 단일 프로세스(monolith) 배포에서는
+        # up 시계열 자체가 없어 이 규칙이 조용히 무시된다.
+        expr: up{job="analysis-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "analysis-worker가 응답하지 않습니다"
+          description: "Prometheus가 analysis-worker(/actuator/prometheus)를 2분 이상 스크레이핑하지 못했습니다. 분석 작업이 실행되지 않고 있을 수 있습니다. 컨테이너 상태와 로그를 확인하세요."
+
       - alert: JwtRevocationDatabaseUnavailable
         expr: |
           sum(increase(security_jwt_revocation_total{result=~"database_read_failure|database_write_failure"}[15m])) > 0
@@ -192,6 +208,20 @@ groups:
 
   - name: host-alerts
     rules:
+      - alert: NodeExporterDown
+        # node-exporter가 죽으면 호스트 디스크/CPU/메모리 알림뿐 아니라, textfile-collector로
+        # 노출되는 mysql_backup_* 게이지(backup-alerts 그룹의 4개 규칙)까지 동시에 눈이 멀어
+        # 조용히 무력화된다(2026-07-31 발견: backup 컨테이너가 8일 넘게 정체된 상태가 사람이
+        # 직접 확인하기 전까지 감지되지 않았음). 여러 다운스트림 알림의 전제조건이므로
+        # severity를 critical로 둔다.
+        expr: up{job="node-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "node-exporter가 응답하지 않습니다"
+          description: "Prometheus가 node-exporter를 5분 이상 스크레이핑하지 못했습니다. 호스트 리소스 알림과 MySQL 백업 정체 알림(textfile-collector 경유)이 함께 무력화된 상태이니 컨테이너를 즉시 확인하세요."
+
       - alert: HostDiskSpaceLow
         expr: node_filesystem_avail_bytes{job="node-exporter", mountpoint=~"/|/rootfs"} / clamp_min(node_filesystem_size_bytes{job="node-exporter", mountpoint=~"/|/rootfs"}, 1) < 0.15
         for: 10m

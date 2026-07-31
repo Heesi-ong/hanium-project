@@ -15,7 +15,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// AuthControllerIntegrationTest 등 기존 통합 테스트는 이 클래스를 @MockBean으로
+// AuthControllerIntegrationTest 등 기존 통합 테스트는 이 클래스를 @MockitoBean으로
 // 완전히 대체하기 때문에, 실제 분기(SMTP 설정됨/dev 폴백/prod 무음 실패)는 어디서도
 // 검증되지 않고 있었다. 비밀번호 재설정 이메일은 보안 관련 기능이라 별도로 검증한다.
 class PasswordResetEmailSenderTest {

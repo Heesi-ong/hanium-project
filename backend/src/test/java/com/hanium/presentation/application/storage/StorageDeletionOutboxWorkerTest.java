@@ -11,7 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -46,10 +46,10 @@ class StorageDeletionOutboxWorkerTest {
     @Autowired
     private StorageDeletionTaskService storageDeletionTaskService;
 
-    @MockBean
+    @MockitoBean
     private ObjectStorage objectStorage;
 
-    @MockBean
+    @MockitoBean
     private SchedulerDistributedLock schedulerDistributedLock;
 
     @BeforeEach

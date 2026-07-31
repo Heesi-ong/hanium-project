@@ -1039,3 +1039,45 @@ toolchain management를 함께 구성한다.
   제공해 이 런타임 의존을 줄인다.
 - Spring Boot 4에서 제거될 `@MockBean` 37건은 Spring Framework의
   `@MockitoBean`으로 별도 전환해야 한다.
+
+## 21. 2026-07-31 Spring `@MockBean` 제거 예정 API 전환
+
+### 확인한 문제
+
+20절의 강제 테스트 컴파일에서 Spring Boot가 제거 예정으로 표시한 `@MockBean`
+경고가 37건 발생했다. 18개 테스트 클래스의 사용 형태를 개별 확인한 결과 모두
+비정적 field annotation이며 annotation 인자, `@Qualifier`, class-level 선언,
+`@ContextHierarchy`는 없었다.
+
+Spring Boot의 `@MockBean`은 3.4부터 deprecated이며 Boot 4에서 제거될 예정이다.
+공식 대체 API인 Spring Framework
+[`@MockitoBean`](https://docs.spring.io/spring-framework/reference/testing/annotations/integration-spring/annotation-mockitobean.html)은
+field type과 field name/qualifier로 대상 bean을 선택하고, 기본적으로 기존 bean을
+mock으로 교체하거나 없으면 생성하며 테스트 후 reset한다. 현재 프로젝트의 단순
+field-level 사용은 이 기본 의미에 대응한다.
+
+### 개선 방향과 반영 내용
+
+- 18개 테스트 파일의 Boot `MockBean` import를 Framework `MockitoBean` import로
+  교체했다.
+- 37개 field annotation을 같은 field name과 type을 유지한 채 전환했다.
+- 테스트 목적을 설명하는 주석 2곳도 새 annotation 이름과 일치시켰다.
+- mock 대상, stubbing, verification, ApplicationContext 설정과 운영 코드는 바꾸지
+  않았다.
+
+### 검증과 남은 위험
+
+- `src/test/java`의 legacy `MockBean` 검색 결과: 0건
+- `@MockitoBean` field annotation: 정확히 37건
+- `compileTestJava --rerun-tasks --warning-mode all`: 성공,
+  기존 `MockBean` 제거 예정 경고 37건 모두 제거
+- `test --rerun-tasks --warning-mode all`: 444 tests, 9 skipped,
+  0 failures/errors
+- 전체 실행은 4분 36초였지만 생성된 Hikari context 번호는 이전 강제 실행과 같은
+  33까지여서 context 수 증가가 확인되지는 않았다. 한 번의 로컬 시간 차이만으로
+  context cache 성능 회귀 또는 개선을 판단하지 않는다.
+- 저장소 밖의 임시 `-Xlint:deprecation` init script로 일반 요약 경고를 펼친 결과,
+  남은 deprecated API는 AssertJ `catchThrowableOfType(ThrowingCallable, Class)`
+  호출 3건이다. 이는 별도 AssertJ API 전환 단위로 남긴다.
+- 이번 변경은 테스트 소스에만 있으므로 production application artifact와 실행 설정은
+  바뀌지 않는다.

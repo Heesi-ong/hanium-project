@@ -17,7 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
 // CoachChatService.sendMessage()가 OpenAI 호출 도중 DB 트랜잭션(=Hikari 커넥션)을 붙잡고
 // 있지 않은지를 검증하는 전용 테스트다. OpenAiCoachClient를 목으로 바꿔치기해 그 호출
 // 시점에 실제로 활성 트랜잭션이 없는지를 직접 관찰한다. 다른 테스트(CoachChatIntegrationTest)와
-// 같은 클래스에 두면 @MockBean이 그쪽의 "실제 mock 응답" 기대와 충돌하므로 별도 컨텍스트로 분리했다.
+// 같은 클래스에 두면 @MockitoBean이 그쪽의 "실제 mock 응답" 기대와 충돌하므로 별도 컨텍스트로 분리했다.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class CoachChatTransactionBoundaryIntegrationTest {
 
@@ -69,7 +69,7 @@ class CoachChatTransactionBoundaryIntegrationTest {
     @Autowired
     private UserRateLimiter userRateLimiter;
 
-    @MockBean
+    @MockitoBean
     private OpenAiCoachClient openAiCoachClient;
 
     @BeforeEach

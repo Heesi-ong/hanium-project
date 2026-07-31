@@ -13,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -48,7 +48,7 @@ class AnalysisOwnershipIntegrationTest {
     @Autowired
     private AnalysisJobRepository analysisJobRepository;
 
-    @MockBean
+    @MockitoBean
     private AnalysisProgressService analysisProgressService;
 
     @BeforeEach

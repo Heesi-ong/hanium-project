@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
@@ -220,19 +221,16 @@ class ResultMergeServiceTest {
                 .containsEntry("videoLlmGenerationMode", "SKIPPED");
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> notableMoments(Map<String, Object> finalResult) {
-        return (List<Map<String, Object>>) finalResult.get("notableMoments");
+        return JsonMapSupport.copyStringKeyedMapList(finalResult.get("notableMoments"));
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> visualAnalysis(Map<String, Object> finalResult) {
-        return (Map<String, Object>) finalResult.get("visualAnalysis");
+        return JsonMapSupport.copyStringKeyedMap(finalResult.get("visualAnalysis"));
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> pipeline(Map<String, Object> finalResult) {
-        return (Map<String, Object>) finalResult.get("pipeline");
+        return JsonMapSupport.copyStringKeyedMap(finalResult.get("pipeline"));
     }
 
     private Map<String, Object> findMoment(

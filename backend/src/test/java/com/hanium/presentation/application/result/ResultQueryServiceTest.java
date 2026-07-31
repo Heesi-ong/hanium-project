@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
@@ -600,7 +601,6 @@ class ResultQueryServiceTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     void getFinalResultNormalizesGenerationMetadataWithPipelineFallbacks() {
         Long ownerId = 1L;
         AnalysisJob completedJob = AnalysisJob.create("20260703090013-nnnnnnnn", ownerId);
@@ -645,9 +645,15 @@ class ResultQueryServiceTest {
 
         AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
 
-        Map<String, Object> feedback = (Map<String, Object>) response.result().get("feedback");
-        Map<String, Object> visualAnalysis = (Map<String, Object>) response.result().get("visualAnalysis");
-        Map<String, Object> visualModel = (Map<String, Object>) visualAnalysis.get("model");
+        Map<String, Object> feedback = JsonMapSupport.copyStringKeyedMap(
+                response.result().get("feedback")
+        );
+        Map<String, Object> visualAnalysis = JsonMapSupport.copyStringKeyedMap(
+                response.result().get("visualAnalysis")
+        );
+        Map<String, Object> visualModel = JsonMapSupport.copyStringKeyedMap(
+                visualAnalysis.get("model")
+        );
 
         assertThat(feedback)
                 .containsEntry("generationMode", "REAL")

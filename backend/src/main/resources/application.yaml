@@ -52,6 +52,11 @@ spring:
   flyway:
     enabled: false
 
+  jpa:
+    # 웹 요청 전체까지 영속성 컨텍스트를 열어두지 않습니다. 응답 DTO에 필요한 조회와
+    # LAZY 연관 접근은 application service의 명시적 transaction 안에서 끝냅니다.
+    open-in-view: false
+
 management:
   health:
     mail:

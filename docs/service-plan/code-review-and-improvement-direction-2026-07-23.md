@@ -597,8 +597,6 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 - Redis/worker 강제 종료를 포함한 전체 chaos test
 - 현재 Flyway가 MySQL 8.4를 공식 검증 범위(MySQL 8.1까지)보다 새 버전으로 경고한다.
   운영 MySQL을 검증된 버전으로 고정하거나 Flyway를 호환 버전으로 올린 뒤 fresh migration을 반복해야 한다.
-- `spring.jpa.open-in-view`가 기본 활성화돼 있다. API 직렬화 중 지연 로딩과 예기치 않은
-  DB 접근을 막으려면 명시적으로 끄고 결과·관리자 API 회귀 테스트를 수행해야 한다.
 - 정식 침투 테스트와 개인정보/법률 준수 검토
 
 정적 리뷰와 현재 테스트가 통과했다는 사실은 위 실환경 검증을 대체하지 않는다.
@@ -612,8 +610,8 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 2. 500MiB 영상을 nginx→backend→MinIO로 실제 전송해 edge·네트워크·스토리지
    조합에서도 경계가 유지되는지 확인한다.
 3. 실제 SMTP provider에서 TLS/인증 송신과 반송·장애 알림을 rehearsal한다.
-4. 잘못된 Python 설정을 의도적으로 주입해 두 엔진이 readiness 전에 종료되는지 Compose에서 확인한다.
-5. 원본/재분석 직접 비교 UX를 보완한다.
+4. 공개 도메인의 TLS 발급·갱신, 백업 복원, Redis/worker 강제 종료를 포함한 staging
+   운영 rehearsal을 수행한다.
 
 ## 9. 2026-07-31 추가 리뷰: 구간 분할과 회로 차단기 시간 기준 불일치
 
@@ -813,3 +811,22 @@ storage job id를 사용한다. Video LLM 접수 전 `sourceExists()`도 같은 
 nginx→backend→MinIO→재분석까지 전송하지는 못했다. 이번 수정은 코드·설정 경계와
 저장 참조 구조의 정합성을 보장하지만, proxy buffering, 요청 시간, 네트워크 대역폭,
 MinIO 저장 및 이후 원본 정리는 staging 실전송으로 별도 확인해야 한다.
+
+## 16. 2026-07-31 Open EntityManager in View 비활성화
+
+Spring Boot의 `spring.jpa.open-in-view` 기본값이 활성 상태라 controller가 반환한
+객체를 JSON으로 직렬화하는 동안에도 영속성 컨텍스트와 DB 접근 가능성이 남아 있었다.
+이는 느린 클라이언트 응답 시간까지 DB connection 수명에 영향을 주고, transaction
+밖의 지연 로딩과 N+1 쿼리를 코드 리뷰에서 놓치기 쉽게 만든다.
+
+현재 controller 응답은 JPA entity를 직접 반환하지 않는다. 결과·관리자 목록과 상세는
+application service의 `@Transactional(readOnly = true)` 안에서 DTO로 변환한다.
+명시적 LAZY 연관인 비밀번호 재설정 email task→token도 worker의
+`TransactionTemplate`, 재큐잉 service transaction, 관리자 페이지 DTO 변환
+transaction 안에서 접근함을 확인했다.
+
+따라서 `spring.jpa.open-in-view: false`를 공통 설정에 명시했다. 별도 프로필에서
+이를 다시 활성화하지 않으며, `BackendApplicationTests`가 최종 Environment 값이
+false임을 회귀 검증한다. 기존 controller 통합 테스트를 포함한 backend 전체 회귀는
+442 tests, 9 skipped, 0 failures/errors로 통과해 transaction 밖 지연 로딩 의존이
+현재 자동 검증 범위에는 없음을 확인했다.

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
@@ -112,9 +113,9 @@ class UserWithdrawalIntegrationTest {
     }
 
     @Test
-    void withdrawRollsBackAllDeletionsWhenOneJobCannotBeDeleted() throws Exception {
-        String token = signupAndLogin("partial-failure@example.com", "password123");
-        Long userId = userRepository.findByEmail("partial-failure@example.com")
+    void withdrawCancelsQueuedJobAndDeletesAccount() throws Exception {
+        String token = signupAndLogin("queued-withdraw@example.com", "password123");
+        Long userId = userRepository.findByEmail("queued-withdraw@example.com")
                 .map(User::getId)
                 .orElseThrow();
 
@@ -127,11 +128,84 @@ class UserWithdrawalIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("password", "password123"))))
+                .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(userId)).isEmpty();
+        assertThat(analysisJobRepository.existsByJobId(FIRST_JOB_ID)).isFalse();
+        assertThat(analysisJobRepository.existsByJobId(SECOND_JOB_ID)).isFalse();
+        assertThat(uploadedVideoRepository.existsByJobId(FIRST_JOB_ID)).isFalse();
+        assertThat(Files.exists(filePathGenerator.generateUploadDirectory(FIRST_JOB_ID))).isFalse();
+        assertThat(Files.exists(filePathGenerator.generateResultDirectory(FIRST_JOB_ID))).isFalse();
+    }
+
+    @Test
+    void withdrawDeletesQueuedReanalysisBeforeSourceAndRemovesSharedAsset() throws Exception {
+        String token = signupAndLogin("queued-reanalysis-withdraw@example.com", "password123");
+        Long userId = userRepository.findByEmail("queued-reanalysis-withdraw@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        Path uploadDirectory = filePathGenerator.generateUploadDirectory(FIRST_JOB_ID);
+        Path resultDirectory = filePathGenerator.generateResultDirectory(FIRST_JOB_ID);
+        Files.createDirectories(uploadDirectory);
+        Files.createDirectories(resultDirectory);
+        Path originalVideoPath = uploadDirectory.resolve("original.mp4");
+        Files.writeString(originalVideoPath, "shared fake mp4 content");
+        Files.writeString(resultDirectory.resolve("final-result.json"), "{}");
+
+        UploadedVideo asset = uploadedVideoRepository.saveAndFlush(UploadedVideo.create(
+                FIRST_JOB_ID,
+                FIRST_JOB_ID + ".mp4",
+                originalVideoPath.toString(),
+                VideoFileType.MP4,
+                Files.size(originalVideoPath)
+        ));
+        AnalysisJob source = AnalysisJob.create(FIRST_JOB_ID, userId);
+        source.linkVideoAsset(asset.getId());
+        source.recordVideoLlmGenerationMode(VideoLlmGenerationMode.FALLBACK);
+        source.complete();
+        source = analysisJobRepository.saveAndFlush(source);
+
+        AnalysisJob child = AnalysisJob.createVideoLlmReanalysis(
+                SECOND_JOB_ID,
+                source,
+                "a".repeat(64)
+        );
+        child.enqueue(true, false);
+        analysisJobRepository.saveAndFlush(child);
+
+        mockMvc.perform(delete("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "password123"))))
+                .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(userId)).isEmpty();
+        assertThat(analysisJobRepository.existsByJobId(FIRST_JOB_ID)).isFalse();
+        assertThat(analysisJobRepository.existsByJobId(SECOND_JOB_ID)).isFalse();
+        assertThat(uploadedVideoRepository.findById(asset.getId())).isEmpty();
+        assertThat(Files.exists(uploadDirectory)).isFalse();
+        assertThat(Files.exists(resultDirectory)).isFalse();
+    }
+
+    @Test
+    void withdrawRollsBackAllDeletionsWhenOneJobIsRunning() throws Exception {
+        String token = signupAndLogin("running-withdraw@example.com", "password123");
+        Long userId = userRepository.findByEmail("running-withdraw@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createResultFixture(FIRST_JOB_ID, userId);
+        AnalysisJob runningJob = AnalysisJob.create(SECOND_JOB_ID, userId);
+        runningJob.startBasicAnalysis();
+        analysisJobRepository.save(runningJob);
+
+        mockMvc.perform(delete("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("password", "password123"))))
                 .andExpect(status().isInternalServerError());
 
-        // 대기 중인 SECOND_JOB_ID는 삭제할 수 없어 전체 탈퇴가 실패했으므로, 이미
-        // 정상적으로 삭제 가능했던 FIRST_JOB_ID의 DB 행/파일도 함께 롤백돼야 합니다.
-        // 원자성이 깨지면 계정은 남았는데 FIRST_JOB_ID만 먼저 사라지는 반쪽 상태가 됩니다.
         assertThat(userRepository.findById(userId)).isPresent();
         assertThat(analysisJobRepository.existsByJobId(FIRST_JOB_ID)).isTrue();
         assertThat(analysisJobRepository.existsByJobId(SECOND_JOB_ID)).isTrue();

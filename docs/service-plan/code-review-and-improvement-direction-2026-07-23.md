@@ -941,3 +941,52 @@ SPA API만 사용하며 RSC API를 사용하지 않는다. 이 전제를 사람�
 - ESLint 및 Vite production build: 통과
 - `docker compose build frontend`: 새 lockfile로 production nginx 이미지 빌드 성공
 - 빌드된 이미지의 `nginx -t`: template 렌더링 후 설정 구문 검증 성공
+
+## 19. 2026-07-31 backend Docker Gradle 다운로드 캐시 분리
+
+### 확인한 문제
+
+기존 `backend/Dockerfile`은 wrapper, Gradle 설정과 `src` 전체를 복사한 뒤 처음으로
+`./gradlew clean bootJar`를 실행했다. 따라서 Java 컴파일과 무관한 파일을 포함해
+`src` 아래의 내용이 하나라도 바뀌면 Gradle 배포본과 Maven 의존성이 들어 있는 이전
+레이어가 존재하지 않았다.
+
+이를 추측으로만 판단하지 않고 `backend/src`에 58바이트 비컴파일 probe를 임시로
+추가해 production 이미지를 빌드했다. `COPY src` 이후 단계가 무효화되면서 Gradle
+9.5.1 ZIP을 다시 다운로드했고, 배포본 준비까지 약 69초, Gradle build 단계 전체는
+132.9초가 걸렸다. probe는 검증 직후 제거해 작업 트리에 남기지 않았다.
+
+### 개선 방향과 반영 내용
+
+- `gradlew`와 `gradle/wrapper`를 먼저 복사하고 `./gradlew --version`을 독립
+  레이어에서 실행해 wrapper 버전이 바뀔 때만 Gradle 배포본을 다시 받는다.
+- `build.gradle`, `settings.gradle`, `gradle.properties`를 소스보다 먼저 복사한다.
+- `./gradlew dependencies`로 Maven 의존성을 독립 레이어에 해석한 뒤에만
+  `src`를 복사한다.
+- 기존 Dockerfile에서 빠져 있던 `gradle.properties`도 build stage에 포함해
+  `org.gradle.caching=true` 설정이 Docker Gradle 실행에도 적용되게 했다.
+
+변경 후 같은 probe를 다시 추가한 비교 빌드에서는 Gradle 배포본과 의존성 단계가
+모두 `CACHED`였고, 최종 Dockerfile의 실제 `clean bootJar` 단계만 45.3초 실행됐다.
+기준선 132.9초 대비 약 66% 감소했으며 Gradle ZIP 재다운로드도 없었다. probe 제거 후
+실제 현재 소스 재빌드는 모든 단계가 cache hit였고 약 3.5초에 끝났다.
+
+build stage만 변경했기 때문에 최종 runtime image manifest는 변경 전후 모두
+`sha256:c756be534d5a1f8747dcdb786886a8f19725a34942782fb5d1b2a98ffbe28ed3`로
+동일했다. 새 이미지의 local 프로필 격리 컨테이너를 실제로 기동해 management health
+`UP`도 확인했다.
+
+### 검증과 남은 위험
+
+- `docker compose build backend`: cold cache 생성, source probe 비교, probe 제거 후
+  실제 소스 최종 빌드 모두 성공
+- runtime image local-profile smoke: `/actuator/health` `UP`
+- `./gradlew test --rerun-tasks --no-daemon`: 444 tests, 9 skipped,
+  0 failures/errors
+- `@MockBean` 제거 예정 경고 37건과 Gradle 10 비호환 deprecated feature 경고는
+  그대로 남아 있다.
+- 이 변경은 소스 변경 시의 반복 다운로드만 줄인다. base image digest와 Actions SHA
+  고정, SBOM·서명, toolchain resolver 명시는 P2-04의 후속 공급망 작업이다.
+- cold build는 별도 dependency-report 단계를 추가하므로 최초 한 번 약 30초의
+  의존성 해석 비용과 더 큰 build cache를 사용한다. 대신 이후 source-only 변경에서는
+  동일 캐시를 재사용한다.

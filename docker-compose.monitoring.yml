@@ -77,6 +77,8 @@ services:
       - prometheus
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+      # 운영 모니터링 UI 기본 언어를 한국어로 설정합니다(로그인 화면 등 일부는 여전히 영문일 수 있음).
+      GF_USERS_DEFAULT_LANGUAGE: ko-KR
     volumes:
       # 데이터소스/대시보드가 기동 시 자동 구성됩니다 (수동 설정 불필요).
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro

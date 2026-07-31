@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import ResultDetailPage from "./ResultDetailPage";
 
@@ -60,9 +60,16 @@ function renderResultDetailPage() {
             <Routes>
                 <Route path="/results/:jobId" element={<ResultDetailPage />} />
                 <Route path="/results" element={<div>결과 목록</div>} />
+                <Route path="/results/compare" element={<CompareDestinationStub />} />
             </Routes>
         </MemoryRouter>
     );
+}
+
+function CompareDestinationStub() {
+    const location = useLocation();
+    const jobIds = location.state?.results?.map((result) => result.jobId) || [];
+    return <div data-testid="lineage-compare-destination">{jobIds.join(",")}</div>;
 }
 
 function createCompletedResult() {
@@ -300,5 +307,67 @@ describe("ResultDetailPage", () => {
         expect(await screen.findByRole("link", {
             name: "최신 재분석 결과 보기",
         })).toHaveAttribute("href", "/results/job-reanalysis-latest");
+    });
+
+    it("loads the lineage counterpart and compares source before reanalysis", async () => {
+        const sourceResult = createCompletedResult();
+        sourceResult.data.jobId = "job-print-test";
+        sourceResult.data.analysisKind = "STANDARD";
+        sourceResult.data.latestReanalysisJobId = "job-reanalysis-latest";
+        sourceResult.data.result.fileName = "원본.mp4";
+
+        const reanalysisResult = createCompletedResult();
+        reanalysisResult.data.jobId = "job-reanalysis-latest";
+        reanalysisResult.data.analysisKind = "VIDEO_LLM_REANALYSIS";
+        reanalysisResult.data.sourceJobId = "job-print-test";
+        reanalysisResult.data.result.fileName = "재분석.mp4";
+
+        analysisApiMock.getResult.mockImplementation((requestedJobId) => {
+            if (requestedJobId === "job-reanalysis-latest") {
+                return Promise.resolve(reanalysisResult);
+            }
+            return Promise.resolve(sourceResult);
+        });
+
+        renderResultDetailPage();
+
+        fireEvent.click(await screen.findByRole("button", {
+            name: "원본과 재분석 비교",
+        }));
+
+        expect(
+            await screen.findByTestId("lineage-compare-destination")
+        ).toHaveTextContent("job-print-test,job-reanalysis-latest");
+        expect(analysisApiMock.getResult)
+            .toHaveBeenCalledWith("job-reanalysis-latest");
+    });
+
+    it("keeps source first when comparison starts from a reanalysis detail", async () => {
+        const reanalysisResult = createCompletedResult();
+        reanalysisResult.data.jobId = "job-print-test";
+        reanalysisResult.data.analysisKind = "VIDEO_LLM_REANALYSIS";
+        reanalysisResult.data.sourceJobId = "job-source";
+
+        const sourceResult = createCompletedResult();
+        sourceResult.data.jobId = "job-source";
+        sourceResult.data.analysisKind = "STANDARD";
+        sourceResult.data.latestReanalysisJobId = "job-print-test";
+
+        analysisApiMock.getResult.mockImplementation((requestedJobId) => {
+            if (requestedJobId === "job-source") {
+                return Promise.resolve(sourceResult);
+            }
+            return Promise.resolve(reanalysisResult);
+        });
+
+        renderResultDetailPage();
+
+        fireEvent.click(await screen.findByRole("button", {
+            name: "원본과 재분석 비교",
+        }));
+
+        expect(
+            await screen.findByTestId("lineage-compare-destination")
+        ).toHaveTextContent("job-source,job-print-test");
     });
 });

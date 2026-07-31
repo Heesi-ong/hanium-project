@@ -662,3 +662,22 @@ video-llm-engine 내부에는 아직 여러 세그먼트 전체를 아우르는 
 남은 실환경 gate는 8절의 NVIDIA timeout/5xx 장애 주입과 복구 후 REAL 성공,
 500MB 경계 Asset 경로 확인이다. 정적 테스트는 실제 공급자와 staging 네트워크의
 지연·정리 동작을 대체하지 않는다.
+
+## 11. 2026-07-31 로컬 HTTP 공급자 장애 주입
+
+단순 함수 mock보다 실제 호출 경로에 가까운 로컬 장애 주입 테스트를 추가했다.
+loopback HTTP 서버를 NVIDIA 호환 endpoint로 사용해 FastAPI 라우트 → `httpx` →
+공급자 응답 → 정책 변환 전체를 통과시켰다.
+
+- 공급자 503: STRICT는 502 `VIDEO_LLM_REAL_MODEL_FAILED`, DEGRADED는 200
+  `generationMode=FALLBACK`
+- 공급자 응답 지연이 `NVIDIA_VIDEO_LLM_TIMEOUT_SECONDS`를 초과: STRICT는 502,
+  DEGRADED는 FALLBACK
+- STRICT에서 첫 503 뒤 공급자를 정상 JSON 응답으로 전환: 다음 요청은 200
+  `generationMode=REAL`로 복구
+- 전체 Video LLM 비라이브 회귀: 184 passed, live 1 deselected
+
+이 검증은 실제 소켓과 `httpx` timeout을 사용하지만 로컬 가짜 공급자에 한정된다.
+따라서 backend 재분석 child의 `FAILED` 저장, Redis 비용·quota 메트릭, 실제 NVIDIA
+네트워크/계정 정책, 500MB Asset 업로드·정리는 아직 staging에서 별도로 rehearsal해야
+한다.

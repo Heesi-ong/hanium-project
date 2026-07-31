@@ -54,6 +54,17 @@ const RUNNING_STATUSES = [
     "MERGING_RESULT",
 ];
 
+function toComparableResult(resultResponse, fallbackJobId) {
+    return {
+        ...(resultResponse?.result || EMPTY_OBJECT),
+        jobId: resultResponse?.jobId || fallbackJobId,
+        analysisKind: resultResponse?.analysisKind,
+        sourceJobId: resultResponse?.sourceJobId,
+        latestReanalysisJobId: resultResponse?.latestReanalysisJobId,
+        videoLlmGenerationMode: resultResponse?.videoLlmGenerationMode,
+    };
+}
+
 function ResultDetailPage() {
     const { jobId } = useParams();
     const navigate = useNavigate();
@@ -75,6 +86,7 @@ function ResultDetailPage() {
     const [reanalyzing, setReanalyzing] = useState(false);
     const [cancelling, setCancelling] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [comparingLineage, setComparingLineage] = useState(false);
     const [error, setError] = useState("");
     const [loadErrorCode, setLoadErrorCode] = useState("");
     const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
@@ -101,6 +113,13 @@ function ResultDetailPage() {
     const analysisKind = resultData?.analysisKind || "STANDARD";
     const sourceJobId = resultData?.sourceJobId || null;
     const latestReanalysisJobId = resultData?.latestReanalysisJobId || null;
+    const lineageCounterpartJobId =
+        sourceJobId ||
+        (
+            latestReanalysisJobId && latestReanalysisJobId !== jobId
+                ? latestReanalysisJobId
+                : null
+        );
     // 재분석 API도 DB에 저장된 mode를 사전 조건으로 사용합니다. 구형 결과 JSON의
     // pipeline 값만 보고 버튼을 노출하면 DB mode backfill이 없는 결과에서 요청이
     // 반드시 409가 되므로, UI 자격 판정도 최상위 저장값과 동일하게 맞춥니다.
@@ -275,6 +294,62 @@ function ResultDetailPage() {
             "분석 상태 확인 중 오류가 발생했습니다."
         ));
     }, []);
+
+    const handleCompareLineage = useCallback(async () => {
+        if (!lineageCounterpartJobId || !resultData) {
+            return;
+        }
+
+        try {
+            setComparingLineage(true);
+            setError("");
+
+            const counterpartResponse = await getResult(lineageCounterpartJobId);
+            const counterpartData = counterpartResponse.data;
+            const currentStatusForComparison = resultData.result?.status;
+            const counterpartStatus = counterpartData?.result?.status;
+
+            if (
+                currentStatusForComparison !== "COMPLETED" ||
+                counterpartStatus !== "COMPLETED"
+            ) {
+                setError("원본과 재분석이 모두 완료된 뒤 비교할 수 있습니다.");
+                return;
+            }
+
+            const sourceResultData = sourceJobId ? counterpartData : resultData;
+            const reanalysisResultData = sourceJobId ? resultData : counterpartData;
+
+            navigate("/results/compare", {
+                state: {
+                    results: [
+                        toComparableResult(
+                            sourceResultData,
+                            sourceJobId || jobId,
+                        ),
+                        toComparableResult(
+                            reanalysisResultData,
+                            sourceJobId ? jobId : latestReanalysisJobId,
+                        ),
+                    ],
+                },
+            });
+        } catch (requestError) {
+            setError(getErrorMessage(
+                requestError,
+                "원본과 재분석 결과를 비교하기 위해 불러오는 중 오류가 발생했습니다."
+            ));
+        } finally {
+            setComparingLineage(false);
+        }
+    }, [
+        jobId,
+        latestReanalysisJobId,
+        lineageCounterpartJobId,
+        navigate,
+        resultData,
+        sourceJobId,
+    ]);
 
     // 이미 결과 상세를 보고 있는 화면이라, UploadPage(접수 직후 즉시 실패로 간주)와
     // 달리 잠깐의 네트워크 실패는 MAX_CONSECUTIVE_POLL_FAILURES번까지 참고 다음
@@ -752,6 +827,18 @@ function ResultDetailPage() {
                             >
                                 최신 재분석 결과 보기
                             </Link>
+                        )}
+                        {lineageCounterpartJobId && (
+                            <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleCompareLineage}
+                                disabled={comparingLineage}
+                            >
+                                {comparingLineage
+                                    ? "비교 결과 불러오는 중..."
+                                    : "원본과 재분석 비교"}
+                            </button>
                         )}
                     </div>
                 </AnimatedSection>

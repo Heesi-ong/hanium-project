@@ -1,6 +1,7 @@
 package com.hanium.presentation.application.analysis;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.analysis.type.AnalysisStep;
@@ -29,6 +30,8 @@ public class AnalysisProgressService {
 
     private static final String KEY_PREFIX = "analysis:progress:";
     private static final Duration TTL = Duration.ofHours(2);
+    private static final TypeReference<Map<String, Object>> PROGRESS_TYPE = new TypeReference<>() {
+    };
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -86,7 +89,6 @@ public class AnalysisProgressService {
      * 반환하며, 이 경우 호출하는 쪽에서 DB에 저장된 최종 상태(AnalysisStatusResponse)로
      * 대체해서 보여주면 됩니다.
      */
-    @SuppressWarnings("unchecked")
     public Map<String, Object> getProgress(String jobId) {
         try {
             String raw = redisTemplate.opsForValue().get(buildKey(jobId));
@@ -95,7 +97,7 @@ public class AnalysisProgressService {
                 return null;
             }
 
-            Map<String, Object> progress = objectMapper.readValue(raw, Map.class);
+            Map<String, Object> progress = objectMapper.readValue(raw, PROGRESS_TYPE);
             onRedisSuccess();
 
             return progress;

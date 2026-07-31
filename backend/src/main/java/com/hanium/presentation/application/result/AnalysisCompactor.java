@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import org.springframework.stereotype.Component;
@@ -541,13 +542,8 @@ public class AnalysisCompactor {
         return value == null ? Map.of() : value;
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> nullSafeMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-
-        return Map.of();
+        return JsonMapSupport.copyStringKeyedMap(value);
     }
 
     private Object nullSafeObject(Object value) {

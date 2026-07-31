@@ -1,5 +1,6 @@
 package com.hanium.presentation.application.coach;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
@@ -239,7 +240,6 @@ public class CoachChatService {
         return summaries;
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> readScoreSummary(String jobId) {
         try {
             Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
@@ -249,7 +249,9 @@ public class CoachChatService {
             }
 
             Object scoreSummary = finalResult.get("scoreSummary");
-            return scoreSummary instanceof Map ? (Map<String, Object>) scoreSummary : null;
+            return scoreSummary instanceof Map<?, ?>
+                    ? JsonMapSupport.copyStringKeyedMap(scoreSummary)
+                    : null;
         } catch (RuntimeException exception) {
             // 과거 발표 하나의 결과 파일이 손상/누락돼도 히스토리 요약 전체나 현재 코치
             // 채팅이 실패하면 안 되므로, 이 항목만 건너뜁니다.

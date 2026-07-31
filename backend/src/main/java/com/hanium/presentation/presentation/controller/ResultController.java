@@ -166,12 +166,11 @@ public class ResultController {
         return createLocalStreamingResponse(uploadedVideo, headers);
     }
 
-    @SuppressWarnings("unchecked")
     private ResponseEntity<ResourceRegion> createRedirectResponse(String presignedStreamingUrl) {
-        return (ResponseEntity<ResourceRegion>) (ResponseEntity<?>) ResponseEntity
+        return ResponseEntity
                 .status(HttpStatus.FOUND)
                 .location(URI.create(presignedStreamingUrl))
-                .build();
+                .<ResourceRegion>build();
     }
 
     private Long getCurrentUserId(Authentication authentication) {

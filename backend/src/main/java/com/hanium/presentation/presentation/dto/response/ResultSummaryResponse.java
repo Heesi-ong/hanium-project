@@ -1,5 +1,6 @@
 package com.hanium.presentation.presentation.dto.response;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
@@ -156,7 +157,6 @@ public record ResultSummaryResponse(
         return normalizedResult;
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> extractScoreSummary(
             Map<String, Object> finalResult
     ) {
@@ -166,14 +166,13 @@ public record ResultSummaryResponse(
 
         Object scoreSummary = finalResult.get("scoreSummary");
 
-        if (scoreSummary instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
+        if (scoreSummary instanceof Map<?, ?>) {
+            return JsonMapSupport.copyStringKeyedMap(scoreSummary);
         }
 
         return createEmptyScoreSummary();
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> extractFeedback(
             Map<String, Object> finalResult,
             Map<String, Object> pipeline
@@ -184,8 +183,8 @@ public record ResultSummaryResponse(
 
         Object feedback = finalResult.get("feedback");
 
-        if (feedback instanceof Map<?, ?> map) {
-            Map<String, Object> source = (Map<String, Object>) map;
+        if (feedback instanceof Map<?, ?>) {
+            Map<String, Object> source = JsonMapSupport.copyStringKeyedMap(feedback);
 
             Map<String, Object> normalizedFeedback = new LinkedHashMap<>();
             Object sourceGenerationMode = getOrDefault(source, "generationMode", "UNKNOWN");
@@ -225,7 +224,6 @@ public record ResultSummaryResponse(
         return createFeedbackFromPipeline(pipeline);
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> extractVisualAnalysisSummary(
             Map<String, Object> finalResult,
             Map<String, Object> pipeline
@@ -236,13 +234,13 @@ public record ResultSummaryResponse(
 
         Object visualAnalysis = finalResult.get("visualAnalysis");
 
-        if (visualAnalysis instanceof Map<?, ?> map) {
-            Map<String, Object> source = (Map<String, Object>) map;
+        if (visualAnalysis instanceof Map<?, ?>) {
+            Map<String, Object> source = JsonMapSupport.copyStringKeyedMap(visualAnalysis);
             Map<String, Object> normalizedVisualAnalysis = new LinkedHashMap<>();
             Object model = source.get("model");
 
-            if (model instanceof Map<?, ?> modelMap) {
-                Map<String, Object> modelSource = (Map<String, Object>) modelMap;
+            if (model instanceof Map<?, ?>) {
+                Map<String, Object> modelSource = JsonMapSupport.copyStringKeyedMap(model);
                 Map<String, Object> normalizedModel = new LinkedHashMap<>();
                 Object pipelineGenerationMode = pipeline.get("videoLlmGenerationMode");
                 Object pipelineAnalysis = pipeline.get("videoLlmAnalysis");
@@ -267,7 +265,6 @@ public record ResultSummaryResponse(
         return createVisualAnalysisFromPipeline(pipeline);
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> extractVisualAnalysisDetail(
             Map<String, Object> finalResult,
             Map<String, Object> pipeline
@@ -278,15 +275,15 @@ public record ResultSummaryResponse(
 
         Object visualAnalysis = finalResult.get("visualAnalysis");
 
-        if (visualAnalysis instanceof Map<?, ?> map) {
-            Map<String, Object> source = (Map<String, Object>) map;
+        if (visualAnalysis instanceof Map<?, ?>) {
+            Map<String, Object> source = JsonMapSupport.copyStringKeyedMap(visualAnalysis);
             Map<String, Object> normalizedVisualAnalysis = new LinkedHashMap<>(source);
             Object model = source.get("model");
             Object pipelineGenerationMode = pipeline.get("videoLlmGenerationMode");
             Object pipelineAnalysis = pipeline.get("videoLlmAnalysis");
 
-            if (model instanceof Map<?, ?> modelMap) {
-                Map<String, Object> modelSource = (Map<String, Object>) modelMap;
+            if (model instanceof Map<?, ?>) {
+                Map<String, Object> modelSource = JsonMapSupport.copyStringKeyedMap(model);
                 Map<String, Object> normalizedModel = new LinkedHashMap<>(modelSource);
 
                 normalizedModel.put("name", getFirstMeaningful(
@@ -313,7 +310,6 @@ public record ResultSummaryResponse(
         return createVisualAnalysisFromPipeline(pipeline);
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> extractPipeline(
             Map<String, Object> finalResult
     ) {
@@ -323,8 +319,8 @@ public record ResultSummaryResponse(
 
         Object pipeline = finalResult.get("pipeline");
 
-        if (pipeline instanceof Map<?, ?> map) {
-            Map<String, Object> source = (Map<String, Object>) map;
+        if (pipeline instanceof Map<?, ?>) {
+            Map<String, Object> source = JsonMapSupport.copyStringKeyedMap(pipeline);
             Map<String, Object> normalizedPipeline = new LinkedHashMap<>();
 
             normalizedPipeline.put("videoLlmAnalysis", getOrDefault(source, "videoLlmAnalysis", "-"));

@@ -36,7 +36,7 @@
 | 항목 | 현재 상태 | 구현·확인 내용 | 남은 운영 게이트 |
 |---|---|---|---|
 | P1-01 재설정 토큰 | 완료 | 사용자별 기존 활성 토큰 무효화, 변경 성공 후 잔여 토큰 무효화, 만료 토큰 정리 작업 | 운영 DB에서 정리량·락 경합 관측 |
-| P1-02 SMTP 정책 | 코드 완료 | 기능 플래그, prod 기동 검증, AES-GCM 암호화 email outbox, lease·backoff·DEAD_LETTER·관리자 재큐잉, SMTP timeout, health/UI·메트릭 | 실제 MySQL V20 migration 및 SMTP 송수신·장애 rehearsal |
+| P1-02 SMTP 정책 | 코드·로컬 SMTP 프로토콜 rehearsal 완료 | 기능 플래그, prod 기동 검증, AES-GCM 암호화 email outbox, lease·backoff·DEAD_LETTER·관리자 재큐잉, SMTP timeout, health/UI·메트릭, 실제 JavaMail 정상 송신과 451 장애→재큐잉→복구. MySQL fresh V1→V24 검증에 V20 포함 | 실제 SMTP provider TLS/인증·반송, MySQL에서 worker 동시성 rehearsal |
 | P1-03 삭제 신뢰성 | 코드·장애 복구 실측 완료 | DB 삭제 outbox, 활성 작업 멱등성, lease 복구, 트랜잭션 밖 MinIO I/O, 재시도·DEAD_LETTER·관리자 재큐잉·감사로그, 완료 행 30일 정리, 설정 검증·메트릭. 실제 MySQL V19와 MinIO 중단→PENDING→DEAD_LETTER→관리자 재큐잉→복구→COMPLETED를 확인 | 배포 환경별 주기적 복구 훈련과 경보 수신 확인 |
 | P1-04 SSRF·경로 경계 | 코드 완료 | 엔진별 host:port allowlist, redirect 차단, 허용 base directory 검증, 보안 회귀 테스트 | 배포 환경의 실제 MinIO endpoint allowlist와 presigned URL E2E |
 | P1-05 설정 검증 | 코드 완료 | backend executor/rate limit/timeout 관계, 두 Python 엔진의 불변 settings 객체·기동 전수 검증, Video LLM mode/backend 교차 검증 | 실제 Compose 기동에서 잘못된 설정 주입 fail-fast 확인 |
@@ -610,7 +610,7 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 1. staging 정책을 STRICT 또는 DEGRADED로 확정하고 NVIDIA timeout/5xx 장애를 주입해
    child FAILED, REAL 복구 성공, 비용·quota 메트릭을 rehearsal한다.
 2. 500MB 경계 영상의 asset 공유 시 저장 중복이 없는지 확인한다.
-3. 테스트 SMTP에서 정상 발송과 연결 실패 → backoff → DEAD_LETTER → 관리자 재큐잉 흐름을 rehearsal한다.
+3. 실제 SMTP provider에서 TLS/인증 송신과 반송·장애 알림을 rehearsal한다.
 4. 잘못된 Python 설정을 의도적으로 주입해 두 엔진이 readiness 전에 종료되는지 Compose에서 확인한다.
 5. 원본/재분석 직접 비교 UX를 보완한다.
 
@@ -736,3 +736,31 @@ video-llm-engine 2.25kB만 전송했고 수초 내 완료됐다. 최종 이미�
 - frontend 전체 테스트 45 files, 218 passed
 - ESLint 통과
 - Vite production build 통과
+
+## 14. 2026-07-31 실제 JavaMail SMTP outbox rehearsal
+
+기존 자동 테스트는 outbox worker의 상태 전이에서는 `PasswordResetEmailSender`를
+mock하고, 관리자 DEAD_LETTER API는 별도 테스트에서 검증했다. 따라서 JavaMail의 실제
+SMTP 프로토콜 오류가 DB backoff와 관리자 복구까지 연결되는지는 하나의 흐름으로
+증명되지 않았다.
+
+loopback SMTP 서버를 사용하는 backend 통합 테스트를 추가해 다음을 실제
+`JavaMailSender` 경로로 확인했다.
+
+- 정상 SMTP 수신: MIME Base64 본문을 디코딩해 수신자와 동일 reset link 확인
+- 성공 후 outbox `COMPLETED`, 수신 이메일·암호문·processing token 삭제
+- SMTP `451` 응답: `MailSendException`, 첫 실패 후 1초 backoff와 `PENDING`
+- 두 번째 실패: 재시도 예산 소진 후 `DEAD_LETTER`, 암호화 reset link 보존
+- 관리자 인증 HTTP API: DEAD_LETTER 목록 조회와 재큐잉, attempt/error 초기화,
+  감사로그 생성
+- SMTP 복구 후 worker 재실행: 동일 링크 발송, `COMPLETED`, 민감 payload 삭제
+
+새 테스트를 포함한 backend 전체 회귀는 438 tests, 9 skipped,
+0 failures/errors로 통과했다.
+
+상태 표에 남아 있던 “실제 MySQL V20 migration 미검증”은 같은 문서의 fresh MySQL
+V1→V24 통과 근거와 모순되어 수정했다. 해당 migration 체인의 V20 스키마 생성은 이미
+실제 MySQL에서 통과했지만, 이번 SMTP worker 통합 테스트 자체는 H2에서 실행했다.
+격리 MySQL 재실행도 시도했으나 Docker daemon이 30초 이상 응답하지 않아 중단하고
+Docker Desktop을 종료했다. 따라서 실제 MySQL의 worker 잠금·동시성과 운영 SMTP
+provider의 TLS/인증·반송 정책은 여전히 외부 운영 gate다.

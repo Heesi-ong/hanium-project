@@ -894,3 +894,50 @@ child→source 순서로 삭제하도록 수정했다. `AnalysisJob`의 optimist
 `UserWithdrawalIntegrationTest`에는 일반 queued 작업 자동 취소, queued 재분석
 child→source와 공유 asset 삭제, RUNNING 작업 전체 롤백을 각각 고정했다. 변경 후
 backend 전체 회귀는 444 tests, 9 skipped, 0 failures/errors로 통과했다.
+
+## 18. 2026-07-31 프론트엔드 의존성 audit 복구와 제한적 위험 수용
+
+최신 frontend 이미지를 빌드하는 과정에서 `npm ci`가 high 취약점 4건을 보고했다.
+현재 advisory DB로 다시 확인한 결과 직접·전이 의존성에는 다음 세 문제가 있었다.
+
+- `postcss` 8.5.16: line return parsing 오류, 8.5.18 이상에서 수정
+- `brace-expansion` 5.0.7: 과도한 backtracking에 의한 ReDoS, 5.0.8 이상에서 수정
+- `react-router`/`react-router-dom` 7.18.1: unstable RSC API의 원격 코드 실행,
+  안정판 7.x에는 아직 수정 버전 없음
+
+근거는 GitHub Advisory Database의
+[PostCSS GHSA-r28c-9q8g-f849](https://github.com/advisories/GHSA-r28c-9q8g-f849),
+[brace-expansion GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg),
+[React Router GHSA-qwww-vcr4-c8h2](https://github.com/advisories/GHSA-qwww-vcr4-c8h2)를
+기준으로 했다.
+
+`postcss`는 8.5.25, `brace-expansion`은 5.0.9로 lockfile을 갱신해 해당 두
+advisory를 제거했다. React Router는 최신 7.x인 7.18.2로 정확히 고정했다.
+7.11.0으로 내리는 대안도 실제 audit했지만 이전 XSS·RCE·DoS advisory 여러 건을
+다시 도입하므로 즉시 되돌렸다. advisory가 안내하는 수정 버전 8.3은 현재 npm의
+안정판으로 배포되지 않아 즉시 업그레이드할 수 없다.
+
+현재 애플리케이션은 `BrowserRouter`, `MemoryRouter`, `Routes`, `Link` 등 선언형
+SPA API만 사용하며 RSC API를 사용하지 않는다. 이 전제를 사람이 기억하는 임시
+예외로 남기지 않도록 `npm run audit:dependencies`를 추가했다. 이 검증은:
+
+- 허용 대상을 `GHSA-qwww-vcr4-c8h2`와 `react-router` 계열 두 package로만 제한하고,
+- 설치 버전이 7.18.x인지 확인하며,
+- 소스 전체에서 직접 `react-router`/server/RSC import와
+  `RSCRouter`, `createCallServer`, `routeRSCServerRequest` 사용을 차단하고,
+- 그 밖의 dev·production advisory는 하나라도 생기면 실패한다.
+
+기존 CI의 무조건적인 `npm audit --audit-level=high`는 이 조건부 gate로 교체했다.
+따라서 raw `npm audit` 결과는 여전히 high 2건이고 “취약점 0건”으로 간주하지
+않는다. 이는 RSC 미사용을 전제로 한 한시적 위험 수용이다. React Router 8.3 이상
+안정판이 배포되고 애플리케이션 회귀 테스트가 통과하면 예외와 정적 차단을 제거하고
+정상 업그레이드하는 것이 종료 조건이다.
+
+변경 후 검증 결과:
+
+- 깨끗한 `npm ci`: 성공, 298 packages 중 raw high 2건
+- `npm run audit:dependencies`: 허용된 React Router advisory 2건만 조건부 통과
+- frontend 전체 회귀: 45 files, 220 tests 통과
+- ESLint 및 Vite production build: 통과
+- `docker compose build frontend`: 새 lockfile로 production nginx 이미지 빌드 성공
+- 빌드된 이미지의 `nginx -t`: template 렌더링 후 설정 구문 검증 성공

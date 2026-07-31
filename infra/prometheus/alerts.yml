@@ -21,9 +21,13 @@ groups:
         # storage_deletion_dead_letter, password_reset_email_dead_letter 등)도 Prometheus
         # staleness 처리로 함께 사라져 관련 알림까지 조용히 무력화된다(2026-07-31 발견:
         # analysis-worker가 3시간 넘게 다운된 상태가 사람이 직접 확인하기 전까지 감지되지
-        # 않았음). DNS SD로 타깃이 아예 0개가 되는 단일 프로세스(monolith) 배포에서는
-        # up 시계열 자체가 없어 이 규칙이 조용히 무시된다.
-        expr: up{job="analysis-worker"} == 0
+        # 않았음). 이 job은 DNS SD(dns_sd_configs)로 스크레이프되는데, 컨테이너가 완전히
+        # 정지되면 Docker 내장 DNS가 해당 이름을 아예 반환하지 않아 타깃과 up 시계열
+        # 자체가 사라진다 — up{...}==0만으로는 절대 안 잡힌다(2026-07-31 실측: 컨테이너를
+        # 직접 정지시켜 재현, absent()를 추가하기 전까진 firing되지 않음을 확인). 단일
+        # 프로세스(monolith, analysis-worker 서비스 자체가 없는) 배포에서도 동일하게
+        # up 시계열이 없으므로 absent()가 필요하다.
+        expr: up{job="analysis-worker"} == 0 or absent(up{job="analysis-worker"})
         for: 2m
         labels:
           severity: critical

@@ -47,7 +47,7 @@ P2 보완도 현재 작업 트리에서 시작했다.
 |---|---|---|---|
 | P2-01 JWT 강제 무효화 | 코드·장애 복구 실측 완료 | SHA-256 DB 폐기 원장, Redis 양성·read-through 캐시, DB fallback, DB 판정 실패 시 503 fail-closed, 만료 행 정리, 메트릭·경보. 실제 MySQL V1→V24와 Redis 중단/복구를 확인 | 배포 환경별 장애 훈련과 경보 수신 확인 |
 | P2-03 Video LLM 실패 정책 | 핵심 정책 코드 완료 | STRICT/DEGRADED/DISABLED, STRICT 502→작업 실패, DEGRADED만 FALLBACK, readiness/UI 정책 노출, MOCK 제외 fallback 경보 | 실제 NVIDIA 장애 rehearsal |
-| P2-03 R1~R4 보존형 재분석 | 코드 완료, R5 주요 DB·스토리지 실측 완료 | V22 asset FK, V23 lineage/mode, V24 멱등·active unique guard, 공유 asset 참조 안전 삭제/retention 잠금, source 선삭제 차단, 202 접수·200 replay·403/409/410/429, 엔진/backend `requireReal` 이중 검증, 상세/목록 lineage 응답, FALLBACK 확인 dialog·child 이동/polling UI. MySQL 8.4 fresh V1→V24, MinIO-only 원본, 동시 10요청, child→source 삭제와 Outbox DEAD_LETTER 관리자 복구 실측 통과. 500MiB 파일 경계와 multipart 1MiB 여유를 자동 검증 | 실제 NVIDIA REAL·timeout/5xx, nginx→backend→MinIO 500MiB 실전송 |
+| P2-03 R1~R4 보존형 재분석 | 코드 완료, R5 DB·스토리지·500MiB 경계 실측 완료 | V22 asset FK, V23 lineage/mode, V24 멱등·active unique guard, 공유 asset 참조 안전 삭제/retention 잠금, source 선삭제 차단, 202 접수·200 replay·403/409/410/429, 엔진/backend `requireReal` 이중 검증, 상세/목록 lineage 응답, FALLBACK 확인 dialog·child 이동/polling UI. MySQL 8.4 fresh V1→V24, MinIO-only 원본, 동시 10요청, child→source 삭제와 Outbox DEAD_LETTER 관리자 복구, production nginx 500MiB 업로드·분석·asset 공유·탈퇴 정리 실측 통과 | 실제 NVIDIA REAL·timeout/5xx |
 
 추가 감사에서 발견한 두 회귀 가능성도 현재 작업 트리에서 보완했다.
 
@@ -607,10 +607,8 @@ local 프로필은 H2 + `ddl-auto: update`, dev/prod는 MySQL + Flyway다. 이�
 
 1. staging 정책을 STRICT 또는 DEGRADED로 확정하고 NVIDIA timeout/5xx 장애를 주입해
    child FAILED, REAL 복구 성공, 비용·quota 메트릭을 rehearsal한다.
-2. 500MiB 영상을 nginx→backend→MinIO로 실제 전송해 edge·네트워크·스토리지
-   조합에서도 경계가 유지되는지 확인한다.
-3. 실제 SMTP provider에서 TLS/인증 송신과 반송·장애 알림을 rehearsal한다.
-4. 공개 도메인의 TLS 발급·갱신, 백업 복원, Redis/worker 강제 종료를 포함한 staging
+2. 실제 SMTP provider에서 TLS/인증 송신과 반송·장애 알림을 rehearsal한다.
+3. 공개 도메인의 TLS 발급·갱신, 백업 복원, Redis/worker 강제 종료를 포함한 staging
    운영 rehearsal을 수행한다.
 
 ## 9. 2026-07-31 추가 리뷰: 구간 분할과 회로 차단기 시간 기준 불일치
@@ -658,9 +656,9 @@ video-llm-engine 내부에는 아직 여러 세그먼트 전체를 아우르는 
 - 2개 세그먼트 중 첫 공급자 응답에서 deadline이 만료되면 두 번째 호출을 하지 않는
   회귀 테스트를 추가해 불필요한 비용 발생도 함께 차단했다.
 
-남은 실환경 gate는 8절의 NVIDIA timeout/5xx 장애 주입과 복구 후 REAL 성공,
-500MB 경계 Asset 경로 확인이다. 정적 테스트는 실제 공급자와 staging 네트워크의
-지연·정리 동작을 대체하지 않는다.
+남은 실환경 gate는 8절의 NVIDIA timeout/5xx 장애 주입과 복구 후 REAL 성공이다.
+500MiB Asset 경계는 17절의 production nginx 로컬 rehearsal로 완료했다. 로컬 검증은
+실제 공급자와 staging 네트워크의 지연·정리 동작을 대체하지 않는다.
 
 ## 11. 2026-07-31 로컬 HTTP 공급자 장애 주입
 
@@ -678,8 +676,8 @@ loopback HTTP 서버를 NVIDIA 호환 endpoint로 사용해 FastAPI 라우트 �
 
 이 검증은 실제 소켓과 `httpx` timeout을 사용하지만 로컬 가짜 공급자에 한정된다.
 따라서 backend 재분석 child의 `FAILED` 저장, Redis 비용·quota 메트릭, 실제 NVIDIA
-네트워크/계정 정책, 500MB Asset 업로드·정리는 아직 staging에서 별도로 rehearsal해야
-한다.
+네트워크/계정 정책은 아직 staging에서 별도로 rehearsal해야 한다. 500MiB Asset
+업로드·정리는 17절의 로컬 production nginx 경로에서 별도 완료했다.
 
 ## 12. 2026-07-31 Compose fail-fast 및 Python 이미지 컨텍스트
 
@@ -807,10 +805,9 @@ storage job id를 사용한다. Video LLM 접수 전 `sourceExists()`도 같은 
   220 tests 통과
 - 프론트 ESLint와 Vite production build 통과
 
-현재 Docker daemon이 비활성 상태이므로 실제 500MiB 영상을
-nginx→backend→MinIO→재분석까지 전송하지는 못했다. 이번 수정은 코드·설정 경계와
-저장 참조 구조의 정합성을 보장하지만, proxy buffering, 요청 시간, 네트워크 대역폭,
-MinIO 저장 및 이후 원본 정리는 staging 실전송으로 별도 확인해야 한다.
+이 절 작성 직후 Docker Desktop을 기동해 17절의 실제 500MiB production nginx
+rehearsal까지 완료했다. 공개 도메인과 staging의 네트워크 대역폭·proxy buffering은
+여전히 배포 환경에서 별도 관측해야 한다.
 
 ## 16. 2026-07-31 Open EntityManager in View 비활성화
 
@@ -830,3 +827,70 @@ transaction 안에서 접근함을 확인했다.
 false임을 회귀 검증한다. 기존 controller 통합 테스트를 포함한 backend 전체 회귀는
 442 tests, 9 skipped, 0 failures/errors로 통과해 transaction 밖 지연 로딩 의존이
 현재 자동 검증 범위에는 없음을 확인했다.
+
+## 17. 2026-07-31 production nginx 500MiB 업로드와 탈퇴 정리 rehearsal
+
+### 500MiB 경계 실측
+
+production Compose overlay의 self-signed HTTPS nginx, 최신 backend, MySQL, Redis,
+MinIO와 두 Python 엔진을 실제 컨테이너로 기동했다. `sample-demo.mp4`의 유효한 MP4
+header와 30.125초 duration을 유지하면서 파일 끝을 확장해 정확히
+524,288,000바이트인 경계 파일을 만들었다.
+
+- `POST /api/auth/signup`: 201
+- `POST /api/auth/login`: 200, Secure cookie를 HTTPS 요청에 사용
+- `POST /api/analysis/upload`: 200
+- backend 응답 `fileSize`: 524,288,000
+- 로컬 `/storage/uploads/{jobId}/original.mp4`: 524,288,000바이트
+- MySQL `uploaded_videos.file_size`: 524,288,000
+- MinIO `mc stat`: 524,288,000바이트, `Content-Type=video/mp4`, multipart ETag
+- 외부 AI를 모두 끈 기본 분석: QUEUED→BASIC_ANALYZING→COMPLETED
+
+따라서 501MiB request 상한은 nginx와 Spring multipart envelope를 실제로 통과했고,
+애플리케이션의 실제 영상 상한 500MiB는 그대로 유지됐다.
+
+### 500MiB asset 공유 실측
+
+재분석 API는 STANDARD FALLBACK source만 받는다. 외부 NVIDIA 호출과 과금을 만들지
+않기 위해 기본 분석으로 생성된 테스트 source의 `video_llm_generation_mode` 한 행만
+SKIPPED→FALLBACK test fixture로 전환하고 analysis worker를 중지했다. 이후 실제
+재분석 API를 호출했다.
+
+- 첫 요청: 202, child QUEUED 생성
+- 같은 Idempotency-Key replay: 200, 같은 child 반환
+- source와 child의 `video_asset_id`: 모두 145
+- `uploaded_videos`: 1행
+- 해당 asset 참조 job: 2행
+- 로컬 원본 파일: 1개
+- MinIO upload 객체: 1개, 524,288,000바이트
+
+즉 child 생성 시 500MiB 파일을 로컬 또는 MinIO에 복사하지 않는다. 위 FALLBACK
+전환은 재분석 precondition만 만드는 controlled fixture이며 실제 NVIDIA FALLBACK
+품질이나 장애 정책을 증명하지 않는다.
+
+### rehearsal에서 발견한 회원 탈퇴 버그
+
+공유 asset 검증 후 테스트 계정을 `DELETE /api/users/me`로 정리하려 했으나 queued
+재분석 child 때문에 500 `FILE_DELETE_FAILED`가 발생했다. `UserWithdrawalService`가
+개별 결과 삭제용 `ResultCommandService.deleteResult()`를 그대로 순회 호출했고,
+이 메서드는 사용자 실수 방지를 위해 QUEUED/RUNNING 삭제를 거부하기 때문이다.
+워커가 꺼져 QUEUED가 계속 유지되면 사용자는 계정을 영구히 삭제할 수 있었다.
+
+회원 탈퇴에 한해 QUEUED 작업을 같은 transaction에서 즉시 CANCELLED로 전환한 뒤
+child→source 순서로 삭제하도록 수정했다. `AnalysisJob`의 optimistic version 덕분에
+동시에 worker가 먼저 선점하면 flush가 실패해 전체 탈퇴가 롤백된다. 이미 RUNNING인
+작업은 처리 스레드가 삭제된 job/asset에 결과를 다시 쓰는 race를 막기 위해 강제
+삭제하지 않고 기존처럼 탈퇴를 롤백한다. 개별 결과 삭제의 QUEUED/RUNNING 차단도
+그대로 유지한다.
+
+최신 backend 이미지로 같은 테스트 계정의 탈퇴를 재시도한 결과:
+
+- 탈퇴 API: 200
+- 사용자, source, child, 공유 `uploaded_videos`: 모두 0행
+- 로컬 upload/source-result/child-result: 모두 삭제
+- storage deletion outbox 3건: PENDING→COMPLETED
+- MinIO upload/source-result/child-result prefix: 모두 객체 0건
+
+`UserWithdrawalIntegrationTest`에는 일반 queued 작업 자동 취소, queued 재분석
+child→source와 공유 asset 삭제, RUNNING 작업 전체 롤백을 각각 고정했다. 변경 후
+backend 전체 회귀는 444 tests, 9 skipped, 0 failures/errors로 통과했다.

@@ -85,6 +85,28 @@ public class UserWithdrawalService {
         for (AnalysisJob analysisJob : analysisJobs) {
             String jobId = analysisJob.getJobId();
             try {
+                // 개별 결과 삭제 API는 사용자가 실수로 대기 작업을 지우지 못하게 QUEUED를
+                // 거부한다. 하지만 회원 탈퇴에서는 이 정책을 그대로 적용하면 워커가 꺼져
+                // 영원히 QUEUED인 작업 하나만 있어도 계정을 삭제할 수 없다. 아직 실행되지
+                // 않은 작업은 이 트랜잭션에서 즉시 취소한 뒤 삭제한다.
+                //
+                // @Version이 있으므로 이 사이 워커가 먼저 선점하면 flush에서 충돌하고 전체
+                // 탈퇴가 롤백된다. 실행 중인 작업은 강제 삭제하지 않고 기존 deleteResult()
+                // 검증에 맡겨, 처리 스레드가 삭제된 job/asset에 결과를 다시 쓰는 race를 막는다.
+                if (analysisJob.isQueued()) {
+                    if (!analysisJob.cancelFromQueue()) {
+                        throw new BusinessException(
+                                ErrorCode.ANALYSIS_DELETE_NOT_ALLOWED,
+                                "회원 탈퇴 중 대기 작업 취소에 실패했습니다. jobId=" + jobId
+                        );
+                    }
+                    analysisJobRepository.saveAndFlush(analysisJob);
+                    log.info(
+                            "USER_WITHDRAWAL_CANCEL_QUEUED userId={} jobId={} 대기 작업을 취소 후 삭제합니다.",
+                            userId,
+                            jobId
+                    );
+                }
                 resultCommandService.deleteResult(jobId, userId);
             } catch (RuntimeException exception) {
                 failedJobIds.add(jobId);

@@ -14,8 +14,11 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
+      # 파일 본문은 정확히 500MiB까지 허용하되 multipart boundary·헤더 여유 1MiB를
+      # request 상한에 둡니다. 두 값을 같게 두면 500MiB 파일은 본문 자체는 허용돼도
+      # multipart 오버헤드 때문에 요청 전체가 먼저 거절됩니다.
+      max-file-size: ${VIDEO_MAX_FILE_SIZE:500MB}
+      max-request-size: ${VIDEO_MAX_REQUEST_SIZE:501MB}
 
   data:
     redis:

@@ -152,10 +152,8 @@ class AnalysisQueuedCancelIntegrationTest {
         assertThat(resultResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(resultResponse.getBody()).contains("CANCELLED");
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> finalResult = jsonFileStorage.readJson(
-                filePathGenerator.generateFinalResultPath(JOB_ID),
-                Map.class
+        Map<String, Object> finalResult = jsonFileStorage.readObjectMap(
+                filePathGenerator.generateFinalResultPath(JOB_ID)
         );
         assertThat(finalResult.get("status")).isEqualTo("CANCELLED");
 

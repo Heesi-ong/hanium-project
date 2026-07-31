@@ -2,6 +2,7 @@ package com.hanium.presentation.global.config;
 
 import com.hanium.presentation.global.properties.RateLimitProperties;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -43,7 +44,7 @@ class UserRateLimiterTest {
     private UserRateLimiter createLimiterWithUnavailableRedis(int capacity) {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         when(redisTemplate.execute(
-                any(RedisScript.class),
+                ArgumentMatchers.<RedisScript<Long>>any(),
                 anyList(),
                 any(Object[].class)
         ))

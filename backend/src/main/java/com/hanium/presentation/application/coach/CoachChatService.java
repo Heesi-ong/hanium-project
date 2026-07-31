@@ -243,7 +243,7 @@ public class CoachChatService {
     private Map<String, Object> readScoreSummary(String jobId) {
         try {
             Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
-            Map<String, Object> finalResult = jsonFileStorage.readJson(finalResultPath, Map.class);
+            Map<String, Object> finalResult = jsonFileStorage.readObjectMap(finalResultPath);
             if (finalResult == null) {
                 return null;
             }
@@ -260,7 +260,7 @@ public class CoachChatService {
     private Map<String, Object> loadCompactAnalysis(String jobId) {
         Path compactAnalysisPath = filePathGenerator.generateCompactAnalysisPath(jobId);
         try {
-            Map<String, Object> compactAnalysis = jsonFileStorage.readJson(compactAnalysisPath, Map.class);
+            Map<String, Object> compactAnalysis = jsonFileStorage.readObjectMap(compactAnalysisPath);
 
             if (compactAnalysis == null || compactAnalysis.isEmpty()) {
                 throw new BusinessException(

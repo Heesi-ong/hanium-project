@@ -5,6 +5,7 @@ import com.hanium.presentation.global.properties.EngineProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.MDC;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
@@ -17,6 +18,9 @@ import java.util.Map;
 public abstract class AbstractEngineClient {
 
     protected static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
+    private static final ParameterizedTypeReference<Map<String, Object>> OBJECT_MAP_RESPONSE_TYPE =
+            new ParameterizedTypeReference<>() {
+            };
 
     protected final RestClient restClient;
     protected final EngineProperties properties;
@@ -63,7 +67,7 @@ public abstract class AbstractEngineClient {
             Map<String, Object> response = restClient.get()
                     .uri("/health")
                     .retrieve()
-                    .body(Map.class);
+                    .body(OBJECT_MAP_RESPONSE_TYPE);
 
             return Map.of(
                     "status", "up",
@@ -89,7 +93,7 @@ public abstract class AbstractEngineClient {
                     .uri("/api/internal/readiness")
                     .header(INTERNAL_API_KEY_HEADER, properties.apiKey() == null ? "" : properties.apiKey())
                     .retrieve()
-                    .body(Map.class);
+                    .body(OBJECT_MAP_RESPONSE_TYPE);
 
             boolean ready = response != null && Boolean.TRUE.equals(response.get("ready"));
             recordReadinessOutcome(ready ? "ready" : "not_ready");

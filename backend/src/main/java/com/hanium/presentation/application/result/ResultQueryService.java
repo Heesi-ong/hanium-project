@@ -65,7 +65,7 @@ public class ResultQueryService {
 
         Map<String, Object> result;
         try {
-            result = jsonFileStorage.readJson(finalResultPath, Map.class);
+            result = jsonFileStorage.readObjectMap(finalResultPath);
         } catch (RuntimeException exception) {
             if (analysisJob.getStatus() == AnalysisStatus.COMPLETED) {
                 recordDataIssue("detail", "RESULT_DATA_UNAVAILABLE");
@@ -242,7 +242,7 @@ public class ResultQueryService {
     private Map<String, Object> readFinalResultSafely(String jobId) {
         try {
             Path finalResultPath = filePathGenerator.generateFinalResultPath(jobId);
-            Map<String, Object> finalResult = jsonFileStorage.readJson(finalResultPath, Map.class);
+            Map<String, Object> finalResult = jsonFileStorage.readObjectMap(finalResultPath);
 
             return finalResult == null ? Map.of() : finalResult;
         } catch (RuntimeException exception) {

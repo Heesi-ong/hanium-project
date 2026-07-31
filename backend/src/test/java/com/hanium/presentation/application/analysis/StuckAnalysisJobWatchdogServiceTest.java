@@ -90,10 +90,8 @@ class StuckAnalysisJobWatchdogServiceTest {
         assertThat(updatedFailedJob.getStatus()).isEqualTo(AnalysisStatus.FAILED);
         assertThat(updatedFailedJob.getFailReason()).isEqualTo("이미 실패한 작업입니다.");
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> failureResult = jsonFileStorage.readJson(
-                filePathGenerator.generateFinalResultPath(OLD_RUNNING_JOB_ID),
-                Map.class
+        Map<String, Object> failureResult = jsonFileStorage.readObjectMap(
+                filePathGenerator.generateFinalResultPath(OLD_RUNNING_JOB_ID)
         );
         assertThat(failureResult.get("status")).isEqualTo("FAILED");
         assertThat(failureResult.get("failedStep")).isEqualTo("FAILED");

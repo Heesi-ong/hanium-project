@@ -3,6 +3,7 @@ package com.hanium.presentation.infrastructure.client.openai;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.properties.FeedbackLlmProperties;
 import com.hanium.presentation.global.properties.OpenAiProperties;
@@ -922,13 +923,8 @@ public class OpenAiClient {
         return Math.round(value * 100) + "%";
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> nullSafeMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-
-        return Map.of();
+        return JsonMapSupport.copyStringKeyedMap(value);
     }
 
     private String getString(
@@ -954,21 +950,11 @@ public class OpenAiClient {
         return List.of();
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getMapList(
             Map<String, Object> map,
             String key
     ) {
-        Object value = map.get(key);
-
-        if (value instanceof List<?> list) {
-            return list.stream()
-                    .filter(item -> item instanceof Map<?, ?>)
-                    .map(item -> (Map<String, Object>) item)
-                    .toList();
-        }
-
-        return List.of();
+        return JsonMapSupport.copyStringKeyedMapList(map.get(key));
     }
 
     private int getInt(

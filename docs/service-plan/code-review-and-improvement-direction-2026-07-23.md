@@ -1180,3 +1180,60 @@ AssertJ 3.27.7 공식 API 문서는 실행 람다를 먼저 받는 overload 대�
 - JSON object의 내부 value는 계약상 `Object`이므로 이 변경이 payload schema 자체를
   강제하지는 않는다. 장기적으로 안정된 final result/compact analysis 구조는
   versioned DTO와 schema validation으로 승격해야 한다.
+
+## 24. 2026-07-31 운영 코드 unchecked suppression 제거
+
+### 확인한 문제
+
+23절에서 표면적인 unchecked 컴파일 경고는 제거했지만, 운영 코드 7개 파일에
+`@SuppressWarnings("unchecked")` annotation 12개가 남아 있었다. 발생 지점은 다음
+세 부류였다.
+
+- Redis 진행률 JSON과 OpenAI·분석 결과의 중첩 Map/List를 제네릭 타입 확인 없이
+  캐스팅하는 외부·저장 데이터 경계
+- AI 코치, analysis compactor, 결과 응답 DTO가 내부 Map을
+  `Map<String, Object>`로 단정하는 변환 경계
+- MinIO presigned URL 302 응답을 `ResponseEntity<ResourceRegion>`으로 맞추기 위한
+  이중 제네릭 캐스트
+
+annotation이 컴파일러 경고만 가리므로, JSON 또는 모델 응답에 문자열이 아닌 key가
+들어오는 경우 잘못된 타입은 변환 시점이 아니라 훨씬 뒤의 사용 지점에서 드러날 수
+있었다. 특히 Redis 진행률과 OpenAI 응답은 프로세스 외부 데이터이므로 내부에서 만든
+Map보다 우선해서 타입 경계를 명시할 필요가 있었다.
+
+### 개선 방향과 반영 내용
+
+- `JsonMapSupport`를 추가해 `Map<?, ?>`의 문자열 key만 새
+  `LinkedHashMap<String, Object>`로 복사한다. Map이 아닌 값은 빈 Map으로,
+  List 변환에서는 Map이 아닌 항목을 제외하는 기존 fallback 의미를 유지한다.
+- 문자열이 아닌 key는 기존 코드에서도 문자열 key 조회에 사용될 수 없었으므로
+  결과에서 제외한다. 원본 Map을 그대로 노출하지 않아 이후 변환 코드가 외부 입력
+  객체를 변경하는 부작용도 방지한다.
+- Redis 진행률 JSON은 Jackson `TypeReference<Map<String, Object>>`로 읽는다.
+  손상 JSON은 기존과 동일하게 로그를 남기고 `null`을 반환해 DB 상태 기반 fallback을
+  사용한다.
+- OpenAI 응답의 중첩 Map과 Map List, AI 코치의 과거 점수, analysis compactor,
+  결과 상세·목록 DTO가 공용 변환기를 사용하도록 전환했다.
+- presigned URL redirect는 `ResponseEntity.BodyBuilder`의 generic `build()` 타입을
+  `ResourceRegion`으로 명시해 이중 캐스트 없이 동일한 302/Location 응답을 만든다.
+- 공용 변환기에 문자열/비문자 key, null value, 혼합 List 입력 테스트 3개를 추가했다.
+- Redis 진행률에는 정상 object JSON과 손상 JSON fallback 테스트 2개를 추가했다.
+
+### 검증과 남은 위험
+
+- 운영 코드 `@SuppressWarnings("unchecked")`: 12 annotations / 7 files에서 0건
+- 신규 suppression 및 unchecked cast 검색: 0건
+- 임시 `-Xlint:unchecked` init script를 적용한
+  `compileTestJava --rerun-tasks --warning-mode all`: 성공, unchecked 경고 0건
+- Map 변환·Redis 진행률·OpenAI·결과 DTO·video redirect 대상 테스트:
+  39 tests, 0 skipped, 0 failures/errors
+- `./gradlew test --rerun-tasks --warning-mode all --no-daemon`:
+  449 tests, 9 skipped, 0 failures/errors
+- 전체 회귀 실행 시간은 6분 57초였고 Hikari context 번호는 33까지 생성됐다.
+- `./gradlew bootJar --rerun-tasks --no-daemon`: 성공
+- 테스트 코드에는 `@SuppressWarnings("unchecked")`가 7개 파일에 남아 있다. 이는
+  production runtime 입력 위험은 아니지만 테스트가 실제 타입 계약을 가릴 수 있으므로
+  다음 별도 단위에서 matcher·fixture를 타입 안전하게 바꾼다.
+- 내부 value 타입은 여전히 `Object`다. 문자열 key 검증은 잘못된 Map 캐스트를
+  제거하지만 final result 전체 schema를 보장하지 않으므로, 안정된 payload부터 DTO와
+  schema version 검증으로 계속 승격해야 한다.

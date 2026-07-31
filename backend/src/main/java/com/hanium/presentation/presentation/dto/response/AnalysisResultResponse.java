@@ -1,5 +1,6 @@
 package com.hanium.presentation.presentation.dto.response;
 
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
@@ -18,7 +19,6 @@ public record AnalysisResultResponse(
         String dataIssueDescription
 ) {
 
-    @SuppressWarnings("unchecked")
     public static AnalysisResultResponse of(
             AnalysisJob analysisJob,
             Map<String, Object> result,
@@ -32,8 +32,8 @@ public record AnalysisResultResponse(
         // normalizeFinalResult가 이미 만들어 둔 scoreSummary/feedback을 그대로 재사용합니다.
         // 원본 result를 다시 넘겨 같은 추출 로직을 한 번 더 돌리지 않습니다.
         String dataIssue = ResultSummaryResponse.resolveDataIssue(
-                (Map<String, Object>) normalizedResult.get("scoreSummary"),
-                (Map<String, Object>) normalizedResult.get("feedback")
+                JsonMapSupport.copyStringKeyedMap(normalizedResult.get("scoreSummary")),
+                JsonMapSupport.copyStringKeyedMap(normalizedResult.get("feedback"))
         );
 
         return new AnalysisResultResponse(

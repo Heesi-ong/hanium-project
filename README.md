@@ -424,6 +424,18 @@ docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prom
 
 경보별 확인 순서와 관리자 복구 화면 연결은 `docs/ops/monitoring-alert-runbook.md`를 따릅니다. 기술 지표는 Grafana에서 확인하고 사용자·결과·DEAD_LETTER 조치는 애플리케이션 `/admin`에서 수행합니다.
 
+실제 운영 배포에서는 nginx/TLS 오버레이(`docker-compose.prod.yml`)와 모니터링 오버레이(`docker-compose.monitoring.yml`)를 함께 사용합니다. 세 파일을 동시에 지정하면 됩니다.
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.monitoring.yml \
+  up -d
+```
+
+이 조합은 포트 충돌이나 설정 병합 문제 없이 정상 동작함을 `docker compose config`로 확인했습니다(2026-08-01). `docker-compose.prod.yml`이 강제하는 `SPRING_PROFILES_ACTIVE=prod`, `SECURITY_JWT_COOKIE_SECURE=true` 같은 보안 설정과 `analysis-worker` role-split 구성은 모니터링 오버레이를 함께 써도 그대로 유지됩니다. Alertmanager를 포함하려면 위 "SMTP 비밀번호 파일" 준비를 먼저 마쳐야 fail-fast 없이 기동됩니다.
+
 ### 6.2 로그
 
 로그 형식은 Spring 프로필에 따라 달라집니다.

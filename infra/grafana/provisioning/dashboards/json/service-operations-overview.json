@@ -1,0 +1,203 @@
+{
+  "uid": "service-operations-overview",
+  "title": "서비스 운영 개요",
+  "tags": ["operations", "sli", "overview"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Backend",
+      "description": "backend Actuator 스크레이프 상태입니다. 사용자·관리자 업무 데이터는 포함하지 않습니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "up{job=\"backend\"}", "legendFormat": "backend" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "중단", "color": "red" }, "1": { "text": "정상", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Analysis Worker",
+      "description": "분석 실행 worker가 한 개 이상 Prometheus에 응답하는지 확인합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "max(up{job=\"analysis-worker\"}) or vector(0)", "legendFormat": "worker" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "중단", "color": "red" }, "1": { "text": "정상", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "분석 엔진 Health",
+      "description": "사용자 상태 페이지 호출과 무관하게 blackbox exporter가 두 Python 엔진의 공개 health를 점검합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "probe_success{job=\"blackbox-http\",component=~\"analysis-engine|video-llm-engine\"}", "legendFormat": "{{component}}" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "실패", "color": "red" }, "1": { "text": "정상", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "데이터 계층 연결",
+      "description": "MySQL·Redis TCP와 MinIO liveness를 인증정보 없이 점검합니다. 기능 수준 상태는 Hikari와 애플리케이션 오류 지표를 함께 봅니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "probe_success{job=~\"blackbox-http|blackbox-tcp\",component=~\"mysql|redis|minio\"}", "legendFormat": "{{component}}" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "실패", "color": "red" }, "1": { "text": "정상", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "현재 Firing 알림",
+      "description": "현재 firing 상태인 Prometheus 알림 수입니다. 1건 이상이면 Alerts 화면과 연결된 runbook을 확인합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "sum(ALERTS{alertstate=\"firing\"}) or vector(0)", "legendFormat": "firing" }],
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "모니터링 스택",
+      "description": "Prometheus·Alertmanager·Grafana·exporter 중 하나라도 스크레이프되지 않으면 중단으로 표시합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "refId": "A", "expr": "min(up{job=~\"prometheus|alertmanager|grafana|blackbox-exporter|node-exporter|cadvisor\"})", "legendFormat": "monitoring" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "일부 중단", "color": "red" }, "1": { "text": "정상", "color": "green" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Backend HTTP 요청률",
+      "description": "URI 템플릿별 초당 요청 수입니다. 사용자 식별값이나 실제 jobId는 라벨에 포함하지 않습니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
+      "targets": [{ "refId": "A", "expr": "sum by (method, uri) (rate(http_server_requests_seconds_count{job=\"backend\",uri!~\"/actuator.*\"}[5m]))", "legendFormat": "{{method}} {{uri}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Backend HTTP 5xx 비율",
+      "description": "전체 HTTP 요청 중 5xx 응답 비율입니다. 요청 20건 이상 구간에서 5% 초과가 지속되면 경보가 발동합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
+      "targets": [{ "refId": "A", "expr": "(sum(rate(http_server_requests_seconds_count{job=\"backend\",status=~\"5..\"}[5m])) or vector(0)) / clamp_min((sum(rate(http_server_requests_seconds_count{job=\"backend\"}[5m])) or vector(0)), 0.001) * 100", "legendFormat": "5xx" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 5 }] }, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Backend HTTP p95 지연",
+      "description": "HTTP 요청 histogram의 최근 5분 p95입니다. application.yaml의 bucket 설정이 필요합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"backend\",uri!~\"/actuator.*\"}[5m])))", "legendFormat": "p95" }],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 3 }] }, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "분석 큐 상태",
+      "description": "실행 대기와 실행 중 작업 수입니다. 상세 원인과 DLQ 추세는 분석 큐 대시보드에서 확인합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
+      "targets": [
+        { "refId": "A", "expr": "max(analysis_queue_backlog)", "legendFormat": "대기" },
+        { "refId": "B", "expr": "max(analysis_queue_running)", "legendFormat": "실행 중" },
+        { "refId": "C", "expr": "max(analysis_queue_limit{scope=\"global\"})", "legendFormat": "전역 한도" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Backend JVM Heap",
+      "description": "JVM heap 최대값 대비 사용률입니다. 85% 초과가 지속되면 경보가 발동합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
+      "targets": [{ "refId": "A", "expr": "sum(jvm_memory_used_bytes{job=\"backend\",area=\"heap\"}) / clamp_min(sum(jvm_memory_max_bytes{job=\"backend\",area=\"heap\"}), 1) * 100", "legendFormat": "heap" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 85 }] }, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Backend DB Pool",
+      "description": "Hikari active/max connection 비율입니다. TCP probe가 정상이어도 pool 포화 시 API가 지연될 수 있습니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
+      "targets": [{ "refId": "A", "expr": "max(hikaricp_connections_active{job=\"backend\"}) / clamp_min(max(hikaricp_connections_max{job=\"backend\"}), 1) * 100", "legendFormat": "active / max" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 80 }] }, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "컨테이너 CPU 사용률",
+      "description": "cAdvisor가 수집한 컨테이너별 CPU 사용률입니다. name 라벨이 없는 Docker Desktop에서는 /docker/<id>로 구분합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "targets": [{ "refId": "A", "expr": "sum by (name, id) (rate(container_cpu_usage_seconds_total{job=\"cadvisor\",id=~\"/docker/.+\",cpu=\"total\"}[5m])) * 100", "legendFormat": "{{name}} {{id}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "컨테이너 메모리 한도 사용률",
+      "description": "cAdvisor working set을 컨테이너 memory limit으로 나눈 비율입니다. limit이 없는 컨테이너는 해석에 주의합니다.",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "targets": [{ "refId": "A", "expr": "container_memory_working_set_bytes{job=\"cadvisor\",id=~\"/docker/.+\"} / clamp_min(container_spec_memory_limit_bytes{job=\"cadvisor\",id=~\"/docker/.+\"}, 1) * 100", "legendFormat": "{{name}} {{id}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}

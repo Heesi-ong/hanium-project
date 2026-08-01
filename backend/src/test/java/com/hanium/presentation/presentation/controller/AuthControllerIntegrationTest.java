@@ -147,6 +147,13 @@ class AuthControllerIntegrationTest {
 
         assertThat(publicHealthResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
+        ResponseEntity<String> unauthorizedStatusResponse = restTemplate.getForEntity(
+                "/api/status",
+                String.class
+        );
+
+        assertThat(unauthorizedStatusResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+
         ResponseEntity<String> unauthorizedResultsResponse = restTemplate.getForEntity(
                 "/api/results",
                 String.class

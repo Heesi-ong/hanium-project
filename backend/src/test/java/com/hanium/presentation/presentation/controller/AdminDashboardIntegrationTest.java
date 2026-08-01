@@ -100,6 +100,36 @@ class AdminDashboardIntegrationTest {
         assertThat(statsBody.path("totalAnalysisJobs").asLong()).isEqualTo(2L);
     }
 
+    @Test
+    void adminCanSearchUsersByEmailStatusAndRole() throws Exception {
+        String adminToken = signupAndLogin("admin@example.com");
+        signupAndLogin("target.member@example.com");
+        signupAndLogin("other@example.com");
+
+        User target = userRepository.findByEmail("target.member@example.com").orElseThrow();
+        target.suspend();
+        userRepository.save(target);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(adminToken);
+
+        ResponseEntity<String> response = restTemplate.exchange(
+                "/api/admin/users?email=TARGET.MEMBER&status=SUSPENDED&role=USER&page=0&size=10",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode data = objectMapper.readTree(response.getBody()).path("data");
+        assertThat(data.path("totalElements").asLong()).isEqualTo(1L);
+        assertThat(data.path("content")).hasSize(1);
+        assertThat(data.path("content").get(0).path("email").asText())
+                .isEqualTo("target.member@example.com");
+        assertThat(data.path("content").get(0).path("status").asText())
+                .isEqualTo("SUSPENDED");
+    }
+
     private JsonNode findByEmail(JsonNode content, String email) {
         for (JsonNode node : content) {
             if (email.equals(node.path("email").asText())) {

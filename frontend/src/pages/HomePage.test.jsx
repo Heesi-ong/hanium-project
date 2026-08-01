@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { engineHealthCheck, healthCheck } from "../api/analysisApi";
+import { getServiceStatus, healthCheck } from "../api/analysisApi";
 import HomePage from "./HomePage";
 
 const authMock = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const authMock = vi.hoisted(() => ({
 
 vi.mock("../api/analysisApi", () => ({
     healthCheck: vi.fn(),
-    engineHealthCheck: vi.fn(),
+    getServiceStatus: vi.fn(),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -32,7 +32,7 @@ describe("HomePage", () => {
     beforeEach(() => {
         authMock.isAuthenticated = false;
         healthCheck.mockReset();
-        engineHealthCheck.mockReset();
+        getServiceStatus.mockReset();
     });
 
     it("renders the public landing page and unauthenticated CTAs without loading status data", () => {
@@ -56,7 +56,7 @@ describe("HomePage", () => {
         expect(screen.queryByRole("link", { name: "지금 업로드하기" }))
             .not.toBeInTheDocument();
         expect(healthCheck).not.toHaveBeenCalled();
-        expect(engineHealthCheck).not.toHaveBeenCalled();
+        expect(getServiceStatus).not.toHaveBeenCalled();
     });
 
     it("renders authenticated CTAs without showing signup links", () => {
@@ -75,7 +75,7 @@ describe("HomePage", () => {
         expect(screen.queryByRole("link", { name: "무료 회원가입" }))
             .not.toBeInTheDocument();
         expect(healthCheck).not.toHaveBeenCalled();
-        expect(engineHealthCheck).not.toHaveBeenCalled();
+        expect(getServiceStatus).not.toHaveBeenCalled();
     });
 
     it("toggles FAQ answers as a single-open accordion", () => {

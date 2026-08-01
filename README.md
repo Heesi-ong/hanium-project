@@ -205,9 +205,11 @@ compose 기반 운영에서 실제 모델을 켜려면 루트 `.env`에
 `VIDEO_LLM_POLICY=STRICT`(또는 제품 승인을 받은 `DEGRADED`), `VIDEO_LLM_ENABLED=true`,
 `NVIDIA_API_KEY`, 필요한 `NVIDIA_*` override, `VIDEO_LLM_MONTHLY_RATE_LIMIT_*` 값을 채운 뒤
 배포하세요. 키 값은 저장소에 커밋하지 말고 운영 환경변수 또는 시크릿으로 관리해야 합니다.
-배포 후에는 백엔드의 `GET /api/health/engines` 또는 프론트엔드 `/status`에서 Video LLM
-readiness가 `ready=true`, `mode=REAL`, `policy=<선택한 정책>`,
-`realModelReady=true`인지 확인하세요. `health`가 `up`이어도 readiness가 `ready=false`이면 실제
+배포 후 사용자가 받는 영향은 인증된 프론트엔드 `/status`에서 확인합니다. 실제 모델 설정은
+운영 네트워크 안에서 `X-Internal-Api-Key`를 사용해 video-llm-engine의
+`GET /api/internal/readiness`를 호출하고 `ready=true`, `mode=REAL`,
+`policy=<선택한 정책>`, `realModelReady=true`인지 확인하세요. 이 상세 응답을 공개 프론트나
+외부 네트워크에 노출하면 안 됩니다. `health`가 `up`이어도 readiness가 `ready=false`이면 실제
 모델 설정은 아직 완료되지 않은 상태입니다.
 
 비용과 한도 측면에서는 backend가 실제 Video LLM 호출 전에
@@ -338,11 +340,13 @@ curl http://localhost:8081/actuator/health
 }
 ```
 
-외부 엔진 연결 확인:
+로그인 사용자의 기능 가용성 확인:
 
 ```bash
-curl http://localhost:8080/api/health/engines
+curl --cookie "access_token=<JWT>" http://localhost:8080/api/status
 ```
+
+`/api/status`는 사용자 영향만 `AVAILABLE`/`DEGRADED`/`UNAVAILABLE`로 반환하며 내부 엔진 URL, 인증 상태, 모델 정책과 원본 오류는 노출하지 않습니다. 엔진·데이터 계층의 기술 상태는 아래 운영 모니터링에서 확인합니다.
 
 ### 6.1 모니터링 엔드포인트
 
@@ -359,7 +363,7 @@ JVM/HTTP 기본 메트릭 외에 분석 작업과 외부 연동 상태를 확인
 | `analysis.job.failed` | Counter | `reason` = `upload-not-found` \| `business` \| `unexpected` | 분석이 실패로 끝난 횟수(사유별) |
 | `analysis.job.cancelled` | Counter | 없음 | 사용자 취소 요청으로 중단된 횟수 |
 | `analysis.job.duration` | Timer | `outcome` = `completed` \| `failed` \| `cancelled` | 분석 파이프라인 소요 시간(종료 결과별) |
-| `engine.readiness.check` | Counter | `engine` = `analysis` \| `video_llm`, `outcome` = `ready` \| `not_ready` \| `unauthenticated` \| `unreachable` | `/api/health/engines`가 authenticated readiness를 확인한 결과 |
+| `engine.readiness.check` | Counter | `engine` = `analysis` \| `video_llm`, `outcome` = `ready` \| `not_ready` \| `unauthenticated` \| `unreachable` | 인증된 `/api/status` 조회에서 backend가 엔진 readiness를 확인한 결과 |
 | `result.data_issue` | Counter | `source` = `list` \| `detail`, `issue` | 결과 조회 중 감지된 누락 영상/누락 결과 파일/placeholder 결과 건수 |
 | `video_llm.generation` | Counter | `mode` = `REAL` \| `FALLBACK` \| `MOCK` \| `UNKNOWN` | Video LLM 결과가 실제 모델/폴백/mock 중 어떤 경로로 생성됐는지 |
 | `video_duration_probe.result` | Counter | `outcome`, `reason` | ffprobe 영상 길이 확인 성공/실패 및 fail-open 사유 |
@@ -372,9 +376,13 @@ JVM/HTTP 기본 메트릭 외에 분석 작업과 외부 연동 상태를 확인
 docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus
 ```
 
-Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합니다. 주요 알림 규칙은 다음과 같습니다.
+Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합니다. Blackbox Exporter가 함께 기동되어 두 Python 엔진의 `/health`, MinIO liveness, MySQL·Redis TCP 연결을 사용자 상태 페이지 호출과 무관하게 점검합니다. 현재 규칙 파일에는 28개 알림이 있으며 주요 규칙은 다음과 같습니다.
 
 - `BackendDown` (critical): backend 스크레이핑이 2분 이상 실패하면 발동
+- `ServiceDependencyProbeFailed` (critical): 엔진·MySQL·Redis·MinIO probe가 2분 이상 실패하면 발동
+- `BackendHttp5xxRateHigh`, `BackendHttpLatencyP95High`: 트래픽이 있는 상태에서 5xx 비율 또는 p95 지연이 임계값을 넘으면 발동
+- `BackendJvmHeapUsageHigh`, `BackendDatabasePoolSaturated`: JVM heap 또는 Hikari pool 포화를 감시
+- `AnalysisQueueNearCapacity`: 분석 큐가 설정 용량의 80% 이상에 근접하면 발동
 - `AnalysisJobFailureRateHigh` (warning): 최근 15분간 분석 작업 실패 비율이 시작 대비 30%를 초과한 상태가 5분 이상 지속되면 발동
 - `EngineReadinessDegraded` (warning): authenticated readiness가 `not_ready`, `unauthenticated`, `unreachable` 상태로 10분 이상 관측되면 발동
 - `ResultDataIssueDetected` (warning): 조회된 결과에서 누락 영상, 누락 결과 파일, placeholder 결과가 감지되면 발동
@@ -407,7 +415,14 @@ Alertmanager UI는 `http://127.0.0.1:9093`(로컬호스트 전용)에서 확인�
 docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus grafana
 ```
 
-`http://127.0.0.1:3000`(로컬호스트 전용)에 접속해 `admin` / `.env`의 `GRAFANA_ADMIN_PASSWORD` 값으로 로그인합니다. Prometheus 데이터소스와 "분석 서비스 개요" 대시보드(Backend Up, 작업 시작/완료/실패/취소 비율, 실패 사유별 비율, 평균 소요 시간)가 프로비저닝으로 자동 구성되어 있어 별도 설정 없이 바로 확인할 수 있습니다.
+`http://127.0.0.1:3000`(로컬호스트 전용)에 접속해 `admin` / `.env`의 `GRAFANA_ADMIN_PASSWORD` 값으로 로그인합니다. Prometheus 데이터소스와 다음 대시보드가 프로비저닝으로 자동 구성됩니다.
+
+- `서비스 운영 개요`: backend·worker·엔진·데이터 계층 상태, firing 알림, HTTP 요청률·5xx·p95, 분석 큐, JVM heap, Hikari pool, 컨테이너 CPU·메모리
+- `분석 서비스 개요`: 분석 성공/실패/취소, 실패 사유, 처리 시간, 외부 모델 예산·fallback
+- `분석 큐/타임아웃`: 큐 상태, timeout, 3종 DEAD_LETTER
+- `호스트 리소스`: 디스크·CPU·메모리와 MySQL 백업 상태
+
+경보별 확인 순서와 관리자 복구 화면 연결은 `docs/ops/monitoring-alert-runbook.md`를 따릅니다. 기술 지표는 Grafana에서 확인하고 사용자·결과·DEAD_LETTER 조치는 애플리케이션 `/admin`에서 수행합니다.
 
 ### 6.2 로그
 
@@ -582,7 +597,7 @@ frontend가 `/api`를 호출하는 경로는 배포 구성에 따라 다르며, 
 
 ## 9. 백엔드 주요 API
 
-`/api/auth/**`, `/api/health`, `/api/health/**`를 제외한 `/api/**` 요청은 인증이 필요합니다.
+허용된 `/api/auth/**`와 정확히 일치하는 `/api/health`를 제외한 `/api/**` 요청은 인증이 필요합니다.
 브라우저 프론트엔드는 로그인 응답의 `Set-Cookie: access_token=...` HttpOnly 쿠키를 사용하며,
 `withCredentials` 요청으로 세션을 복구합니다. 수동 API 호출이나 비브라우저 클라이언트는
 호환 경로로 아래 Bearer 헤더를 사용할 수 있습니다.
@@ -595,10 +610,10 @@ Authorization: Bearer {accessToken}
 
 ```http
 GET /api/health
-GET /api/health/engines
 ```
 
-인증 없이 호출할 수 있습니다.
+인증 없이 호출할 수 있습니다. 기능별 사용자 영향은 인증 후 `GET /api/status`로 확인하며,
+내부 엔진 상세 진단은 이 API에 포함되지 않습니다.
 
 ### 9.2 인증
 

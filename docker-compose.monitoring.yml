@@ -14,6 +14,7 @@ services:
     depends_on:
       - backend
       - alertmanager
+      - blackbox-exporter
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -68,6 +69,27 @@ services:
           memory: 256m
     ports:
       - "127.0.0.1:8085:8080"
+
+  blackbox-exporter:
+    # 엔진과 데이터 계층을 사용자 상태 페이지 호출과 무관하게 지속 점검합니다.
+    # 인증정보는 넣지 않고 공개 health 또는 TCP 연결 가능 여부만 확인합니다.
+    image: prom/blackbox-exporter:v0.28.0
+    restart: unless-stopped
+    volumes:
+      - ./infra/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:9115:9115"
 
   grafana:
     # 버전은 Docker Hub 태그 목록(last_updated 순)에서 확인한 최신 안정 릴리스입니다.

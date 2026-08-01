@@ -155,6 +155,88 @@ groups:
           summary: "분석 결과 데이터 정합성 문제가 감지됐습니다"
           description: "{{ $labels.issue }} 유형의 결과 데이터 문제가 최근 조회 경로에서 감지됐습니다. jobId는 backend 로그에서 dataIssue 경고를 확인하세요."
 
+  - name: service-sli-alerts
+    rules:
+      - alert: MonitoringComponentDown
+        expr: up{job=~"alertmanager|grafana|blackbox-exporter|cadvisor"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "운영 모니터링 구성 요소가 응답하지 않습니다"
+          description: "{{ $labels.job }} 스크레이프가 5분 이상 실패했습니다. 해당 구성 요소가 담당하는 대시보드·경보·probe가 불완전할 수 있습니다."
+
+      - alert: ServiceDependencyProbeFailed
+        expr: probe_success{job=~"blackbox-http|blackbox-tcp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "서비스 의존 구성 요소 probe가 실패했습니다"
+          description: "{{ $labels.component }}({{ $labels.instance }}) 연결 점검이 2분 이상 실패했습니다. 대상 서비스 상태와 네트워크를 확인하세요."
+
+      - alert: BackendHttp5xxRateHigh
+        expr: |
+          (
+            sum(rate(http_server_requests_seconds_count{job="backend",status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_server_requests_seconds_count{job="backend"}[5m])), 0.001)
+          ) > 0.05
+          and sum(increase(http_server_requests_seconds_count{job="backend"}[10m])) > 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "backend HTTP 5xx 비율이 높습니다"
+          description: "최근 요청이 20건 이상인 구간에서 5xx 비율이 5%를 초과했습니다. 서비스 운영 개요에서 URI별 오류율을 확인하세요."
+
+      - alert: BackendHttpLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_requests_seconds_bucket{job="backend",uri!~"/actuator.*"}[5m])
+            )
+          ) > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "backend HTTP p95 지연이 높습니다"
+          description: "backend HTTP 요청 p95가 3초를 10분 이상 초과했습니다. URI별 지연과 DB pool, JVM, 컨테이너 자원을 함께 확인하세요."
+
+      - alert: BackendJvmHeapUsageHigh
+        expr: |
+          sum(jvm_memory_used_bytes{job="backend",area="heap"})
+          / clamp_min(sum(jvm_memory_max_bytes{job="backend",area="heap"}), 1) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "backend JVM heap 사용률이 높습니다"
+          description: "backend JVM heap 사용률이 85%를 10분 이상 초과했습니다. GC 추세와 컨테이너 메모리 제한을 확인하세요."
+
+      - alert: BackendDatabasePoolSaturated
+        expr: |
+          max(hikaricp_connections_active{job="backend"})
+          / clamp_min(max(hikaricp_connections_max{job="backend"}), 1) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "backend DB connection pool이 포화 상태입니다"
+          description: "Hikari active/max 비율이 80%를 10분 이상 초과했습니다. 느린 쿼리, transaction 범위와 DB 상태를 확인하세요."
+
+      - alert: AnalysisQueueNearCapacity
+        expr: |
+          max(analysis_queue_backlog)
+          / clamp_min(max(analysis_queue_limit{scope="global"}), 1) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "분석 큐가 수용 한도에 근접했습니다"
+          description: "QUEUED 작업이 전역 한도의 80%를 10분 이상 초과했습니다. worker 상태와 처리량을 확인하고 필요하면 안전하게 확장하세요."
+
   - name: video-processing-alerts
     rules:
       - alert: VideoDurationProbeFailOpenHigh

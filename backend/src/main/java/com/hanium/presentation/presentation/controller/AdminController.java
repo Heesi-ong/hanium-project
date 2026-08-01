@@ -7,6 +7,12 @@ import com.hanium.presentation.application.admin.AdminResultActionService;
 import com.hanium.presentation.application.admin.AdminStorageDeletionTaskActionService;
 import com.hanium.presentation.application.admin.AdminPasswordResetEmailTaskActionService;
 import com.hanium.presentation.application.admin.AdminUserActionService;
+import com.hanium.presentation.domain.admin.type.AdminAuditAction;
+import com.hanium.presentation.domain.admin.type.AdminAuditTargetType;
+import com.hanium.presentation.domain.user.type.UserRole;
+import com.hanium.presentation.domain.user.type.UserStatus;
+import com.hanium.presentation.global.exception.BusinessException;
+import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
@@ -32,6 +38,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDateTime;
 
 /**
  * 관리자 전용 API입니다. 조회(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그)에 더해
@@ -78,9 +87,17 @@ public class AdminController {
     @GetMapping("/users")
     public ApiResponse<PagedAdminUserSummaryResponse> getUsers(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) UserRole role
     ) {
-        Page<AdminUserSummaryResponse> users = adminDashboardService.getUsers(createPageable(page, size));
+        Page<AdminUserSummaryResponse> users = adminDashboardService.getUsers(
+                email,
+                status,
+                role,
+                createPageable(page, size)
+        );
 
         return ApiResponse.success(
                 "사용자 목록 조회가 완료되었습니다.",
@@ -116,9 +133,32 @@ public class AdminController {
     @GetMapping("/audit-logs")
     public ApiResponse<PagedAdminAuditLogResponse> getAuditLogs(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String adminEmail,
+            @RequestParam(required = false) AdminAuditAction action,
+            @RequestParam(required = false) AdminAuditTargetType targetType,
+            @RequestParam(required = false) String targetId,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
     ) {
-        Page<AdminAuditLogResponse> auditLogs = adminAuditLogService.getAuditLogs(createPageable(page, size));
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    "감사로그 조회 시작 시각은 종료 시각보다 늦을 수 없습니다."
+            );
+        }
+
+        Page<AdminAuditLogResponse> auditLogs = adminAuditLogService.getAuditLogs(
+                adminEmail,
+                action,
+                targetType,
+                targetId,
+                from,
+                to,
+                createPageable(page, size)
+        );
 
         return ApiResponse.success(
                 "관리자 감사로그 조회가 완료되었습니다.",

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { deleteAdminResult, getAdminUserResults } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
+import AdminNav from "../components/admin/AdminNav";
 import EmptyState from "../components/EmptyState";
 import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
 import VideoLlmGenerationBadge from "../components/result-detail/VideoLlmGenerationBadge";
@@ -150,8 +151,10 @@ function AdminUserDetailPage() {
                 description={`사용자 #${userId}의 분석 작업과 결과를 확인합니다.`}
             />
 
+            <AdminNav />
+
             <p className="policy-links">
-                <Link to="/admin">← 관리자 대시보드로 돌아가기</Link>
+                <Link to="/admin/users">← 사용자 목록으로 돌아가기</Link>
             </p>
 
             <StateMessage type="error">{error}</StateMessage>

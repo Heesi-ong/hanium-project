@@ -73,6 +73,14 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # 운영 대시보드에서 평균이 아닌 p95 지연을 계산할 수 있도록 HTTP 요청
+      # histogram bucket을 노출합니다. URI 라벨은 Spring MVC의 템플릿 경로를 사용해
+      # jobId 같은 고카디널리티 값이 메트릭 라벨로 들어가지 않습니다.
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 100ms,300ms,1s,3s,10s
   prometheus:
     metrics:
       export:

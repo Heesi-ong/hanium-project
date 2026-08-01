@@ -1,234 +1,72 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-    activateAdminUser,
-    forceWithdrawAdminUser,
     getAdminDeadLetterJobs,
+    getAdminPasswordResetEmailDeadLetters,
     getAdminStats,
-    getAdminUsers,
-    requeueAdminDeadLetterJob,
-    suspendAdminUser,
+    getAdminStorageDeletionDeadLetters,
 } from "../api/adminApi";
 import { getErrorMessage } from "../api/errorUtils";
+import AdminNav from "../components/admin/AdminNav";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
-import { useAuth } from "../context/AuthContext";
-import { useConfirm } from "../context/ConfirmContext";
+
+const EMPTY_COUNTS = {
+    analysis: null,
+    storageDeletion: null,
+    passwordResetEmail: null,
+};
 
 function AdminDashboardPage() {
-    const { user: currentUser } = useAuth();
-    const confirm = useConfirm();
     const [stats, setStats] = useState(null);
-    const [users, setUsers] = useState([]);
-    const [page, setPage] = useState(0);
-    const [hasMore, setHasMore] = useState(false);
+    const [recoveryCounts, setRecoveryCounts] = useState(EMPTY_COUNTS);
     const [loading, setLoading] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
-    const [actionUserId, setActionUserId] = useState("");
     const [error, setError] = useState("");
 
-    const [deadLetterJobs, setDeadLetterJobs] = useState([]);
-    const [deadLetterPage, setDeadLetterPage] = useState(0);
-    const [deadLetterHasMore, setDeadLetterHasMore] = useState(false);
-    const [deadLetterLoadingMore, setDeadLetterLoadingMore] = useState(false);
-    const [requeueingJobId, setRequeueingJobId] = useState("");
-    const [deadLetterError, setDeadLetterError] = useState("");
+    const loadOverview = useCallback(async () => {
+        setLoading(true);
+        setError("");
 
-    const loadDashboard = useCallback(async () => {
-        try {
-            const [statsResponse, usersResponse, deadLetterResponse] = await Promise.all([
-                getAdminStats(),
-                getAdminUsers({ page: 0 }),
-                getAdminDeadLetterJobs({ page: 0 }),
-            ]);
+        const results = await Promise.allSettled([
+            getAdminStats(),
+            getAdminDeadLetterJobs({ page: 0, size: 1 }),
+            getAdminStorageDeletionDeadLetters({ page: 0, size: 1 }),
+            getAdminPasswordResetEmailDeadLetters({ page: 0, size: 1 }),
+        ]);
 
-            setStats(statsResponse.data);
-            setUsers(usersResponse.data?.content || []);
-            setHasMore(usersResponse.data?.last === false);
-            setDeadLetterJobs(deadLetterResponse.data?.content || []);
-            setDeadLetterHasMore(deadLetterResponse.data?.last === false);
-        } catch (requestError) {
-            setError(getErrorMessage(
-                requestError,
-                "관리자 대시보드 정보를 불러오는 중 오류가 발생했습니다."
-            ));
-        } finally {
-            setLoading(false);
+        const [statsResult, analysisResult, storageResult, passwordResetResult] = results;
+        const errors = [];
+
+        if (statsResult.status === "fulfilled") {
+            setStats(statsResult.value.data);
+        } else {
+            errors.push(getErrorMessage(statsResult.reason, "집계 통계를 불러오지 못했습니다."));
         }
+
+        setRecoveryCounts({
+            analysis: getTotalElements(analysisResult, errors, "분석 복구 건수를 불러오지 못했습니다."),
+            storageDeletion: getTotalElements(storageResult, errors, "삭제 복구 건수를 불러오지 못했습니다."),
+            passwordResetEmail: getTotalElements(passwordResetResult, errors, "이메일 복구 건수를 불러오지 못했습니다."),
+        });
+        setError([...new Set(errors)].join(" "));
+        setLoading(false);
     }, []);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- 마운트 시 관리자 API를 호출한 뒤 응답 상태를 화면에 반영해야 합니다.
-        loadDashboard();
-    }, [loadDashboard]);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 관리자 개요의 서버 집계값을 최초 진입 시 불러옵니다.
+        loadOverview();
+    }, [loadOverview]);
 
-    async function loadMoreUsers() {
-        try {
-            setLoadingMore(true);
-            setError("");
-
-            const nextPage = page + 1;
-            const usersResponse = await getAdminUsers({ page: nextPage });
-
-            setUsers((prevUsers) => [...prevUsers, ...(usersResponse.data?.content || [])]);
-            setPage(nextPage);
-            setHasMore(usersResponse.data?.last === false);
-        } catch (requestError) {
-            setError(getErrorMessage(
-                requestError,
-                "사용자 목록을 더 불러오는 중 오류가 발생했습니다."
-            ));
-        } finally {
-            setLoadingMore(false);
-        }
-    }
-
-    async function handleToggleStatus(targetUser) {
-        const isSuspending = targetUser.status !== "SUSPENDED";
-        const confirmMessage = isSuspending
-            ? `${targetUser.email} 계정을 정지하시겠습니까?`
-            : `${targetUser.email} 계정을 다시 활성화하시겠습니까?`;
-
-        const confirmed = await confirm(confirmMessage);
-        if (!confirmed) {
-            return;
-        }
-
-        try {
-            setActionUserId(targetUser.id);
-            setError("");
-
-            if (isSuspending) {
-                await suspendAdminUser(targetUser.id);
-            } else {
-                await activateAdminUser(targetUser.id);
-            }
-
-            setUsers((prevUsers) => prevUsers.map((item) =>
-                item.id === targetUser.id
-                    ? { ...item, status: isSuspending ? "SUSPENDED" : "ACTIVE" }
-                    : item
-            ));
-        } catch (requestError) {
-            setError(getErrorMessage(
-                requestError,
-                "계정 상태를 변경하는 중 오류가 발생했습니다."
-            ));
-        } finally {
-            setActionUserId("");
-        }
-    }
-
-    async function loadMoreDeadLetterJobs() {
-        try {
-            setDeadLetterLoadingMore(true);
-            setDeadLetterError("");
-
-            const nextPage = deadLetterPage + 1;
-            const deadLetterResponse = await getAdminDeadLetterJobs({ page: nextPage });
-
-            setDeadLetterJobs((prevJobs) => [...prevJobs, ...(deadLetterResponse.data?.content || [])]);
-            setDeadLetterPage(nextPage);
-            setDeadLetterHasMore(deadLetterResponse.data?.last === false);
-        } catch (requestError) {
-            setDeadLetterError(getErrorMessage(
-                requestError,
-                "재시도 소진 작업 목록을 더 불러오는 중 오류가 발생했습니다."
-            ));
-        } finally {
-            setDeadLetterLoadingMore(false);
-        }
-    }
-
-    async function handleRequeueDeadLetterJob(job) {
-        const confirmed = await confirm(
-            `작업 ${job.jobId}을(를) 다시 큐에 넣으시겠습니까? 재시도 횟수가 초기화되어 처음부터 다시 실행됩니다.`
-        );
-        if (!confirmed) {
-            return;
-        }
-
-        try {
-            setRequeueingJobId(job.jobId);
-            setDeadLetterError("");
-
-            await requeueAdminDeadLetterJob(job.jobId);
-
-            setDeadLetterJobs((prevJobs) => prevJobs.filter((item) => item.jobId !== job.jobId));
-        } catch (requestError) {
-            setDeadLetterError(getErrorMessage(
-                requestError,
-                "작업을 다시 큐에 넣는 중 오류가 발생했습니다."
-            ));
-        } finally {
-            setRequeueingJobId("");
-        }
-    }
-
-    async function handleForceWithdraw(targetUser) {
-        const confirmed = await confirm(
-            `${targetUser.email} 계정을 강제 탈퇴시키겠습니까? 소유한 분석 데이터가 모두 삭제되며 되돌릴 수 없습니다.`
-        );
-        if (!confirmed) {
-            return;
-        }
-
-        try {
-            setActionUserId(targetUser.id);
-            setError("");
-
-            await forceWithdrawAdminUser(targetUser.id);
-
-            setUsers((prevUsers) => prevUsers.filter((item) => item.id !== targetUser.id));
-        } catch (requestError) {
-            setError(getErrorMessage(
-                requestError,
-                "계정을 강제 탈퇴시키는 중 오류가 발생했습니다."
-            ));
-        } finally {
-            setActionUserId("");
-        }
-    }
-
-    function formatDateTime(value) {
-        if (!value) {
-            return "-";
-        }
-
-        const date = new Date(value);
-
-        if (Number.isNaN(date.getTime())) {
-            return value;
-        }
-
-        return date.toLocaleString("ko-KR", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-    }
-
-    function formatRole(role) {
-        return role === "ADMIN" ? "관리자" : "일반 사용자";
-    }
-
-    if (loading) {
+    if (loading && !stats) {
         return (
             <section className="page-section">
                 <PageHeader
                     eyebrow="Admin"
-                    title="관리자 대시보드"
-                    description="가입자 현황과 분석 작업 통계를 불러오는 중입니다."
+                    title="관리자 업무 개요"
+                    description="사용자 현황과 조치가 필요한 복구 작업을 불러오는 중입니다."
                 />
-
-                <EmptyState
-                    loading
-                    title="로딩 중"
-                    description="잠시만 기다려 주세요."
-                />
+                <EmptyState loading title="로딩 중" description="잠시만 기다려 주세요." />
             </section>
         );
     }
@@ -237,186 +75,78 @@ function AdminDashboardPage() {
         <section className="page-section">
             <PageHeader
                 eyebrow="Admin"
-                title="관리자 대시보드"
-                description="가입자 현황과 분석 작업 통계를 확인합니다. 사용자 개별 분석 결과 내용은 상세 화면에서만 확인할 수 있습니다."
+                title="관리자 업무 개요"
+                description="사용자·분석 데이터 관리와 수동 복구가 필요한 항목만 보여줍니다. 기술 지표와 장애 추세는 운영 모니터링에서 확인합니다."
             />
 
-            <p className="policy-links">
-                <Link to="/admin/audit-logs">감사로그 보기 →</Link>
-            </p>
-
+            <AdminNav />
             <StateMessage type="error">{error}</StateMessage>
 
             <div className="result-summary-grid">
-                <article className="summary-card">
-                    <span>전체 가입자</span>
-                    <strong>{stats?.totalUsers ?? 0}</strong>
-                    <p>지금까지 가입한 전체 사용자 수입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>관리자</span>
-                    <strong>{stats?.adminUsers ?? 0}</strong>
-                    <p>ADMIN_EMAILS에 등록된 관리자 계정 수입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>전체 분석 작업</span>
-                    <strong>{stats?.totalAnalysisJobs ?? 0}</strong>
-                    <p>지금까지 접수된 전체 분석 작업 수입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>완료된 분석</span>
-                    <strong>{stats?.completedAnalysisJobs ?? 0}</strong>
-                    <p>정상적으로 완료된 분석 작업 수입니다.</p>
-                </article>
+                <SummaryCard label="전체 가입자" value={stats?.totalUsers} description="등록된 사용자" />
+                <SummaryCard label="관리자" value={stats?.adminUsers} description="관리자 계정" />
+                <SummaryCard label="전체 분석" value={stats?.totalAnalysisJobs} description="접수된 분석 작업" />
+                <SummaryCard label="완료 분석" value={stats?.completedAnalysisJobs} description="정상 완료된 작업" />
+                <SummaryCard label="분석 복구" value={recoveryCounts.analysis} description="재시도 소진 작업" attention />
+                <SummaryCard label="삭제 복구" value={recoveryCounts.storageDeletion} description="미처리 파일 삭제" attention />
+                <SummaryCard label="이메일 복구" value={recoveryCounts.passwordResetEmail} description="미발송 재설정 메일" attention />
             </div>
 
-            {users.length === 0 ? (
-                <EmptyState
-                    title="표시할 사용자가 없습니다."
-                    description="아직 가입한 사용자가 없습니다."
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+                <AdminActionCard
+                    title="사용자 관리"
+                    description="사용자를 검색하고 계정 상태와 소유 분석 결과를 관리합니다."
+                    to="/admin/users"
+                    linkLabel="사용자 관리 열기"
                 />
-            ) : (
-                <div className="pose-frame-table-wrap">
-                    <h3>사용자 목록</h3>
-
-                    <table className="pose-frame-table">
-                        <thead>
-                            <tr>
-                                <th>이메일</th>
-                                <th>권한</th>
-                                <th>상태</th>
-                                <th>가입일</th>
-                                <th>온보딩</th>
-                                <th>분석 작업 수</th>
-                                <th>상세</th>
-                                <th>관리</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.map((user) => (
-                                <tr key={user.id}>
-                                    <td>{user.email}</td>
-                                    <td>{formatRole(user.role)}</td>
-                                    <td>{user.status === "SUSPENDED" ? "정지" : "활성"}</td>
-                                    <td>{formatDateTime(user.createdAt)}</td>
-                                    <td>{user.onboardingCompleted ? "완료" : "미완료"}</td>
-                                    <td>{user.analysisJobCount}</td>
-                                    <td>
-                                        <Link to={`/admin/users/${user.id}`} className="secondary-button">
-                                            상세 보기
-                                        </Link>
-                                    </td>
-                                    <td>
-                                        {currentUser?.id === user.id ? (
-                                            <span>-</span>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    className={user.status === "SUSPENDED" ? "secondary-button" : "danger-button"}
-                                                    onClick={() => handleToggleStatus(user)}
-                                                    disabled={actionUserId === user.id}
-                                                >
-                                                    {actionUserId === user.id
-                                                        ? "처리 중..."
-                                                        : user.status === "SUSPENDED" ? "활성화" : "정지"}
-                                                </button>
-                                                {" "}
-                                                <button
-                                                    type="button"
-                                                    className="danger-button"
-                                                    onClick={() => handleForceWithdraw(user)}
-                                                    disabled={actionUserId === user.id}
-                                                >
-                                                    {actionUserId === user.id ? "처리 중..." : "강제 탈퇴"}
-                                                </button>
-                                            </>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {hasMore && (
-                <div className="button-row">
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={loadMoreUsers}
-                        disabled={loadingMore}
-                    >
-                        {loadingMore ? "불러오는 중..." : "더 보기"}
-                    </button>
-                </div>
-            )}
-
-            <h3>재시도 소진 작업 (DLQ)</h3>
-            <p>재시도 가능 횟수를 모두 소진한 채로 다시 실패한 분석 작업입니다. 검토 후 다시 큐에 넣을 수 있습니다.</p>
-
-            <StateMessage type="error">{deadLetterError}</StateMessage>
-
-            {deadLetterJobs.length === 0 ? (
-                <EmptyState
-                    title="재시도 소진 작업이 없습니다."
-                    description="반복 실패로 재시도 한도를 넘긴 작업이 없습니다."
+                <AdminActionCard
+                    title="복구 작업"
+                    description="분석·스토리지 삭제·비밀번호 이메일 DEAD_LETTER를 검토하고 재큐잉합니다."
+                    to="/admin/recovery"
+                    linkLabel="복구 작업 열기"
                 />
-            ) : (
-                <div className="pose-frame-table-wrap">
-                    <table className="pose-frame-table">
-                        <thead>
-                            <tr>
-                                <th>작업 ID</th>
-                                <th>사용자 ID</th>
-                                <th>실패 사유</th>
-                                <th>재시도 횟수</th>
-                                <th>마지막 실패 시각</th>
-                                <th>관리</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {deadLetterJobs.map((job) => (
-                                <tr key={job.jobId}>
-                                    <td>{job.jobId}</td>
-                                    <td>{job.ownerId}</td>
-                                    <td>{job.failReason || "-"}</td>
-                                    <td>{job.retryCount}</td>
-                                    <td>{formatDateTime(job.completedAt)}</td>
-                                    <td>
-                                        <button
-                                            type="button"
-                                            className="secondary-button"
-                                            onClick={() => handleRequeueDeadLetterJob(job)}
-                                            disabled={requeueingJobId === job.jobId}
-                                        >
-                                            {requeueingJobId === job.jobId ? "처리 중..." : "다시 큐에 넣기"}
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            </div>
 
-            {deadLetterHasMore && (
-                <div className="button-row">
-                    <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={loadMoreDeadLetterJobs}
-                        disabled={deadLetterLoadingMore}
-                    >
-                        {deadLetterLoadingMore ? "불러오는 중..." : "더 보기"}
-                    </button>
-                </div>
-            )}
+            <div className="button-row">
+                <button type="button" className="secondary-button" onClick={loadOverview} disabled={loading}>
+                    {loading ? "새로고침 중..." : "개요 새로고침"}
+                </button>
+            </div>
         </section>
+    );
+}
+
+function getTotalElements(result, errors, fallbackMessage) {
+    if (result.status === "fulfilled") {
+        return result.value.data?.totalElements ?? 0;
+    }
+
+    errors.push(getErrorMessage(result.reason, fallbackMessage));
+    return null;
+}
+
+function SummaryCard({ label, value, description, attention = false }) {
+    const numericValue = typeof value === "number" ? value : null;
+    return (
+        <article className="summary-card">
+            <span>{label}</span>
+            <strong className={attention && numericValue > 0 ? "text-warning" : undefined}>
+                {numericValue ?? "-"}
+            </strong>
+            <p>{description}</p>
+        </article>
+    );
+}
+
+function AdminActionCard({ title, description, to, linkLabel }) {
+    return (
+        <article className="result-card">
+            <h3>{title}</h3>
+            <p>{description}</p>
+            <Link to={to} className="secondary-button inline-flex mt-4">
+                {linkLabel} →
+            </Link>
+        </article>
     );
 }
 

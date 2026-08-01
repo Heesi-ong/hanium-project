@@ -63,7 +63,7 @@ function NavLinks({ isAuthenticated, user, logout, variant, onNavigate }) {
                     </NavLink>
 
                     <NavLink to="/status" className={linkClassName} onClick={onNavigate}>
-                        시스템 상태
+                        서비스 상태
                     </NavLink>
 
                     {user?.admin && (

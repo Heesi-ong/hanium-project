@@ -1,6 +1,6 @@
 import apiClient, { unwrapApiResponse } from "./apiClient";
 
-export async function getAdminUsers({ page, size } = {}) {
+export async function getAdminUsers({ page, size, email, status, role } = {}) {
     const params = {};
 
     if (page !== undefined) {
@@ -9,6 +9,18 @@ export async function getAdminUsers({ page, size } = {}) {
 
     if (size !== undefined) {
         params.size = size;
+    }
+
+    if (email) {
+        params.email = email;
+    }
+
+    if (status) {
+        params.status = status;
+    }
+
+    if (role) {
+        params.role = role;
     }
 
     const response = await apiClient.get("/api/admin/users", { params });
@@ -55,7 +67,16 @@ export async function deleteAdminResult(jobId) {
     return unwrapApiResponse(response);
 }
 
-export async function getAdminAuditLogs({ page, size } = {}) {
+export async function getAdminAuditLogs({
+    page,
+    size,
+    adminEmail,
+    action,
+    targetType,
+    targetId,
+    from,
+    to,
+} = {}) {
     const params = {};
 
     if (page !== undefined) {
@@ -64,6 +85,30 @@ export async function getAdminAuditLogs({ page, size } = {}) {
 
     if (size !== undefined) {
         params.size = size;
+    }
+
+    if (adminEmail) {
+        params.adminEmail = adminEmail;
+    }
+
+    if (action) {
+        params.action = action;
+    }
+
+    if (targetType) {
+        params.targetType = targetType;
+    }
+
+    if (targetId) {
+        params.targetId = targetId;
+    }
+
+    if (from) {
+        params.from = from;
+    }
+
+    if (to) {
+        params.to = to;
     }
 
     const response = await apiClient.get("/api/admin/audit-logs", { params });
@@ -87,5 +132,55 @@ export async function getAdminDeadLetterJobs({ page, size } = {}) {
 
 export async function requeueAdminDeadLetterJob(jobId) {
     const response = await apiClient.post(`/api/admin/analysis-jobs/${jobId}/requeue`);
+    return unwrapApiResponse(response);
+}
+
+export async function getAdminStorageDeletionDeadLetters({ page, size } = {}) {
+    const params = {};
+
+    if (page !== undefined) {
+        params.page = page;
+    }
+
+    if (size !== undefined) {
+        params.size = size;
+    }
+
+    const response = await apiClient.get(
+        "/api/admin/storage-deletion-tasks/dead-letter",
+        { params }
+    );
+    return unwrapApiResponse(response);
+}
+
+export async function requeueAdminStorageDeletionDeadLetter(taskId) {
+    const response = await apiClient.post(
+        `/api/admin/storage-deletion-tasks/${taskId}/requeue`
+    );
+    return unwrapApiResponse(response);
+}
+
+export async function getAdminPasswordResetEmailDeadLetters({ page, size } = {}) {
+    const params = {};
+
+    if (page !== undefined) {
+        params.page = page;
+    }
+
+    if (size !== undefined) {
+        params.size = size;
+    }
+
+    const response = await apiClient.get(
+        "/api/admin/password-reset-email-tasks/dead-letter",
+        { params }
+    );
+    return unwrapApiResponse(response);
+}
+
+export async function requeueAdminPasswordResetEmailDeadLetter(taskId) {
+    const response = await apiClient.post(
+        `/api/admin/password-reset-email-tasks/${taskId}/requeue`
+    );
     return unwrapApiResponse(response);
 }

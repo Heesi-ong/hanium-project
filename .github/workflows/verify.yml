@@ -308,8 +308,8 @@ jobs:
     # backend+DB 앞에서만 의미가 있어 여기서 별도로 돈다. analysis-engine/
     # video-llm-engine/analysis-worker는 페이지 렌더링·인증 흐름 검증에는 필요
     # 없고(모델 프리로드로 기동이 매우 느려짐) backend-boot-smoke와 같은 이유로
-    # --no-deps로 제외한다. backend의 엔진 헬스체크(/api/health/engines)는
-    # 엔진이 없으면 "unreachable"로 우아하게 응답하도록 이미 구현되어 있다.
+    # --no-deps로 제외한다. 인증된 사용자 상태 API(/api/status)는 엔진이 없으면
+    # 내부 세부를 노출하지 않고 사용자 영향만 "UNAVAILABLE"로 응답한다.
     runs-on: ubuntu-latest
     env:
       INTERNAL_ENGINE_API_KEY: ci-e2e-internal-key
@@ -706,6 +706,8 @@ jobs:
           yaml_files = [
               'infra/prometheus/prometheus.yml',
               'infra/prometheus/alerts.yml',
+              'infra/prometheus/alerts.test.yml',
+              'infra/blackbox/blackbox.yml',
               'infra/alertmanager/alertmanager.yml',
               'infra/grafana/provisioning/datasources/prometheus.yml',
               'infra/grafana/provisioning/dashboards/dashboards.yml',
@@ -730,6 +732,13 @@ jobs:
             -w /etc/prometheus \
             prom/prometheus:v3.13.0 \
             test rules alerts.test.yml
+      - name: Validate Blackbox Exporter config
+        run: |
+          docker run --rm \
+            -v "$PWD/infra/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro" \
+            prom/blackbox-exporter:v0.28.0 \
+            --config.file=/etc/blackbox_exporter/config.yml \
+            --config.check
       - name: Validate k6 load-test script
         run: >-
           docker run --rm

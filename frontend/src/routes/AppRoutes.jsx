@@ -21,6 +21,8 @@ const PricingPage = lazy(() => import("../pages/PricingPage"));
 const AccountPage = lazy(() => import("../pages/AccountPage"));
 const StatusPage = lazy(() => import("../pages/StatusPage"));
 const AdminDashboardPage = lazy(() => import("../pages/AdminDashboardPage"));
+const AdminUsersPage = lazy(() => import("../pages/AdminUsersPage"));
+const AdminRecoveryPage = lazy(() => import("../pages/AdminRecoveryPage"));
 const AdminUserDetailPage = lazy(() => import("../pages/AdminUserDetailPage"));
 const AdminAuditLogPage = lazy(() => import("../pages/AdminAuditLogPage"));
 const NotFoundPage = lazy(() => import("../pages/NotFoundPage"));
@@ -61,6 +63,8 @@ function AppRoutes() {
 
                     <Route element={<AdminRoute />}>
                         <Route path="/admin" element={<AdminDashboardPage />} />
+                        <Route path="/admin/users" element={<AdminUsersPage />} />
+                        <Route path="/admin/recovery" element={<AdminRecoveryPage />} />
                         <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
                         <Route path="/admin/audit-logs" element={<AdminAuditLogPage />} />
                     </Route>

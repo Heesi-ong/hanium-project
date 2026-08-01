@@ -89,6 +89,60 @@ class AdminAuditLogIntegrationTest {
     }
 
     @Test
+    void adminCanFilterAuditLogsAndInvalidDateRangeIsRejected() throws Exception {
+        String adminToken = signupAndLogin("admin@example.com");
+        User admin = userRepository.findByEmail("admin@example.com").orElseThrow();
+
+        adminAuditLogService.record(
+                admin.getId(),
+                admin.getEmail(),
+                AdminAuditAction.SUSPEND_USER,
+                AdminAuditTargetType.USER,
+                "42",
+                "정지"
+        );
+        adminAuditLogService.record(
+                admin.getId(),
+                admin.getEmail(),
+                AdminAuditAction.REQUEUE_STORAGE_DELETION_TASK,
+                AdminAuditTargetType.STORAGE_DELETION_TASK,
+                "storage-77",
+                "재큐잉"
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(adminToken);
+
+        ResponseEntity<String> filteredResponse = restTemplate.exchange(
+                "/api/admin/audit-logs?adminEmail=ADMIN"
+                        + "&action=REQUEUE_STORAGE_DELETION_TASK"
+                        + "&targetType=STORAGE_DELETION_TASK"
+                        + "&targetId=77",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(filteredResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode filtered = objectMapper.readTree(filteredResponse.getBody()).path("data").path("content");
+        assertThat(filtered).hasSize(1);
+        assertThat(filtered.get(0).path("action").asText())
+                .isEqualTo("REQUEUE_STORAGE_DELETION_TASK");
+        assertThat(filtered.get(0).path("targetId").asText()).isEqualTo("storage-77");
+
+        ResponseEntity<String> invalidRangeResponse = restTemplate.exchange(
+                "/api/admin/audit-logs?from=2026-08-02T00:00:00&to=2026-08-01T00:00:00",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                String.class
+        );
+
+        assertThat(invalidRangeResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(objectMapper.readTree(invalidRangeResponse.getBody()).path("message").asText())
+                .contains("시작 시각은 종료 시각보다 늦을 수 없습니다");
+    }
+
+    @Test
     void nonAdminCannotReadAuditLogs() throws Exception {
         String memberToken = signupAndLogin("member@example.com");
 

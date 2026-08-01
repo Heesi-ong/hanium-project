@@ -49,7 +49,7 @@ describe("MainLayout", () => {
         expect(screen.queryByRole("link", { name: "영상 업로드" })).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "분석 결과" })).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "계정" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("link", { name: "시스템 상태" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "서비스 상태" })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "로그아웃" })).not.toBeInTheDocument();
         expect(screen.queryByText("user@example.com")).not.toBeInTheDocument();
         expect(screen.getByRole("link", { name: "개인정보처리방침" }))
@@ -69,7 +69,7 @@ describe("MainLayout", () => {
         expect(screen.getByRole("link", { name: "홈" })).toHaveAttribute("href", "/");
         expect(screen.getByRole("link", { name: "영상 업로드" })).toHaveAttribute("href", "/upload");
         expect(screen.getByRole("link", { name: "분석 결과" })).toHaveAttribute("href", "/results");
-        expect(screen.getByRole("link", { name: "시스템 상태" })).toHaveAttribute("href", "/status");
+        expect(screen.getByRole("link", { name: "서비스 상태" })).toHaveAttribute("href", "/status");
         // 로그인 이메일 표시부가 계정 설정(/account) 진입점으로 합쳐졌습니다.
         // 별도 "계정" 탭은 없어지고, 이메일을 누르면 /account로 이동합니다.
         expect(screen.queryByRole("link", { name: "계정" })).not.toBeInTheDocument();

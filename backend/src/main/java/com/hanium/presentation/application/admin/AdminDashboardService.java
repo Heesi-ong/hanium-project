@@ -10,6 +10,7 @@ import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.user.repository.PasswordResetEmailTaskRepository;
 import com.hanium.presentation.domain.user.type.PasswordResetEmailTaskStatus;
 import com.hanium.presentation.domain.user.type.UserRole;
+import com.hanium.presentation.domain.user.type.UserStatus;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
@@ -51,8 +52,18 @@ public class AdminDashboardService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AdminUserSummaryResponse> getUsers(Pageable pageable) {
-        Page<User> users = userRepository.findAllByOrderByCreatedAtDesc(pageable);
+    public Page<AdminUserSummaryResponse> getUsers(
+            String email,
+            UserStatus status,
+            UserRole role,
+            Pageable pageable
+    ) {
+        Page<User> users = userRepository.searchForAdmin(
+                normalizeFilter(email),
+                status,
+                role,
+                pageable
+        );
 
         // 행마다 countByOwnerId를 따로 부르면 페이지 크기만큼 쿼리가 나가므로(N+1),
         // 이 페이지에 있는 ownerId를 한 번에 모아 배치 집계합니다. 작업이 0건인
@@ -70,6 +81,13 @@ public class AdminDashboardService {
                 user,
                 jobCountByOwnerId.getOrDefault(user.getId(), 0L)
         ));
+    }
+
+    private String normalizeFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     @Transactional(readOnly = true)

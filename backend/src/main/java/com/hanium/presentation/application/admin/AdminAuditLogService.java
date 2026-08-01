@@ -10,6 +10,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @Service
 public class AdminAuditLogService {
 
@@ -41,8 +43,31 @@ public class AdminAuditLogService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AdminAuditLogResponse> getAuditLogs(Pageable pageable) {
-        return adminAuditLogRepository.findAllByOrderByCreatedAtDesc(pageable)
+    public Page<AdminAuditLogResponse> getAuditLogs(
+            String adminEmail,
+            AdminAuditAction action,
+            AdminAuditTargetType targetType,
+            String targetId,
+            LocalDateTime fromDateTime,
+            LocalDateTime toDateTime,
+            Pageable pageable
+    ) {
+        return adminAuditLogRepository.search(
+                        normalizeFilter(adminEmail),
+                        action,
+                        targetType,
+                        normalizeFilter(targetId),
+                        fromDateTime,
+                        toDateTime,
+                        pageable
+                )
                 .map(AdminAuditLogResponse::from);
+    }
+
+    private String normalizeFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 }

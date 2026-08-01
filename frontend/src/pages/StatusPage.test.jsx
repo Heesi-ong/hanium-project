@@ -1,151 +1,98 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { engineHealthCheck, healthCheck } from "../api/analysisApi";
-import { API_BASE_URL } from "../api/apiClient";
+import { getServiceStatus } from "../api/analysisApi";
 import StatusPage from "./StatusPage";
-import { resolveBackendBaseUrl } from "./statusPageUtils";
 
 vi.mock("../api/analysisApi", () => ({
-    healthCheck: vi.fn(),
-    engineHealthCheck: vi.fn(),
+    getServiceStatus: vi.fn(),
 }));
+
+const STATUS_RESPONSE = {
+    timestamp: "2026-08-01T09:30:00",
+    data: {
+        overallStatus: "DEGRADED",
+        backend: {
+            status: "AVAILABLE",
+            message: "서비스에 정상적으로 연결되었습니다.",
+        },
+        analysisEngine: {
+            status: "AVAILABLE",
+            message: "기본 분석 기능을 정상적으로 이용할 수 있습니다.",
+        },
+        videoLlmEngine: {
+            status: "DEGRADED",
+            message: "Video LLM 분석 기능 일부가 제한되어 있습니다.",
+        },
+        passwordReset: {
+            status: "UNAVAILABLE",
+            message: "현재 비밀번호 재설정 이메일을 보낼 수 없습니다.",
+        },
+    },
+};
 
 describe("StatusPage", () => {
     beforeEach(() => {
-        healthCheck.mockReset();
-        engineHealthCheck.mockReset();
-
-        healthCheck.mockResolvedValue({
-            data: {
-                status: "ok",
-            },
-        });
-
-        engineHealthCheck.mockResolvedValue({
-            data: {
-                analysisEngine: {
-                    baseUrl: "http://analysis-engine:8001",
-                    health: {
-                        status: "up",
-                        reachable: true,
-                    },
-                    readiness: {
-                        reachable: true,
-                        authenticated: false,
-                        ready: false,
-                        message: "Analysis 엔진 내부 API 키 인증에 실패했습니다.",
-                    },
-                },
-                videoLlmEngine: {
-                    baseUrl: "http://video-llm-engine:8002",
-                    health: {
-                        status: "up",
-                        reachable: true,
-                    },
-                    readiness: {
-                        reachable: true,
-                        authenticated: true,
-                        ready: false,
-                        response: {
-                            mode: "FALLBACK",
-                            policy: "DEGRADED",
-                            realModelReady: false,
-                            reason: "VIDEO_LLM_ENABLED=true but NVIDIA_API_KEY is missing; analysis will fall back to mock responses.",
-                        },
-                    },
-                },
-            },
-        });
+        getServiceStatus.mockReset();
+        getServiceStatus.mockResolvedValue(STATUS_RESPONSE);
     });
 
-    it("loads and renders backend and engine status cards", async () => {
+    it("renders user-facing availability without internal diagnostics", async () => {
         render(<StatusPage />);
 
-        expect(screen.getByRole("heading", { name: "시스템 상태" })).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "서비스 상태" })).toBeInTheDocument();
+        expect(await screen.findByText("기본 분석")).toBeInTheDocument();
+        expect(screen.getByText("Video LLM 분석")).toBeInTheDocument();
+        expect(screen.getByText("비밀번호 재설정")).toBeInTheDocument();
 
-        expect(await screen.findByText("Spring Boot Backend")).toBeInTheDocument();
-        expect(screen.getByText("Analysis Engine")).toBeInTheDocument();
-        expect(screen.getByText("Video LLM Engine")).toBeInTheDocument();
-        expect(screen.getByText(API_BASE_URL || window.location.origin)).toBeInTheDocument();
-        expect(screen.getByText("http://analysis-engine:8001")).toBeInTheDocument();
-        expect(screen.getByText("http://video-llm-engine:8002")).toBeInTheDocument();
-        await screen.findByText("Analysis 엔진 내부 API 키 인증에 실패했습니다.");
-        expect(screen.getAllByText("degraded")).toHaveLength(2);
-        expect(screen.getByText("FALLBACK")).toBeInTheDocument();
-        expect(screen.getByText("DEGRADED")).toBeInTheDocument();
-        expect(screen.getByText("Policy")).toBeInTheDocument();
-        expect(screen.getByText("Real Model")).toBeInTheDocument();
-        expect(screen.getAllByText("Reason")).toHaveLength(2);
-        expect(screen.getByText(/NVIDIA_API_KEY is missing/)).toBeInTheDocument();
-        expect(screen.getByText("Analysis 엔진 내부 API 키 인증에 실패했습니다.")).toBeInTheDocument();
-
-        await waitFor(() => {
-            expect(healthCheck).toHaveBeenCalledTimes(1);
-            expect(engineHealthCheck).toHaveBeenCalledTimes(1);
-        });
-    });
-
-    it("shows the password reset feature as ok when enabled and SMTP is configured", async () => {
-        healthCheck.mockResolvedValue({
-            data: {
-                status: "ok",
-                passwordReset: {
-                    enabled: true,
-                    smtpConfigured: true,
-                },
-            },
-        });
-
-        render(<StatusPage />);
-
-        expect(await screen.findByText("비밀번호 재설정")).toBeInTheDocument();
         const passwordResetCard = screen.getByText("비밀번호 재설정").closest("article");
-        expect(within(passwordResetCard).getByText("ok")).toBeInTheDocument();
+        expect(within(passwordResetCard).getByText("이용 불가")).toBeInTheDocument();
+        expect(within(passwordResetCard).getByText(
+            "현재 비밀번호 재설정 이메일을 보낼 수 없습니다."
+        )).toBeInTheDocument();
+
+        expect(screen.queryByText(/http:\/\//)).not.toBeInTheDocument();
+        expect(screen.queryByText(/authenticated/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/NVIDIA_API_KEY/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/policy/i)).not.toBeInTheDocument();
+        expect(getServiceStatus).toHaveBeenCalledTimes(1);
     });
 
-    it("shows the password reset feature as down when SMTP is missing and explains why", async () => {
-        healthCheck.mockResolvedValue({
+    it("refreshes all component statuses on demand", async () => {
+        render(<StatusPage />);
+        await screen.findByText("기본 분석 기능을 정상적으로 이용할 수 있습니다.");
+
+        getServiceStatus.mockResolvedValueOnce({
+            ...STATUS_RESPONSE,
             data: {
-                status: "ok",
+                ...STATUS_RESPONSE.data,
+                overallStatus: "AVAILABLE",
+                videoLlmEngine: {
+                    status: "AVAILABLE",
+                    message: "Video LLM 분석 기능을 정상적으로 이용할 수 있습니다.",
+                },
                 passwordReset: {
-                    enabled: true,
-                    smtpConfigured: false,
+                    status: "AVAILABLE",
+                    message: "비밀번호 재설정 이메일을 정상적으로 이용할 수 있습니다.",
                 },
             },
         });
 
-        render(<StatusPage />);
+        fireEvent.click(screen.getByRole("button", { name: "상태 새로고침" }));
 
-        const passwordResetCard = (await screen.findByText("비밀번호 재설정")).closest("article");
-        expect(within(passwordResetCard).getByText("down")).toBeInTheDocument();
-        expect(
-            within(passwordResetCard).getByText("SMTP가 설정되지 않아 재설정 이메일을 보낼 수 없습니다.")
-        ).toBeInTheDocument();
+        expect(await screen.findByText(
+            "Video LLM 분석 기능을 정상적으로 이용할 수 있습니다."
+        )).toBeInTheDocument();
+        await waitFor(() => expect(getServiceStatus).toHaveBeenCalledTimes(2));
     });
 
-    it("shows the password reset feature as degraded when explicitly disabled", async () => {
-        healthCheck.mockResolvedValue({
-            data: {
-                status: "ok",
-                passwordReset: {
-                    enabled: false,
-                    smtpConfigured: false,
-                },
-            },
-        });
+    it("keeps the status layout visible when the request fails", async () => {
+        getServiceStatus.mockRejectedValueOnce({ message: "상태 조회 실패" });
 
         render(<StatusPage />);
 
-        const passwordResetCard = (await screen.findByText("비밀번호 재설정")).closest("article");
-        expect(within(passwordResetCard).getByText("degraded")).toBeInTheDocument();
-        expect(
-            within(passwordResetCard).getByText("관리자가 이 기능을 의도적으로 비활성화했습니다.")
-        ).toBeInTheDocument();
-    });
-
-    it("resolves the backend base URL from config and falls back to the current origin", () => {
-        expect(resolveBackendBaseUrl("https://api.example.com", "https://app.example.com")).toBe("https://api.example.com");
-        expect(resolveBackendBaseUrl("", "https://app.example.com")).toBe("https://app.example.com");
+        expect(await screen.findByText("상태 조회 실패")).toBeInTheDocument();
+        expect(screen.getByText("기본 분석")).toBeInTheDocument();
+        expect(screen.getAllByText("확인 불가")).toHaveLength(4);
     });
 });

@@ -15,6 +15,22 @@ alerting:
         - targets: ['alertmanager:9093']
 
 scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  - job_name: grafana
+    static_configs:
+      - targets: ['grafana:3000']
+
+  - job_name: blackbox-exporter
+    static_configs:
+      - targets: ['blackbox-exporter:9115']
+
   - job_name: backend
     metrics_path: /actuator/prometheus
     static_configs:
@@ -40,3 +56,48 @@ scrape_configs:
   - job_name: cadvisor
     static_configs:
       - targets: ['cadvisor:8080']
+
+  # 사용자 상태 페이지 방문 여부와 무관하게 엔진/MinIO의 공개 health를 지속 점검합니다.
+  # 상세 readiness와 내부 API 키는 blackbox exporter에 전달하지 않습니다.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ['http://analysis-engine:8001/health']
+        labels:
+          component: analysis-engine
+      - targets: ['http://video-llm-engine:8002/health']
+        labels:
+          component: video-llm-engine
+      - targets: ['http://minio:9000/minio/health/live']
+        labels:
+          component: minio
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # MySQL/Redis는 비밀값을 exporter에 복제하지 않고 TCP 연결 가능 여부만 확인합니다.
+  # 쿼리·인증 수준의 상태는 backend Hikari/Redis 실패 메트릭과 함께 판단합니다.
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets: ['mysql:3306']
+        labels:
+          component: mysql
+      - targets: ['redis:6379']
+        labels:
+          component: redis
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

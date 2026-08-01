@@ -77,7 +77,7 @@ public class SecurityConfig {
                                     "/api/auth/password-reset/request",
                                     "/api/auth/password-reset/confirm"
                             ).permitAll()
-                            .requestMatchers("/api/health", "/api/health/**").permitAll()
+                            .requestMatchers("/api/health").permitAll()
                             .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll();
 
                     if (apiDocsProperties.publicEnabled()) {

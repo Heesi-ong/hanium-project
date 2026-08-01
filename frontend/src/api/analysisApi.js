@@ -9,8 +9,8 @@ export async function healthCheck() {
     return unwrapApiResponse(response);
 }
 
-export async function engineHealthCheck() {
-    const response = await apiClient.get("/api/health/engines");
+export async function getServiceStatus() {
+    const response = await apiClient.get("/api/status");
     return unwrapApiResponse(response);
 }
 

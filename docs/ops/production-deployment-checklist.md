@@ -106,10 +106,10 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 - `minio-init`이 종료 코드 0으로 끝나 사용자 파일 버킷과 백업 버킷을 만든 뒤에만 backup,
   backend, analysis-worker가 시작되어야 한다. 세 서비스가 대기 상태라면
   `docker compose logs minio-init`에서 MinIO 계정·버킷 이름·네트워크 오류를 확인한다.
-- 전체 기동 후 `GET /api/health/engines`에서 두 엔진의 `health`뿐 아니라 내부 API 키를 사용하는
-  authenticated readiness 경로도 성공하는지 확인한다. 단순 `/health` 성공만으로 분석 API 인증까지
-  검증됐다고 판단하면 안 된다.
-- 실제 모델 정책으로 배포했다면 `videoLlmEngine.readiness.response.mode=REAL`,
+- 전체 기동 후 운영 네트워크 안에서 `X-Internal-Api-Key`를 사용해 두 엔진의
+  `GET /api/internal/readiness`가 성공하는지 확인한다. 상세 readiness를 공개 상태 API나 외부
+  네트워크에 노출하지 않으며, 단순 `/health` 성공만으로 분석 API 인증까지 검증됐다고 판단하면 안 된다.
+- 실제 모델 정책으로 배포했다면 Video LLM readiness 응답의 `mode=REAL`,
   `policy=STRICT|DEGRADED`, `realModelReady=true`인지 확인한다. `health`가 `up`이어도
   readiness가 `ready=false`이면 API 키, timeout, 영상 크기 상한, NVIDIA base URL 설정을
   먼저 수정한다.

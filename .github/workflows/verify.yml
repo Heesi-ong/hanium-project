@@ -121,7 +121,11 @@ jobs:
       # 저장소 루트에 .ruff_cache가 있어 ruff가 로컬에서는 쓰이고 있었지만 CI에는 연결돼
       # 있지 않았다. pip-audit처럼 무거운 의존성 설치 없이 바로 돌릴 수 있는 정적 검사라
       # requirements 설치보다 먼저 실행한다.
-      - run: pip install ruff
+      # 버전을 반드시 고정한다 — 2026-08-03 실측: pin 없이 최신(0.16.1)을 설치하면 두
+      # 엔진 모두에서 138/59건씩 새로 위반이 발생한다(ruff가 기본으로 활성화하는 규칙
+      # 집합이 버전 사이에 늘어났기 때문이지, 코드가 실제로 나빠진 게 아니다). 0.12.0은
+      # 현재 코드에서 위반 0건임을 확인했다.
+      - run: pip install ruff==0.12.0
         working-directory: ${{ matrix.engine }}
       - run: ruff check .
         working-directory: ${{ matrix.engine }}
@@ -248,7 +252,7 @@ jobs:
           hanium-${{ matrix.image }}:ci
           -m pip check
       - name: Trivy image vulnerability scan (report only)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: hanium-${{ matrix.image }}:ci
           format: table
@@ -277,6 +281,15 @@ jobs:
       COMPOSE_PROJECT_NAME: hanium-ci
     steps:
       - uses: actions/checkout@v4
+      # ./storage:/storage 바인드 마운트가 러너의 빈 storage/ 디렉터리를 그대로
+      # 노출하면 root:root 소유로 생성되어, 컨테이너 안의 non-root appuser가
+      # storage/logs/backend.log에 쓰지 못해 Logback이 기동 자체를 실패시킨다
+      # (2026-08-03 실측: "container is unhealthy"의 실제 원인). analysis-pipeline-e2e
+      # job과 동일하게 미리 만들어 둔다.
+      - name: Prepare writable runtime storage
+        run: |
+          mkdir -p storage/logs
+          chmod -R a+rwx storage
       - uses: docker/setup-buildx-action@v3
       - name: Start database/cache/object-storage dependencies
         run: docker compose up -d --wait mysql redis minio
@@ -328,6 +341,11 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # backend-boot-smoke job과 동일한 이유(2026-08-03 실측)로 미리 만들어 둔다.
+      - name: Prepare writable runtime storage
+        run: |
+          mkdir -p storage/logs
+          chmod -R a+rwx storage
       - uses: docker/setup-buildx-action@v3
       - name: Start database/cache/object-storage dependencies
         run: docker compose up -d --wait mysql redis minio

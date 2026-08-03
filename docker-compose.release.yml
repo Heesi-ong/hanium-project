@@ -1,0 +1,45 @@
+# 배포용 이미지 오버레이입니다. docker-compose.yml/docker-compose.prod.yml의 build:
+# 기반 서비스를 GHCR에 미리 push된 불변(sha-<커밋SHA>) 이미지로 교체합니다.
+# 로컬 개발 워크플로(docker-compose.yml 단독 사용, 소스에서 직접 빌드)는
+# 이 파일을 쓰지 않으면 그대로 유지됩니다.
+#
+# IMAGE_TAG를 비워두면 바로 기동이 거부됩니다("latest"처럼 무엇이 배포됐는지
+# 불명확한 태그를 실수로 쓰는 상황을 막기 위함입니다). .github/workflows/release.yml이
+# 커밋마다 sha-<7자리 SHA> 태그로 push하며, production은 그 태그만 참조합니다.
+#
+# 사용 예:
+#   IMAGE_TAG=sha-abc1234 docker compose \
+#     -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.release.yml \
+#     up -d
+
+services:
+  backend:
+    image: ghcr.io/ehtkddn123-cloud/hanium-backend:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null
+
+  analysis-worker:
+    # backend와 이미지를 공유합니다(docker-compose.yml의 기존 주석과 동일한 이유).
+    image: ghcr.io/ehtkddn123-cloud/hanium-backend:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null
+
+  frontend:
+    image: ghcr.io/ehtkddn123-cloud/hanium-frontend:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null
+
+  analysis-engine:
+    image: ghcr.io/ehtkddn123-cloud/hanium-analysis-engine:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null
+
+  video-llm-engine:
+    image: ghcr.io/ehtkddn123-cloud/hanium-video-llm-engine:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null
+
+  backup:
+    image: ghcr.io/ehtkddn123-cloud/hanium-backup:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null
+
+  # nginx는 docker-compose.prod.yml에만 정의되어 있으므로, 이 오버레이는 항상
+  # docker-compose.yml + docker-compose.prod.yml과 함께 사용해야 합니다.
+  nginx:
+    image: ghcr.io/ehtkddn123-cloud/hanium-nginx:${IMAGE_TAG:?IMAGE_TAG must be set, e.g. sha-abc1234}
+    build: !reset null

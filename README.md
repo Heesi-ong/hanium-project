@@ -1031,6 +1031,12 @@ Dependabot은 매주 backend(Gradle), frontend(npm), analysis-engine/video-llm-e
 
 CI의 `docker-build` job은 서비스/운영 보조 이미지(`backend`, `frontend`, `analysis-engine`, `video-llm-engine`, `backup`, `nginx`)를 빌드한 뒤 Trivy로 컨테이너 OS 패키지 취약점을 스캔합니다. 현재는 `CRITICAL,HIGH` 결과를 로그에 표로 남기는 보고 전용 단계이며, `exit-code: 0`이라 취약점 발견만으로 빌드를 실패시키지 않습니다. 실제 CI에서 나온 CVE 목록을 확인한 뒤, 베이스 이미지 업데이트로 해결 가능한 항목과 예외 처리할 항목을 분류하고 차후 실패 기준을 정해야 합니다.
 
+### 15.1 Release 이미지 파이프라인
+
+`.github/workflows/release.yml`은 `verify` 워크플로가 `main` push에 대해 성공한 뒤에만 실행되어 6개 이미지를 GHCR(`ghcr.io/ehtkddn123-cloud/hanium-<service>`)에 `sha-<커밋SHA>` 불변 태그로 push하고, 그 이미지를 재빌드 없이 pull해 로그인·업로드→큐→결과 흐름을 다시 검증합니다(`staging-smoke` job). `latest` 태그는 만들지 않습니다 — 어떤 태그가 어떤 바이너리인지 불명확해지는 문제를 막기 위함입니다. `docker-compose.release.yml`은 이 태그를 참조해 production Compose 서비스의 `build:`를 pull 가능한 `image:`로 교체하는 오버레이입니다.
+
+production 승격(`deploy` job)은 아직 없습니다 — production 호스트가 아직 정해지지 않았기 때문입니다. 설계 배경과 다음 단계는 `docs/service-plan/release-pipeline-design-2026-08-03.md`를, 릴리스별 태그·배포 이력은 `docs/ops/release-log.md`를 참고합니다.
+
 ## 16. 현재 구현 범위
 
 현재 구현된 범위:

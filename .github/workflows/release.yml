@@ -1,0 +1,203 @@
+name: release
+
+# verify 워크플로가 main 브랜치 push에 대해 성공했을 때만 실행된다(workflow_run 트리거).
+# PR 단계에서는 절대 push하지 않는다 — 아직 리뷰/머지되지 않은 이미지가 GHCR에 쌓이는
+# 것을 막기 위함이다. workflow_run은 이 파일의 main 브랜치 버전 기준으로 실행되므로
+# 신뢰할 수 없는 PR 코드가 GHCR write 권한을 가진 컨텍스트에서 실행되지 않는다.
+#
+# 설계 배경: docs/service-plan/release-pipeline-design-2026-08-03.md 참고.
+# 이 워크플로는 "artifact 파이프라인"(build→push→staging smoke)만 다룬다. 실제
+# production 호스트가 아직 없어 promote(배포) job은 포함하지 않는다. 호스트가 정해지면
+# staging-smoke 뒤에 workflow_dispatch 기반 deploy job을 추가한다.
+
+on:
+  workflow_run:
+    workflows: ["verify"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ehtkddn123-cloud
+
+jobs:
+  compute-tag:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - id: tag
+        run: echo "image_tag=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: compute-tag
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - backend
+          - frontend
+          - analysis-engine
+          - video-llm-engine
+          - backup
+          - nginx
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # verify.yml의 docker-build job과 동일한 scope로 GitHub Actions 캐시를 공유해
+      # 같은 커밋을 두 워크플로가 각자 처음부터 다시 빌드하지 않게 한다.
+      - name: Build and push image
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/hanium-${{ matrix.image }}
+          TAG: ${{ needs.compute-tag.outputs.image_tag }}
+        run: |
+          if [[ "${{ matrix.image }}" == "backup" ]]; then
+            docker buildx build --push \
+              -f infra/backup/Dockerfile \
+              -t "$IMAGE:$TAG" -t "$IMAGE:main" \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              .
+          elif [[ "${{ matrix.image }}" == "nginx" ]]; then
+            docker buildx build --push \
+              -t "$IMAGE:$TAG" -t "$IMAGE:main" \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              infra/nginx
+          elif [[ "${{ matrix.image }}" == "frontend" ]]; then
+            # docker-compose.prod.yml과 동일하게 VITE_API_BASE_URL을 비워, nginx
+            # 동일 origin /api 프록시를 쓰는 실제 production 빌드와 같은 이미지를 만든다.
+            docker buildx build --push \
+              -t "$IMAGE:$TAG" -t "$IMAGE:main" \
+              --build-arg VITE_API_BASE_URL= \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              frontend
+          else
+            docker buildx build --push \
+              -t "$IMAGE:$TAG" -t "$IMAGE:main" \
+              --cache-from "type=gha,scope=${{ matrix.image }}" \
+              --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
+              "${{ matrix.image }}"
+          fi
+
+  staging-smoke:
+    # push된 이미지를 재빌드 없이 pull해서 검증한다. backend-boot-smoke/
+    # frontend-e2e-full-stack/analysis-pipeline-e2e(verify.yml)가 각자 다시 빌드한
+    # 이미지를 쓰는 것과 달리, 여기서는 production으로 승격될 바로 그 digest를 그대로 쓴다.
+    #
+    # 범위 제한: frontend는 production과 동일하게 VITE_API_BASE_URL=""(동일 origin)로
+    # 빌드되어 있어, nginx 없이는 /api 호출이 실패한다. nginx는 docker-compose.prod.yml
+    # 기반이라 DOMAIN/인증서 부트스트랩이 필요해 이번 범위에 포함하지 않았다(호스트가
+    # 정해진 뒤 deploy job과 함께 추가). 그래서 로그인/업로드 흐름은 frontend UI가
+    # 아니라 backend API를 직접 호출하는 auth-api.spec.js/analysis-pipeline.spec.js로
+    # 검증한다(verify.yml의 같은 스펙과 동일 — UI 셀렉터에 의존하지 않는다).
+    # frontend 이미지 자체는 별도로 pull해 정적 페이지 응답만 확인한다.
+    needs: [compute-tag, build-and-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IMAGE_TAG: ${{ needs.compute-tag.outputs.image_tag }}
+      COMPOSE_PROJECT_NAME: hanium-release
+      INTERNAL_ENGINE_API_KEY: ci-release-internal-key
+      SECURITY_JWT_SECRET: ci-release-jwt-secret-not-a-placeholder-value
+      MINIO_ROOT_USER: ci-release-minio-admin
+      MINIO_ROOT_PASSWORD: ci-release-minio-password12345
+      DB_PASSWORD: ci-release-db-password
+      DB_ROOT_PASSWORD: ci-release-db-root-password
+      REDIS_PASSWORD: ci-release-redis-password
+      OPENAI_ENABLED: "false"
+      VIDEO_LLM_POLICY: "DISABLED"
+      VIDEO_LLM_ENABLED: "false"
+      ANALYSIS_ENGINE_WHISPER_POOL_SIZE: "1"
+      ANALYSIS_ENGINE_POSE_POOL_SIZE: "1"
+      ANALYSIS_ENGINE_FACE_POOL_SIZE: "1"
+      ANALYSIS_EXECUTOR_CORE_POOL_SIZE: "1"
+      ANALYSIS_EXECUTOR_MAX_POOL_SIZE: "1"
+      ANALYSIS_EXECUTOR_QUEUE_CAPACITY: "5"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restore analysis model cache
+        uses: actions/cache@v4
+        with:
+          path: storage/models
+          key: analysis-models-${{ runner.os }}-${{ hashFiles('analysis-engine/requirements.txt', 'analysis-engine/app/core/model_registry.py') }}
+      - name: Prepare writable runtime storage
+        run: |
+          mkdir -p storage/uploads storage/results storage/temp storage/logs storage/models
+          chmod -R a+rwx storage
+      - name: Pull release images
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.release.yml
+          pull backend analysis-worker analysis-engine frontend
+      - name: Start database/cache/object-storage dependencies
+        run: docker compose up -d --wait mysql redis minio
+      - name: Create MinIO buckets
+        run: docker compose up minio-init
+      - name: Boot analysis engine and wait for model readiness
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.release.yml
+          up -d --wait --wait-timeout 900 --no-deps analysis-engine
+      - name: Boot API and analysis worker
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.release.yml
+          up -d --wait --wait-timeout 180 --no-deps backend analysis-worker
+      # frontend 서비스는 자체 healthcheck(wget --spider http://127.0.0.1/)가 있어
+      # --wait이 정적 페이지 응답을 이미 확인한다.
+      - name: Boot frontend and wait for health check
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.release.yml
+          up -d --wait --no-deps frontend
+      - name: Install Playwright test runner
+        working-directory: frontend
+        run: npm ci
+      - name: Run login contract smoke (auth-api.spec.js)
+        working-directory: frontend
+        env:
+          E2E_FULL_STACK: "true"
+          API_BASE_URL: http://localhost:8080
+        run: npm run test:e2e -- e2e/auth-api.spec.js
+      - name: Run upload-to-result pipeline smoke (analysis-pipeline.spec.js)
+        working-directory: frontend
+        env:
+          E2E_ANALYSIS_PIPELINE: "true"
+          BASE_URL: http://localhost:8080
+          API_BASE_URL: http://localhost:8080
+          E2E_ANALYSIS_MAX_WAIT_MS: "900000"
+        run: npm run test:e2e -- e2e/analysis-pipeline.spec.js
+      - name: Dump service logs on failure
+        if: failure()
+        run: >-
+          docker compose -f docker-compose.yml -f docker-compose.release.yml
+          logs backend analysis-worker analysis-engine frontend mysql redis minio
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.release.yml down -v

@@ -251,8 +251,11 @@ jobs:
           --entrypoint python
           hanium-${{ matrix.image }}:ci
           -m pip check
+      # v0.28.0은 내부적으로 aquasecurity/setup-trivy@v0.2.1을 참조하는데 그 태그가
+      # 업스트림에서 삭제되어(2026-08-03 실측) 더 이상 쓸 수 없다. v0.36.0은 같은
+      # 의존성을 커밋 SHA로 고정해 참조하므로 더 안전하다.
       - name: Trivy image vulnerability scan (report only)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: hanium-${{ matrix.image }}:ci
           format: table

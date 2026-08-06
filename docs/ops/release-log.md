@@ -12,7 +12,7 @@ production 승격(`deploy` job)은 아직 없다(2026-08-03 기준 production �
 
 | 커밋 SHA | 이미지 태그 | staging-smoke 통과 시각 | production 배포 시각 | 배포자 | 비고 |
 | --- | --- | --- | --- | --- | --- |
-| (아직 없음) | | | | | |
+| eda2777 | sha-eda2777 | 2026-08-03T10:13:36Z | (미배포) | - | release.yml 최초 전체 통과(compute-tag/build-and-push 6개/staging-smoke). production 호스트 미정이라 승격 없음 |
 
 - **커밋 SHA**: `git rev-parse --short=7 HEAD` 기준 7자리.
 - **이미지 태그**: `sha-<커밋 SHA>` (GHCR `ghcr.io/ehtkddn123-cloud/hanium-<service>:sha-xxxxxxx`).

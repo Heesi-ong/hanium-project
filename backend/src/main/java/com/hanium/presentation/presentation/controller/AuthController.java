@@ -5,13 +5,11 @@ import com.hanium.presentation.application.auth.PasswordResetService;
 import com.hanium.presentation.domain.user.TermsVersion;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
-import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.JwtBlacklist;
 import com.hanium.presentation.global.config.JwtCookieSupport;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.config.SecurityConfig.JwtTokenProvider;
 import com.hanium.presentation.global.exception.ErrorCode;
-import com.hanium.presentation.global.properties.AdminProperties;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.global.security.ClientIpResolver;
 import jakarta.servlet.http.Cookie;
@@ -56,7 +54,6 @@ public class AuthController {
     private final UserRateLimiter userRateLimiter;
     private final JwtCookieSupport jwtCookieSupport;
     private final PasswordResetService passwordResetService;
-    private final AdminProperties adminProperties;
     private final ClientIpResolver clientIpResolver;
 
     public AuthController(
@@ -67,7 +64,6 @@ public class AuthController {
             UserRateLimiter userRateLimiter,
             JwtCookieSupport jwtCookieSupport,
             PasswordResetService passwordResetService,
-            AdminProperties adminProperties,
             ClientIpResolver clientIpResolver
     ) {
         this.userRepository = userRepository;
@@ -77,7 +73,6 @@ public class AuthController {
         this.userRateLimiter = userRateLimiter;
         this.jwtCookieSupport = jwtCookieSupport;
         this.passwordResetService = passwordResetService;
-        this.adminProperties = adminProperties;
         this.clientIpResolver = clientIpResolver;
     }
 
@@ -102,13 +97,18 @@ public class AuthController {
         }
 
         try {
+            // 공개 회원가입은 항상 USER로만 생성한다(User 생성자 기본값). ADMIN은 여기서
+            // 절대 부여하지 않는다 — 예전에는 ADMIN_EMAILS와 이메일이 일치하면 소유 확인
+            // 없이 즉시 ADMIN이 부여되어, 관리자 이메일을 아는 누구나 그 주소로 먼저
+            // 가입하면 관리자 계정을 선점할 수 있었다(2026-08-03 실측 재현). 관리자 승격은
+            // AdminRoleSyncRunner가 기동 시 기존 사용자에 한해서만 수행한다(공개 HTTP
+            // 요청만으로는 ADMIN을 만들 수 없다).
             User user = User.create(
                     email,
                     passwordEncoder.encode(request.password()),
                     LocalDateTime.now(),
                     TermsVersion.CURRENT
             );
-            user.syncRole(adminProperties.isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER);
             user = userRepository.save(user);
 
             return ResponseEntity
@@ -157,12 +157,6 @@ public class AuthController {
             return ResponseEntity
                     .status(errorCode.getStatus())
                     .body(ApiResponse.fail(errorCode.getMessage()));
-        }
-
-        UserRole expectedRole = adminProperties.isAdminEmail(email) ? UserRole.ADMIN : UserRole.USER;
-        if (user.getRole() != expectedRole) {
-            user.syncRole(expectedRole);
-            user = userRepository.save(user);
         }
 
         String accessToken = jwtTokenProvider.createToken(user);

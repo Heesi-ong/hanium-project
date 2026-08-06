@@ -56,6 +56,33 @@ DB/Redis/JWT/MinIO/백업 암호화 시크릿은 비어 있으면 compose 설정
 | `VIDEO_LLM_ENABLED` | `false` | 정책 값이 비었을 때만 DISABLED로 해석되는 하위 호환 스위치 | 기존 배포 마이그레이션 시 정책 값과 의미를 맞출 때 |
 | `OPENAI_ENABLED` | `false` | OpenAI 피드백 생성 대신 폴백 처리 | OpenAI 키를 확보하고 비용 정책을 확인한 뒤 |
 
+### 3.1 관리자(ADMIN) 부여·회수 절차 (2026-08-03 P0 수정)
+
+과거에는 `ADMIN_EMAILS`에 등록된 이메일로 공개 회원가입/로그인만 해도 이메일 소유 확인 없이
+즉시 ADMIN이 부여됐다(실제 재현 확인된 취약점). 관리자 이메일을 아는 누구나 그 주소로 먼저
+가입하면 관리자 계정을 선점할 수 있었다. 지금은 공개 `POST /api/auth/signup`,
+`POST /api/auth/login` 어느 경로로도 ADMIN이 생성되지 않는다(항상 USER로만 생성/유지).
+
+**부여 절차 (out-of-band, 공개 HTTP 밖에서만 가능)**
+
+1. 관리자로 만들 사람이 먼저 일반 사용자로 회원가입한다(USER로 생성됨).
+2. 운영자가 `.env`(또는 배포 환경변수)의 `ADMIN_EMAILS`에 그 이메일을 추가한다(쉼표로 여러 개
+   구분 가능).
+3. backend(및 analysis-worker, 역할 분리 배포라면 두 서비스 모두)를 재기동한다.
+4. 기동 시 `AdminRoleSyncRunner`가 `ADMIN_EMAILS`와 **이미 존재하는** 사용자의 role을
+   동기화한다. 아직 가입 전인 이메일은 아무 효과가 없다(다음 재기동 때 그 사람이 가입해
+   있으면 그때 승격된다) — 이 러너는 새 사용자를 만들지 않는다.
+5. 로그: 승격/강등이 실제로 일어나면 `ADMIN_ROLE_SYNC_PROMOTED`/`ADMIN_ROLE_SYNC_DEMOTED`가
+   backend 로그에 남는다.
+
+**회수 절차**: `ADMIN_EMAILS`에서 이메일을 빼고 재기동하면 해당 사용자는 다음 기동 시 USER로
+자동 강등된다(대칭 동작). 즉시 로그인 세션까지 끊어야 하면 관리자 화면에서 별도로 강제
+탈퇴/정지 조치를 병행한다.
+
+주의: 이 절차는 "누가 먼저 가입해서 이메일을 선점하는 것"을 막지 못한다 — 목표 관리자 이메일로
+아직 아무도 가입하지 않았다면, 그 이메일로 먼저 가입하는 사람이 이후 `ADMIN_EMAILS`에 등록될 때
+승격 대상이 된다. 운영 전 관리자 이메일로 직접 먼저 가입해 선점해 두는 것을 권장한다.
+
 ## 4. 모니터링 알림 필수값
 
 `docker-compose.monitoring.yml`의 Alertmanager는 실제 SMTP 설정 없이는 fail-fast로 종료된다.

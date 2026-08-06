@@ -44,9 +44,15 @@ class AdminAuthorizationIntegrationTest {
         userRateLimiter.resetForTest();
     }
 
+    // 2026-08-03 이전에는 이 테스트가 "ADMIN_EMAILS와 이메일이 일치하면 공개 회원가입만
+    // 으로 즉시 ADMIN이 부여된다"는 것을 정상 동작으로 고정하고 있었다. 이는 관리자
+    // 이메일을 아는 누구나 그 주소로 먼저 가입해 관리자 계정을 선점할 수 있는 P0
+    // 취약점이었다(실제 재현 확인). 공개 API로는 ADMIN을 만들 수 없어야 한다는 것을
+    // 검증하도록 뒤집었다 — 실제 승격 경로(AdminRoleSyncRunner)는
+    // AdminRoleSyncRunnerTest에서 별도로 검증한다.
     @Test
-    void adminListedEmailIsPromotedAndCanAccessAdminEndpoint() throws Exception {
-        String accessToken = signupAndLogin("admin@example.com", true);
+    void publicSignupWithAdminListedEmailStaysUser() throws Exception {
+        String accessToken = signupAndLogin("admin@example.com", false);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(accessToken);
@@ -57,7 +63,7 @@ class AdminAuthorizationIntegrationTest {
                 String.class
         );
 
-        assertThat(pingResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(pingResponse.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     @Test

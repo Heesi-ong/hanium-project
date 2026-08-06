@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.admin.repository.AdminAuditLogRepository;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
+import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ class AdminUserForceWithdrawalIntegrationTest {
 
     @Test
     void adminCanForceWithdrawUser() throws Exception {
-        String adminToken = signupAndLogin("admin@example.com");
+        String adminToken = signupAndLoginAsAdmin("admin@example.com");
         String memberToken = signupAndLogin("member@example.com");
         User member = userRepository.findByEmail("member@example.com").orElseThrow();
 
@@ -90,7 +91,7 @@ class AdminUserForceWithdrawalIntegrationTest {
 
     @Test
     void adminCannotForceWithdrawSelf() throws Exception {
-        String adminToken = signupAndLogin("admin@example.com");
+        String adminToken = signupAndLoginAsAdmin("admin@example.com");
         User admin = userRepository.findByEmail("admin@example.com").orElseThrow();
 
         HttpHeaders headers = new HttpHeaders();
@@ -108,7 +109,7 @@ class AdminUserForceWithdrawalIntegrationTest {
 
     @Test
     void forceWithdrawingNonexistentUserReturnsNotFound() throws Exception {
-        String adminToken = signupAndLogin("admin@example.com");
+        String adminToken = signupAndLoginAsAdmin("admin@example.com");
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(adminToken);
@@ -155,5 +156,17 @@ class AdminUserForceWithdrawalIntegrationTest {
         ResponseEntity<String> loginResponse = restTemplate.postForEntity("/api/auth/login", request, String.class);
         JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
         return loginBody.path("data").path("accessToken").asText();
+    }
+
+    // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03
+    // P0 수정). 테스트에서 관리자 토큰이 필요하면 가입 후 role을 직접 동기화한다 —
+    // JwtAuthenticationFilter가 매 요청마다 DB에서 role을 새로 조회하므로, 이미 발급된
+    // 토큰도 이 동기화 이후 즉시 관리자 권한으로 동작한다.
+    private String signupAndLoginAsAdmin(String email) throws Exception {
+        String token = signupAndLogin(email);
+        User user = userRepository.findByEmail(email).orElseThrow();
+        user.syncRole(UserRole.ADMIN);
+        userRepository.save(user);
+        return token;
     }
 }

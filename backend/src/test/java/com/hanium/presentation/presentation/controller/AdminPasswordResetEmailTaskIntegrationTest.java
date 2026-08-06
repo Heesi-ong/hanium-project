@@ -11,6 +11,7 @@ import com.hanium.presentation.domain.user.repository.PasswordResetEmailTaskRepo
 import com.hanium.presentation.domain.user.repository.PasswordResetTokenRepository;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.user.type.PasswordResetEmailTaskStatus;
+import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +69,7 @@ class AdminPasswordResetEmailTaskIntegrationTest {
 
     @Test
     void adminCanListDeadLetterWithoutExposingResetLinkOrFullEmail() throws Exception {
-        String adminToken = signupAndLogin("admin@example.com");
+        String adminToken = signupAndLoginAsAdmin("admin@example.com");
         PasswordResetEmailTask deadLetter = createDeadLetter("sensitive-user@example.com");
 
         HttpHeaders headers = new HttpHeaders();
@@ -93,7 +94,7 @@ class AdminPasswordResetEmailTaskIntegrationTest {
 
     @Test
     void adminCanRequeueDeadLetterAndAuditAction() throws Exception {
-        String adminToken = signupAndLogin("admin@example.com");
+        String adminToken = signupAndLoginAsAdmin("admin@example.com");
         PasswordResetEmailTask deadLetter = createDeadLetter("requeue-user@example.com");
 
         HttpHeaders headers = new HttpHeaders();
@@ -157,5 +158,17 @@ class AdminPasswordResetEmailTaskIntegrationTest {
         ResponseEntity<String> loginResponse =
                 restTemplate.postForEntity("/api/auth/login", request, String.class);
         return objectMapper.readTree(loginResponse.getBody()).path("data").path("accessToken").asText();
+    }
+
+    // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03
+    // P0 수정). 테스트에서 관리자 토큰이 필요하면 가입 후 role을 직접 동기화한다 —
+    // JwtAuthenticationFilter가 매 요청마다 DB에서 role을 새로 조회하므로, 이미 발급된
+    // 토큰도 이 동기화 이후 즉시 관리자 권한으로 동작한다.
+    private String signupAndLoginAsAdmin(String email) throws Exception {
+        String token = signupAndLogin(email);
+        User user = userRepository.findByEmail(email).orElseThrow();
+        user.syncRole(UserRole.ADMIN);
+        userRepository.save(user);
+        return token;
     }
 }

@@ -100,11 +100,15 @@ Kubernetes는 도입하지 않는다. 현재 Compose 구조를 유지하며 이�
 
 구체적으로는:
 
-- [ ] `main` push 시 6개 이미지가 `sha-<short-sha>` 태그로 GHCR에 push된다.
-- [ ] push된 이미지가 재빌드 없이 pull되어 staging smoke(health/migration/로그인/업로드→큐→결과)를 통과한다.
+- [x] `main` push 시 6개 이미지가 `sha-<short-sha>` 태그로 GHCR에 push된다. (2026-08-03, `eda2777` 최초 확인 — 상세는 `docs/ops/release-log.md`)
+- [x] push된 이미지가 재빌드 없이 pull되어 staging smoke(health/migration/로그인/업로드→큐→결과)를 통과한다. (2026-08-03, 동일 커밋에서 `staging-smoke` 최초 성공)
 - [ ] production 호스트가 정해진 뒤, 승인된 SHA만 수동 `workflow_dispatch`로 production에 승격된다.
 - [ ] 이전 SHA로 재배포하는 rollback이 재빌드 없이 성공한다.
 - [ ] migration 호환성 확인 없이 rollback이 실행되지 않도록 runbook에 체크리스트가 있다.
+
+## 8. 2026-08-03 첫 실행 결과
+
+설계한 artifact 파이프라인(4.1~4.2절)을 구현하고 실제로 `main`에 push해 처음 실행했다. 최초 실행에서는 이 설계와 무관한, 훨씬 이전부터 있던 `verify.yml`의 문제 3가지(Trivy action 태그 오타/삭제된 의존성, ruff 버전 미고정, storage 바인드 마운트 권한)가 먼저 드러나 `release`가 계속 `skipped`됐다. 이를 해결한 뒤 `verify`가 세션 내 처음으로 전체 통과했고, `release`도 처음 실행되어 `staging-smoke`에서 Playwright `BASE_URL` 미지정으로 인한 포트 충돌 1건을 추가로 발견해 고쳤다. 최종적으로 `compute-tag → build-and-push(6개) → staging-smoke`가 전부 성공했다(커밋 `eda2777`). 자세한 실패/수정 이력은 git log와 `docs/ops/release-log.md`를 참고한다.
 
 ## 6. 다음 실행 순서
 

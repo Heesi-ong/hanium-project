@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 WORKDIR /app
 
 # OpenCV / MediaPipe / ffmpeg 기반 영상·오디오 처리에 필요한 시스템 라이브러리입니다.

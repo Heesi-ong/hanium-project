@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -106,9 +107,9 @@ class AnalysisCommandServiceMetricsTest {
                 mock(AnalysisProgressService.class),
                 analysisJobStatusService,
                 analysisTaskExecutor,
-                new AnalysisRetryProperties(3),
                 new AnalysisQueueProperties(100, 3),
-                meterRegistry
+                meterRegistry,
+                new AnalysisJobValidator(new AnalysisRetryProperties(3))
         );
     }
 
@@ -177,13 +178,30 @@ class AnalysisCommandServiceMetricsTest {
     void retryPathRecordsStartedCounterWithRetryTrigger() {
         when(analysisJob.canRetry()).thenReturn(true);
         when(analysisJob.getRetryCount()).thenReturn(0);
+        when(analysisJob.isUseVideoLlm()).thenReturn(false);
+        when(analysisJob.isUseOpenAi()).thenReturn(false);
         when(analysisEngineClient.analyze(any(AnalysisEngineRequest.class)))
                 .thenReturn(successEngineResponse());
 
-        analysisCommandService.retryAnalysis(JOB_ID, 1L, false, false);
+        analysisCommandService.retryAnalysis(JOB_ID, 1L);
 
         assertThat(meterRegistry.counter("analysis.job.started", "trigger", "retry").count())
                 .isEqualTo(1.0);
+        verify(analysisJob).enqueue(false, false);
+    }
+
+    @Test
+    void retryOnlyOverridesOptionsExplicitlyProvidedByTheCaller() {
+        when(analysisJob.canRetry()).thenReturn(true);
+        when(analysisJob.getRetryCount()).thenReturn(0);
+        when(analysisJob.isUseVideoLlm()).thenReturn(false);
+        when(analysisJob.isUseOpenAi()).thenReturn(false);
+        when(analysisEngineClient.analyze(any(AnalysisEngineRequest.class)))
+                .thenReturn(successEngineResponse());
+
+        analysisCommandService.retryAnalysis(JOB_ID, 1L, null, true);
+
+        verify(analysisJob).enqueue(false, true);
     }
 
     private AnalysisEngineResponse successEngineResponse() {

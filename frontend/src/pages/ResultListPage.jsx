@@ -3,12 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { deleteResult, getResults, updateResultMemo } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 import AnimatedSection from "../components/motion/AnimatedSection";
+import CollapsibleDetails from "../components/CollapsibleDetails";
 import EmptyState from "../components/EmptyState";
 import ScoreTrendChart from "../components/chart/ScoreTrendChart";
 import PageHeader from "../components/PageHeader";
-import OpenAiGenerationBadge from "../components/result-detail/OpenAiGenerationBadge";
-import { firstMeaningfulResultValue } from "../components/result-detail/resultDetailFormatters";
-import VideoLlmGenerationBadge from "../components/result-detail/VideoLlmGenerationBadge";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
 import { useConfirm } from "../context/ConfirmContext";
@@ -24,33 +22,6 @@ const FILTER_OPTIONS = [
     },
     {
         label: "실패",
-        value: "FAILED",
-    },
-];
-
-const GENERATION_MODE_FILTER_OPTIONS = [
-    {
-        label: "OpenAI 전체",
-        value: "ALL",
-    },
-    {
-        label: "MOCK",
-        value: "MOCK",
-    },
-    {
-        label: "REAL",
-        value: "REAL",
-    },
-    {
-        label: "FALLBACK",
-        value: "FALLBACK",
-    },
-    {
-        label: "UNKNOWN",
-        value: "UNKNOWN",
-    },
-    {
-        label: "FAILED",
         value: "FAILED",
     },
 ];
@@ -74,14 +45,45 @@ const SORT_OPTIONS = [
     },
 ];
 
+// 목록 단순화(P1-04) 기준: 현재 로드된 결과가 2개 이상일 때만 추이 차트와
+// 필터·정렬·비교 기능을 노출합니다. 서버 전체 건수가 더 많아도 화면에 아직 1개만
+// 로드됐다면 비교할 대상이 없으므로, "더 보기" 후 실제 결과가 늘어날 때 공개합니다.
+const PROGRESSIVE_FEATURES_MIN_COUNT = 2;
+
+function getTotalScore(result) {
+    const score = result?.scoreSummary?.totalScore;
+
+    return typeof score === "number" ? score : null;
+}
+
+function compareScores(a, b, direction) {
+    const aScore = getTotalScore(a);
+    const bScore = getTotalScore(b);
+
+    if (aScore === null && bScore === null) {
+        return 0;
+    }
+
+    if (aScore === null) {
+        return 1;
+    }
+
+    if (bScore === null) {
+        return -1;
+    }
+
+    return direction === "ASC" ? aScore - bScore : bScore - aScore;
+}
+
 function ResultListPage() {
     const confirm = useConfirm();
     const navigate = useNavigate();
     const [results, setResults] = useState([]);
+    const [totalResultCount, setTotalResultCount] = useState(0);
     const [filterStatus, setFilterStatus] = useState("ALL");
-    const [generationModeFilter, setGenerationModeFilter] = useState("ALL");
     const [sortType, setSortType] = useState("LATEST");
     const [keyword, setKeyword] = useState("");
+    const [jobIdQuery, setJobIdQuery] = useState("");
     const [loading, setLoading] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [page, setPage] = useState(0);
@@ -97,28 +99,12 @@ function ResultListPage() {
     const [compareMode, setCompareMode] = useState(false);
     const [selectedForCompare, setSelectedForCompare] = useState([]);
 
-    const completedCount = results.filter(
-        (result) => result.status === "COMPLETED"
-    ).length;
-
-    const failedCount = results.filter(
-        (result) => result.status === "FAILED"
-    ).length;
-
-    const mockCount = results.filter(
-        (result) => getGenerationMode(result) === "MOCK"
-    ).length;
-
-    const realCount = results.filter(
-        (result) => getGenerationMode(result) === "REAL"
-    ).length;
-
-    const fallbackCount = results.filter(
-        (result) => getGenerationMode(result) === "FALLBACK"
-    ).length;
+    const totalCount = results.length;
+    const showProgressiveFeatures = totalCount >= PROGRESSIVE_FEATURES_MIN_COUNT;
 
     const filteredResults = useMemo(() => {
         const normalizedKeyword = keyword.trim().toLowerCase();
+        const normalizedJobIdQuery = jobIdQuery.trim().toLowerCase();
 
         return results
             .filter((result) => {
@@ -129,36 +115,15 @@ function ResultListPage() {
                 return result.status === filterStatus;
             })
             .filter((result) => {
-                if (generationModeFilter === "ALL") {
-                    return true;
-                }
-
-                return getGenerationMode(result) === generationModeFilter;
-            })
-            .filter((result) => {
                 if (!normalizedKeyword) {
                     return true;
                 }
 
                 const searchableText = [
-                    result.jobId,
                     result.memo,
                     result.fileName,
                     result.originalFileName,
                     result.videoFileName,
-                    result.status,
-                    result.statusDescription,
-                    result.feedback?.generationMode,
-                    result.feedback?.model,
-                    result.feedback?.fallbackReason,
-                    result.pipeline?.openAiGenerationMode,
-                    result.pipeline?.openAiModel,
-                    result.pipeline?.openAiFallbackReason,
-                    result.visualAnalysis?.model?.generationMode,
-                    result.visualAnalysis?.model?.name,
-                    result.visualAnalysis?.model?.version,
-                    result.pipeline?.videoLlmGenerationMode,
-                    result.pipeline?.videoLlmAnalysis,
                 ]
                     .filter(Boolean)
                     .join(" ")
@@ -166,22 +131,29 @@ function ResultListPage() {
 
                 return searchableText.includes(normalizedKeyword);
             })
+            .filter((result) => {
+                if (!normalizedJobIdQuery) {
+                    return true;
+                }
+
+                return (result.jobId || "").toLowerCase().includes(normalizedJobIdQuery);
+            })
             .sort((a, b) => {
                 if (sortType === "OLDEST") {
                     return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
                 }
 
                 if (sortType === "SCORE_DESC") {
-                    return getTotalScore(b) - getTotalScore(a);
+                    return compareScores(a, b, "DESC");
                 }
 
                 if (sortType === "SCORE_ASC") {
-                    return getTotalScore(a) - getTotalScore(b);
+                    return compareScores(a, b, "ASC");
                 }
 
                 return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
             });
-    }, [results, filterStatus, generationModeFilter, sortType, keyword]);
+    }, [results, filterStatus, sortType, keyword, jobIdQuery]);
 
     useEffect(() => {
         loadResults();
@@ -199,26 +171,35 @@ function ResultListPage() {
 
             if (Array.isArray(responseData?.content)) {
                 setResults(responseData.content);
+                setTotalResultCount(
+                    typeof responseData.totalElements === "number"
+                        ? responseData.totalElements
+                        : responseData.content.length
+                );
                 setHasMore(responseData.last === false);
                 return;
             }
 
             if (Array.isArray(responseData)) {
                 setResults(responseData);
+                setTotalResultCount(responseData.length);
                 return;
             }
 
             if (Array.isArray(responseData?.results)) {
                 setResults(responseData.results);
+                setTotalResultCount(responseData.results.length);
                 return;
             }
 
             if (Array.isArray(responseData?.data)) {
                 setResults(responseData.data);
+                setTotalResultCount(responseData.data.length);
                 return;
             }
 
             setResults([]);
+            setTotalResultCount(0);
         } catch (requestError) {
             setError(getErrorMessage(
                 requestError,
@@ -240,6 +221,9 @@ function ResultListPage() {
 
             if (Array.isArray(responseData?.content)) {
                 setResults((prevResults) => [...prevResults, ...responseData.content]);
+                if (typeof responseData.totalElements === "number") {
+                    setTotalResultCount(responseData.totalElements);
+                }
                 setPage(nextPage);
                 setHasMore(responseData.last === false);
             } else {
@@ -277,6 +261,7 @@ function ResultListPage() {
             setResults((prevResults) =>
                 prevResults.filter((result) => result.jobId !== jobId)
             );
+            setTotalResultCount((previous) => Math.max(0, previous - 1));
         } catch (requestError) {
             if (getErrorCode(requestError) === ERROR_CODES.ANALYSIS_JOB_ACCESS_DENIED) {
                 setError("본인 소유의 결과만 삭제할 수 있습니다.");
@@ -361,24 +346,6 @@ function ResultListPage() {
         navigate("/results/compare", { state: { results: selectedResults } });
     }
 
-    function getGenerationMode(result) {
-        return firstMeaningfulResultValue(
-            result?.feedback?.generationMode,
-            result?.pipeline?.openAiGenerationMode,
-            "UNKNOWN"
-        );
-    }
-
-    function getTotalScore(result) {
-        const score = result?.scoreSummary?.totalScore;
-
-        if (typeof score === "number") {
-            return score;
-        }
-
-        return 0;
-    }
-
     function getResultTitle(result) {
         return (
             result?.memo ||
@@ -387,6 +354,16 @@ function ResultListPage() {
             result?.videoFileName ||
             "분석 결과"
         );
+    }
+
+    function getImprovementPoint(result) {
+        const improvements = result?.feedback?.improvements;
+
+        if (Array.isArray(improvements) && improvements.length > 0 && improvements[0]) {
+            return improvements[0];
+        }
+
+        return "-";
     }
 
     function getScoreClassName(score) {
@@ -455,6 +432,64 @@ function ResultListPage() {
         );
     }
 
+    if (error && totalCount === 0) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result List"
+                    title="분석 결과 목록"
+                    description="저장된 발표 분석 결과를 다시 불러올 수 있습니다."
+                />
+
+                <EmptyState
+                    title="결과 목록을 불러오지 못했습니다."
+                    description={error}
+                />
+
+                <div className="button-row">
+                    <button
+                        type="button"
+                        className="primary-button"
+                        onClick={loadResults}
+                    >
+                        다시 시도
+                    </button>
+                </div>
+            </section>
+        );
+    }
+
+    if (totalCount === 0) {
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result List"
+                    title="분석 결과 목록"
+                    description="업로드된 발표 영상의 분석 결과를 확인하고 상세 피드백으로 이동할 수 있습니다."
+                />
+
+                <StateMessage type="error">{error}</StateMessage>
+
+                <AnimatedSection>
+                    <EmptyState
+                        title="아직 분석 결과가 없습니다."
+                        description="발표 영상을 업로드하면 자세, 시선, 제스처, 음성 분석 결과를 여기에서 확인할 수 있습니다."
+                    />
+
+                    <div className="button-row">
+                        <Link to="/upload" className="primary-button">
+                            첫 영상 업로드하기
+                        </Link>
+
+                        <Link to="/" className="secondary-button">
+                            홈에서 샘플 지표 보기
+                        </Link>
+                    </div>
+                </AnimatedSection>
+            </section>
+        );
+    }
+
     return (
         <section className="page-section">
             <PageHeader
@@ -465,133 +500,110 @@ function ResultListPage() {
 
             <StateMessage type="error">{error}</StateMessage>
 
-            <AnimatedSection className="result-summary-grid">
-                <article className="summary-card">
-                    <span>전체 결과</span>
-                    <strong>{results.length}</strong>
-                    <p>저장된 전체 분석 결과 수입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>완료</span>
-                    <strong>{completedCount}</strong>
-                    <p>정상적으로 분석이 완료된 결과입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>실패</span>
-                    <strong>{failedCount}</strong>
-                    <p>분석 중 오류가 발생한 결과입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>OpenAI Mock</span>
-                    <strong>{mockCount}</strong>
-                    <p>내부 Mock 피드백으로 생성된 결과입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>OpenAI Real</span>
-                    <strong>{realCount}</strong>
-                    <p>실제 OpenAI API로 생성된 결과입니다.</p>
-                </article>
-
-                <article className="summary-card">
-                    <span>OpenAI Fallback</span>
-                    <strong>{fallbackCount}</strong>
-                    <p>OpenAI 호출 실패 후 Mock으로 대체된 결과입니다.</p>
-                </article>
-            </AnimatedSection>
-
-            <AnimatedSection>
-                <ScoreTrendChart results={results} />
-            </AnimatedSection>
-
-            <div className="result-control-grid">
-                <div className="filter-button-group">
-                    {FILTER_OPTIONS.map((option) => (
-                        <button
-                            key={option.value}
-                            type="button"
-                            className={
-                                filterStatus === option.value
-                                    ? "filter-button active"
-                                    : "filter-button"
-                            }
-                            onClick={() => setFilterStatus(option.value)}
-                        >
-                            {option.label}
-                        </button>
-                    ))}
-                </div>
-
-                <div className="filter-button-group">
-                    {GENERATION_MODE_FILTER_OPTIONS.map((option) => (
-                        <button
-                            key={option.value}
-                            type="button"
-                            className={
-                                generationModeFilter === option.value
-                                    ? "filter-button active"
-                                    : "filter-button"
-                            }
-                            onClick={() => setGenerationModeFilter(option.value)}
-                        >
-                            {option.label}
-                        </button>
-                    ))}
-                </div>
-
-                <input
-                    type="search"
-                    className="search-input"
-                    placeholder="파일명, jobId, OpenAI/Video LLM 방식 검색"
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                />
-
-                <select
-                    className="sort-select"
-                    value={sortType}
-                    onChange={(event) => setSortType(event.target.value)}
-                >
-                    {SORT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                            {option.label}
-                        </option>
-                    ))}
-                </select>
-
-                <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={loadResults}
-                >
-                    새로고침
-                </button>
-
-                <button
-                    type="button"
-                    className={compareMode ? "filter-button active" : "secondary-button"}
-                    onClick={toggleCompareMode}
-                >
-                    {compareMode ? "비교 모드 종료" : "결과 비교"}
-                </button>
+            <div className="result-list-header">
+                <h2>내 분석 결과</h2>
+                <span>총 {totalResultCount}개</span>
             </div>
 
-            {compareMode && (
-                <div className="compare-action-bar" role="status">
-                    <span>
-                        비교할 완료된 결과를 2개 선택하세요 ({selectedForCompare.length}/2)
-                    </span>
+            {showProgressiveFeatures ? (
+                <>
+                    <AnimatedSection>
+                        <ScoreTrendChart results={results} />
+                    </AnimatedSection>
 
+                    <div className="result-control-grid">
+                        <div className="filter-button-group">
+                            {FILTER_OPTIONS.map((option) => (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    className={
+                                        filterStatus === option.value
+                                            ? "filter-button active"
+                                            : "filter-button"
+                                    }
+                                    onClick={() => setFilterStatus(option.value)}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <input
+                            type="search"
+                            className="search-input"
+                            placeholder="파일명 또는 메모 검색"
+                            value={keyword}
+                            onChange={(event) => setKeyword(event.target.value)}
+                        />
+
+                        <select
+                            className="sort-select"
+                            value={sortType}
+                            onChange={(event) => setSortType(event.target.value)}
+                        >
+                            {SORT_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={loadResults}
+                        >
+                            새로고침
+                        </button>
+
+                        <button
+                            type="button"
+                            className={compareMode ? "filter-button active" : "secondary-button"}
+                            onClick={toggleCompareMode}
+                        >
+                            {compareMode ? "비교 모드 종료" : "결과 비교"}
+                        </button>
+                    </div>
+
+                    <CollapsibleDetails
+                        className="inquiry-id-details"
+                        summary="고급 검색 — 문의용 ID"
+                    >
+                        <input
+                            type="search"
+                            className="search-input"
+                            placeholder="문의 시 안내받은 결과 ID(jobId)로 검색"
+                            value={jobIdQuery}
+                            onChange={(event) => setJobIdQuery(event.target.value)}
+                        />
+                    </CollapsibleDetails>
+
+                    {compareMode && (
+                        <div className="compare-action-bar" role="status">
+                            <span>
+                                비교할 완료된 결과를 2개 선택하세요 ({selectedForCompare.length}/2)
+                            </span>
+
+                            <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleCompareNavigate}
+                                disabled={selectedForCompare.length !== 2}
+                            >
+                                선택한 결과 비교하기
+                            </button>
+                        </div>
+                    )}
+                </>
+            ) : (
+                <div className="button-row">
                     <button
                         type="button"
-                        className="primary-button"
-                        onClick={handleCompareNavigate}
-                        disabled={selectedForCompare.length !== 2}
+                        className="secondary-button"
+                        onClick={loadResults}
                     >
-                        선택한 결과 비교하기
+                        새로고침
                     </button>
                 </div>
             )}
@@ -679,9 +691,6 @@ function ResultListPage() {
                                         {editingMemoJobId === result.jobId && (
                                             <StateMessage type="error">{memoError}</StateMessage>
                                         )}
-                                        <p>
-                                            jobId: <code>{result.jobId}</code>
-                                        </p>
                                     </div>
 
                                     <StatusBadge
@@ -696,12 +705,6 @@ function ResultListPage() {
                                     </p>
                                 )}
 
-                                <OpenAiGenerationBadge
-                                    feedback={result.feedback}
-                                    pipeline={result.pipeline}
-                                />
-                                <VideoLlmGenerationBadge result={result} />
-
                                 <div className="result-score-row">
                                     <div>
                                         <span>총점</span>
@@ -711,29 +714,14 @@ function ResultListPage() {
                                     </div>
 
                                     <div>
-                                        <span>등급</span>
-                                        <strong>{result.scoreSummary?.level || "-"}</strong>
-                                    </div>
-
-                                    <div>
                                         <span>생성일</span>
                                         <strong>{formatDateTime(result.createdAt)}</strong>
                                     </div>
                                 </div>
 
-                                <div className="result-metric-row">
-                                    <span>자세 {formatScore(result.scoreSummary?.postureScore)}</span>
-                                    <span>시선 {formatScore(result.scoreSummary?.gazeScore)}</span>
-                                    <span>음성 {formatScore(result.scoreSummary?.speechScore)}</span>
-                                    <span>제스처 {formatScore(result.scoreSummary?.gestureScore)}</span>
-                                    <span>표정 {formatScore(result.scoreSummary?.expressionScore)}</span>
-                                </div>
-
-                                {result.feedback?.overall && (
-                                    <p className="result-feedback-preview">
-                                        {result.feedback.overall}
-                                    </p>
-                                )}
+                                <p className="result-feedback-preview">
+                                    개선 포인트: {getImprovementPoint(result)}
+                                </p>
 
                                 <div className="result-card-actions">
                                     <Link

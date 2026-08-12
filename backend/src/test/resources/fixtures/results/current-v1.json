@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "jobId": "current-job",
+  "status": "COMPLETED",
+  "scoreSummary": {
+    "totalScore": 88,
+    "postureScore": 80,
+    "gazeScore": 81,
+    "speechScore": 82,
+    "gestureScore": 83,
+    "expressionScore": 84,
+    "level": "EXCELLENT"
+  },
+  "feedback": {},
+  "visualAnalysis": {},
+  "pipeline": {}
+}

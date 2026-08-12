@@ -11,6 +11,7 @@ const apiMock = vi.hoisted(() => ({
 
 const confirmMock = vi.hoisted(() => ({
     confirm: vi.fn(),
+    promptReason: vi.fn(),
 }));
 
 vi.mock("../api/adminApi", () => ({
@@ -20,6 +21,7 @@ vi.mock("../api/adminApi", () => ({
 
 vi.mock("../context/ConfirmContext", () => ({
     useConfirm: () => confirmMock.confirm,
+    useReasonPrompt: () => confirmMock.promptReason,
 }));
 
 function renderAdminUserDetailPage(userId = "1") {
@@ -61,6 +63,8 @@ describe("AdminUserDetailPage", () => {
         apiMock.deleteAdminResult.mockReset();
         confirmMock.confirm.mockReset();
         confirmMock.confirm.mockResolvedValue(true);
+        confirmMock.promptReason.mockReset();
+        confirmMock.promptReason.mockResolvedValue({ reason: "테스트 사유", incidentId: "INC-2001" });
     });
 
     afterEach(() => {
@@ -146,10 +150,28 @@ describe("AdminUserDetailPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "삭제" }));
 
         await waitFor(() => {
-            expect(apiMock.deleteAdminResult).toHaveBeenCalledWith("20260715090000-abcd1234");
+            expect(apiMock.deleteAdminResult).toHaveBeenCalledWith(
+                "20260715090000-abcd1234",
+                { reason: "테스트 사유", incidentId: "INC-2001" }
+            );
         });
         await waitFor(() => {
             expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
         });
+    });
+
+    it("does not delete a result when the reason prompt is cancelled", async () => {
+        apiMock.getAdminUserResults.mockResolvedValue(singleResultResponse);
+        confirmMock.promptReason.mockResolvedValue(null);
+
+        renderAdminUserDetailPage("1");
+
+        await screen.findByText("presentation.mp4");
+
+        fireEvent.click(screen.getByRole("button", { name: "삭제" }));
+
+        await waitFor(() => expect(confirmMock.promptReason).toHaveBeenCalled());
+        expect(apiMock.deleteAdminResult).not.toHaveBeenCalled();
+        expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
     });
 });

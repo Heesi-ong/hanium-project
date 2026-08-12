@@ -1,4 +1,5 @@
 import apiClient, { unwrapApiResponse } from "./apiClient";
+import { validateResultSchemaResponse } from "../contracts/resultSchema";
 
 export const UPLOAD_ANALYSIS_TIMEOUT_MS = 20 * 60 * 1000;
 export const ANALYSIS_COMMAND_TIMEOUT_MS = 30 * 1000;
@@ -14,7 +15,7 @@ export async function getServiceStatus() {
     return unwrapApiResponse(response);
 }
 
-export async function uploadAnalysisVideo(file) {
+export async function uploadAnalysisVideo(file, { onUploadProgress } = {}) {
     const formData = new FormData();
     formData.append("file", file);
 
@@ -23,6 +24,7 @@ export async function uploadAnalysisVideo(file) {
             "Content-Type": "multipart/form-data",
         },
         timeout: UPLOAD_ANALYSIS_TIMEOUT_MS,
+        onUploadProgress,
     });
 
     return unwrapApiResponse(response);
@@ -43,11 +45,19 @@ export async function runAnalysis(jobId, options = {}) {
     return unwrapApiResponse(response);
 }
 
-export async function retryAnalysis(jobId, options = {}) {
-    const requestBody = {
-        useVideoLlm: options.useVideoLlm ?? true,
-        useOpenAi: options.useOpenAi ?? true,
-    };
+export async function retryAnalysis(jobId, options) {
+    // 옵션을 생략한 일반 재시도는 서버가 DB에 저장한 최초 실행 선택을 그대로 사용합니다.
+    // 여기서 true/true를 기본 전송하면 사용자가 끈 외부 AI 전송·비용 옵션이 다시 켜집니다.
+    const requestBody = options
+        ? {
+            ...(options.useVideoLlm !== undefined && {
+                useVideoLlm: options.useVideoLlm,
+            }),
+            ...(options.useOpenAi !== undefined && {
+                useOpenAi: options.useOpenAi,
+            }),
+        }
+        : null;
 
     const response = await apiClient.post(
         `/api/analysis/${jobId}/retry`,
@@ -119,7 +129,7 @@ export async function getResults({ page, size } = {}) {
 
 export async function getResult(jobId) {
     const response = await apiClient.get(`/api/results/${jobId}`);
-    return unwrapApiResponse(response);
+    return validateResultSchemaResponse(unwrapApiResponse(response));
 }
 
 export async function updateResultMemo(jobId, memo) {

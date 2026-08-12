@@ -66,6 +66,15 @@ jobs:
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/hanium-${{ matrix.image }}
           TAG: ${{ needs.compute-tag.outputs.image_tag }}
+          VITE_BUSINESS_NAME: ${{ vars.VITE_BUSINESS_NAME }}
+          VITE_BUSINESS_REPRESENTATIVE: ${{ vars.VITE_BUSINESS_REPRESENTATIVE }}
+          VITE_BUSINESS_REGISTRATION_NUMBER: ${{ vars.VITE_BUSINESS_REGISTRATION_NUMBER }}
+          VITE_BUSINESS_ADDRESS: ${{ vars.VITE_BUSINESS_ADDRESS }}
+          VITE_BUSINESS_PHONE: ${{ vars.VITE_BUSINESS_PHONE }}
+          VITE_BUSINESS_EMAIL: ${{ vars.VITE_BUSINESS_EMAIL }}
+          VITE_PRIVACY_OFFICER_NAME: ${{ vars.VITE_PRIVACY_OFFICER_NAME }}
+          VITE_PRIVACY_OFFICER_EMAIL: ${{ vars.VITE_PRIVACY_OFFICER_EMAIL }}
+          VITE_PRIVACY_OFFICER_PHONE: ${{ vars.VITE_PRIVACY_OFFICER_PHONE }}
         run: |
           if [[ "${{ matrix.image }}" == "backup" ]]; then
             docker buildx build --push \
@@ -81,11 +90,43 @@ jobs:
               --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
               infra/nginx
           elif [[ "${{ matrix.image }}" == "frontend" ]]; then
+            required_business_variables=(
+              VITE_BUSINESS_NAME
+              VITE_BUSINESS_REPRESENTATIVE
+              VITE_BUSINESS_REGISTRATION_NUMBER
+              VITE_BUSINESS_ADDRESS
+              VITE_BUSINESS_PHONE
+              VITE_BUSINESS_EMAIL
+              VITE_PRIVACY_OFFICER_NAME
+              VITE_PRIVACY_OFFICER_EMAIL
+              VITE_PRIVACY_OFFICER_PHONE
+            )
+            missing_business_variables=()
+            for variable_name in "${required_business_variables[@]}"; do
+              variable_value="${!variable_name}"
+              if [[ -z "${variable_value//[[:space:]]/}" ]]; then
+                missing_business_variables+=("$variable_name")
+              fi
+            done
+            if (( ${#missing_business_variables[@]} > 0 )); then
+              echo "Required frontend legal metadata is missing: ${missing_business_variables[*]}" >&2
+              exit 1
+            fi
+
             # docker-compose.prod.yml과 동일하게 VITE_API_BASE_URL을 비워, nginx
             # 동일 origin /api 프록시를 쓰는 실제 production 빌드와 같은 이미지를 만든다.
             docker buildx build --push \
               -t "$IMAGE:$TAG" -t "$IMAGE:main" \
               --build-arg VITE_API_BASE_URL= \
+              --build-arg VITE_BUSINESS_NAME="$VITE_BUSINESS_NAME" \
+              --build-arg VITE_BUSINESS_REPRESENTATIVE="$VITE_BUSINESS_REPRESENTATIVE" \
+              --build-arg VITE_BUSINESS_REGISTRATION_NUMBER="$VITE_BUSINESS_REGISTRATION_NUMBER" \
+              --build-arg VITE_BUSINESS_ADDRESS="$VITE_BUSINESS_ADDRESS" \
+              --build-arg VITE_BUSINESS_PHONE="$VITE_BUSINESS_PHONE" \
+              --build-arg VITE_BUSINESS_EMAIL="$VITE_BUSINESS_EMAIL" \
+              --build-arg VITE_PRIVACY_OFFICER_NAME="$VITE_PRIVACY_OFFICER_NAME" \
+              --build-arg VITE_PRIVACY_OFFICER_EMAIL="$VITE_PRIVACY_OFFICER_EMAIL" \
+              --build-arg VITE_PRIVACY_OFFICER_PHONE="$VITE_PRIVACY_OFFICER_PHONE" \
               --cache-from "type=gha,scope=${{ matrix.image }}" \
               --cache-to "type=gha,mode=max,scope=${{ matrix.image }}" \
               frontend
@@ -123,6 +164,8 @@ jobs:
       DB_ROOT_PASSWORD: ci-release-db-root-password
       REDIS_PASSWORD: ci-release-redis-password
       OPENAI_ENABLED: "false"
+      FEEDBACK_LLM_PROVIDER: openai
+      NVIDIA_API_KEY: ""
       VIDEO_LLM_POLICY: "DISABLED"
       VIDEO_LLM_ENABLED: "false"
       ANALYSIS_ENGINE_WHISPER_POOL_SIZE: "1"
@@ -131,6 +174,15 @@ jobs:
       ANALYSIS_EXECUTOR_CORE_POOL_SIZE: "1"
       ANALYSIS_EXECUTOR_MAX_POOL_SIZE: "1"
       ANALYSIS_EXECUTOR_QUEUE_CAPACITY: "5"
+      VITE_BUSINESS_NAME: ${{ vars.VITE_BUSINESS_NAME }}
+      VITE_BUSINESS_REPRESENTATIVE: ${{ vars.VITE_BUSINESS_REPRESENTATIVE }}
+      VITE_BUSINESS_REGISTRATION_NUMBER: ${{ vars.VITE_BUSINESS_REGISTRATION_NUMBER }}
+      VITE_BUSINESS_ADDRESS: ${{ vars.VITE_BUSINESS_ADDRESS }}
+      VITE_BUSINESS_PHONE: ${{ vars.VITE_BUSINESS_PHONE }}
+      VITE_BUSINESS_EMAIL: ${{ vars.VITE_BUSINESS_EMAIL }}
+      VITE_PRIVACY_OFFICER_NAME: ${{ vars.VITE_PRIVACY_OFFICER_NAME }}
+      VITE_PRIVACY_OFFICER_EMAIL: ${{ vars.VITE_PRIVACY_OFFICER_EMAIL }}
+      VITE_PRIVACY_OFFICER_PHONE: ${{ vars.VITE_PRIVACY_OFFICER_PHONE }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -176,9 +228,33 @@ jobs:
         run: >-
           docker compose -f docker-compose.yml -f docker-compose.release.yml
           up -d --wait --no-deps frontend
+      - name: Verify configured legal metadata is embedded in the release frontend
+        run: |
+          legal_metadata_variables=(
+            VITE_BUSINESS_NAME
+            VITE_BUSINESS_REPRESENTATIVE
+            VITE_BUSINESS_REGISTRATION_NUMBER
+            VITE_BUSINESS_ADDRESS
+            VITE_BUSINESS_PHONE
+            VITE_BUSINESS_EMAIL
+            VITE_PRIVACY_OFFICER_NAME
+            VITE_PRIVACY_OFFICER_EMAIL
+            VITE_PRIVACY_OFFICER_PHONE
+          )
+          for variable_name in "${legal_metadata_variables[@]}"; do
+            expected_value="${!variable_name}"
+            if ! docker compose -f docker-compose.yml -f docker-compose.release.yml \
+              exec -T frontend grep -R -F -q -- "$expected_value" /usr/share/nginx/html; then
+              echo "Frontend release image does not contain $variable_name." >&2
+              exit 1
+            fi
+          done
       - name: Install Playwright test runner
         working-directory: frontend
         run: npm ci
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
       # BASE_URL을 반드시 지정한다 — 없으면 playwright.config.js가 자체 webServer를
       # 5173에 띄우려다 이미 떠 있는 frontend 컨테이너와 포트 충돌한다(2026-08-03
       # 실측: "http://127.0.0.1:5173 is already used"). auth-api.spec.js 자체는
@@ -187,14 +263,14 @@ jobs:
         working-directory: frontend
         env:
           E2E_FULL_STACK: "true"
-          BASE_URL: http://localhost:8080
+          BASE_URL: http://localhost:5173
           API_BASE_URL: http://localhost:8080
         run: npm run test:e2e -- e2e/auth-api.spec.js
       - name: Run upload-to-result pipeline smoke (analysis-pipeline.spec.js)
         working-directory: frontend
         env:
           E2E_ANALYSIS_PIPELINE: "true"
-          BASE_URL: http://localhost:8080
+          BASE_URL: http://localhost:5173
           API_BASE_URL: http://localhost:8080
           E2E_ANALYSIS_MAX_WAIT_MS: "900000"
         run: npm run test:e2e -- e2e/analysis-pipeline.spec.js

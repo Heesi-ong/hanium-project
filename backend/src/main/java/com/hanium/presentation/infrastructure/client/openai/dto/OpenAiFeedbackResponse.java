@@ -106,4 +106,27 @@ public record OpenAiFeedbackResponse(
                 timelineFeedback
         );
     }
+
+    public static OpenAiFeedbackResponse skipped(
+            String jobId,
+            String reason,
+            String overallFeedback,
+            List<String> strengths,
+            List<String> improvements,
+            List<?> practicePlan,
+            List<?> timelineFeedback
+    ) {
+        return new OpenAiFeedbackResponse(
+                jobId,
+                "SKIPPED",
+                null,
+                false,
+                reason,
+                overallFeedback,
+                strengths,
+                improvements,
+                practicePlan,
+                timelineFeedback
+        );
+    }
 }

@@ -223,6 +223,9 @@ function AdminAuditLogPage() {
                                 <th>대상 유형</th>
                                 <th>대상 ID</th>
                                 <th>상세</th>
+                                <th>사유</th>
+                                <th>인시던트 ID</th>
+                                <th>요청 ID</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -234,6 +237,9 @@ function AdminAuditLogPage() {
                                     <td>{formatTargetType(log.targetType)}</td>
                                     <td>{log.targetId}</td>
                                     <td>{log.detail || "-"}</td>
+                                    <td>{log.reason || "-"}</td>
+                                    <td>{log.incidentId || "-"}</td>
+                                    <td>{log.requestId || "-"}</td>
                                 </tr>
                             ))}
                         </tbody>

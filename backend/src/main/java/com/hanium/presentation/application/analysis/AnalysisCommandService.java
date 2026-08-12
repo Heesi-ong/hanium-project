@@ -9,23 +9,17 @@ import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
-import com.hanium.presentation.domain.analysis.type.AnalysisStep;
-import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.properties.AnalysisQueueProperties;
-import com.hanium.presentation.global.properties.AnalysisRetryProperties;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
-import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.OpenAiClient;
-import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.VideoLlmEngineClient;
-import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineRequest;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
 import com.hanium.presentation.presentation.dto.response.AnalysisStatusResponse;
@@ -44,62 +38,34 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.YearMonth;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 
 @Service
 public class AnalysisCommandService {
 
     private static final Logger log = LoggerFactory.getLogger(AnalysisCommandService.class);
 
-    private enum VideoLlmSkipReason {
-        DISABLED(
-                "이 작업은 Video LLM 분석 없이 진행하도록 설정되었습니다.",
-                "Video LLM 분석 비활성화",
-                "사용자 설정으로 Video LLM 분석이 생략되었습니다."
-        ),
-        MONTHLY_BUDGET_EXCEEDED(
-                "이번 달 Video LLM 분석 호출 한도를 초과해 이 작업은 Video LLM 분석 없이 처리되었습니다.",
-                "Video LLM 월간 한도 초과",
-                "월간 호출 한도 초과로 Video LLM 분석이 생략되었습니다."
-        ),
-        DAILY_LIMIT_EXCEEDED(
-                "오늘 계정에서 사용할 수 있는 Video LLM 분석 호출 한도를 초과해 이 작업은 Video LLM 분석 없이 처리되었습니다.",
-                "Video LLM 일일 한도 초과",
-                "사용자별 일일 호출 한도 초과로 Video LLM 분석이 생략되었습니다."
-        );
-
-        private final String visualDelivery;
-        private final String mainStrength;
-        private final String mainWeakness;
-
-        VideoLlmSkipReason(String visualDelivery, String mainStrength, String mainWeakness) {
-            this.visualDelivery = visualDelivery;
-            this.mainStrength = mainStrength;
-            this.mainWeakness = mainWeakness;
-        }
-    }
-
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
     private final VideoFileCommandService videoFileCommandService;
-    private final ResultCommandService resultCommandService;
-    private final AnalysisEngineClient analysisEngineClient;
-    private final VideoLlmEngineClient videoLlmEngineClient;
-    private final OpenAiClient openAiClient;
-    private final UserRateLimiter userRateLimiter;
-    private final VideoDurationProbe videoDurationProbe;
     private final JobIdGenerator jobIdGenerator;
     private final AnalysisProgressService analysisProgressService;
     private final AnalysisJobStatusService analysisJobStatusService;
     private final ThreadPoolTaskExecutor analysisTaskExecutor;
+    private final AnalysisJobValidator analysisJobValidator;
+    private final AnalysisDispatchAdmissionPolicy dispatchAdmissionPolicy;
+    private final AnalysisRetryPolicy retryPolicy;
+    private final AnalysisPipelineTerminationHandler pipelineTerminationHandler;
+    private final AnalysisOpenAiFeedbackStage openAiFeedbackStage;
+    private final AnalysisVideoLlmStage videoLlmStage;
+    private final AnalysisBasicStage basicStage;
+    private final AnalysisResultPersistenceStage resultPersistenceStage;
+    private final AnalysisPipelineOutcomeHandler pipelineOutcomeHandler;
+    private final AnalysisPipelineStageReporter pipelineStageReporter;
 
     // /run이 이 인스턴스의 로컬 executor로 즉시 투입할지 여부. 기본값 true(=monolith, 현행 동작).
     // api/worker 분리 배포에서는 false로 두고, 워커 폴러(QueuedAnalysisJobPoller)가 QUEUED를 소비합니다.
@@ -122,8 +88,6 @@ public class AnalysisCommandService {
     @Value("${video.max-duration-minutes:30}")
     private long videoMaxDurationMinutes = 30;
 
-    private final AnalysisRetryProperties analysisRetryProperties;
-    private final AnalysisQueueProperties analysisQueueProperties;
     private final MeterRegistry meterRegistry;
 
     public AnalysisCommandService(
@@ -140,26 +104,58 @@ public class AnalysisCommandService {
             AnalysisProgressService analysisProgressService,
             AnalysisJobStatusService analysisJobStatusService,
             ThreadPoolTaskExecutor analysisTaskExecutor,
-            AnalysisRetryProperties analysisRetryProperties,
             AnalysisQueueProperties analysisQueueProperties,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            AnalysisJobValidator analysisJobValidator
     ) {
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
         this.videoFileCommandService = videoFileCommandService;
-        this.resultCommandService = resultCommandService;
-        this.analysisEngineClient = analysisEngineClient;
-        this.videoLlmEngineClient = videoLlmEngineClient;
-        this.openAiClient = openAiClient;
-        this.userRateLimiter = userRateLimiter;
-        this.videoDurationProbe = videoDurationProbe;
         this.jobIdGenerator = jobIdGenerator;
         this.analysisProgressService = analysisProgressService;
         this.analysisJobStatusService = analysisJobStatusService;
         this.analysisTaskExecutor = analysisTaskExecutor;
-        this.analysisRetryProperties = analysisRetryProperties;
-        this.analysisQueueProperties = analysisQueueProperties;
         this.meterRegistry = meterRegistry;
+        this.analysisJobValidator = analysisJobValidator;
+        this.dispatchAdmissionPolicy = new AnalysisDispatchAdmissionPolicy(
+                analysisJobRepository,
+                analysisTaskExecutor,
+                analysisQueueProperties,
+                meterRegistry
+        );
+        this.retryPolicy = new AnalysisRetryPolicy();
+        this.pipelineTerminationHandler = new AnalysisPipelineTerminationHandler(
+                analysisJobRepository,
+                analysisJobStatusService,
+                analysisProgressService,
+                resultCommandService,
+                meterRegistry
+        );
+        this.openAiFeedbackStage = new AnalysisOpenAiFeedbackStage(
+                resultCommandService,
+                openAiClient
+        );
+        this.videoLlmStage = new AnalysisVideoLlmStage(
+                analysisJobRepository,
+                userRateLimiter,
+                videoDurationProbe,
+                videoLlmEngineClient
+        );
+        this.basicStage = new AnalysisBasicStage(
+                videoFileCommandService,
+                analysisEngineClient
+        );
+        this.resultPersistenceStage = new AnalysisResultPersistenceStage(resultCommandService);
+        this.pipelineOutcomeHandler = new AnalysisPipelineOutcomeHandler(
+                analysisJobStatusService,
+                analysisProgressService,
+                resultPersistenceStage,
+                meterRegistry
+        );
+        this.pipelineStageReporter = new AnalysisPipelineStageReporter(
+                analysisJobStatusService,
+                analysisProgressService
+        );
     }
 
     @Transactional
@@ -208,8 +204,8 @@ public class AnalysisCommandService {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
-        validateOwnership(analysisJob, ownerId);
-        validateRunnable(analysisJob);
+        analysisJobValidator.validateOwnership(analysisJob, ownerId);
+        analysisJobValidator.validateRunnable(analysisJob);
 
         return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi, "run");
     }
@@ -217,18 +213,51 @@ public class AnalysisCommandService {
     @Transactional
     public AnalysisStatusResponse retryAnalysis(
             String jobId,
+            Long ownerId
+    ) {
+        return retryAnalysisInternal(jobId, ownerId, null, null);
+    }
+
+    @Transactional
+    public AnalysisStatusResponse retryAnalysis(
+            String jobId,
             Long ownerId,
-            boolean useVideoLlm,
-            boolean useOpenAi
+            Boolean useVideoLlm,
+            Boolean useOpenAi
+    ) {
+        return retryAnalysisInternal(jobId, ownerId, useVideoLlm, useOpenAi);
+    }
+
+    private AnalysisStatusResponse retryAnalysisInternal(
+            String jobId,
+            Long ownerId,
+            Boolean useVideoLlmOverride,
+            Boolean useOpenAiOverride
     ) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
-        validateOwnership(analysisJob, ownerId);
-        validateRetryable(analysisJob);
+        analysisJobValidator.validateOwnership(analysisJob, ownerId);
+        analysisJobValidator.validateRetryable(analysisJob);
+
+        // 일반적인 "재시도"는 실패한 작업을 같은 조건으로 다시 실행해야 합니다. 요청 본문이
+        // 생략됐는데 true/true를 기본값으로 쓰면, 사용자가 최초 실행에서 끈 외부 AI 전송과
+        // 비용 발생 옵션이 재시도 순간 다시 켜질 수 있습니다. 명시적 override가 있을 때만
+        // 옵션을 바꾸고, 기본 경로에서는 DB에 저장된 최초 선택을 그대로 보존합니다.
+        AnalysisRetryPolicy.RetryOptions retryOptions = retryPolicy.resolve(
+                analysisJob,
+                useVideoLlmOverride,
+                useOpenAiOverride
+        );
+
         analysisJob.resetForRetry();
 
-        return acceptAndDispatch(analysisJob, useVideoLlm, useOpenAi, "retry");
+        return acceptAndDispatch(
+                analysisJob,
+                retryOptions.useVideoLlm(),
+                retryOptions.useOpenAi(),
+                "retry"
+        );
     }
 
     // 관리자 전용 재처리입니다. DEAD_LETTER(재시도 소진) 작업만 대상이며, 소유권 검사는 하지
@@ -259,7 +288,7 @@ public class AnalysisCommandService {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
-        validateOwnership(analysisJob, ownerId);
+        analysisJobValidator.validateOwnership(analysisJob, ownerId);
 
         if (analysisJob.isQueued()) {
             return cancelQueuedJob(analysisJob);
@@ -308,7 +337,7 @@ public class AnalysisCommandService {
         }
 
         analysisProgressService.cancel(jobId, 0);
-        saveCancelledResultSafely(jobId);
+        resultPersistenceStage.saveCancelledSafely(jobId);
         meterRegistry.counter("analysis.job.cancelled").increment();
         log.info("[{}] 대기(QUEUED) 상태에서 즉시 취소되었습니다.", jobId);
 
@@ -324,15 +353,7 @@ public class AnalysisCommandService {
         // 배포 모드와 무관하게 항상 검사합니다. api/worker 분리 모드(dispatch.local-on-run=false)에서는
         // 아래 rejectIfExecutorSaturated()가 동작하지 않으므로, 워커가 느리거나 꺼져 있어도
         // DB에 QUEUED 작업이 무제한 쌓이지 않게 막는 방어선은 이 검사가 유일합니다.
-        rejectIfQueueBackpressureExceeded(analysisJob.getOwnerId());
-
-        // 로컬 즉시 투입 모드(monolith)에서만, 상태를 "시작됨"으로 바꾸기 전에 워커 스레드풀이
-        // 이미 가득 찼는지 확인합니다. 여기서 막으면 job은 원래 상태로 남고 사용자에게는
-        // 429(잠시 후 재시도)를 돌려줍니다. api/worker 분리 모드에서는 접수만 하고 워커 폴러가
-        // 소비하므로 이 사전 점검은 하지 않습니다(대기 작업은 QUEUED로 안전하게 쌓입니다).
-        if (localDispatchOnRun) {
-            rejectIfExecutorSaturated();
-        }
+        dispatchAdmissionPolicy.verify(analysisJob.getOwnerId(), localDispatchOnRun);
 
         meterRegistry.counter("analysis.job.started", "trigger", trigger).increment();
 
@@ -441,65 +462,12 @@ public class AnalysisCommandService {
         String failReason =
                 "분석 워커 대기열이 가득 차 작업을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.";
         log.warn("[{}] 백그라운드 분석 작업 제출이 거부되어 실패 처리합니다.", jobId, e);
-        analysisJobStatusService.failStatus(jobId, failReason);
-        analysisProgressService.fail(jobId, 0, failReason);
-        saveFailureResultSafely(jobId, failReason);
-        meterRegistry.counter("analysis.job.failed", "reason", "queue-full").increment();
-    }
-
-    // DB에 쌓인 QUEUED 작업 수가 설정된 한도를 넘었는지 확인합니다. 전역 한도를 먼저 검사해
-    // 시스템 전체가 과부하 상태인지 보고, 그다음 사용자별 한도로 한 사용자가 대기열을 독점하지
-    // 못하게 막습니다. 두 검사 모두 "최선 노력(best-effort)"이라 아주 짧은 경합 구간에서는
-    // 한도를 살짝 넘길 수 있지만, 워커가 죽어도 무한정 쌓이는 것을 막기에는 충분합니다.
-    private void rejectIfQueueBackpressureExceeded(Long ownerId) {
-        long globalQueuedCount = analysisJobRepository.countByStatus(AnalysisStatus.QUEUED);
-
-        if (globalQueuedCount >= analysisQueueProperties.maxGlobalQueued()) {
-            meterRegistry.counter("analysis.job.rejected", "reason", "queue-full-global").increment();
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_QUEUE_FULL,
-                    "현재 분석 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요."
-            );
-        }
-
-        long ownerQueuedCount = analysisJobRepository.countByStatusAndOwnerId(AnalysisStatus.QUEUED, ownerId);
-
-        if (ownerQueuedCount >= analysisQueueProperties.maxQueuedPerUser()) {
-            meterRegistry.counter("analysis.job.rejected", "reason", "queue-full-per-user").increment();
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_QUEUE_FULL,
-                    "대기 중인 분석 작업이 너무 많습니다. 이전 작업이 끝난 뒤 다시 시도해주세요. (최대 "
-                            + analysisQueueProperties.maxQueuedPerUser() + "건)"
-            );
-        }
-    }
-
-    // 워커 스레드 풀과 대기열이 모두 가득 찬 상태인지 확인합니다. 가득 찼다면 새 작업을
-    // 받지 않고 429로 안내합니다. 이 점검은 "최선 노력(best-effort)"이라 아주 짧은 경합
-    // 구간은 남지만, 그 경합은 dispatch()의 RejectedExecutionException 처리로 보완됩니다.
-    private void rejectIfExecutorSaturated() {
-        ThreadPoolExecutor executor;
-        try {
-            executor = analysisTaskExecutor.getThreadPoolExecutor();
-        } catch (IllegalStateException notInitialized) {
-            // 아직 풀이 초기화되지 않았거나 사용할 수 없는 상태면 사전 점검을 건너뜁니다.
-            return;
-        }
-
-        if (executor == null) {
-            return;
-        }
-
-        boolean saturated = executor.getQueue().remainingCapacity() == 0
-                && executor.getActiveCount() >= executor.getMaximumPoolSize();
-
-        if (saturated) {
-            meterRegistry.counter("analysis.job.rejected", "reason", "queue-full").increment();
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_QUEUE_FULL,
-                    "현재 분석 대기열이 가득 찼습니다. 잠시 후 다시 시도해주세요."
-            );
-        }
+        pipelineOutcomeHandler.failBeforeExecution(
+                jobId,
+                0,
+                failReason,
+                "queue-full"
+        );
     }
 
     // 백그라운드 스레드에서 실행되는 실제 분석 파이프라인입니다.
@@ -540,7 +508,7 @@ public class AnalysisCommandService {
         // 투입되면, 먼저 선점한 워커만 진행하고 나머지는 조용히 종료해 중복 실행을 막습니다.
         if (!alreadyClaimed && !analysisJobStatusService.claimForExecution(jobId)) {
             log.info("[{}] 실행 선점에 실패해(이미 다른 워커가 처리 중이거나 대기 상태가 아님) 이 워커는 종료합니다.", jobId);
-            stopDurationTimer(sample, "skipped");
+            pipelineOutcomeHandler.stopSkipped(sample);
             return;
         }
 
@@ -555,16 +523,18 @@ public class AnalysisCommandService {
         } catch (Exception e) {
             log.error("[{}] 업로드 영상 정보를 찾지 못해 분석을 시작할 수 없습니다.", jobId, e);
             String failReason = "업로드된 영상 정보를 찾을 수 없습니다.";
-            analysisJobStatusService.failStatus(jobId, failReason);
-            analysisProgressService.fail(jobId, 0, failReason);
-            saveFailureResultSafely(jobId, failReason);
-            meterRegistry.counter("analysis.job.failed", "reason", "upload-not-found").increment();
-            stopDurationTimer(sample, "failed");
+            pipelineOutcomeHandler.fail(
+                    jobId,
+                    0,
+                    failReason,
+                    "upload-not-found",
+                    sample
+            );
             return;
         }
 
         log.info("[{}] 분석 파이프라인 시작 (useVideoLlm={}, useOpenAi={})", jobId, useVideoLlm, useOpenAi);
-        analysisProgressService.start(jobId);
+        pipelineStageReporter.start(jobId);
 
         // 이 작업의 마감 시각(deadline). 각 단계 사이 체크포인트에서 이 시각을 넘겼는지 확인해
         // 초과 시 자동 실패시킵니다.
@@ -577,149 +547,71 @@ public class AnalysisCommandService {
                 return;
             }
 
-            log.info("[{}] ({}%) 기본 분석 요청을 analysis-engine으로 전송합니다.", jobId, lastPercent);
-            analysisProgressService.update(
-                    jobId, AnalysisStep.BASIC_ANALYSIS, AnalysisStatus.BASIC_ANALYZING,
-                    lastPercent, "영상/음성 기본 분석을 실행하는 중입니다."
-            );
+            lastPercent = pipelineStageReporter.beginBasicAnalysis(jobId);
 
-            String videoDownloadUrl = videoFileCommandService.resolveDownloadUrl(
+            AnalysisBasicStage.Result basicResult = basicStage.analyze(
+                    jobId,
                     uploadedVideo.getJobId(),
                     uploadedVideo.getStoredFilePath()
             );
+            AnalysisEngineResponse analysisEngineResponse = basicResult.response();
+            String videoDownloadUrl = basicResult.videoDownloadUrl();
 
-            AnalysisEngineResponse analysisEngineResponse = analysisEngineClient.analyze(
-                    new AnalysisEngineRequest(
-                            jobId,
-                            uploadedVideo.getStoredFilePath(),
-                            videoDownloadUrl
-                    )
+            AnalysisVideoLlmStage.Plan videoLlmPlan = videoLlmStage.prepare(
+                    jobId,
+                    useVideoLlm,
+                    uploadedVideo.getStoredFilePath(),
+                    videoLlmChunkDurationSeconds,
+                    videoMaxDurationMinutes
             );
-            log.info("[{}] 기본 분석 응답을 받았습니다.", jobId);
-
             VideoLlmEngineResponse videoLlmEngineResponse;
-            boolean requireRealVideoLlm = analysisJobRepository.findByJobId(jobId)
-                    .map(AnalysisJob::getAnalysisKind)
-                    .filter(AnalysisKind.VIDEO_LLM_REANALYSIS::equals)
-                    .isPresent();
 
-            Double videoDurationSec = useVideoLlm
-                    ? resolveDurationSec(jobId, uploadedVideo.getStoredFilePath())
-                    : null;
-            VideoLlmSkipReason budgetSkipReason = useVideoLlm
-                    ? reserveVideoLlmBudgetOrSkipReason(jobId, videoDurationSec)
-                    : VideoLlmSkipReason.DISABLED;
-
-            if (budgetSkipReason != null) {
-                if (requireRealVideoLlm) {
-                    ErrorCode errorCode = budgetSkipReason == VideoLlmSkipReason.DISABLED
-                            ? ErrorCode.VIDEO_LLM_REAL_REQUIRED
-                            : ErrorCode.VIDEO_LLM_USAGE_LIMIT_EXCEEDED;
-                    throw new BusinessException(
-                            errorCode,
-                            "실제 Video LLM 재분석을 실행할 수 없습니다. reason=" + budgetSkipReason
-                    );
-                }
-                log.info("[{}] Video LLM 분석을 건너뜁니다. ({})", jobId, budgetSkipReason);
-                videoLlmEngineResponse = createSkippedVideoLlmResponse(jobId, budgetSkipReason);
+            if (videoLlmPlan.skipped()) {
+                videoLlmEngineResponse = videoLlmPlan.skippedResponse();
             } else {
                 if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                     return;
                 }
 
-                analysisJobStatusService.updateStatus(jobId, AnalysisStatus.VIDEO_LLM_ANALYZING);
-                lastPercent = 40;
-                log.info("[{}] ({}%) Video LLM 분석 요청을 전송합니다.", jobId, lastPercent);
-                analysisProgressService.update(
-                        jobId, AnalysisStep.VIDEO_LLM_ANALYSIS, AnalysisStatus.VIDEO_LLM_ANALYZING,
-                        lastPercent, "Video LLM 분석을 실행하는 중입니다."
-                );
+                lastPercent = pipelineStageReporter.beginVideoLlmAnalysis(jobId);
 
-                videoLlmEngineResponse = videoLlmEngineClient.analyze(
-                        VideoLlmEngineRequest.defaultOption(
-                                jobId,
-                                uploadedVideo.getStoredFilePath(),
-                                videoDurationSec,
-                                videoDownloadUrl,
-                                requireRealVideoLlm
-                        )
+                videoLlmEngineResponse = videoLlmStage.analyze(
+                        jobId,
+                        uploadedVideo.getStoredFilePath(),
+                        videoDownloadUrl,
+                        videoLlmPlan
                 );
-                VideoLlmGenerationMode responseMode =
-                        resolveVideoLlmGenerationMode(videoLlmEngineResponse);
-                if (requireRealVideoLlm && responseMode != VideoLlmGenerationMode.REAL) {
-                    throw new BusinessException(
-                            ErrorCode.VIDEO_LLM_REAL_REQUIRED,
-                            "실제 Video LLM 재분석이 REAL 응답을 반환하지 않았습니다. generationMode="
-                                    + responseMode
-                    );
-                }
-                log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);
             }
 
-            analysisJobStatusService.updateStatus(jobId, AnalysisStatus.COMPACTING);
-            lastPercent = 60;
-            log.info("[{}] ({}%) 분석 결과를 정리(compact)하는 중입니다.", jobId, lastPercent);
-            analysisProgressService.update(
-                    jobId, AnalysisStep.COMPACT_ANALYSIS, AnalysisStatus.COMPACTING,
-                    lastPercent, "분석 결과를 정리하는 중입니다."
-            );
+            lastPercent = pipelineStageReporter.beginCompacting(jobId);
 
-            Map<String, Object> compactAnalysis = resultCommandService.saveEngineResultsAndCompact(
+            Map<String, Object> compactAnalysis = resultPersistenceStage.compact(
                     jobId,
                     analysisEngineResponse,
                     videoLlmEngineResponse
             );
-
-            OpenAiFeedbackResponse openAiFeedbackResponse;
 
             if (useOpenAi) {
                 if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                     return;
                 }
 
-                analysisJobStatusService.updateStatus(jobId, AnalysisStatus.OPENAI_GENERATING);
-                lastPercent = 75;
-                log.info("[{}] ({}%) AI 피드백을 생성하는 중입니다.", jobId, lastPercent);
-                analysisProgressService.update(
-                        jobId, AnalysisStep.OPENAI_FEEDBACK, AnalysisStatus.OPENAI_GENERATING,
-                        lastPercent, "AI 피드백을 생성하는 중입니다."
-                );
-
-                openAiFeedbackResponse = resultCommandService.loadExistingRealOpenAiFeedback(jobId)
-                        .map(existingFeedback -> {
-                            log.info(
-                                    "OPENAI_REUSE jobId={} 이전에 성공한 실제 OpenAI 응답을 재사용합니다. (재호출 생략)",
-                                    jobId
-                            );
-                            return existingFeedback;
-                        })
-                        .orElseGet(() -> openAiClient.generateFeedback(
-                                new OpenAiFeedbackRequest(jobId, compactAnalysis)
-                        ));
-                log.info("[{}] AI 피드백 생성이 끝났습니다. (mode={})", jobId, openAiFeedbackResponse.generationMode());
-            } else {
-                log.info("[{}] OpenAI 피드백 생성을 건너뜁니다. (useOpenAi=false)", jobId);
-                openAiFeedbackResponse = createSkippedOpenAiResponse(jobId);
+                lastPercent = pipelineStageReporter.beginOpenAiFeedback(jobId);
             }
 
-            resultCommandService.saveOpenAiFeedbackResult(
+            OpenAiFeedbackResponse openAiFeedbackResponse = openAiFeedbackStage.generateAndSave(
                     jobId,
-                    openAiFeedbackResponse
+                    useOpenAi,
+                    compactAnalysis
             );
 
             if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                 return;
             }
 
-            analysisJobStatusService.updateStatus(jobId, AnalysisStatus.MERGING_RESULT);
-            lastPercent = 90;
-            log.info("[{}] ({}%) 최종 결과를 병합하는 중입니다.", jobId, lastPercent);
-            analysisProgressService.update(
-                    jobId, AnalysisStep.RESULT_MERGE, AnalysisStatus.MERGING_RESULT,
-                    lastPercent, "최종 결과를 병합하는 중입니다."
-            );
+            lastPercent = pipelineStageReporter.beginResultMerge(jobId);
 
-            resultCommandService.saveFinalResult(
+            resultPersistenceStage.saveFinal(
                     jobId,
                     analysisEngineResponse,
                     videoLlmEngineResponse,
@@ -730,32 +622,33 @@ public class AnalysisCommandService {
                 return;
             }
 
-            analysisJobStatusService.completeStatus(
+            pipelineOutcomeHandler.complete(
                     jobId,
-                    resolveVideoLlmGenerationMode(videoLlmEngineResponse)
+                    AnalysisVideoLlmStage.resolveGenerationMode(videoLlmEngineResponse),
+                    sample
             );
-            meterRegistry.counter("analysis.job.completed").increment();
-            stopDurationTimer(sample, "completed");
-            analysisProgressService.complete(jobId);
-            log.info("[{}] (100%) 분석 파이프라인이 완료되었습니다.", jobId);
         } catch (BusinessException e) {
             log.warn("[{}] 분석이 실패했습니다: {}", jobId, e.getMessage());
-            analysisJobStatusService.failStatus(jobId, e.getMessage());
-            analysisProgressService.fail(jobId, lastPercent, e.getMessage());
-            saveFailureResultSafely(jobId, e.getMessage());
-            meterRegistry.counter("analysis.job.failed", "reason", "business").increment();
-            stopDurationTimer(sample, "failed");
+            pipelineOutcomeHandler.fail(
+                    jobId,
+                    lastPercent,
+                    e.getMessage(),
+                    "business",
+                    sample
+            );
         } catch (Exception e) {
             String failReason = e.getMessage() == null
                     ? "분석 실행 중 알 수 없는 오류가 발생했습니다."
                     : e.getMessage();
 
             log.error("[{}] 분석 중 예상하지 못한 오류가 발생했습니다.", jobId, e);
-            analysisJobStatusService.failStatus(jobId, failReason);
-            analysisProgressService.fail(jobId, lastPercent, failReason);
-            saveFailureResultSafely(jobId, failReason);
-            meterRegistry.counter("analysis.job.failed", "reason", "unexpected").increment();
-            stopDurationTimer(sample, "failed");
+            pipelineOutcomeHandler.fail(
+                    jobId,
+                    lastPercent,
+                    failReason,
+                    "unexpected",
+                    sample
+            );
         }
     }
 
@@ -767,104 +660,6 @@ public class AnalysisCommandService {
         return linkedAsset.or(() -> uploadedVideoRepository.findByJobId(jobId));
     }
 
-    private VideoLlmGenerationMode resolveVideoLlmGenerationMode(
-            VideoLlmEngineResponse videoLlmEngineResponse
-    ) {
-        Object rawMode = videoLlmEngineResponse == null || videoLlmEngineResponse.model() == null
-                ? null
-                : videoLlmEngineResponse.model().get("generationMode");
-        return VideoLlmGenerationMode.from(rawMode);
-    }
-
-    private Double resolveDurationSec(String jobId, String storedFilePath) {
-        try {
-            Optional<Duration> duration = videoDurationProbe.probe(Path.of(storedFilePath));
-            return duration
-                    .map(value -> value.toMillis() / 1000.0)
-                    .orElse(null);
-        } catch (Exception e) {
-            log.warn("[{}] Video LLM durationSec 계산에 실패해 null로 전송합니다. path={}", jobId, storedFilePath, e);
-            return null;
-        }
-    }
-
-    // 일일 예산과 월간 예산을 모두 먼저 peek(wouldAllow)해 어느 한쪽이라도 이미
-    // 소진되어 있으면 실제 소비(tryConsume) 없이 즉시 건너뛴다. 이렇게 하면 일일
-    // 한도로 어차피 막힐 호출이 공용 월간 카운터를 헛되이 소비하는 일이 없다.
-    private VideoLlmSkipReason reserveVideoLlmBudgetOrSkipReason(
-            String jobId,
-            Double durationSec
-    ) {
-        Long ownerId = analysisJobRepository.findByJobId(jobId)
-                .map(AnalysisJob::getOwnerId)
-                .orElse(null);
-        int estimatedNvidiaCallUnits = estimateNvidiaCallUnits(durationSec);
-
-        if (ownerId != null && !userRateLimiter.wouldAllow("video-llm-daily", ownerId)) {
-            log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
-            return VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED;
-        }
-
-        if (!userRateLimiter.wouldAllow(
-                "video-llm-monthly",
-                currentMonthKey(),
-                estimatedNvidiaCallUnits
-        )) {
-            log.warn(
-                    "[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다. "
-                            + "estimatedNvidiaCallUnits={}",
-                    jobId,
-                    estimatedNvidiaCallUnits
-            );
-            return VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED;
-        }
-
-        if (ownerId == null) {
-            log.warn("[{}] Video LLM 일일 한도 확인을 위한 소유자 정보를 찾지 못해 한도 확인을 건너뜁니다.", jobId);
-        } else if (!userRateLimiter.tryConsume("video-llm-daily", ownerId)) {
-            log.warn("[{}] 사용자(ownerId={})의 Video LLM 일일 호출 한도를 초과해 실제 호출을 생략합니다.", jobId, ownerId);
-            return VideoLlmSkipReason.DAILY_LIMIT_EXCEEDED;
-        }
-
-        if (!userRateLimiter.tryConsume(
-                "video-llm-monthly",
-                currentMonthKey(),
-                estimatedNvidiaCallUnits
-        )) {
-            log.warn(
-                    "[{}] Video LLM 월간 호출 한도를 초과해 실제 호출을 생략합니다. "
-                            + "estimatedNvidiaCallUnits={}",
-                    jobId,
-                    estimatedNvidiaCallUnits
-            );
-            return VideoLlmSkipReason.MONTHLY_BUDGET_EXCEEDED;
-        }
-
-        log.info(
-                "[{}] Video LLM 월간 예산에서 NVIDIA 예상 호출 {}회를 예약했습니다. durationSec={}",
-                jobId,
-                estimatedNvidiaCallUnits,
-                durationSec
-        );
-        return null;
-    }
-
-    private int estimateNvidiaCallUnits(Double durationSec) {
-        double budgetedDurationSec = durationSec != null
-                && Double.isFinite(durationSec)
-                && durationSec > 0
-                ? durationSec
-                : Math.multiplyExact(videoMaxDurationMinutes, 60L);
-        return Math.max(
-                1,
-                (int) Math.ceil(budgetedDurationSec / videoLlmChunkDurationSeconds)
-        );
-    }
-
-    private String currentMonthKey() {
-        return YearMonth.now().toString();
-    }
-
     // 각 단계 사이에서 호출됩니다. (1) 마감 시각 초과면 timeout으로, (2) 취소 요청이 있으면
     // cancelled로 남은 단계를 중단합니다. 둘 중 하나라도 해당하면 true를 반환합니다.
     // 타임아웃을 먼저 확인합니다(예산을 넘긴 작업은 취소 여부와 무관하게 종료해야 하므로).
@@ -874,172 +669,13 @@ public class AnalysisCommandService {
             Timer.Sample sample,
             Instant deadline
     ) {
-        if (Instant.now().isAfter(deadline)) {
-            String failReason = "분석이 제한 시간(" + jobTimeoutMinutes + "분)을 초과해 자동으로 종료되었습니다.";
-            log.warn("[{}] {}", jobId, failReason);
-            analysisJobStatusService.failStatus(jobId, failReason);
-            analysisProgressService.fail(jobId, lastPercent, failReason);
-            saveFailureResultSafely(jobId, failReason);
-            meterRegistry.counter("analysis.job.failed", "reason", "timeout").increment();
-            stopDurationTimer(sample, "timeout");
-            return true;
-        }
-
-        boolean cancelRequested = analysisJobRepository.findByJobId(jobId)
-                .map(AnalysisJob::isCancelRequested)
-                .orElse(false);
-
-        if (!cancelRequested) {
-            return false;
-        }
-
-        log.info("[{}] 취소 요청을 감지해 남은 분석 단계를 중단합니다.", jobId);
-        analysisJobStatusService.cancelStatus(jobId);
-        analysisProgressService.cancel(jobId, lastPercent);
-        saveCancelledResultSafely(jobId);
-        meterRegistry.counter("analysis.job.cancelled").increment();
-        stopDurationTimer(sample, "cancelled");
-        return true;
-    }
-
-    private void stopDurationTimer(Timer.Sample sample, String outcome) {
-        sample.stop(
-                Timer.builder("analysis.job.duration")
-                        .tag("outcome", outcome)
-                        .register(meterRegistry)
-        );
-    }
-
-    private void validateRunnable(AnalysisJob analysisJob) {
-        if (analysisJob.isRunning() || analysisJob.isQueued()) {
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_ALREADY_RUNNING,
-                    "이미 실행이 접수되었거나 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
-            );
-        }
-
-        if (analysisJob.isCompleted()) {
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_ALREADY_COMPLETED,
-                    "이미 완료된 분석 작업입니다. jobId=" + analysisJob.getJobId()
-            );
-        }
-
-        if (!analysisJob.canRun()) {
-            throw new BusinessException(
-                    ErrorCode.INVALID_INPUT_VALUE,
-                    "현재 상태에서는 분석을 실행할 수 없습니다. status=" + analysisJob.getStatus()
-            );
-        }
-    }
-
-    private void validateRetryable(AnalysisJob analysisJob) {
-        if (analysisJob.isRunning() || analysisJob.isQueued()) {
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_ALREADY_RUNNING,
-                    "이미 실행이 접수되었거나 진행 중인 작업입니다. jobId=" + analysisJob.getJobId()
-            );
-        }
-
-        if (analysisJob.isCompleted()) {
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_ALREADY_COMPLETED,
-                    "이미 완료된 분석 작업입니다. jobId=" + analysisJob.getJobId()
-            );
-        }
-
-        // DEAD_LETTER는 canRetry()에서 이미 제외되지만, 아래의 일반 "실패/취소 상태만
-        // 재시도 가능" 메시지 대신 기존과 동일한 ANALYSIS_RETRY_LIMIT_EXCEEDED(409)를
-        // 반환합니다. DEAD_LETTER는 정의상 재시도 한도를 소진한 상태이므로, 사용자에게는
-        // 이 API 계약을 유지하면서 관리자 재처리가 필요하다는 것만 안내하면 충분합니다.
-        if (analysisJob.isDeadLetter()) {
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_RETRY_LIMIT_EXCEEDED,
-                    "재시도 가능 횟수를 모두 소진했습니다. 관리자 재처리가 필요합니다. jobId="
-                            + analysisJob.getJobId()
-            );
-        }
-
-        if (!analysisJob.canRetry()) {
-            throw new BusinessException(
-                    ErrorCode.INVALID_INPUT_VALUE,
-                    "실패 또는 취소 상태의 분석 작업만 재시도할 수 있습니다. status=" + analysisJob.getStatus()
-            );
-        }
-
-        if (analysisJob.getRetryCount() >= analysisRetryProperties.maxCount()) {
-            throw new BusinessException(
-                    ErrorCode.ANALYSIS_RETRY_LIMIT_EXCEEDED,
-                    "재시도 가능 횟수를 초과했습니다. jobId=" + analysisJob.getJobId()
-                            + ", retryCount=" + analysisJob.getRetryCount()
-                            + ", maxRetryCount=" + analysisRetryProperties.maxCount()
-            );
-        }
-    }
-
-    private void validateOwnership(AnalysisJob analysisJob, Long ownerId) {
-        if (!ownerId.equals(analysisJob.getOwnerId())) {
-            throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
-        }
-    }
-
-    private void saveFailureResultSafely(
-            String jobId,
-            String failReason
-    ) {
-        try {
-            resultCommandService.saveFailureResult(
-                    jobId,
-                    AnalysisStatus.FAILED.name(),
-                    failReason
-            );
-        } catch (Exception ignored) {
-            // 실패 결과 저장 중 발생한 예외는 원래 분석 실패 원인을 덮어쓰지 않기 위해 무시합니다.
-        }
-    }
-
-    private void saveCancelledResultSafely(String jobId) {
-        try {
-            resultCommandService.saveFailureResult(
-                    jobId,
-                    AnalysisStatus.CANCELLED.name(),
-                    "사용자 요청으로 분석 작업이 취소되었습니다."
-            );
-        } catch (Exception ignored) {
-            // 취소 결과 저장 실패가 취소 상태 반영을 덮어쓰지 않도록 무시합니다.
-        }
-    }
-
-    private VideoLlmEngineResponse createSkippedVideoLlmResponse(String jobId, VideoLlmSkipReason reason) {
-        return new VideoLlmEngineResponse(
+        return pipelineTerminationHandler.stopIfCancelledOrTimedOut(
                 jobId,
-                "skipped",
-                Map.of(
-                        "name", "video-llm-skipped",
-                        "version", "none",
-                        "generationMode", "SKIPPED"
-                ),
-                Map.of(),
-                Map.of(
-                        "visualDelivery", reason.visualDelivery,
-                        "mainStrength", reason.mainStrength,
-                        "mainWeakness", reason.mainWeakness
-                )
+                lastPercent,
+                sample,
+                deadline,
+                jobTimeoutMinutes
         );
     }
 
-    private OpenAiFeedbackResponse createSkippedOpenAiResponse(String jobId) {
-        return new OpenAiFeedbackResponse(
-                jobId,
-                "OpenAI 피드백 생성을 사용하지 않았습니다. 기본 분석 결과만 저장되었습니다.",
-                List.of(
-                        "기본 분석 결과가 정상적으로 생성되었습니다."
-                ),
-                List.of(
-                        "OpenAI 피드백을 활성화하면 더 구체적인 개선점을 받을 수 있습니다."
-                ),
-                List.of(),
-                List.of()
-        );
-    }
 }

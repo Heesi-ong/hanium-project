@@ -45,4 +45,21 @@ describe("OpenAiGenerationBadge", () => {
         expect(screen.getByText("Mock")).toBeInTheDocument();
         expect(screen.getByText("mock-feedback · API 미사용")).toBeInTheDocument();
     });
+
+    it("shows an explicit skipped state when OpenAI feedback was disabled", () => {
+        render(
+            <OpenAiGenerationBadge
+                feedback={{
+                    generationMode: "SKIPPED",
+                    model: null,
+                    realApiUsed: false,
+                }}
+                pipeline={{}}
+            />
+        );
+
+        expect(screen.getByText("SKIPPED")).toBeInTheDocument();
+        expect(screen.getByText("사용 안 함")).toBeInTheDocument();
+        expect(screen.getByText("- · API 미사용")).toBeInTheDocument();
+    });
 });

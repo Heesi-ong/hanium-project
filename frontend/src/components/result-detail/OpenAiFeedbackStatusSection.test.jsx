@@ -52,4 +52,27 @@ describe("OpenAiFeedbackStatusSection", () => {
         const realApiCard = screen.getByText("실제 API 사용 여부").closest("article");
         expect(within(realApiCard).getByText("아니오")).toBeInTheDocument();
     });
+
+    it("explains that OpenAI feedback was skipped by user configuration", () => {
+        render(
+            <OpenAiFeedbackStatusSection
+                feedback={{
+                    generationMode: "SKIPPED",
+                    model: null,
+                    realApiUsed: false,
+                    fallbackReason: "사용자 설정으로 OpenAI 피드백 생성이 비활성화되었습니다.",
+                }}
+                pipeline={{}}
+            />
+        );
+
+        expect(screen.getByText("OpenAI 피드백 사용 안 함")).toBeInTheDocument();
+        expect(
+            screen.getByText("사용자 설정에 따라 OpenAI 피드백 생성을 건너뛰었습니다.")
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText("사용자 설정으로 OpenAI 피드백 생성이 비활성화되었습니다.")
+        ).toBeInTheDocument();
+        expect(screen.getByText("미사용·대체 사유")).toBeInTheDocument();
+    });
 });

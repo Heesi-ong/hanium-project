@@ -2,6 +2,7 @@ import json
 import math
 from pathlib import Path
 import subprocess
+import tempfile
 import threading
 
 import httpx
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.api import video_llm_analysis
 from app.api.video_llm_analysis import VideoLlmAnalysisRequest
+from app.services import media_io, nvidia_provider, nvidia_response
 
 
 def create_client(monkeypatch, tmp_path, api_key: str = "shared-secret") -> TestClient:
@@ -36,17 +38,30 @@ def create_video_file(tmp_path) -> str:
     return str(video_path)
 
 
-def create_real_video_file(tmp_path, duration_seconds: float, name: str = "real.mp4") -> str:
+def create_real_video_file(
+    tmp_path, duration_seconds: float, name: str = "real.mp4"
+) -> str:
     """구간 분할(ffmpeg) 테스트는 실제로 디코딩 가능한 영상이 있어야 하므로, lavfi로
     지정한 길이만큼의 최소 동영상을 실제로 만들어 반환합니다."""
     video_path = tmp_path / name
     ffmpeg_executable = video_llm_analysis.imageio_ffmpeg.get_ffmpeg_exe()
     subprocess.run(
         [
-            ffmpeg_executable, "-y",
-            "-f", "lavfi", "-i", f"color=c=blue:s=64x64:d={duration_seconds}",
-            "-f", "lavfi", "-i", f"sine=frequency=1000:duration={duration_seconds}",
-            "-c:v", "libx264", "-c:a", "aac", "-shortest",
+            ffmpeg_executable,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=blue:s=64x64:d={duration_seconds}",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=1000:duration={duration_seconds}",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-shortest",
             str(video_path),
         ],
         check=True,
@@ -108,12 +123,14 @@ class FakeNvidiaClient:
         return False
 
     def post(self, url, headers, json, timeout=None):
-        self.requests.append({
-            "method": "POST",
-            "url": url,
-            "headers": headers,
-            "json": json,
-        })
+        self.requests.append(
+            {
+                "method": "POST",
+                "url": url,
+                "headers": headers,
+                "json": json,
+            }
+        )
         if url.endswith("/assets"):
             return httpx.Response(
                 FakeNvidiaClient.asset_create_status,
@@ -148,23 +165,27 @@ class FakeNvidiaClient:
             if isinstance(content, (bytes, bytearray))
             else b"".join(content)
         )
-        self.requests.append({
-            "method": "PUT",
-            "url": url,
-            "headers": headers,
-            "content": uploaded_content,
-        })
+        self.requests.append(
+            {
+                "method": "PUT",
+                "url": url,
+                "headers": headers,
+                "content": uploaded_content,
+            }
+        )
         return httpx.Response(
             FakeNvidiaClient.upload_status,
             request=httpx.Request("PUT", url),
         )
 
     def get(self, url, headers, timeout=None):
-        self.requests.append({
-            "method": "GET",
-            "url": url,
-            "headers": headers,
-        })
+        self.requests.append(
+            {
+                "method": "GET",
+                "url": url,
+                "headers": headers,
+            }
+        )
         if not FakeNvidiaClient.get_responses:
             raise AssertionError("Unexpected NVIDIA polling request.")
         response = FakeNvidiaClient.get_responses.pop(0)
@@ -175,11 +196,13 @@ class FakeNvidiaClient:
         )
 
     def delete(self, url, headers, timeout=None):
-        self.requests.append({
-            "method": "DELETE",
-            "url": url,
-            "headers": headers,
-        })
+        self.requests.append(
+            {
+                "method": "DELETE",
+                "url": url,
+                "headers": headers,
+            }
+        )
         return httpx.Response(
             FakeNvidiaClient.delete_status,
             request=httpx.Request("DELETE", url),
@@ -202,7 +225,7 @@ def install_fake_nvidia_client(monkeypatch, response_content):
     FakeNvidiaClient.upload_status = 200
     FakeNvidiaClient.delete_status = 204
     FakeNvidiaClient.raised_exception = None
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeNvidiaClient)
+    monkeypatch.setattr(nvidia_provider.httpx, "Client", FakeNvidiaClient)
 
 
 def test_analyze_rejects_request_without_internal_api_key(monkeypatch, tmp_path):
@@ -230,7 +253,9 @@ def test_analyze_rejects_request_with_wrong_internal_api_key(monkeypatch, tmp_pa
     assert response.json()["detail"] == "Invalid internal engine API key."
 
 
-def test_analyze_returns_mock_video_llm_result_with_valid_internal_api_key(monkeypatch, tmp_path):
+def test_analyze_returns_mock_video_llm_result_with_valid_internal_api_key(
+    monkeypatch, tmp_path
+):
     client = create_client(monkeypatch, tmp_path)
 
     response = client.post(
@@ -260,7 +285,9 @@ def test_analyze_returns_mock_video_llm_result_with_valid_internal_api_key(monke
     assert "mainWeakness" in body["globalSummary"]
 
 
-def test_analyze_binds_job_id_and_request_id_for_the_duration_of_the_request(monkeypatch, tmp_path):
+def test_analyze_binds_job_id_and_request_id_for_the_duration_of_the_request(
+    monkeypatch, tmp_path
+):
     from app.core.logging_config import job_id_var, request_id_var
 
     client = create_client(monkeypatch, tmp_path)
@@ -272,7 +299,9 @@ def test_analyze_binds_job_id_and_request_id_for_the_duration_of_the_request(mon
         captured["request_id"] = request_id_var.get()
         return original_build_mock_response(request, mode)
 
-    monkeypatch.setattr(video_llm_analysis, "build_mock_response", spy_build_mock_response)
+    monkeypatch.setattr(
+        video_llm_analysis, "build_mock_response", spy_build_mock_response
+    )
 
     response = client.post(
         "/api/video-llm/analyze",
@@ -287,7 +316,9 @@ def test_analyze_binds_job_id_and_request_id_for_the_duration_of_the_request(mon
     assert request_id_var.get() == "-"
 
 
-def test_analyze_defaults_request_id_to_dash_when_header_is_absent(monkeypatch, tmp_path):
+def test_analyze_defaults_request_id_to_dash_when_header_is_absent(
+    monkeypatch, tmp_path
+):
     from app.core.logging_config import request_id_var
 
     client = create_client(monkeypatch, tmp_path)
@@ -298,7 +329,9 @@ def test_analyze_defaults_request_id_to_dash_when_header_is_absent(monkeypatch, 
         captured["request_id"] = request_id_var.get()
         return original_build_mock_response(request, mode)
 
-    monkeypatch.setattr(video_llm_analysis, "build_mock_response", spy_build_mock_response)
+    monkeypatch.setattr(
+        video_llm_analysis, "build_mock_response", spy_build_mock_response
+    )
 
     response = client.post(
         "/api/video-llm/analyze",
@@ -310,7 +343,9 @@ def test_analyze_defaults_request_id_to_dash_when_header_is_absent(monkeypatch, 
     assert captured["request_id"] == "-"
 
 
-def test_analyze_uses_mock_generation_mode_when_video_llm_disabled(monkeypatch, tmp_path):
+def test_analyze_uses_mock_generation_mode_when_video_llm_disabled(
+    monkeypatch, tmp_path
+):
     monkeypatch.delenv("VIDEO_LLM_ENABLED", raising=False)
     client = create_client(monkeypatch, tmp_path)
 
@@ -493,7 +528,9 @@ def test_call_real_video_llm_model_normalizes_nvidia_response(monkeypatch, tmp_p
     assert sent_request["method"] == "POST"
     assert sent_request["url"] == "https://integrate.api.nvidia.com/v1/chat/completions"
     assert sent_request["headers"]["Authorization"] == "Bearer nvapi-test-key"
-    assert sent_request["json"]["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    assert (
+        sent_request["json"]["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+    )
     assert sent_request["json"]["messages"][0]["content"].startswith("/no_think")
     user_content = sent_request["json"]["messages"][1]["content"]
     assert user_content[1]["type"] == "video_url"
@@ -510,7 +547,9 @@ def test_call_real_video_llm_model_raises_when_concurrency_semaphore_is_exhauste
 
     exhausted_semaphore = threading.Semaphore(1)
     exhausted_semaphore.acquire()  # 유일한 permit을 미리 점유해 세마포어를 소진시킵니다.
-    monkeypatch.setattr(video_llm_analysis, "_REAL_MODEL_SEMAPHORE", exhausted_semaphore)
+    monkeypatch.setattr(
+        video_llm_analysis, "_REAL_MODEL_SEMAPHORE", exhausted_semaphore
+    )
 
     with pytest.raises(RuntimeError, match="동시 호출"):
         video_llm_analysis.call_real_video_llm_model(
@@ -526,13 +565,17 @@ def test_call_real_video_llm_model_raises_when_concurrency_semaphore_is_exhauste
     assert FakeNvidiaClient.instances == []
 
 
-def test_call_real_video_llm_model_releases_semaphore_after_success(monkeypatch, tmp_path):
+def test_call_real_video_llm_model_releases_semaphore_after_success(
+    monkeypatch, tmp_path
+):
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
 
     single_slot_semaphore = threading.Semaphore(1)
-    monkeypatch.setattr(video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore)
+    monkeypatch.setattr(
+        video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore
+    )
 
     video_llm_analysis.call_real_video_llm_model(
         VideoLlmAnalysisRequest(
@@ -553,7 +596,7 @@ def test_call_real_video_llm_model_releases_semaphore_even_when_call_fails(
 ):
     video_path = tmp_path / "large.mp4"
     video_path.write_bytes(
-        b"x" * (video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+        b"x" * (nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
     )
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     FakeNvidiaClient.asset_create_status = 500
@@ -561,7 +604,9 @@ def test_call_real_video_llm_model_releases_semaphore_even_when_call_fails(
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
 
     single_slot_semaphore = threading.Semaphore(1)
-    monkeypatch.setattr(video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore)
+    monkeypatch.setattr(
+        video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore
+    )
 
     with pytest.raises(httpx.HTTPStatusError):
         video_llm_analysis.call_real_video_llm_model(
@@ -684,7 +729,9 @@ def test_analyze_falls_back_to_mock_when_duration_exceeds_configured_max(
     assert FakeNvidiaClient.instances == []
 
 
-def test_call_real_video_llm_model_uses_natural_prompt_for_short_duration(monkeypatch, tmp_path):
+def test_call_real_video_llm_model_uses_natural_prompt_for_short_duration(
+    monkeypatch, tmp_path
+):
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
@@ -733,7 +780,10 @@ def test_call_real_video_llm_model_forces_three_segments_for_long_duration(
     assert "[20.000, 40.000)" in user_text
     assert "[40.000, 60.000]" in user_text
     assert "include at least one observation for each segment" in user_text
-    assert "do not collapse all observations into a single [0, duration] range" in user_text
+    assert (
+        "do not collapse all observations into a single [0, duration] range"
+        in user_text
+    )
 
 
 @pytest.mark.parametrize("duration_sec", [0.0, 29.999])
@@ -777,7 +827,7 @@ def test_normalize_video_llm_response_clamps_times_to_duration():
         },
     }
 
-    response = video_llm_analysis.normalize_video_llm_response(
+    response = nvidia_response.normalize_video_llm_response(
         "clamp-job",
         "test-model",
         payload,
@@ -810,7 +860,7 @@ def test_normalize_video_llm_response_clamps_negative_times_to_zero():
         },
     }
 
-    response = video_llm_analysis.normalize_video_llm_response(
+    response = nvidia_response.normalize_video_llm_response(
         "negative-clamp-job",
         "test-model",
         payload,
@@ -822,8 +872,15 @@ def test_normalize_video_llm_response_clamps_negative_times_to_zero():
 
 
 @pytest.mark.parametrize("duration_sec", [None, 10.0])
-def test_clamp_observation_time_floors_negative_values_regardless_of_duration(duration_sec):
-    assert video_llm_analysis.clamp_observation_time(-5.0, duration_sec, "eyeContact", 0, "startSec") == 0
+def test_clamp_observation_time_floors_negative_values_regardless_of_duration(
+    duration_sec,
+):
+    assert (
+        nvidia_response.clamp_observation_time(
+            -5.0, duration_sec, "eyeContact", 0, "startSec"
+        )
+        == 0
+    )
 
 
 def test_normalize_video_llm_response_rejects_reversed_negative_times_instead_of_clamping_to_zero():
@@ -852,7 +909,7 @@ def test_normalize_video_llm_response_rejects_reversed_negative_times_instead_of
     }
 
     with pytest.raises(ValueError, match="endSec < startSec"):
-        video_llm_analysis.normalize_video_llm_response(
+        nvidia_response.normalize_video_llm_response(
             "reversed-negative-job",
             "test-model",
             payload,
@@ -883,7 +940,7 @@ def test_normalize_video_llm_response_keeps_existing_validation_without_duration
     }
 
     with pytest.raises(ValueError, match="endSec < startSec"):
-        video_llm_analysis.normalize_video_llm_response(
+        nvidia_response.normalize_video_llm_response(
             "no-duration-job",
             "test-model",
             payload,
@@ -920,7 +977,7 @@ def test_normalize_video_llm_response_rejects_nan_and_infinite_values(field, bad
     }
 
     with pytest.raises(ValueError, match="finite number"):
-        video_llm_analysis.normalize_video_llm_response(
+        nvidia_response.normalize_video_llm_response(
             "nan-infinity-job",
             "test-model",
             payload,
@@ -944,7 +1001,7 @@ def test_call_real_video_llm_model_uses_nvcf_asset_for_large_video(
 ):
     video_path = tmp_path / "large.mp4"
     video_path.write_bytes(
-        b"x" * (video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+        b"x" * (nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
     )
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
@@ -971,15 +1028,16 @@ def test_call_real_video_llm_model_uses_nvcf_asset_for_large_video(
         "video-llm-analysis jobId=large-video-job"
     )
     assert upload_request["headers"]["Content-Length"] == str(
-        video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1
+        nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1
     )
     assert len(upload_request["content"]) == (
-        video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1
+        nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1
     )
     chat_request = main_client.requests[2]
     assert chat_request["headers"]["NVCF-INPUT-ASSET-REFERENCES"] == "asset-123"
-    assert '<video src="data:video/mp4;asset_id,asset-123" />' in (
-        chat_request["json"]["messages"][0]["content"]
+    assert (
+        '<video src="data:video/mp4;asset_id,asset-123" />'
+        in (chat_request["json"]["messages"][0]["content"])
     )
 
     cleanup_client = FakeNvidiaClient.instances[1]
@@ -1001,7 +1059,7 @@ def test_build_nvidia_video_input_from_local_file_rejects_oversized_video(
     client = FakeNvidiaClient(timeout=120)
 
     with pytest.raises(ValueError, match="exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB"):
-        video_llm_analysis.build_nvidia_video_input_from_local_file(
+        nvidia_provider.build_nvidia_video_input_from_local_file(
             client=client,
             api_key="nvapi-test-key",
             asset_base_url="https://api.nvcf.nvidia.com/v2/nvcf",
@@ -1015,22 +1073,20 @@ def test_build_nvidia_video_input_from_local_file_rejects_oversized_video(
 
 def test_iter_file_chunks_uses_bounded_chunks(tmp_path):
     video_path = tmp_path / "chunked.mp4"
-    video_path.write_bytes(
-        b"x" * (video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES * 2 + 123)
-    )
+    video_path.write_bytes(b"x" * (media_io.VIDEO_STREAM_CHUNK_SIZE_BYTES * 2 + 123))
 
-    chunks = list(video_llm_analysis.iter_file_chunks(video_path))
+    chunks = list(nvidia_provider.iter_file_chunks(video_path))
 
     assert [len(chunk) for chunk in chunks] == [
-        video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES,
-        video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES,
+        media_io.VIDEO_STREAM_CHUNK_SIZE_BYTES,
+        media_io.VIDEO_STREAM_CHUNK_SIZE_BYTES,
         123,
     ]
 
 
 def test_upload_video_to_asset_streams_through_httpx_with_content_length(tmp_path):
     video_path = tmp_path / "httpx-stream.mp4"
-    video_content = b"z" * (video_llm_analysis.VIDEO_STREAM_CHUNK_SIZE_BYTES + 321)
+    video_content = b"z" * (media_io.VIDEO_STREAM_CHUNK_SIZE_BYTES + 321)
     video_path.write_bytes(video_content)
 
     def handle_upload(request: httpx.Request) -> httpx.Response:
@@ -1040,7 +1096,7 @@ def test_upload_video_to_asset_streams_through_httpx_with_content_length(tmp_pat
         return httpx.Response(200)
 
     with httpx.Client(transport=httpx.MockTransport(handle_upload)) as client:
-        video_llm_analysis.upload_video_to_asset(
+        nvidia_provider.upload_video_to_asset(
             client,
             "https://upload.example.test/asset",
             video_path,
@@ -1055,7 +1111,7 @@ def test_call_real_video_llm_model_raises_when_nvcf_asset_create_fails(
 ):
     video_path = tmp_path / "large.mp4"
     video_path.write_bytes(
-        b"x" * (video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+        b"x" * (nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
     )
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     FakeNvidiaClient.asset_create_status = 500
@@ -1077,7 +1133,7 @@ def test_call_real_video_llm_model_deletes_asset_when_upload_fails(
 ):
     video_path = tmp_path / "large.mp4"
     video_path.write_bytes(
-        b"x" * (video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+        b"x" * (nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
     )
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     FakeNvidiaClient.upload_status = 403
@@ -1105,7 +1161,7 @@ def test_call_real_video_llm_model_ignores_nvcf_asset_delete_failure(
 ):
     video_path = tmp_path / "large.mp4"
     video_path.write_bytes(
-        b"x" * (video_llm_analysis.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+        b"x" * (nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
     )
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     FakeNvidiaClient.delete_status = 500
@@ -1121,6 +1177,42 @@ def test_call_real_video_llm_model_ignores_nvcf_asset_delete_failure(
     assert response["jobId"] == "asset-delete-failure-job"
     cleanup_client = FakeNvidiaClient.instances[1]
     assert cleanup_client.requests[0]["method"] == "DELETE"
+
+
+def test_call_real_video_llm_model_deletes_asset_when_chat_request_fails(
+    monkeypatch,
+    tmp_path,
+):
+    video_path = tmp_path / "large.mp4"
+    video_path.write_bytes(
+        b"x" * (nvidia_provider.NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES + 1)
+    )
+    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
+    FakeNvidiaClient.raised_exception = httpx.ConnectError("chat connection failed")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    with pytest.raises(httpx.ConnectError, match="chat connection failed"):
+        video_llm_analysis.call_real_video_llm_model(
+            VideoLlmAnalysisRequest(
+                jobId="chat-failure-cleanup-job",
+                videoPath=str(video_path),
+            )
+        )
+
+    main_client = FakeNvidiaClient.instances[0]
+    assert [request["method"] for request in main_client.requests] == [
+        "POST",
+        "PUT",
+        "POST",
+    ]
+    cleanup_client = FakeNvidiaClient.instances[1]
+    assert cleanup_client.requests == [
+        {
+            "method": "DELETE",
+            "url": "https://api.nvcf.nvidia.com/v2/nvcf/assets/asset-123",
+            "headers": {"Authorization": "Bearer nvapi-test-key"},
+        }
+    ]
 
 
 def test_call_real_video_llm_model_polls_accepted_nvidia_response(
@@ -1150,7 +1242,7 @@ def test_call_real_video_llm_model_polls_accepted_nvidia_response(
         },
     ]
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setattr(video_llm_analysis.time, "sleep", lambda _: None)
+    monkeypatch.setattr(nvidia_provider.time, "sleep", lambda _: None)
 
     response = video_llm_analysis.call_real_video_llm_model(
         VideoLlmAnalysisRequest(
@@ -1182,10 +1274,10 @@ def test_call_real_video_llm_model_raises_when_nvidia_polling_times_out(
             "status": 202,
             "json": {"requestId": "22222222-2222-2222-2222-222222222222"},
         }
-        for _ in range(video_llm_analysis.NVIDIA_STATUS_POLL_MAX_ATTEMPTS)
+        for _ in range(nvidia_provider.NVIDIA_STATUS_POLL_MAX_ATTEMPTS)
     ]
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-    monkeypatch.setattr(video_llm_analysis.time, "sleep", lambda _: None)
+    monkeypatch.setattr(nvidia_provider.time, "sleep", lambda _: None)
 
     with pytest.raises(TimeoutError, match="did not finish"):
         video_llm_analysis.call_real_video_llm_model(
@@ -1203,14 +1295,16 @@ def test_analyze_falls_back_when_nvidia_response_is_missing_required_fields(
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(
         monkeypatch,
-        json.dumps({
-            "observations": {},
-            "globalSummary": {
-                "visualDelivery": "요약",
-                "mainStrength": "강점",
-                "mainWeakness": "약점",
-            },
-        }),
+        json.dumps(
+            {
+                "observations": {},
+                "globalSummary": {
+                    "visualDelivery": "요약",
+                    "mainStrength": "강점",
+                    "mainWeakness": "약점",
+                },
+            }
+        ),
     )
     monkeypatch.setenv("VIDEO_LLM_ENABLED", "true")
     monkeypatch.setenv("VIDEO_LLM_BACKEND", "external-api")
@@ -1284,7 +1378,8 @@ class FakeDownloadClient:
         response = httpx.Response(
             FakeDownloadClient.response_status,
             content=FakeDownloadClient.response_content,
-            headers=FakeDownloadClient.response_headers or {"content-type": "video/mp4"},
+            headers=FakeDownloadClient.response_headers
+            or {"content-type": "video/mp4"},
             request=httpx.Request(method, url),
         )
         return FakeDownloadResponseContext(response)
@@ -1302,12 +1397,14 @@ class FakeDownloadResponseContext:
         return False
 
 
-def test_resolve_video_file_streams_download_and_removes_temp_file(monkeypatch, tmp_path):
+def test_resolve_video_file_streams_download_and_removes_temp_file(
+    monkeypatch, tmp_path
+):
     FakeDownloadClient.response_status = 200
     FakeDownloadClient.response_content = b"downloaded-bytes"
     FakeDownloadClient.response_headers = {"content-type": "video/mp4"}
     FakeDownloadClient.raised_exception = None
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+    monkeypatch.setattr(media_io.httpx, "Client", FakeDownloadClient)
 
     request = VideoLlmAnalysisRequest(
         jobId="video-llm-download-1",
@@ -1315,7 +1412,7 @@ def test_resolve_video_file_streams_download_and_removes_temp_file(monkeypatch, 
         videoDownloadUrl="https://minio.local/uploads/video-llm-download-1/original.mp4",
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (video_path, content_type):
+    with media_io.resolve_video_file(request) as (video_path, content_type):
         assert video_path.read_bytes() == b"downloaded-bytes"
         assert video_path != Path(request.videoPath)
         assert video_path.exists()
@@ -1324,9 +1421,11 @@ def test_resolve_video_file_streams_download_and_removes_temp_file(monkeypatch, 
     assert video_path.exists() is False
 
 
-def test_resolve_video_file_falls_back_to_local_path_when_download_fails(monkeypatch, tmp_path):
+def test_resolve_video_file_falls_back_to_local_path_when_download_fails(
+    monkeypatch, tmp_path
+):
     FakeDownloadClient.raised_exception = httpx.ConnectError("connection failed")
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+    monkeypatch.setattr(media_io.httpx, "Client", FakeDownloadClient)
 
     video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(
@@ -1335,7 +1434,7 @@ def test_resolve_video_file_falls_back_to_local_path_when_download_fails(monkeyp
         videoDownloadUrl="https://minio.local/uploads/video-llm-download-2/original.mp4",
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
         assert resolved_path == Path(video_path)
         assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
@@ -1354,19 +1453,19 @@ def test_resolve_video_file_falls_back_to_local_path_when_download_fails(monkeyp
 )
 def test_validate_video_download_url_rejects_non_http_urls(bad_url):
     with pytest.raises(ValueError, match="absolute http"):
-        video_llm_analysis.validate_video_download_url(bad_url)
+        media_io.validate_video_download_url(bad_url)
 
 
 def test_validate_video_download_url_accepts_http_and_https():
-    video_llm_analysis.validate_video_download_url("https://minio.local/uploads/x/original.mp4")
-    video_llm_analysis.validate_video_download_url("http://minio.local/uploads/x/original.mp4")
+    media_io.validate_video_download_url("https://minio.local/uploads/x/original.mp4")
+    media_io.validate_video_download_url("http://minio.local/uploads/x/original.mp4")
 
 
 def test_validate_video_download_url_rejects_host_outside_allowlist(monkeypatch):
     monkeypatch.setenv("VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS", "minio:9000")
 
     with pytest.raises(ValueError, match="not in VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS"):
-        video_llm_analysis.validate_video_download_url("https://attacker.example.com/steal.mp4")
+        media_io.validate_video_download_url("https://attacker.example.com/steal.mp4")
 
 
 def test_validate_video_download_url_rejects_internal_metadata_endpoint(monkeypatch):
@@ -1374,10 +1473,12 @@ def test_validate_video_download_url_rejects_internal_metadata_endpoint(monkeypa
     monkeypatch.setenv("VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS", "minio:9000")
 
     with pytest.raises(ValueError, match="not in VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS"):
-        video_llm_analysis.validate_video_download_url("http://169.254.169.254/latest/meta-data/")
+        media_io.validate_video_download_url("http://169.254.169.254/latest/meta-data/")
 
 
-def test_resolve_video_file_falls_back_to_local_path_for_disallowed_host(monkeypatch, tmp_path):
+def test_resolve_video_file_falls_back_to_local_path_for_disallowed_host(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS", "minio.local:443")
     request_attempted = {"called": False}
 
@@ -1386,7 +1487,7 @@ def test_resolve_video_file_falls_back_to_local_path_for_disallowed_host(monkeyp
             request_attempted["called"] = True
             return super().stream(method, url)
 
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", TrackingFakeDownloadClient)
+    monkeypatch.setattr(media_io.httpx, "Client", TrackingFakeDownloadClient)
 
     video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(
@@ -1395,18 +1496,22 @@ def test_resolve_video_file_falls_back_to_local_path_for_disallowed_host(monkeyp
         videoDownloadUrl="https://attacker.example.com/steal.mp4",
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
         assert resolved_path == Path(video_path)
 
     assert request_attempted["called"] is False
 
 
-def test_resolve_video_file_falls_back_to_local_path_on_redirect_response(monkeypatch, tmp_path):
+def test_resolve_video_file_falls_back_to_local_path_on_redirect_response(
+    monkeypatch, tmp_path
+):
     FakeDownloadClient.response_status = 302
     FakeDownloadClient.response_content = b""
-    FakeDownloadClient.response_headers = {"location": "https://attacker.example.com/steal.mp4"}
+    FakeDownloadClient.response_headers = {
+        "location": "https://attacker.example.com/steal.mp4"
+    }
     FakeDownloadClient.raised_exception = None
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+    monkeypatch.setattr(media_io.httpx, "Client", FakeDownloadClient)
 
     video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(
@@ -1415,7 +1520,7 @@ def test_resolve_video_file_falls_back_to_local_path_on_redirect_response(monkey
         videoDownloadUrl="https://minio.local/uploads/video-llm-redirect-job/original.mp4",
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
         assert resolved_path == Path(video_path)
         assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
@@ -1430,7 +1535,7 @@ def test_resolve_video_file_falls_back_to_local_path_without_attempting_request_
             request_attempted["called"] = True
             return super().stream(method, url)
 
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", TrackingFakeDownloadClient)
+    monkeypatch.setattr(media_io.httpx, "Client", TrackingFakeDownloadClient)
 
     video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(
@@ -1441,23 +1546,27 @@ def test_resolve_video_file_falls_back_to_local_path_without_attempting_request_
         videoDownloadUrl="file:///etc/passwd",
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
         assert resolved_path == Path(video_path)
 
     assert request_attempted["called"] is False
 
 
-def test_validate_local_video_path_accepts_path_inside_allowed_base_dir(monkeypatch, tmp_path):
+def test_validate_local_video_path_accepts_path_inside_allowed_base_dir(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", str(tmp_path))
     inside_path = tmp_path / "uploads" / "job-1" / "original.mp4"
     inside_path.parent.mkdir(parents=True)
     inside_path.write_bytes(b"x")
 
     # 예외를 던지지 않으면 통과입니다.
-    video_llm_analysis.validate_local_video_path(inside_path)
+    media_io.validate_local_video_path(inside_path)
 
 
-def test_validate_local_video_path_rejects_path_outside_allowed_base_dir(monkeypatch, tmp_path):
+def test_validate_local_video_path_rejects_path_outside_allowed_base_dir(
+    monkeypatch, tmp_path
+):
     allowed_dir = tmp_path / "storage"
     allowed_dir.mkdir()
     monkeypatch.setenv("VIDEO_LLM_ALLOWED_VIDEO_BASE_DIR", str(allowed_dir))
@@ -1467,7 +1576,7 @@ def test_validate_local_video_path_rejects_path_outside_allowed_base_dir(monkeyp
     outside_path.write_bytes(b"secret")
 
     with pytest.raises(ValueError, match="must be inside"):
-        video_llm_analysis.validate_local_video_path(outside_path)
+        media_io.validate_local_video_path(outside_path)
 
 
 def test_call_real_video_llm_model_rejects_local_path_outside_allowed_base_dir(
@@ -1502,7 +1611,7 @@ def test_resolve_video_file_uses_local_path_when_no_download_url(tmp_path):
         videoPath=video_path,
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
         assert resolved_path == Path(video_path)
         assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
@@ -1522,7 +1631,7 @@ def test_resolve_video_file_rejects_oversized_download_and_removes_partial_file(
     }
     FakeDownloadClient.raised_exception = None
     monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "1")
-    monkeypatch.setattr(video_llm_analysis.httpx, "Client", FakeDownloadClient)
+    monkeypatch.setattr(media_io.httpx, "Client", FakeDownloadClient)
 
     local_video_path = create_video_file(tmp_path)
     request = VideoLlmAnalysisRequest(
@@ -1531,11 +1640,48 @@ def test_resolve_video_file_rejects_oversized_download_and_removes_partial_file(
         videoDownloadUrl="https://minio.local/uploads/oversized/original.mp4",
     )
 
-    with video_llm_analysis.resolve_video_file(request) as (resolved_path, content_type):
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
         assert resolved_path == Path(local_video_path)
         assert resolved_path.read_bytes() == b"fake mp4 bytes"
 
     assert content_type == "video/mp4"
+
+
+def test_resolve_video_file_removes_partial_file_when_stream_exceeds_limit_without_length(
+    monkeypatch,
+    tmp_path,
+):
+    oversized_content = b"x" * (1024 * 1024 + 1)
+    FakeDownloadClient.response_status = 200
+    FakeDownloadClient.response_content = oversized_content
+    FakeDownloadClient.response_headers = {"content-type": "video/mp4"}
+    FakeDownloadClient.raised_exception = None
+    monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", "1")
+    monkeypatch.setattr(media_io.httpx, "Client", FakeDownloadClient)
+
+    real_named_temporary_file = tempfile.NamedTemporaryFile
+
+    def create_tracked_temp_file(*args, **kwargs):
+        return real_named_temporary_file(*args, dir=tmp_path, **kwargs)
+
+    monkeypatch.setattr(
+        media_io.tempfile,
+        "NamedTemporaryFile",
+        create_tracked_temp_file,
+    )
+
+    local_video_path = create_video_file(tmp_path)
+    request = VideoLlmAnalysisRequest(
+        jobId="video-llm-stream-limit",
+        videoPath=local_video_path,
+        videoDownloadUrl="https://minio.local/uploads/oversized/original.mp4",
+    )
+
+    with media_io.resolve_video_file(request) as (resolved_path, content_type):
+        assert resolved_path == Path(local_video_path)
+
+    assert content_type == "video/mp4"
+    assert list(tmp_path.glob("video-llm-video-llm-stream-limit-*")) == []
 
 
 @pytest.mark.parametrize("configured_value", ["0", "-1", "not-a-number"])
@@ -1543,7 +1689,7 @@ def test_resolve_video_max_size_rejects_invalid_values(monkeypatch, configured_v
     monkeypatch.setenv("VIDEO_LLM_MAX_VIDEO_SIZE_MB", configured_value)
 
     with pytest.raises(RuntimeError, match="must be a positive integer"):
-        video_llm_analysis.resolve_video_max_size_bytes()
+        media_io.resolve_video_max_size_bytes()
 
 
 def test_split_video_into_segments_creates_expected_segment_files(tmp_path):
@@ -1575,7 +1721,9 @@ def test_split_video_into_segments_raises_when_input_is_not_a_valid_video(tmp_pa
             pass
 
 
-def test_call_real_video_llm_model_uses_single_call_for_short_video(monkeypatch, tmp_path):
+def test_call_real_video_llm_model_uses_single_call_for_short_video(
+    monkeypatch, tmp_path
+):
     video_path = create_video_file(tmp_path)
     install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
     monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
@@ -1632,7 +1780,12 @@ def test_call_real_video_llm_model_splits_long_video_and_merges_segment_results(
     assert all(item["endSec"] <= 5.0 for item in eye_contact)
 
     # 두 세그먼트의 요약이 모두 최종 globalSummary에 반영되어야 합니다(단순 이어붙이기).
-    assert response["globalSummary"]["visualDelivery"].count("전반적으로 안정적인 발표 태도입니다.") == 2
+    assert (
+        response["globalSummary"]["visualDelivery"].count(
+            "전반적으로 안정적인 발표 태도입니다."
+        )
+        == 2
+    )
 
 
 def test_call_real_video_llm_model_stops_chunk_processing_at_total_deadline(

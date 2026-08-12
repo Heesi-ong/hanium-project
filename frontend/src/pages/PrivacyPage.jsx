@@ -1,4 +1,10 @@
 import { Link } from "react-router-dom";
+import BusinessInfoSection from "../components/BusinessInfoSection";
+import {
+    PRIVACY_OFFICER_EMAIL,
+    PRIVACY_OFFICER_NAME,
+    PRIVACY_OFFICER_PHONE,
+} from "../constants/businessInfo";
 
 function PrivacyPage() {
     return (
@@ -12,24 +18,14 @@ function PrivacyPage() {
                     실제 서비스 출시 전 반드시 법률 전문가 검토가 필요합니다.
                 </div>
 
-                <div className="policy-section">
-                    <h3>사업자 정보</h3>
-                    <ul>
-                        <li>상호: [실제 서비스명/사업자명 입력 필요]</li>
-                        <li>대표자: [실제 대표자명 입력 필요]</li>
-                        <li>사업자등록번호: [실제 사업자등록번호 입력 필요]</li>
-                        <li>주소: [실제 사업장 주소 입력 필요]</li>
-                        <li>전화: [실제 연락처 입력 필요]</li>
-                        <li>이메일: [실제 고객문의 이메일 입력 필요]</li>
-                    </ul>
-                </div>
+                <BusinessInfoSection />
 
                 <div className="policy-section">
                     <h3>개인정보 보호책임자</h3>
                     <ul>
-                        <li>이름 또는 직책: [실제 개인정보 보호책임자 이름 또는 직책 입력 필요]</li>
-                        <li>이메일: [실제 개인정보 문의 이메일 입력 필요]</li>
-                        <li>전화: [실제 개인정보 문의 전화번호 입력 필요]</li>
+                        <li>이름 또는 직책: {PRIVACY_OFFICER_NAME}</li>
+                        <li>이메일: {PRIVACY_OFFICER_EMAIL}</li>
+                        <li>전화: {PRIVACY_OFFICER_PHONE}</li>
                     </ul>
                 </div>
 

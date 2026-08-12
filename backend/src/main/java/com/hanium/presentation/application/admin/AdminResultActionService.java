@@ -28,7 +28,14 @@ public class AdminResultActionService {
     }
 
     @Transactional
-    public void deleteResult(Long adminId, String adminEmail, String jobId) {
+    public void deleteResult(
+            Long adminId,
+            String adminEmail,
+            String jobId,
+            String reason,
+            String requestId,
+            String incidentId
+    ) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
 
@@ -40,7 +47,10 @@ public class AdminResultActionService {
                 AdminAuditAction.DELETE_RESULT,
                 AdminAuditTargetType.ANALYSIS_JOB,
                 jobId,
-                null
+                null,
+                reason,
+                requestId,
+                incidentId
         );
     }
 }

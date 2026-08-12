@@ -21,7 +21,14 @@ public class AdminStorageDeletionTaskActionService {
     }
 
     @Transactional
-    public void requeueDeadLetterTask(Long adminId, String adminEmail, Long taskId) {
+    public void requeueDeadLetterTask(
+            Long adminId,
+            String adminEmail,
+            Long taskId,
+            String reason,
+            String requestId,
+            String incidentId
+    ) {
         storageDeletionTaskService.requeueForManualRetry(taskId);
 
         adminAuditLogService.record(
@@ -30,7 +37,10 @@ public class AdminStorageDeletionTaskActionService {
                 AdminAuditAction.REQUEUE_STORAGE_DELETION_TASK,
                 AdminAuditTargetType.STORAGE_DELETION_TASK,
                 String.valueOf(taskId),
-                null
+                null,
+                reason,
+                requestId,
+                incidentId
         );
     }
 }

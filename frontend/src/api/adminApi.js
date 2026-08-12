@@ -47,8 +47,13 @@ export async function getAdminUserResults(userId, { page, size } = {}) {
     return unwrapApiResponse(response);
 }
 
-export async function suspendAdminUser(userId) {
-    const response = await apiClient.post(`/api/admin/users/${userId}/suspend`);
+// 정지/강제 탈퇴/결과 삭제/수동 재큐잉은 파괴적 조치라 실행 사유(reason)가 필수이고,
+// 인시던트/문의 티켓 번호(incidentId)는 선택적으로 함께 남길 수 있다(P2-03).
+export async function suspendAdminUser(userId, { reason, incidentId } = {}) {
+    const response = await apiClient.post(`/api/admin/users/${userId}/suspend`, {
+        reason,
+        incidentId,
+    });
     return unwrapApiResponse(response);
 }
 
@@ -57,13 +62,18 @@ export async function activateAdminUser(userId) {
     return unwrapApiResponse(response);
 }
 
-export async function forceWithdrawAdminUser(userId) {
-    const response = await apiClient.post(`/api/admin/users/${userId}/withdraw`);
+export async function forceWithdrawAdminUser(userId, { reason, incidentId } = {}) {
+    const response = await apiClient.post(`/api/admin/users/${userId}/withdraw`, {
+        reason,
+        incidentId,
+    });
     return unwrapApiResponse(response);
 }
 
-export async function deleteAdminResult(jobId) {
-    const response = await apiClient.delete(`/api/admin/results/${jobId}`);
+export async function deleteAdminResult(jobId, { reason, incidentId } = {}) {
+    const response = await apiClient.delete(`/api/admin/results/${jobId}`, {
+        data: { reason, incidentId },
+    });
     return unwrapApiResponse(response);
 }
 
@@ -130,8 +140,11 @@ export async function getAdminDeadLetterJobs({ page, size } = {}) {
     return unwrapApiResponse(response);
 }
 
-export async function requeueAdminDeadLetterJob(jobId) {
-    const response = await apiClient.post(`/api/admin/analysis-jobs/${jobId}/requeue`);
+export async function requeueAdminDeadLetterJob(jobId, { reason, incidentId } = {}) {
+    const response = await apiClient.post(`/api/admin/analysis-jobs/${jobId}/requeue`, {
+        reason,
+        incidentId,
+    });
     return unwrapApiResponse(response);
 }
 
@@ -153,9 +166,10 @@ export async function getAdminStorageDeletionDeadLetters({ page, size } = {}) {
     return unwrapApiResponse(response);
 }
 
-export async function requeueAdminStorageDeletionDeadLetter(taskId) {
+export async function requeueAdminStorageDeletionDeadLetter(taskId, { reason, incidentId } = {}) {
     const response = await apiClient.post(
-        `/api/admin/storage-deletion-tasks/${taskId}/requeue`
+        `/api/admin/storage-deletion-tasks/${taskId}/requeue`,
+        { reason, incidentId }
     );
     return unwrapApiResponse(response);
 }
@@ -178,9 +192,10 @@ export async function getAdminPasswordResetEmailDeadLetters({ page, size } = {})
     return unwrapApiResponse(response);
 }
 
-export async function requeueAdminPasswordResetEmailDeadLetter(taskId) {
+export async function requeueAdminPasswordResetEmailDeadLetter(taskId, { reason, incidentId } = {}) {
     const response = await apiClient.post(
-        `/api/admin/password-reset-email-tasks/${taskId}/requeue`
+        `/api/admin/password-reset-email-tasks/${taskId}/requeue`,
+        { reason, incidentId }
     );
     return unwrapApiResponse(response);
 }

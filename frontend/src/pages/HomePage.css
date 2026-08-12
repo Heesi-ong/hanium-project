@@ -146,12 +146,21 @@
     line-height: 1.78;
 }
 
+.hero-metric-caption {
+    margin: 32px 0 10px;
+    color: #8a8079;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 .hero-metric-strip {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     max-width: 530px;
-    margin: 32px 0 0;
+    margin: 0;
 }
 
 .hero-metric {

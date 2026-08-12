@@ -1,5 +1,7 @@
 package com.hanium.presentation.application.result;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hanium.presentation.common.contract.ResultSchemaVersion;
 import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
@@ -14,6 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ResultMergeServiceTest {
 
     private final ResultMergeService resultMergeService = new ResultMergeService();
+    // scoreSummary는 이제 ScoreSummary 레코드 타입이라(P2-04), Map 기반 필드처럼 바로
+    // 캐스팅할 수 없다. ObjectMapper로 실제 JSON 직렬화 shape과 동일한 Map으로 변환해
+    // 검증한다 — 이렇게 하면 "JSON 계약은 그대로다"까지 함께 검증된다.
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void createFinalResultAddsDeterministicNotableMomentsFromFrameResults() {
@@ -99,6 +105,8 @@ class ResultMergeServiceTest {
 
         List<Map<String, Object>> notableMoments = notableMoments(finalResult);
 
+        assertThat(finalResult)
+                .containsEntry(ResultSchemaVersion.FIELD, ResultSchemaVersion.CURRENT);
         assertThat(notableMoments).hasSize(4);
         assertThat(findMoment(notableMoments, "posture"))
                 .containsEntry("label", "자세 균형이 가장 흔들린 순간")
@@ -163,6 +171,71 @@ class ResultMergeServiceTest {
         assertThat(failureResult).containsEntry("notableMoments", List.of());
     }
 
+    // scoreSummary는 Map<String,Object>로 즉석에서 만들어지고 있어(2026-08-03 서비스화 점검
+    // P2-04), 필드 누락이나 타입 변경을 컴파일 타임에 잡지 못한다. versioned DTO로 옮기기
+    // 전에, 동작을 바꾸지 않는다는 전제로 현재 출력 shape을 먼저 고정한다(P2-02와 동일한
+    // characterization test 우선 원칙).
+    @Test
+    void createFinalResultProducesScoreSummaryWithCurrentShapeAndValues() {
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1",
+                analysisResponse(Map.of(), Map.of(), Map.of(), Map.of()),
+                videoLlmResponse(),
+                openAiFeedbackResponse()
+        );
+
+        Map<String, Object> scoreSummary = scoreSummary(finalResult);
+
+        assertThat(scoreSummary.keySet()).containsExactlyInAnyOrder(
+                "totalScore",
+                "postureScore",
+                "gazeScore",
+                "speechScore",
+                "gestureScore",
+                "expressionScore",
+                "level"
+        );
+        assertThat(scoreSummary)
+                .containsEntry("totalScore", 80)
+                .containsEntry("postureScore", 80)
+                .containsEntry("gazeScore", 80)
+                .containsEntry("speechScore", 80)
+                .containsEntry("gestureScore", 80)
+                .containsEntry("expressionScore", 80)
+                .containsEntry("level", "GOOD");
+    }
+
+    @Test
+    void createFailureResultProducesScoreSummaryWithCurrentShapeAndFailedDefaults() {
+        Map<String, Object> failureResult = resultMergeService.createFailureResult(
+                "job-1",
+                "BASIC_ANALYZING",
+                "analysis failed"
+        );
+
+        Map<String, Object> scoreSummary = scoreSummary(failureResult);
+
+        assertThat(failureResult)
+                .containsEntry(ResultSchemaVersion.FIELD, ResultSchemaVersion.CURRENT);
+        assertThat(scoreSummary.keySet()).containsExactlyInAnyOrder(
+                "totalScore",
+                "postureScore",
+                "gazeScore",
+                "speechScore",
+                "gestureScore",
+                "expressionScore",
+                "level"
+        );
+        assertThat(scoreSummary)
+                .containsEntry("totalScore", 0)
+                .containsEntry("postureScore", 0)
+                .containsEntry("gazeScore", 0)
+                .containsEntry("speechScore", 0)
+                .containsEntry("gestureScore", 0)
+                .containsEntry("expressionScore", 0)
+                .containsEntry("level", "FAILED");
+    }
+
     @Test
     void createFinalResultIncludesVideoLlmStatusInVisualAnalysis() {
         Map<String, Object> finalResult = resultMergeService.createFinalResult(
@@ -221,6 +294,35 @@ class ResultMergeServiceTest {
                 .containsEntry("videoLlmGenerationMode", "SKIPPED");
     }
 
+    @Test
+    void createFinalResultMarksOpenAiPipelineAsSkippedWhenFeedbackWasDisabled() {
+        OpenAiFeedbackResponse skippedFeedback = OpenAiFeedbackResponse.skipped(
+                "job-1",
+                "사용자 설정으로 OpenAI 피드백 생성이 비활성화되었습니다.",
+                "기본 분석 결과만 저장되었습니다.",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1",
+                analysisResponse(Map.of(), Map.of(), Map.of(), Map.of()),
+                videoLlmResponse(),
+                skippedFeedback
+        );
+
+        assertThat(pipeline(finalResult))
+                .containsEntry("openAiFeedback", "openai skipped")
+                .containsEntry("openAiGenerationMode", "SKIPPED")
+                .containsEntry("openAiRealApiUsed", false)
+                .containsEntry(
+                        "openAiFallbackReason",
+                        "사용자 설정으로 OpenAI 피드백 생성이 비활성화되었습니다."
+                );
+    }
+
     private List<Map<String, Object>> notableMoments(Map<String, Object> finalResult) {
         return JsonMapSupport.copyStringKeyedMapList(finalResult.get("notableMoments"));
     }
@@ -231,6 +333,11 @@ class ResultMergeServiceTest {
 
     private Map<String, Object> pipeline(Map<String, Object> finalResult) {
         return JsonMapSupport.copyStringKeyedMap(finalResult.get("pipeline"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> scoreSummary(Map<String, Object> finalResult) {
+        return objectMapper.convertValue(finalResult.get("scoreSummary"), Map.class);
     }
 
     private Map<String, Object> findMoment(

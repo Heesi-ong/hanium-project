@@ -82,9 +82,9 @@ class AnalysisCommandServiceDispatchClaimedJobTest {
                 mock(AnalysisProgressService.class),
                 analysisJobStatusService,
                 analysisTaskExecutor,
-                new AnalysisRetryProperties(3),
                 new AnalysisQueueProperties(100, 3),
-                meterRegistry
+                meterRegistry,
+                new AnalysisJobValidator(new AnalysisRetryProperties(3))
         );
     }
 

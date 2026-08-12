@@ -21,7 +21,14 @@ public class AdminAnalysisJobActionService {
     }
 
     @Transactional
-    public void requeueDeadLetterJob(Long adminId, String adminEmail, String jobId) {
+    public void requeueDeadLetterJob(
+            Long adminId,
+            String adminEmail,
+            String jobId,
+            String reason,
+            String requestId,
+            String incidentId
+    ) {
         analysisCommandService.requeueDeadLetterJob(jobId);
 
         adminAuditLogService.record(
@@ -30,7 +37,10 @@ public class AdminAnalysisJobActionService {
                 AdminAuditAction.REQUEUE_DEAD_LETTER_JOB,
                 AdminAuditTargetType.ANALYSIS_JOB,
                 jobId,
-                null
+                null,
+                reason,
+                requestId,
+                incidentId
         );
     }
 }

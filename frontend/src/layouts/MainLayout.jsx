@@ -49,7 +49,7 @@ function NavLinks({ isAuthenticated, user, logout, variant, onNavigate }) {
             </NavLink>
 
             <NavLink to="/pricing" className={linkClassName} onClick={onNavigate}>
-                요금제
+                베타 이용 안내
             </NavLink>
 
             {isAuthenticated ? (
@@ -261,14 +261,26 @@ function MainLayout() {
                 </AnimatePresence>
             </main>
 
-            <footer className="px-6 py-6 text-center text-sm text-text-muted">
-                <Link to="/privacy" className="text-text-secondary hover:text-primary-bright">
-                    개인정보처리방침
-                </Link>
-                <span aria-hidden="true"> · </span>
-                <Link to="/terms" className="text-text-secondary hover:text-primary-bright">
-                    이용약관
-                </Link>
+            {/* 이전에는 홈 페이지가 자체 footer를 하나 더 렌더링해 이 전역 footer와
+                연속으로 두 번 표시됐습니다(P1-05). 이제 footer는 이 한 곳에만 있습니다. */}
+            <footer className="border-t border-white/10 bg-background-primary px-6 py-10 text-text-primary sm:px-10 lg:px-16">
+                <div className="mx-auto flex max-w-[1120px] flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p className="text-base italic text-text-primary">AI Presentation Coach</p>
+                        <p className="mt-1 text-xs text-text-muted">
+                            &copy; {new Date().getFullYear()} AI Presentation Coach. All rights reserved.
+                        </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                        <Link to="/privacy" className="text-text-secondary hover:text-primary-bright">
+                            개인정보처리방침
+                        </Link>
+                        <Link to="/terms" className="text-text-secondary hover:text-primary-bright">
+                            이용약관
+                        </Link>
+                    </div>
+                </div>
             </footer>
         </div>
     );

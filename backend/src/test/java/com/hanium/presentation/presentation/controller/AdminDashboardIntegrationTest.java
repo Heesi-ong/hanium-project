@@ -8,6 +8,7 @@ import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -140,6 +141,14 @@ class AdminDashboardIntegrationTest {
         throw new AssertionError("사용자를 찾지 못했습니다: " + email);
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -150,8 +159,7 @@ class AdminDashboardIntegrationTest {
         restTemplate.postForEntity("/api/auth/signup", request, String.class);
 
         ResponseEntity<String> loginResponse = restTemplate.postForEntity("/api/auth/login", request, String.class);
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03

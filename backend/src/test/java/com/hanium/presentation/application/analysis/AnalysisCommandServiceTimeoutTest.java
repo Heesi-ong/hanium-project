@@ -94,9 +94,9 @@ class AnalysisCommandServiceTimeoutTest {
                 mock(AnalysisProgressService.class),
                 analysisJobStatusService,
                 analysisTaskExecutor,
-                new AnalysisRetryProperties(3),
                 new AnalysisQueueProperties(100, 3),
-                meterRegistry
+                meterRegistry,
+                new AnalysisJobValidator(new AnalysisRetryProperties(3))
         );
 
         // 마감 시각을 과거로 만들어(now + (-1)분) 첫 체크포인트에서 즉시 timeout이 나게 합니다.

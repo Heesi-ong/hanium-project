@@ -51,6 +51,9 @@ public class User {
     @Column(name = "onboarding_completed_at")
     private LocalDateTime onboardingCompletedAt;
 
+    @Column(name = "onboarding_skipped_at")
+    private LocalDateTime onboardingSkippedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     private UserRole role;
@@ -128,6 +131,19 @@ public class User {
         this.experienceLevel = experienceLevel;
         this.improvementGoal = improvementGoal;
         this.onboardingCompletedAt = LocalDateTime.now();
+        // 이전에 건너뛰었다가 나중에 완료한 경우, 더 이상 "건너뛴 상태"가 아니다.
+        this.onboardingSkippedAt = null;
+    }
+
+    // "나중에 하기"를 서버에 기록한다. 이전에는 클라이언트가 화면만 넘기고 서버 상태를
+    // 남기지 않아, 다음 로그인 때마다 다시 온보딩 화면으로 보내졌다(2026-08-06 수정).
+    public void skipOnboarding() {
+        // 완료된 온보딩을 계정 화면에서 편집하다 취소한 경우 기존 답변과 완료 상태를
+        // 보존한다. completed/skipped가 동시에 true가 되는 모순된 상태도 방지한다.
+        if (onboardingCompletedAt != null) {
+            return;
+        }
+        this.onboardingSkippedAt = LocalDateTime.now();
     }
 
     public String getPurpose() {
@@ -144,6 +160,10 @@ public class User {
 
     public LocalDateTime getOnboardingCompletedAt() {
         return onboardingCompletedAt;
+    }
+
+    public LocalDateTime getOnboardingSkippedAt() {
+        return onboardingSkippedAt;
     }
 
     public UserRole getRole() {

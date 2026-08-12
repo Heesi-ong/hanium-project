@@ -18,20 +18,21 @@ public class JwtCookieSupport {
     }
 
     public ResponseCookie createAccessTokenCookie(String token, Duration maxAge) {
-        return baseCookie(token)
+        return baseCookie(ACCESS_TOKEN_COOKIE_NAME, token)
+                .httpOnly(true)
                 .maxAge(maxAge)
                 .build();
     }
 
     public ResponseCookie expireAccessTokenCookie() {
-        return baseCookie("")
+        return baseCookie(ACCESS_TOKEN_COOKIE_NAME, "")
+                .httpOnly(true)
                 .maxAge(Duration.ZERO)
                 .build();
     }
 
-    private ResponseCookie.ResponseCookieBuilder baseCookie(String value) {
-        return ResponseCookie.from(ACCESS_TOKEN_COOKIE_NAME, value)
-                .httpOnly(true)
+    private ResponseCookie.ResponseCookieBuilder baseCookie(String name, String value) {
+        return ResponseCookie.from(name, value)
                 .secure(cookieSecure)
                 .sameSite("Lax")
                 .path("/");

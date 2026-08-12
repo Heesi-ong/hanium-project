@@ -610,13 +610,10 @@ frontend가 `/api`를 호출하는 경로는 배포 구성에 따라 다르며, 
 ## 9. 백엔드 주요 API
 
 허용된 `/api/auth/**`와 정확히 일치하는 `/api/health`를 제외한 `/api/**` 요청은 인증이 필요합니다.
-브라우저 프론트엔드는 로그인 응답의 `Set-Cookie: access_token=...` HttpOnly 쿠키를 사용하며,
-`withCredentials` 요청으로 세션을 복구합니다. 수동 API 호출이나 비브라우저 클라이언트는
-호환 경로로 아래 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증은 로그인 응답의 `Set-Cookie: access_token=...` HttpOnly 쿠키를 사용합니다.
+브라우저 프론트엔드는 `withCredentials` 요청으로 세션을 복구하며, `curl` 같은 수동
+클라이언트는 로그인 응답을 쿠키 파일에 저장한 뒤 후속 요청에 같은 쿠키를 전달해야 합니다.
+공개 로그인 API는 JavaScript나 응답 본문에 access token을 노출하지 않습니다.
 
 ### 9.1 Health Check
 
@@ -643,10 +640,21 @@ Request Body:
 }
 ```
 
-로그인 성공 시 `data.accessToken`이 반환되고, 동시에 `access_token` HttpOnly 쿠키가 설정됩니다.
-프론트엔드는 토큰을 `localStorage`에 저장하지 않고 쿠키 기반 세션을 사용합니다.
+로그인 성공 시 응답의 `data.user`에 사용자 정보가 반환되고 `access_token` HttpOnly 쿠키가
+설정됩니다. 응답 본문에는 `accessToken` 또는 `tokenType`이 포함되지 않으며, 프론트엔드는
+토큰을 `localStorage`에 저장하지 않고 쿠키 기반 세션만 사용합니다.
+
+```bash
+# 수동 호출 예시: 로그인 쿠키를 저장한 뒤 같은 쿠키 파일을 사용합니다.
+curl -c cookies.txt -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"password123"}' \
+  http://localhost:8080/api/auth/login
+curl -b cookies.txt http://localhost:8080/api/auth/me
+```
 
 - 인증 쿠키는 `HttpOnly`, `SameSite=Lax`, `Path=/`로 설정됩니다. local/dev HTTP 환경에서는 `SECURITY_JWT_COOKIE_SECURE=false`를 쓰고, prod 프로필과 `docker-compose.prod.yml` 운영 오버레이는 `SECURITY_JWT_COOKIE_SECURE=true`를 기본 적용합니다.
+- 쿠키가 첨부된 `POST`/`PUT`/`PATCH`/`DELETE` 요청은 `CORS_ALLOWED_ORIGINS`의 정확한 Origin 또는 브라우저의 `Sec-Fetch-Site: same-origin`을 요구합니다. 브라우저 Origin 누락과 `same-site` 교차 origin은 403(`AUTH_ORIGIN_FORBIDDEN`)으로 거부됩니다. 명시적 Bearer 인증과 Fetch Metadata가 없는 비브라우저 클라이언트는 이 쿠키 CSRF 경계를 적용받지 않습니다.
+- `GET /api/auth/me`는 세션 확인용 API입니다. 인증된 세션은 사용자 정보를, 익명·만료·무효 세션은 오류 대신 `200`과 `data: null`을 반환합니다. 다른 보호 API는 인증이 없으면 계속 401을 반환합니다.
 - 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일 기준과 IP 기준을 모두 적용해 rate limit이 걸립니다. 한도를 초과하면 429 응답을 반환합니다. 기본적으로 클라이언트 IP는 `request.getRemoteAddr()`를 사용하며, 신뢰 가능한 reverse proxy가 `X-Forwarded-For`를 덮어쓰는 배포에서만 `SECURITY_CLIENT_IP_TRUST_FORWARDED_HEADERS=true`로 forwarded header를 신뢰하세요. 운영 nginx는 기존 XFF 체인을 보존하지 않고 `$remote_addr`로 덮어써 스푸핑을 막습니다.
 - Swagger UI와 OpenAPI JSON은 local/dev 계약 확인 호환을 위해 기본 공개입니다. prod 프로필과 `docker-compose.prod.yml` 운영 오버레이는 `SECURITY_API_DOCS_PUBLIC_ENABLED=false`를 기본 적용해 `/v3/api-docs`와 `/swagger-ui/**`를 차단합니다.
 - 회원가입 비밀번호는 8~72자이면서 영문자와 숫자를 각각 1자 이상 포함해야 합니다(400 응답으로 거부됩니다). 이 복잡도 규칙은 회원가입에만 적용되며, 로그인 요청의 비밀번호 필드에는 적용되지 않습니다.
@@ -657,11 +665,7 @@ Request Body:
 POST /api/analysis/upload
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 Form Data:
 
@@ -675,11 +679,7 @@ file: 영상 파일
 POST /api/analysis/{jobId}/run
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 Request Body:
 
@@ -696,11 +696,7 @@ Request Body:
 POST /api/analysis/{jobId}/retry
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 Request Body:
 
@@ -718,7 +714,6 @@ Request Body:
 
 ```http
 POST /api/analysis/{sourceJobId}/video-llm-reanalysis
-Authorization: Bearer {accessToken}
 Idempotency-Key: {16~128자 고유 요청 키}
 Content-Type: application/json
 ```
@@ -745,11 +740,7 @@ Content-Type: application/json
 GET /api/analysis/{jobId}/status
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 ### 9.8 결과 목록 조회
 
@@ -758,11 +749,7 @@ GET /api/results
 GET /api/results?page=0&size=50
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 Query Parameters:
 
@@ -777,11 +764,7 @@ size: 페이지 크기 (기본값 50, 최대 100)
 GET /api/results/{jobId}
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 ### 9.10 결과 삭제
 
@@ -789,11 +772,7 @@ Authorization: Bearer {accessToken}
 DELETE /api/results/{jobId}
 ```
 
-인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 Bearer 헤더를 사용할 수 있습니다.
-
-```http
-Authorization: Bearer {accessToken}
-```
+인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
 ## 10. 분석 상태 흐름
 
@@ -903,8 +882,8 @@ backend(8080)가 아니라 frontend 자기 자신(5173)으로 보냅니다. 홈 
 4. 서버 및 엔진 상태 확인
 5. /upload 이동
 6. 영상 파일 선택
-7. 영상 업로드
-8. 분석 실행
+7. “업로드하고 분석 시작” 클릭
+8. 분석 진행 중 새로고침 후 상태·진행률 복구 확인
 9. 분석 완료 후 상세 페이지 자동 이동 확인
 10. /results 이동
 11. 결과 목록 확인
@@ -927,6 +906,10 @@ backend(8080)가 아니라 frontend 자기 자신(5173)으로 보냅니다. 홈 
   다른 호스트로 취급되니 반드시 `localhost`를 쓰세요). CI의 `frontend-e2e-full-stack`
   job에서 실제 docker compose 스택(MySQL/Redis/MinIO/backend/frontend, `--no-deps`라
   analysis-engine/video-llm-engine은 제외) 앞에서 자동 실행됩니다.
+- `analysis-pipeline.spec.js`: 실제 `sample-demo.mp4`를 화면의 단일 CTA로 업로드·접수하고,
+  분석 중 브라우저를 새로고침해 상태와 진행률이 복구되는지 확인한 뒤 실제 worker와
+  analysis-engine의 완료 결과·영상 접근 토큰까지 검증합니다. 외부 Video LLM/OpenAI는
+  비활성화하며 테스트 계정은 종료 시 삭제합니다.
 
 로컬에서 직접 돌리려면:
 
@@ -938,7 +921,19 @@ npm run test:e2e -- e2e/public-flow.spec.js
 # 로그인 필요 흐름까지(백엔드/DB가 이미 http://localhost:8080, 프론트가 http://localhost:5173에 떠 있어야 함)
 E2E_FULL_STACK=true BASE_URL=http://localhost:5173 API_BASE_URL=http://localhost:8080 \
   npm run test:e2e -- e2e/auth-api.spec.js e2e/protected-pages.spec.js
+
+# 실제 분석 파이프라인(전체 스택 기동 시 아래 provider 값을 명시해 로컬 .env 누수를 차단하세요)
+OPENAI_ENABLED=false FEEDBACK_LLM_PROVIDER=openai NVIDIA_API_KEY= \
+VIDEO_LLM_POLICY=DISABLED VIDEO_LLM_ENABLED=false docker compose up -d --wait
+
+E2E_ANALYSIS_PIPELINE=true BASE_URL=http://localhost:5173 \
+API_BASE_URL=http://localhost:8080 E2E_ANALYSIS_MAX_WAIT_MS=900000 \
+  npm run test:e2e -- e2e/analysis-pipeline.spec.js
 ```
+
+`OPENAI_ENABLED=false`만 지정해도 로컬 `.env`가 `FEEDBACK_LLM_PROVIDER=nvidia`와 NVIDIA
+키를 제공하면 피드백 단계가 실제 외부 provider를 사용할 수 있습니다. 비용 없는 E2E에서는
+provider를 `openai`로 고정하고 OpenAI/NVIDIA 키를 모두 비워야 합니다.
 
 ## 13. Git에 올리지 않는 항목
 
@@ -1071,6 +1066,7 @@ production 승격(`deploy` job)은 아직 없습니다 — production 호스트�
 - 온보딩 화면 및 비밀번호 재설정(이메일 발송)
 - AI 코치 대화(완료된 분석 결과 기반 채팅, 사용자별 일일 한도)
 - 관리자 대시보드/사용자 관리/감사 로그
+- 관리자 정지·강제 탈퇴·결과 삭제·수동 재큐잉은 대상과 영향을 확인한 뒤 필수 사유와 선택적 인시던트/문의 참조 ID를 입력해야 합니다. 서버가 부여한 `X-Request-Id`와 함께 감사로그에 구조화해 저장하며, 탈퇴 사용자 이메일·토큰·원본 오류 전문은 감사 `detail`에 복사하지 않습니다.
 - MySQL + Flyway 마이그레이션, MinIO 오브젝트 스토리지, Redis 기반 rate limiting
 - Docker Compose 기반 local/dev/prod 배포, Prometheus/Grafana 모니터링, 자동 백업
 

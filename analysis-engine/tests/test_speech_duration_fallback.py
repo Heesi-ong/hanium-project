@@ -8,7 +8,7 @@
 
 import pytest
 
-from app.api import basic_analysis as basic
+from app.services import audio_analysis, speech_to_text
 
 
 @pytest.mark.parametrize(
@@ -21,13 +21,13 @@ from app.api import basic_analysis as basic
     ],
 )
 def test_count_words_for_presentation(text, expected):
-    assert basic.count_words_for_presentation(text) == expected
+    assert speech_to_text.count_words_for_presentation(text) == expected
 
 
 def test_calculate_segment_speech_duration_ignores_negative_and_rounds():
-    assert basic.calculate_segment_speech_duration([]) == 0.0
+    assert audio_analysis.calculate_segment_speech_duration([]) == 0.0
     assert (
-        basic.calculate_segment_speech_duration(
+        audio_analysis.calculate_segment_speech_duration(
             [{"duration": 2.0}, {"duration": 3.55}, {"duration": -1}]
         )
         == 5.55
@@ -44,21 +44,21 @@ def test_calculate_segment_speech_duration_ignores_negative_and_rounds():
     ],
 )
 def test_estimate_word_count_uses_130_wpm_baseline(speech_duration_sec, expected):
-    assert basic.estimate_word_count(speech_duration_sec) == expected
+    assert audio_analysis.estimate_word_count(speech_duration_sec) == expected
 
 
 @pytest.mark.parametrize(
     ("duration_sec", "expected"),
     [
         (0, 0),
-        (10, 1),   # 20초 미만이어도 최소 1
+        (10, 1),  # 20초 미만이어도 최소 1
         (20, 1),
         (45, 2),
         (60, 3),
     ],
 )
 def test_estimate_silence_count_one_per_20s_with_floor(duration_sec, expected):
-    assert basic.estimate_silence_count(duration_sec) == expected
+    assert audio_analysis.estimate_silence_count(duration_sec) == expected
 
 
 @pytest.mark.parametrize(
@@ -70,15 +70,17 @@ def test_estimate_silence_count_one_per_20s_with_floor(duration_sec, expected):
         (40, 60, 1),
     ],
 )
-def test_estimate_filler_count_is_2_5_percent_of_words(word_count, duration_sec, expected):
-    assert basic.estimate_filler_count(word_count, duration_sec) == expected
+def test_estimate_filler_count_is_2_5_percent_of_words(
+    word_count, duration_sec, expected
+):
+    assert audio_analysis.estimate_filler_count(word_count, duration_sec) == expected
 
 
 def test_analyze_speech_from_video_duration_60s_snapshot():
     audio_extraction_result = {"status": "ok"}
     stt_result = {"success": False, "reason": "stt_failed"}
 
-    result = basic.analyze_speech_from_video_duration(
+    result = audio_analysis.analyze_speech_from_video_duration(
         duration_sec=60,
         audio_extraction_result=audio_extraction_result,
         stt_result=stt_result,
@@ -103,7 +105,7 @@ def test_analyze_speech_from_video_duration_60s_snapshot():
 
 
 def test_analyze_speech_from_video_duration_clamps_negative_duration():
-    result = basic.analyze_speech_from_video_duration(
+    result = audio_analysis.analyze_speech_from_video_duration(
         duration_sec=-10,
         audio_extraction_result={},
         stt_result={},
@@ -113,3 +115,16 @@ def test_analyze_speech_from_video_duration_clamps_negative_duration():
     assert result["estimatedSpeechDurationSec"] == 0.0
     assert result["estimatedWordCount"] == 0
     assert result["silenceCount"] == 0
+
+
+def test_analyze_speech_fallback_does_not_claim_failed_audio_was_extracted():
+    result = audio_analysis.analyze_speech(
+        duration_sec=30,
+        audio_extraction_result={"success": False, "audioPath": ""},
+        stt_result={"success": False, "error": "audio unavailable"},
+    )
+
+    assert result["analysisMethod"] == "audio_extracted_duration_based_estimation"
+    assert result["note"] == (
+        "오디오 추출 또는 STT에 실패하여 영상 길이 기반 추정값을 사용했습니다."
+    )

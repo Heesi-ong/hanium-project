@@ -174,16 +174,15 @@ public class AnalysisController {
             @RequestBody(required = false) AnalysisRunRequest request,
             Authentication authentication
     ) {
-        AnalysisRunRequest runRequest = request == null
-                ? new AnalysisRunRequest(true, true)
-                : request;
-
-        AnalysisStatusResponse response = analysisCommandService.retryAnalysis(
-                jobId,
-                getCurrentUserId(authentication),
-                runRequest.isUseVideoLlm(),
-                runRequest.isUseOpenAi()
-        );
+        Long ownerId = getCurrentUserId(authentication);
+        AnalysisStatusResponse response = request == null
+                ? analysisCommandService.retryAnalysis(jobId, ownerId)
+                : analysisCommandService.retryAnalysis(
+                        jobId,
+                        ownerId,
+                        request.useVideoLlm(),
+                        request.useOpenAi()
+                );
 
         return ApiResponse.success(
                 "분석 재시도가 완료되었습니다.",

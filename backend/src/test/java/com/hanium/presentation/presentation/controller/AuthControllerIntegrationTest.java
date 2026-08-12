@@ -128,7 +128,9 @@ class AuthControllerIntegrationTest {
 
         assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        String accessToken = loginBody.path("data").path("accessToken").asText();
+        assertThat(loginBody.path("data").has("accessToken")).isFalse();
+        assertThat(loginBody.path("data").has("tokenType")).isFalse();
+        String accessToken = extractAccessTokenFromCookie(loginResponse);
         assertThat(accessToken).isNotBlank();
         String loginCookie = findAccessTokenSetCookie(loginResponse);
         assertThat(loginCookie)
@@ -272,8 +274,7 @@ class AuthControllerIntegrationTest {
                 request,
                 String.class
         );
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        String accessToken = loginBody.path("data").path("accessToken").asText();
+        String accessToken = extractAccessTokenFromCookie(loginResponse);
 
         ResponseEntity<String> logoutWithoutTokenResponse = restTemplate.postForEntity(
                 "/api/auth/logout",
@@ -316,7 +317,7 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    void meReturnsCurrentUserWithBearerOrCookieAndRejectsAnonymous() throws Exception {
+    void meReturnsCurrentUserWithBearerOrCookieAndReturnsEmptySessionForAnonymous() throws Exception {
         Map<String, Object> request = Map.of(
                 "email", "me@example.com",
                 "password", "password123",
@@ -334,15 +335,17 @@ class AuthControllerIntegrationTest {
                 String.class
         );
 
-        assertThat(anonymousMeResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(anonymousMeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode anonymousMeBody = objectMapper.readTree(anonymousMeResponse.getBody());
+        assertThat(anonymousMeBody.path("success").asBoolean()).isTrue();
+        assertThat(anonymousMeBody.path("data").isNull()).isTrue();
 
         ResponseEntity<String> loginResponse = restTemplate.postForEntity(
                 "/api/auth/login",
                 request,
                 String.class
         );
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        String accessToken = loginBody.path("data").path("accessToken").asText();
+        String accessToken = extractAccessTokenFromCookie(loginResponse);
 
         HttpHeaders bearerHeaders = new HttpHeaders();
         bearerHeaders.setBearerAuth(accessToken);
@@ -393,8 +396,7 @@ class AuthControllerIntegrationTest {
                 request,
                 String.class
         );
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        String accessToken = loginBody.path("data").path("accessToken").asText();
+        String accessToken = extractAccessTokenFromCookie(loginResponse);
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(accessToken);
@@ -429,8 +431,7 @@ class AuthControllerIntegrationTest {
                 request,
                 String.class
         );
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        String accessToken = loginBody.path("data").path("accessToken").asText();
+        String accessToken = extractAccessTokenFromCookie(loginResponse);
 
         HttpHeaders cookieHeaders = new HttpHeaders();
         cookieHeaders.add(HttpHeaders.COOKIE, JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=" + accessToken);
@@ -459,10 +460,7 @@ class AuthControllerIntegrationTest {
                 request,
                 String.class
         );
-        String accessToken = objectMapper.readTree(loginResponse.getBody())
-                .path("data")
-                .path("accessToken")
-                .asText();
+        String accessToken = extractAccessTokenFromCookie(loginResponse);
         org.mockito.Mockito.doThrow(new com.hanium.presentation.global.config.JwtRevocationUnavailableException(
                 "revocation database down",
                 new IllegalStateException("db down")
@@ -515,10 +513,7 @@ class AuthControllerIntegrationTest {
                 ),
                 String.class
         );
-        String preResetAccessToken = objectMapper.readTree(preResetLoginResponse.getBody())
-                .path("data")
-                .path("accessToken")
-                .asText();
+        String preResetAccessToken = extractAccessTokenFromCookie(preResetLoginResponse);
 
         requestPasswordReset("reset-confirm@example.com");
         String resetLink = capturePasswordResetLink();
@@ -552,7 +547,9 @@ class AuthControllerIntegrationTest {
                 new HttpEntity<>(preResetTokenHeaders),
                 String.class
         );
-        assertThat(oldTokenMeResponse.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(oldTokenMeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        JsonNode oldTokenMeBody = objectMapper.readTree(oldTokenMeResponse.getBody());
+        assertThat(oldTokenMeBody.path("data").isNull()).isTrue();
 
         ResponseEntity<String> oldPasswordLoginResponse = restTemplate.postForEntity(
                 "/api/auth/login",
@@ -675,6 +672,14 @@ class AuthControllerIntegrationTest {
         ResponseEntity<String> limitedResponse = confirmPasswordReset("invalid-token-final", "newpassword123");
 
         assertThat(limitedResponse.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
     }
 
     private String findAccessTokenSetCookie(ResponseEntity<String> response) {

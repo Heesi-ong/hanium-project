@@ -93,6 +93,6 @@ describe("StatusPage", () => {
 
         expect(await screen.findByText("상태 조회 실패")).toBeInTheDocument();
         expect(screen.getByText("기본 분석")).toBeInTheDocument();
-        expect(screen.getAllByText("확인 불가")).toHaveLength(4);
+        expect(screen.getAllByText("확인 불가")).toHaveLength(5);
     });
 });

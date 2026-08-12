@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import UploadPage from "./UploadPage";
 
@@ -7,6 +8,7 @@ const analysisApiMock = vi.hoisted(() => ({
     cancelAnalysis: vi.fn(),
     getAnalysisProgress: vi.fn(),
     getAnalysisStatus: vi.fn(),
+    getServiceStatus: vi.fn(),
     runAnalysis: vi.fn(),
     uploadAnalysisVideo: vi.fn(),
 }));
@@ -23,6 +25,7 @@ vi.mock("../api/analysisApi", () => ({
     cancelAnalysis: analysisApiMock.cancelAnalysis,
     getAnalysisProgress: analysisApiMock.getAnalysisProgress,
     getAnalysisStatus: analysisApiMock.getAnalysisStatus,
+    getServiceStatus: analysisApiMock.getServiceStatus,
     runAnalysis: analysisApiMock.runAnalysis,
     uploadAnalysisVideo: analysisApiMock.uploadAnalysisVideo,
 }));
@@ -50,12 +53,14 @@ Object.defineProperty(window.URL, "revokeObjectURL", {
     value: revokeObjectURLMock,
 });
 
-function renderUploadPage() {
-    return render(
+function renderUploadPage({ strict = false } = {}) {
+    const page = (
         <MemoryRouter>
             <UploadPage />
         </MemoryRouter>
     );
+
+    return render(strict ? <StrictMode>{page}</StrictMode> : page);
 }
 
 function getDropZone() {
@@ -90,12 +95,15 @@ describe("UploadPage", () => {
         analysisApiMock.cancelAnalysis.mockReset();
         analysisApiMock.getAnalysisProgress.mockReset();
         analysisApiMock.getAnalysisStatus.mockReset();
+        analysisApiMock.getServiceStatus.mockReset();
         analysisApiMock.runAnalysis.mockReset();
         analysisApiMock.uploadAnalysisVideo.mockReset();
         toastMock.showToast.mockReset();
         confirmMock.confirm.mockReset();
         createObjectURLMock.mockReset();
         revokeObjectURLMock.mockReset();
+        localStorage.clear();
+        analysisApiMock.getServiceStatus.mockResolvedValue({ data: {} });
         createObjectURLMock.mockImplementation((file) => `blob:${file.name}`);
     });
 
@@ -269,13 +277,19 @@ describe("UploadPage", () => {
         renderUploadPage();
 
         dropFile(getDropZone(), createVideoFile());
-        fireEvent.click(await screen.findByRole("button", { name: "영상 업로드" }));
-
-        await screen.findByText(jobId);
-
-        fireEvent.click(await screen.findByRole("button", { name: "분석 실행" }));
+        fireEvent.click(await screen.findByRole("button", {
+            name: "업로드하고 분석 시작",
+        }));
 
         const cancelButton = await screen.findByRole("button", { name: "대기 중 취소" });
+        expect(analysisApiMock.uploadAnalysisVideo).toHaveBeenCalledTimes(1);
+        expect(analysisApiMock.runAnalysis).toHaveBeenCalledWith(jobId, {
+            useVideoLlm: true,
+            useOpenAi: true,
+        });
+        expect(
+            analysisApiMock.uploadAnalysisVideo.mock.invocationCallOrder[0]
+        ).toBeLessThan(analysisApiMock.runAnalysis.mock.invocationCallOrder[0]);
         fireEvent.click(cancelButton);
 
         expect(confirmMock.confirm).toHaveBeenCalled();
@@ -320,17 +334,242 @@ describe("UploadPage", () => {
         renderUploadPage();
 
         dropFile(getDropZone(), createVideoFile());
-        fireEvent.click(await screen.findByRole("button", { name: "영상 업로드" }));
-
-        await screen.findByText(jobId);
-
-        fireEvent.click(await screen.findByRole("button", { name: "분석 실행" }));
+        fireEvent.click(await screen.findByRole("button", {
+            name: "업로드하고 분석 시작",
+        }));
 
         // 아직 분석 결과 파일이 없는데도 상세 페이지로 이동하면 진행률 UI 대신 깨진
         // 에러 화면을 보게 되므로, 폴링 중에는 이 버튼이 비활성화돼 있어야 합니다.
-        const goToResultButton = await screen.findByRole("button", { name: "결과 페이지로 이동" });
         await waitFor(() => {
-            expect(goToResultButton).toBeDisabled();
+            expect(screen.queryByRole("button", {
+                name: "결과 페이지로 이동",
+            })).not.toBeInTheDocument();
+        });
+    });
+
+    it("recovers an uploaded running job after the page is remounted", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        analysisApiMock.uploadAnalysisVideo.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                originalFileName: "presentation.mp4",
+                storedFilePath: "/storage/uploads/recovery/presentation.mp4",
+                fileSize: 1024,
+            },
+        });
+
+        analysisApiMock.runAnalysis.mockResolvedValue({ data: {} });
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "BASIC_ANALYZING",
+                statusDescription: "기본 분석 중",
+                failReason: null,
+            },
+        });
+
+        const firstRender = renderUploadPage();
+        dropFile(getDropZone(), createVideoFile());
+        fireEvent.click(await screen.findByRole("button", {
+            name: "업로드하고 분석 시작",
+        }));
+        await screen.findByText(jobId);
+        await waitFor(() => {
+            expect(analysisApiMock.runAnalysis).toHaveBeenCalledWith(jobId, {
+                useVideoLlm: true,
+                useOpenAi: true,
+            });
+        });
+        firstRender.unmount();
+
+        const secondRender = renderUploadPage({ strict: true });
+
+        expect(await screen.findByText("이전에 업로드한 영상")).toBeInTheDocument();
+        expect(screen.getByText("새로고침 전 업로드")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "분석 진행 중..." })).toBeDisabled();
+        expect(analysisApiMock.getAnalysisStatus).toHaveBeenCalledWith(jobId);
+        expect(localStorage.getItem("presentationCoachActiveAnalysis")).toContain(jobId);
+
+        secondRender.unmount();
+    });
+
+    it("clears a persisted job that the current user cannot access", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        localStorage.setItem(
+            "presentationCoachActiveAnalysis",
+            JSON.stringify({ jobId })
+        );
+        analysisApiMock.getAnalysisStatus.mockRejectedValue({
+            error: "ANALYSIS_JOB_ACCESS_DENIED",
+            message: "본인이 소유한 분석 작업이 아닙니다.",
+        });
+
+        renderUploadPage();
+
+        expect(
+            await screen.findByText("본인이 소유한 분석 작업이 아닙니다.")
+        ).toBeInTheDocument();
+        expect(localStorage.getItem("presentationCoachActiveAnalysis")).toBeNull();
+        expect(screen.getByText("아직 업로드된 영상이 없습니다.")).toBeInTheDocument();
+    });
+
+    it("offers a retry action when a persisted job was uploaded but not started", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        localStorage.setItem(
+            "presentationCoachActiveAnalysis",
+            JSON.stringify({ jobId })
+        );
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                failReason: null,
+            },
+        });
+        analysisApiMock.runAnalysis.mockResolvedValue({ data: {} });
+
+        renderUploadPage();
+
+        const retryButton = await screen.findByRole("button", {
+            name: "분석 다시 시작",
+        });
+        fireEvent.click(retryButton);
+
+        await waitFor(() => {
+            expect(analysisApiMock.runAnalysis).toHaveBeenCalledWith(jobId, {
+                useVideoLlm: true,
+                useOpenAi: true,
+            });
+        });
+    });
+
+    it("continues tracking when the run request times out after server acceptance", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        analysisApiMock.uploadAnalysisVideo.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                originalFileName: "presentation.mp4",
+                fileSize: 1024,
+            },
+        });
+        analysisApiMock.runAnalysis.mockRejectedValue({
+            error: "REQUEST_TIMEOUT",
+            message: "요청 시간이 초과되었습니다.",
+        });
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "QUEUED",
+                statusDescription: "분석 대기 중",
+                failReason: null,
+            },
+        });
+        analysisApiMock.getAnalysisProgress.mockResolvedValue({
+            data: { status: "QUEUED", percent: 0, message: "분석 대기 중" },
+        });
+
+        renderUploadPage();
+        dropFile(getDropZone(), createVideoFile());
+        fireEvent.click(await screen.findByRole("button", {
+            name: "업로드하고 분석 시작",
+        }));
+
+        expect(await screen.findByRole("button", { name: "대기 중 취소" }))
+            .toBeEnabled();
+        expect(screen.queryByText("요청 시간이 초과되었습니다.")).not.toBeInTheDocument();
+        expect(toastMock.showToast).toHaveBeenCalledWith(
+            "분석 요청이 접수되어 상태 확인을 계속합니다.",
+            "info"
+        );
+        expect(screen.getByRole("button", { name: "분석 진행 중..." })).toBeDisabled();
+    });
+
+    it("keeps progress polling active after the run command has returned", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        analysisApiMock.uploadAnalysisVideo.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                originalFileName: "presentation.mp4",
+                fileSize: 1024,
+            },
+        });
+        analysisApiMock.runAnalysis.mockResolvedValue({ data: {} });
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "BASIC_ANALYZING",
+                statusDescription: "기본 분석 중",
+                failReason: null,
+            },
+        });
+        analysisApiMock.getAnalysisProgress.mockResolvedValue({
+            data: {
+                status: "BASIC_ANALYZING",
+                percent: 18,
+                message: "기본 분석 중",
+            },
+        });
+
+        renderUploadPage();
+        dropFile(getDropZone(), createVideoFile());
+        fireEvent.click(screen.getByRole("button", {
+            name: "업로드하고 분석 시작",
+        }));
+
+        await waitFor(() => {
+            expect(analysisApiMock.getAnalysisProgress).toHaveBeenCalledWith(jobId);
+        }, { timeout: 2000 });
+        expect(await screen.findByText("18% · 기본 분석 중")).toBeInTheDocument();
+    });
+
+    it("applies changed advanced options through the single CTA", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        analysisApiMock.uploadAnalysisVideo.mockResolvedValue({
+            data: {
+                jobId,
+                status: "UPLOADED",
+                statusDescription: "업로드 완료",
+                originalFileName: "presentation.mp4",
+                fileSize: 1024,
+            },
+        });
+        analysisApiMock.runAnalysis.mockResolvedValue({ data: {} });
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "QUEUED",
+                statusDescription: "분석 대기 중",
+                failReason: null,
+            },
+        });
+
+        renderUploadPage();
+        fireEvent.click(screen.getByRole("heading", {
+            name: /고급 분석 옵션/,
+        }));
+        fireEvent.click(await screen.findByRole("checkbox", {
+            name: /Video LLM 분석 사용/,
+        }));
+        fireEvent.click(screen.getByRole("checkbox", {
+            name: /AI 피드백 사용/,
+        }));
+        dropFile(getDropZone(), createVideoFile());
+        fireEvent.click(screen.getByRole("button", {
+            name: "업로드하고 분석 시작",
+        }));
+
+        await waitFor(() => {
+            expect(analysisApiMock.runAnalysis).toHaveBeenCalledWith(jobId, {
+                useVideoLlm: false,
+                useOpenAi: false,
+            });
         });
     });
 });

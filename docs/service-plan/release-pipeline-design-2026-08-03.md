@@ -58,6 +58,12 @@ Kubernetes는 도입하지 않는다. 현재 Compose 구조를 유지하며 이�
 
 - 새 워크플로 `.github/workflows/release.yml`을 만든다. `verify.yml`과 분리하는 이유: `verify.yml`은 "품질 게이트"(PR마다 계속 도는 테스트/빌드)이고, `release.yml`은 "이 커밋을 배포 가능한 산출물로 만드는 것"이라 책임이 다르다.
 - 트리거: `main` 브랜치에 push되고 `verify.yml`이 성공했을 때만 실행한다(`workflow_run` 트리거, `conclusion == 'success'` 조건). PR 단계에서는 push하지 않는다 — 아직 리뷰/머지되지 않은 이미지가 registry에 쌓이는 것을 막는다.
+- frontend 릴리스는 GitHub Repository Variables의 `VITE_BUSINESS_NAME`,
+  `VITE_BUSINESS_REPRESENTATIVE`, `VITE_BUSINESS_REGISTRATION_NUMBER`,
+  `VITE_BUSINESS_ADDRESS`, `VITE_BUSINESS_PHONE`, `VITE_BUSINESS_EMAIL`,
+  `VITE_PRIVACY_OFFICER_NAME`, `VITE_PRIVACY_OFFICER_EMAIL`,
+  `VITE_PRIVACY_OFFICER_PHONE`을 빌드 인수로 사용한다. 하나라도 비어 있으면 이미지 push 전에
+  실패하며, staging에서는 설정한 각 값이 실제 정적 산출물에 포함됐는지도 다시 검사한다.
 - job 구성:
   1. `build-and-push`: 6개 이미지를 매트릭스로 빌드하고 `sha-<short-sha>`와 `main` 두 태그로 push한다. `verify.yml`의 `docker-build` job과 같은 GHA 캐시 scope를 재사용해 중복 빌드 시간을 줄인다.
   2. `staging-smoke`: push된 이미지를 **다시 빌드하지 않고 pull**해서 `docker-compose.release.yml + docker-compose.yml`(env 오버레이) 조합으로 기동한 뒤, 기존 `backend-boot-smoke`/`frontend-e2e-full-stack`이 하던 것과 동일한 확인(health, migration, 로그인, 업로드→큐→결과)을 GitHub Actions 러너 위에서 수행한다. 이게 이번 설계의 "staging"이다 — 상시 떠 있는 서버가 아니라 매 릴리스마다 뜨고 사라지는 ephemeral 환경이며, **production에 실제로 올라갈 그 이미지(digest)를 그대로 검증**한다는 점이 지금 CI와의 핵심 차이다(지금은 `docker-build`와 `backend-boot-smoke`가 각자 따로 다시 빌드해서, 이론상 두 잡의 산출물이 100% 동일하다는 보장이 없다).
@@ -104,7 +110,9 @@ Kubernetes는 도입하지 않는다. 현재 Compose 구조를 유지하며 이�
 - [x] push된 이미지가 재빌드 없이 pull되어 staging smoke(health/migration/로그인/업로드→큐→결과)를 통과한다. (2026-08-03, 동일 커밋에서 `staging-smoke` 최초 성공)
 - [ ] production 호스트가 정해진 뒤, 승인된 SHA만 수동 `workflow_dispatch`로 production에 승격된다.
 - [ ] 이전 SHA로 재배포하는 rollback이 재빌드 없이 성공한다.
-- [ ] migration 호환성 확인 없이 rollback이 실행되지 않도록 runbook에 체크리스트가 있다.
+- [x] migration 호환성 확인 없이 rollback이 실행되지 않도록 runbook에 체크리스트가 있다. (2026-08-06,
+      `docs/ops/release-log.md`의 "Rollback 체크리스트" — migration diff 확인·파괴적 변경 판정을
+      먼저 체크하지 않으면 배포 명령 단계로 넘어가지 않는 순서형 체크리스트)
 
 ## 8. 2026-08-03 첫 실행 결과
 

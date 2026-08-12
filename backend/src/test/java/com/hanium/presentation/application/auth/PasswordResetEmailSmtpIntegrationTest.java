@@ -13,6 +13,7 @@ import com.hanium.presentation.domain.user.type.PasswordResetEmailTaskStatus;
 import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.SchedulerDistributedLock;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,9 +65,14 @@ import static org.mockito.Mockito.when;
         "password-reset.outbox.poll-interval-ms=3600000",
         "spring.mail.properties.mail.smtp.auth=false",
         "spring.mail.properties.mail.smtp.starttls.enable=false",
-        "spring.mail.properties.mail.smtp.connectiontimeout=1000",
-        "spring.mail.properties.mail.smtp.timeout=1000",
-        "spring.mail.properties.mail.smtp.writetimeout=1000"
+        // 1000ms였던 예전 값은 로컬에서는 문제없지만, CI 러너가 스레드 스케줄링/GC로 잠깐
+        // 지연되면(루프백 accept 스레드 기동 등) 실제 전송 성공 케이스도 타임아웃으로
+        // MailSendException이 나 flaky하게 실패했다(2026-08-03 서비스화 점검 P2-06). 실패를
+        // 검증하는 테스트는 타임아웃이 아니라 SMTP 451 응답으로 명시적으로 실패를 주입하므로,
+        // 이 값을 올려도 실패 경로 테스트 속도에는 영향이 없다.
+        "spring.mail.properties.mail.smtp.connectiontimeout=5000",
+        "spring.mail.properties.mail.smtp.timeout=5000",
+        "spring.mail.properties.mail.smtp.writetimeout=5000"
 })
 class PasswordResetEmailSmtpIntegrationTest {
 
@@ -194,7 +200,7 @@ class PasswordResetEmailSmtpIntegrationTest {
         ResponseEntity<String> requeueResponse = restTemplate.exchange(
                 "/api/admin/password-reset-email-tasks/" + task.getId() + "/requeue",
                 HttpMethod.POST,
-                new HttpEntity<>(headers),
+                new HttpEntity<>(Map.of("reason", "테스트 재큐잉"), headers),
                 String.class
         );
         assertThat(requeueResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -255,6 +261,14 @@ class PasswordResetEmailSmtpIntegrationTest {
         taskRepository.saveAndFlush(task);
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -264,10 +278,7 @@ class PasswordResetEmailSmtpIntegrationTest {
         restTemplate.postForEntity("/api/auth/signup", request, String.class);
         ResponseEntity<String> loginResponse =
                 restTemplate.postForEntity("/api/auth/login", request, String.class);
-        return objectMapper.readTree(loginResponse.getBody())
-                .path("data")
-                .path("accessToken")
-                .asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03

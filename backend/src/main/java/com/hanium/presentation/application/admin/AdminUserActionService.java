@@ -28,7 +28,14 @@ public class AdminUserActionService {
     }
 
     @Transactional
-    public void suspendUser(Long adminId, String adminEmail, Long targetUserId) {
+    public void suspendUser(
+            Long adminId,
+            String adminEmail,
+            Long targetUserId,
+            String reason,
+            String requestId,
+            String incidentId
+    ) {
         if (adminId.equals(targetUserId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE, "자기 자신은 정지할 수 없습니다.");
         }
@@ -44,7 +51,10 @@ public class AdminUserActionService {
                 AdminAuditAction.SUSPEND_USER,
                 AdminAuditTargetType.USER,
                 String.valueOf(targetUserId),
-                null
+                null,
+                reason,
+                requestId,
+                incidentId
         );
     }
 
@@ -61,20 +71,29 @@ public class AdminUserActionService {
                 AdminAuditAction.ACTIVATE_USER,
                 AdminAuditTargetType.USER,
                 String.valueOf(targetUserId),
+                null,
+                null,
+                null,
                 null
         );
     }
 
     @Transactional
-    public void forceWithdrawUser(Long adminId, String adminEmail, Long targetUserId) {
+    public void forceWithdrawUser(
+            Long adminId,
+            String adminEmail,
+            Long targetUserId,
+            String reason,
+            String requestId,
+            String incidentId
+    ) {
         if (adminId.equals(targetUserId)) {
             throw new BusinessException(ErrorCode.INVALID_INPUT_VALUE, "자기 자신은 강제 탈퇴시킬 수 없습니다.");
         }
 
-        User targetUser = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        String targetEmail = targetUser.getEmail();
-
+        if (!userRepository.existsById(targetUserId)) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
         userWithdrawalService.forceWithdraw(targetUserId);
 
         adminAuditLogService.record(
@@ -83,7 +102,10 @@ public class AdminUserActionService {
                 AdminAuditAction.FORCE_WITHDRAW_USER,
                 AdminAuditTargetType.USER,
                 String.valueOf(targetUserId),
-                targetEmail
+                null,
+                reason,
+                requestId,
+                incidentId
         );
     }
 }

@@ -1,9 +1,6 @@
-import base64
 from contextlib import contextmanager
-import json
 import logging
 import math
-import mimetypes
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,15 +8,14 @@ import tempfile
 import threading
 import time
 from typing import Any, Dict, Iterator
-from urllib.parse import urlparse
 
-import httpx
 import imageio_ffmpeg
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from app.core.logging_config import bind_job_id, bind_request_id
 from app.core.security import verify_internal_api_key
+from app.services import deadline, media_io, nvidia_provider, nvidia_response
 from app.core.settings import (
     NVIDIA_DEFAULT_MODEL as NVIDIA_DEFAULT_MODEL,
     VideoLlmSettings,
@@ -57,11 +53,6 @@ def resolve_video_llm_enabled() -> bool:
 def resolve_video_llm_backend() -> str:
     return get_settings().installed_backend
 
-
-NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES = 180 * 1024
-VIDEO_STREAM_CHUNK_SIZE_BYTES = 1024 * 1024
-NVIDIA_STATUS_POLL_MAX_ATTEMPTS = 10
-NVIDIA_STATUS_POLL_INTERVAL_SECONDS = 1
 
 # NVIDIA hosted API의 공식 SLA 문서는 없지만, 계정당 약 40 RPM을 공유한다는 보고가
 # 있습니다(docs/service-plan/video-llm-model-options.md 참고). 여러 분석 작업이 동시에
@@ -109,7 +100,9 @@ def validate_duration_sec(duration_sec: float | None) -> None:
         return
 
     if not math.isfinite(duration_sec) or duration_sec <= 0:
-        raise RuntimeError(f"durationSec must be a positive finite number, got {duration_sec!r}.")
+        raise RuntimeError(
+            f"durationSec must be a positive finite number, got {duration_sec!r}."
+        )
 
     max_duration_seconds = resolve_video_llm_max_duration_seconds()
     if duration_sec > max_duration_seconds:
@@ -118,76 +111,12 @@ def validate_duration_sec(duration_sec: float | None) -> None:
         )
 
 
-OBSERVATION_CATEGORIES = (
-    "eyeContact",
-    "facialExpression",
-    "gesture",
-    "posture",
-)
-SUMMARY_FIELDS = (
-    "visualDelivery",
-    "mainStrength",
-    "mainWeakness",
-)
-
-
-def resolve_video_max_size_bytes() -> int:
-    return get_settings().max_video_size_bytes
-
-
 def resolve_nvidia_timeout_seconds() -> float:
     return get_settings().nvidia_timeout_seconds
 
 
 def resolve_video_llm_total_timeout_seconds() -> float:
     return get_settings().total_timeout_seconds
-
-
-def remaining_deadline_timeout_seconds(
-    deadline_monotonic: float | None,
-    configured_timeout_seconds: float,
-    operation: str,
-) -> float:
-    if deadline_monotonic is None:
-        return configured_timeout_seconds
-
-    remaining_seconds = deadline_monotonic - time.monotonic()
-    if remaining_seconds <= 0:
-        raise TimeoutError(
-            "Video LLM 전체 요청 deadline을 초과했습니다. "
-            f"operation={operation}"
-        )
-    return min(configured_timeout_seconds, remaining_seconds)
-
-
-def ensure_within_deadline(
-    deadline_monotonic: float | None,
-    operation: str,
-) -> None:
-    remaining_deadline_timeout_seconds(
-        deadline_monotonic,
-        float("inf"),
-        operation,
-    )
-
-
-def resolve_allowed_video_base_dir() -> Path:
-    return get_settings().allowed_video_base_dir
-
-
-# request.videoPath는 backend가 만들어 보내는 값이라 지금은 항상 안전한 경로만 들어오지만,
-# analysis-engine의 job_id 검증(경로 이탈 방지)과 같은 이유로 이 엔진도 방어적으로 한 번 더
-# 검증합니다. 이 경로의 내용은 그대로 읽혀 제3자(NVIDIA)로 업로드되므로, backend가 버그나
-# 침해로 잘못된 경로를 보내는 경우 임의 파일이 외부로 유출되는 것을 막습니다.
-def validate_local_video_path(video_path: Path) -> None:
-    allowed_base_dir = resolve_allowed_video_base_dir()
-    resolved_path = video_path.resolve()
-
-    if resolved_path != allowed_base_dir and allowed_base_dir not in resolved_path.parents:
-        raise ValueError(
-            f"videoPath must be inside {allowed_base_dir}, got {video_path!r} "
-            f"(resolved to {resolved_path})."
-        )
 
 
 def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any]:
@@ -217,7 +146,10 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
             deadline_monotonic,
         )
 
-    with resolve_video_file(request, deadline_monotonic) as (video_path, content_type):
+    with media_io.resolve_video_file(request, deadline_monotonic) as (
+        video_path,
+        content_type,
+    ):
         model_json = call_nvidia_chat_completion(
             api_key=api_key,
             model=model,
@@ -233,7 +165,9 @@ def call_real_video_llm_model(request: VideoLlmAnalysisRequest) -> Dict[str, Any
             deadline_monotonic=deadline_monotonic,
         )
 
-    return normalize_video_llm_response(request.jobId, model, model_json, request.durationSec)
+    return nvidia_response.normalize_video_llm_response(
+        request.jobId, model, model_json, request.durationSec
+    )
 
 
 def call_real_video_llm_model_in_chunks(
@@ -254,7 +188,10 @@ def call_real_video_llm_model_in_chunks(
     """
     total_segment_count = math.ceil(request.durationSec / chunk_duration_seconds)
 
-    with resolve_video_file(request, deadline_monotonic) as (video_path, content_type):
+    with media_io.resolve_video_file(request, deadline_monotonic) as (
+        video_path,
+        content_type,
+    ):
         with split_video_into_segments(
             video_path,
             chunk_duration_seconds,
@@ -262,9 +199,11 @@ def call_real_video_llm_model_in_chunks(
             deadline_monotonic,
         ) as segment_paths:
             merged_observations: Dict[str, list] = {
-                category: [] for category in OBSERVATION_CATEGORIES
+                category: [] for category in nvidia_response.OBSERVATION_CATEGORIES
             }
-            summary_parts: Dict[str, list] = {field: [] for field in SUMMARY_FIELDS}
+            summary_parts: Dict[str, list] = {
+                field: [] for field in nvidia_response.SUMMARY_FIELDS
+            }
 
             if len(segment_paths) != total_segment_count:
                 raise RuntimeError(
@@ -294,19 +233,23 @@ def call_real_video_llm_model_in_chunks(
                     max_frames=request.maxFrames,
                     deadline_monotonic=deadline_monotonic,
                 )
-                segment_normalized = normalize_video_llm_response(
+                segment_normalized = nvidia_response.normalize_video_llm_response(
                     request.jobId, model, segment_model_json, segment_local_duration
                 )
 
-                for category in OBSERVATION_CATEGORIES:
+                for category in nvidia_response.OBSERVATION_CATEGORIES:
                     for item in segment_normalized["observations"][category]:
                         offset_item = dict(item)
-                        offset_item["startSec"] = round(item["startSec"] + segment_start_offset, 3)
-                        offset_item["endSec"] = round(item["endSec"] + segment_start_offset, 3)
+                        offset_item["startSec"] = round(
+                            item["startSec"] + segment_start_offset, 3
+                        )
+                        offset_item["endSec"] = round(
+                            item["endSec"] + segment_start_offset, 3
+                        )
                         merged_observations[category].append(offset_item)
 
                 segment_end_offset = segment_start_offset + segment_local_duration
-                for field in SUMMARY_FIELDS:
+                for field in nvidia_response.SUMMARY_FIELDS:
                     summary_parts[field].append(
                         f"[{segment_start_offset:.0f}-{segment_end_offset:.0f}s] "
                         f"{segment_normalized['globalSummary'][field]}"
@@ -321,7 +264,7 @@ def call_real_video_llm_model_in_chunks(
 
     # 세그먼트별로는 각자의 로컬 구간 길이로 이미 클램프했지만, 반올림/마지막 구간 오차에
     # 대비해 전체 영상 길이 기준으로 한 번 더 검증/클램프합니다.
-    return normalize_video_llm_response(
+    return nvidia_response.normalize_video_llm_response(
         request.jobId, model, merged_model_json, request.durationSec
     )
 
@@ -351,7 +294,7 @@ def split_video_into_segments(
         for index in range(segment_count):
             start_sec = index * chunk_duration_seconds
             output_path = output_dir / f"segment-{index}{suffix}"
-            effective_split_timeout_seconds = remaining_deadline_timeout_seconds(
+            effective_split_timeout_seconds = deadline.remaining_timeout_seconds(
                 deadline_monotonic,
                 split_timeout_seconds,
                 f"segment_split_{index}",
@@ -361,18 +304,23 @@ def split_video_into_segments(
                 [
                     ffmpeg_executable,
                     "-y",
-                    "-ss", str(start_sec),
-                    "-t", str(chunk_duration_seconds),
-                    "-i", str(video_path),
-                    "-c", "copy",
-                    "-avoid_negative_ts", "make_zero",
+                    "-ss",
+                    str(start_sec),
+                    "-t",
+                    str(chunk_duration_seconds),
+                    "-i",
+                    str(video_path),
+                    "-c",
+                    "copy",
+                    "-avoid_negative_ts",
+                    "make_zero",
                     str(output_path),
                 ],
                 check=True,
                 capture_output=True,
                 timeout=effective_split_timeout_seconds,
             )
-            ensure_within_deadline(
+            deadline.ensure_within(
                 deadline_monotonic,
                 f"segment_split_{index}",
             )
@@ -386,7 +334,9 @@ def split_video_into_segments(
                 )
 
         if not segment_paths:
-            raise RuntimeError("ffmpeg가 영상을 세그먼트로 나누지 못했습니다(생성된 세그먼트 없음).")
+            raise RuntimeError(
+                "ffmpeg가 영상을 세그먼트로 나누지 못했습니다(생성된 세그먼트 없음)."
+            )
 
         yield segment_paths
     finally:
@@ -407,17 +357,8 @@ def call_nvidia_chat_completion(
     max_frames: int,
     deadline_monotonic: float | None = None,
 ) -> Dict[str, Any]:
-    """세마포어로 보호된 단일 NVIDIA chat/completions 호출입니다. video_path가 가리키는
-    파일(전체 영상 또는 분할된 세그먼트) 하나를 보내고, 정규화 이전의 원본 model_json을
-    반환합니다 — 여러 세그먼트를 하나로 합치는 상위 호출부가 정규화/시간 오프셋을 책임집니다.
-    """
-    url = f"{base_url}/chat/completions"
-
-    # NVIDIA 계정 전체가 공유하는 순간 rate limit(약 40 RPM으로 알려짐)에 여러 분석
-    # 작업(과 한 작업 안의 여러 세그먼트)이 동시에 부딪히지 않도록, 실제 모델 호출 자체를
-    # 세마포어로 감쌉니다. 순번을 제한 시간 안에 확보하지 못하면 예외를 던져, 호출부의
-    # 기존 FALLBACK 폴백 경로를 그대로 타게 합니다.
-    semaphore_timeout_seconds = remaining_deadline_timeout_seconds(
+    """세마포어로 보호된 단일 NVIDIA chat/completions 호출입니다."""
+    semaphore_timeout_seconds = deadline.remaining_timeout_seconds(
         deadline_monotonic,
         resolve_real_model_semaphore_timeout_seconds(),
         "real_model_semaphore",
@@ -430,96 +371,28 @@ def call_nvidia_chat_completion(
         )
 
     try:
-        started_at = time.monotonic()
-        response_status = "not_sent"
-        asset_id = None
-
-        try:
-            effective_request_timeout_seconds = remaining_deadline_timeout_seconds(
-                deadline_monotonic,
-                timeout_seconds,
-                "nvidia_request",
-            )
-            with httpx.Client(timeout=effective_request_timeout_seconds) as client:
-                video_input = build_nvidia_video_input_from_local_file(
-                    client=client,
-                    api_key=api_key,
-                    asset_base_url=asset_base_url,
-                    video_path=video_path,
-                    content_type=content_type,
-                    description=f"video-llm-analysis jobId={job_id}",
-                    timeout_seconds=timeout_seconds,
-                    deadline_monotonic=deadline_monotonic,
-                )
-                asset_id = video_input.get("asset_id")
-                ensure_within_deadline(deadline_monotonic, "nvidia_asset_upload")
-                payload = build_nvidia_chat_completion_payload(
-                    duration_hint_sec, sample_fps, max_frames, model, video_input
-                )
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                }
-                if asset_id:
-                    headers["NVCF-INPUT-ASSET-REFERENCES"] = asset_id
-
-                response = client.post(
-                    url,
-                    headers=headers,
-                    json=payload,
-                    timeout=remaining_deadline_timeout_seconds(
-                        deadline_monotonic,
-                        timeout_seconds,
-                        "nvidia_chat_completion",
-                    ),
-                )
-                response_status = str(response.status_code)
-                if response.status_code == 202:
-                    response = poll_nvidia_chat_completion_result(
-                        client=client,
-                        base_url=base_url,
-                        api_key=api_key,
-                        initial_response=response,
-                        timeout_seconds=timeout_seconds,
-                        deadline_monotonic=deadline_monotonic,
-                    )
-                    response_status = f"202->{response.status_code}"
-                else:
-                    response.raise_for_status()
-                ensure_within_deadline(deadline_monotonic, "nvidia_response")
-        finally:
-            if asset_id:
-                try:
-                    cleanup_timeout_seconds = remaining_deadline_timeout_seconds(
-                        deadline_monotonic,
-                        timeout_seconds,
-                        "nvidia_asset_cleanup",
-                    )
-                    with httpx.Client(timeout=cleanup_timeout_seconds) as cleanup_client:
-                        delete_nvidia_asset(
-                            cleanup_client,
-                            api_key,
-                            asset_base_url,
-                            asset_id,
-                            cleanup_timeout_seconds,
-                            deadline_monotonic,
-                        )
-                except TimeoutError:
-                    logger.warning(
-                        "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_SKIPPED_DEADLINE assetId=%s",
-                        asset_id,
-                    )
-            elapsed_ms = int((time.monotonic() - started_at) * 1000)
-            logger.info(
-                "NVIDIA_VIDEO_LLM_USAGE jobId=%s model=%s generationMode=REAL status=%s elapsedMs=%s",
-                job_id,
+        provider_result = nvidia_provider.execute_chat_completion(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            asset_base_url=asset_base_url,
+            timeout_seconds=timeout_seconds,
+            job_id=job_id,
+            video_path=video_path,
+            content_type=content_type,
+            payload_builder=lambda video_input: build_nvidia_chat_completion_payload(
+                duration_hint_sec,
+                sample_fps,
+                max_frames,
                 model,
-                response_status,
-                elapsed_ms,
-            )
-
-        content = extract_chat_completion_content(response.json())
-        return parse_model_json(content)
+                video_input,
+            ),
+            deadline_monotonic=deadline_monotonic,
+        )
+        content = nvidia_response.extract_chat_completion_content(
+            provider_result.response_json
+        )
+        return nvidia_response.parse_model_json(content)
     finally:
         _REAL_MODEL_SEMAPHORE.release()
 
@@ -541,20 +414,20 @@ def build_nvidia_chat_completion_payload(
         "Analyze the uploaded presentation video for visible delivery behavior. "
         "Return JSON with this exact shape: "
         "{"
-        "\"observations\":{"
-        "\"eyeContact\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
-        "\"description\":\"string\",\"confidence\":0.0}],"
-        "\"facialExpression\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
-        "\"description\":\"string\",\"confidence\":0.0}],"
-        "\"gesture\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
-        "\"description\":\"string\",\"confidence\":0.0}],"
-        "\"posture\":[{\"startSec\":0,\"endSec\":0,\"label\":\"string\","
-        "\"description\":\"string\",\"confidence\":0.0}]"
+        '"observations":{'
+        '"eyeContact":[{"startSec":0,"endSec":0,"label":"string",'
+        '"description":"string","confidence":0.0}],'
+        '"facialExpression":[{"startSec":0,"endSec":0,"label":"string",'
+        '"description":"string","confidence":0.0}],'
+        '"gesture":[{"startSec":0,"endSec":0,"label":"string",'
+        '"description":"string","confidence":0.0}],'
+        '"posture":[{"startSec":0,"endSec":0,"label":"string",'
+        '"description":"string","confidence":0.0}]'
         "},"
-        "\"globalSummary\":{"
-        "\"visualDelivery\":\"string\","
-        "\"mainStrength\":\"string\","
-        "\"mainWeakness\":\"string\""
+        '"globalSummary":{'
+        '"visualDelivery":"string",'
+        '"mainStrength":"string",'
+        '"mainWeakness":"string"'
         "}"
         "}. "
         "Use seconds from the start of the video. Keep confidence between 0 and 1. "
@@ -613,75 +486,6 @@ def build_nvidia_chat_completion_payload(
     }
 
 
-def build_nvidia_video_input_from_local_file(
-    client: httpx.Client,
-    api_key: str,
-    asset_base_url: str,
-    video_path: Path,
-    content_type: str,
-    description: str,
-    timeout_seconds: float = 120,
-    deadline_monotonic: float | None = None,
-) -> Dict[str, str | None]:
-    video_size = video_path.stat().st_size
-    max_size = resolve_video_max_size_bytes()
-    if video_size > max_size:
-        raise ValueError(
-            "Video file exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
-            f"({video_size} bytes > {max_size} bytes)."
-        )
-
-    if video_size <= NVCF_INLINE_ASSET_SIZE_LIMIT_BYTES:
-        encoded = base64.b64encode(video_path.read_bytes()).decode("ascii")
-        return {
-            "url": f"data:{content_type};base64,{encoded}",
-            "asset_id": None,
-            "content_type": content_type,
-        }
-
-    asset_id, upload_url = create_nvidia_asset(
-        client,
-        api_key,
-        asset_base_url,
-        content_type,
-        description,
-        timeout_seconds,
-        deadline_monotonic,
-    )
-    try:
-        upload_video_to_asset(
-            client,
-            upload_url,
-            video_path,
-            content_type,
-            description,
-            timeout_seconds,
-            deadline_monotonic,
-        )
-    except Exception:
-        try:
-            delete_nvidia_asset(
-                client,
-                api_key,
-                asset_base_url,
-                asset_id,
-                timeout_seconds,
-                deadline_monotonic,
-            )
-        except TimeoutError:
-            logger.warning(
-                "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_SKIPPED_DEADLINE assetId=%s",
-                asset_id,
-            )
-        raise
-
-    return {
-        "url": f"data:{content_type};asset_id,{asset_id}",
-        "asset_id": asset_id,
-        "content_type": content_type,
-    }
-
-
 # 이보다 짧은 영상에는 3구간 강제 분할을 적용하지 않습니다. 원래 3구간 강제 프롬프트는
 # 60초/120초 영상에서 모델이 관찰을 [0, duration] 하나로 뭉개버리는 문제(구간 분할
 # 실패)에 대응하려고 도입했습니다(docs/service-plan/video-llm-model-options.md 5절
@@ -722,517 +526,9 @@ def build_duration_prompt(duration_sec: float | None) -> str:
     )
 
 
-VIDEO_DOWNLOAD_TIMEOUT_SECONDS = 60.0
-
-
-@contextmanager
-def resolve_video_file(
-    request: VideoLlmAnalysisRequest,
-    deadline_monotonic: float | None = None,
-) -> Iterator[tuple[Path, str]]:
-    """MinIO 영상은 임시 파일로 스트리밍하고 사용 직후 삭제합니다.
-
-    URL 다운로드가 실패하면 공유 스토리지의 기존 로컬 경로를 사용합니다.
-    """
-    downloaded = None
-    if request.videoDownloadUrl:
-        downloaded = download_video_to_temp_file(
-            request.jobId,
-            request.videoDownloadUrl,
-            request.videoPath,
-            deadline_monotonic,
-        )
-
-    if downloaded is None:
-        ensure_within_deadline(deadline_monotonic, "video_file_resolution")
-        local_path = Path(request.videoPath)
-        validate_local_video_path(local_path)
-        content_type = mimetypes.guess_type(local_path.name)[0] or "video/mp4"
-        yield local_path, content_type
-        return
-
-    downloaded_path, content_type = downloaded
-    try:
-        yield downloaded_path, content_type
-    finally:
-        downloaded_path.unlink(missing_ok=True)
-
-
-def resolve_allowed_download_hosts() -> set[str]:
-    return set(get_settings().allowed_download_hosts)
-
-
-def _download_url_host_port(parsed) -> str:
-    default_port = 443 if parsed.scheme == "https" else 80
-    port = parsed.port or default_port
-    return f"{parsed.hostname}:{port}".lower()
-
-
-# videoDownloadUrl(backend가 만드는 MinIO presigned URL)이 신뢰할 수 있는 내부 MinIO
-# 엔드포인트만 가리키도록 강제한다. scheme/netloc만 확인하던 기존 검증은 backend가
-# 침해되거나 버그로 임의 URL을 보낼 경우 이 엔진이 내부망 스캔이나 클라우드 메타데이터
-# 엔드포인트 접근에 악용되는 것을 막지 못했다(2026-07-23 코드 리뷰 P1-04). 이 값은 항상
-# 고정된 MinIO 엔드포인트 하나만 가리켜야 정상이므로, host:port 허용 목록으로 제한한다
-# (analysis-engine의 app/core/network_security.py와 동일한 검증 방식).
-def validate_video_download_url(video_download_url: str) -> None:
-    parsed = urlparse(video_download_url)
-
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError(
-            f"videoDownloadUrl must be an absolute http(s) URL, got {video_download_url!r}."
-        )
-
-    allowed_hosts = resolve_allowed_download_hosts()
-    host_port = _download_url_host_port(parsed)
-
-    if host_port not in allowed_hosts:
-        raise ValueError(
-            f"videoDownloadUrl host {host_port!r} is not in VIDEO_LLM_ALLOWED_DOWNLOAD_HOSTS "
-            f"({sorted(allowed_hosts)!r})."
-        )
-
-
-def download_video_to_temp_file(
-    job_id: str,
-    video_download_url: str,
-    original_video_path: str,
-    deadline_monotonic: float | None = None,
-) -> tuple[Path, str] | None:
-    suffix = Path(original_video_path).suffix or ".mp4"
-    temp_path: Path | None = None
-    max_size = resolve_video_max_size_bytes()
-
-    try:
-        validate_video_download_url(video_download_url)
-
-        with tempfile.NamedTemporaryFile(
-            prefix=f"video-llm-{job_id}-",
-            suffix=suffix,
-            delete=False,
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-
-            # follow_redirects=False(명시): 리다이렉트를 자동으로 따라가면 허용 목록
-            # 검증을 우회해 다른 호스트로 요청이 새어나갈 수 있으므로, 라이브러리 기본값에
-            # 기대는 대신 명시적으로 끄고 리다이렉트 응답 자체를 아래에서 거부한다.
-            effective_download_timeout_seconds = remaining_deadline_timeout_seconds(
-                deadline_monotonic,
-                VIDEO_DOWNLOAD_TIMEOUT_SECONDS,
-                "video_download",
-            )
-            with httpx.Client(
-                timeout=effective_download_timeout_seconds, follow_redirects=False
-            ) as client:
-                with client.stream("GET", video_download_url) as response:
-                    if 300 <= response.status_code < 400:
-                        raise ValueError(
-                            f"videoDownloadUrl returned a redirect ({response.status_code}), "
-                            "which is not allowed."
-                        )
-
-                    response.raise_for_status()
-                    content_length = response.headers.get("content-length")
-                    if content_length is not None and int(content_length) > max_size:
-                        raise ValueError(
-                            "Downloaded video exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
-                            f"({content_length} bytes > {max_size} bytes)."
-                        )
-
-                    downloaded_size = 0
-                    for chunk in response.iter_bytes(chunk_size=VIDEO_STREAM_CHUNK_SIZE_BYTES):
-                        ensure_within_deadline(deadline_monotonic, "video_download")
-                        if not chunk:
-                            continue
-                        downloaded_size += len(chunk)
-                        if downloaded_size > max_size:
-                            raise ValueError(
-                                "Downloaded video exceeds VIDEO_LLM_MAX_VIDEO_SIZE_MB "
-                                f"({downloaded_size} bytes > {max_size} bytes)."
-                            )
-                        temp_file.write(chunk)
-
-                    if downloaded_size == 0:
-                        raise ValueError("Downloaded video is empty.")
-
-                    content_type = response.headers.get("content-type") or "video/mp4"
-
-        return temp_path, content_type
-
-    except Exception as exception:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-        logger.warning(
-            "(%s) MinIO 다운로드 URL 요청 실패, 로컬 경로로 폴백합니다: %s",
-            job_id,
-            exception,
-        )
-        return None
-
-
-
-
-def create_nvidia_asset(
-    client: httpx.Client,
-    api_key: str,
-    asset_base_url: str,
-    content_type: str,
-    description: str,
-    timeout_seconds: float = 120,
-    deadline_monotonic: float | None = None,
-) -> tuple[str, str]:
-    response = client.post(
-        f"{asset_base_url}/assets",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "contentType": content_type,
-            "description": description,
-        },
-        timeout=remaining_deadline_timeout_seconds(
-            deadline_monotonic,
-            timeout_seconds,
-            "nvidia_asset_create",
-        ),
-    )
-    response.raise_for_status()
-    response_json = response.json()
-
-    asset_id = response_json.get("assetId")
-    upload_url = response_json.get("uploadUrl")
-    if not isinstance(asset_id, str) or not asset_id.strip():
-        raise ValueError("NVIDIA asset create response is missing assetId.")
-    if not isinstance(upload_url, str) or not upload_url.strip():
-        raise ValueError("NVIDIA asset create response is missing uploadUrl.")
-
-    return asset_id.strip(), upload_url.strip()
-
-
-def upload_video_to_asset(
-    client: httpx.Client,
-    upload_url: str,
-    video_path: Path,
-    content_type: str,
-    description: str,
-    timeout_seconds: float = 120,
-    deadline_monotonic: float | None = None,
-) -> None:
-    video_size = video_path.stat().st_size
-    response = client.put(
-        upload_url,
-        headers={
-            "Content-Type": content_type,
-            "Content-Length": str(video_size),
-            "x-amz-meta-nvcf-asset-description": description,
-        },
-        content=iter_file_chunks(video_path),
-        timeout=remaining_deadline_timeout_seconds(
-            deadline_monotonic,
-            timeout_seconds,
-            "nvidia_asset_upload",
-        ),
-    )
-    response.raise_for_status()
-
-
-def iter_file_chunks(video_path: Path) -> Iterator[bytes]:
-    with video_path.open("rb") as video_file:
-        while chunk := video_file.read(VIDEO_STREAM_CHUNK_SIZE_BYTES):
-            yield chunk
-
-
-def delete_nvidia_asset(
-    client: httpx.Client,
-    api_key: str,
-    asset_base_url: str,
-    asset_id: str,
-    timeout_seconds: float = 120,
-    deadline_monotonic: float | None = None,
-) -> None:
-    try:
-        response = client.delete(
-            f"{asset_base_url}/assets/{asset_id}",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-            },
-            timeout=remaining_deadline_timeout_seconds(
-                deadline_monotonic,
-                timeout_seconds,
-                "nvidia_asset_cleanup",
-            ),
-        )
-        response.raise_for_status()
-    except TimeoutError:
-        raise
-    except Exception:
-        logger.warning(
-            "NVIDIA_VIDEO_LLM_ASSET_CLEANUP_FAILED assetId=%s",
-            asset_id,
-            exc_info=True,
-        )
-
-
-def poll_nvidia_chat_completion_result(
-    client: httpx.Client,
-    base_url: str,
-    api_key: str,
-    initial_response: httpx.Response,
-    timeout_seconds: float = 120,
-    deadline_monotonic: float | None = None,
-) -> httpx.Response:
-    request_id = extract_nvidia_request_id(initial_response)
-    poll_url = f"{base_url}/status/{request_id}"
-
-    for _ in range(NVIDIA_STATUS_POLL_MAX_ATTEMPTS):
-        poll_sleep_seconds = remaining_deadline_timeout_seconds(
-            deadline_monotonic,
-            NVIDIA_STATUS_POLL_INTERVAL_SECONDS,
-            "nvidia_status_poll",
-        )
-        time.sleep(poll_sleep_seconds)
-        ensure_within_deadline(deadline_monotonic, "nvidia_status_poll")
-        poll_response = client.get(
-            poll_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Accept": "application/json",
-            },
-            timeout=remaining_deadline_timeout_seconds(
-                deadline_monotonic,
-                timeout_seconds,
-                "nvidia_status_poll_request",
-            ),
-        )
-        if poll_response.status_code == 200:
-            return poll_response
-        if poll_response.status_code == 202:
-            continue
-        poll_response.raise_for_status()
-
-    raise TimeoutError(
-        "NVIDIA chat completion result did not finish within "
-        f"{NVIDIA_STATUS_POLL_MAX_ATTEMPTS} polling attempts."
-    )
-
-
-def extract_nvidia_request_id(response: httpx.Response) -> str:
-    try:
-        response_json = response.json()
-    except json.JSONDecodeError as exc:
-        raise ValueError("NVIDIA 202 response body is not valid JSON.") from exc
-
-    if not isinstance(response_json, dict):
-        raise ValueError("NVIDIA 202 response body must be a JSON object.")
-
-    request_id = response_json.get("requestId")
-    if not isinstance(request_id, str) or not request_id.strip():
-        raise ValueError("NVIDIA 202 response is missing requestId.")
-
-    return request_id.strip()
-
-
-def extract_chat_completion_content(response_json: Dict[str, Any]) -> str:
-    try:
-        content = response_json["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise ValueError("NVIDIA response is missing choices[0].message.content.") from exc
-
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        text_parts = [
-            part.get("text", "")
-            for part in content
-            if isinstance(part, dict) and part.get("type") == "text"
-        ]
-        joined = "".join(text_parts).strip()
-        if joined:
-            return joined
-
-    raise ValueError("NVIDIA response content must be a JSON string.")
-
-
-def parse_model_json(content: str) -> Dict[str, Any]:
-    stripped = content.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        stripped = "\n".join(lines).strip()
-
-    try:
-        parsed = json.loads(stripped)
-    except json.JSONDecodeError as exc:
-        raise ValueError("NVIDIA response content is not valid JSON.") from exc
-
-    if not isinstance(parsed, dict):
-        raise ValueError("NVIDIA response JSON must be an object.")
-
-    return parsed
-
-
-def normalize_video_llm_response(
-    job_id: str,
-    model_name: str,
-    model_json: Dict[str, Any],
-    duration_sec: float | None = None,
+def build_mock_response(
+    request: VideoLlmAnalysisRequest, generation_mode: str
 ) -> Dict[str, Any]:
-    observations = model_json.get("observations")
-    if not isinstance(observations, dict):
-        raise ValueError("NVIDIA response is missing observations object.")
-
-    normalized_observations = {
-        category: normalize_observation_list(observations, category, duration_sec)
-        for category in OBSERVATION_CATEGORIES
-    }
-
-    global_summary = model_json.get("globalSummary")
-    if not isinstance(global_summary, dict):
-        raise ValueError("NVIDIA response is missing globalSummary object.")
-
-    normalized_summary = {}
-    for field in SUMMARY_FIELDS:
-        value = global_summary.get(field)
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(
-                f"NVIDIA response globalSummary.{field} must be a non-empty string."
-            )
-        normalized_summary[field] = value.strip()
-
-    return {
-        "jobId": job_id,
-        "status": "success",
-        "model": {
-            "name": model_name,
-            "version": "nvidia-nim",
-            "generationMode": "REAL",
-        },
-        "observations": normalized_observations,
-        "globalSummary": normalized_summary,
-    }
-
-
-def normalize_observation_list(
-    observations: Dict[str, Any],
-    category: str,
-    duration_sec: float | None,
-) -> list[Dict[str, Any]]:
-    items = observations.get(category)
-    if not isinstance(items, list):
-        raise ValueError(f"NVIDIA response observations.{category} must be a list.")
-
-    return [
-        normalize_observation_item(item, category, index, duration_sec)
-        for index, item in enumerate(items)
-    ]
-
-
-def normalize_observation_item(
-    item: Any,
-    category: str,
-    index: int,
-    duration_sec: float | None,
-) -> Dict[str, Any]:
-    if not isinstance(item, dict):
-        raise ValueError(f"NVIDIA response observations.{category}[{index}] must be an object.")
-
-    raw_start_sec = require_number(item, "startSec", category, index)
-    raw_end_sec = require_number(item, "endSec", category, index)
-
-    # 순서 검증은 클램프 전(원본 값) 기준으로 합니다. 예를 들어 startSec=-1.0,
-    # endSec=-3.5(둘 다 음수, 순서도 뒤집힘)는 각각 0으로 클램프되면 0 < 0이 되어
-    # "정상"처럼 보이지만, 실제로는 애초에 유효하지 않았던 값입니다. 클램프 결과가
-    # 우연히 뒤집힌 순서를 가려버리지 않도록 원본 값으로 먼저 걸러냅니다.
-    if raw_end_sec < raw_start_sec:
-        raise ValueError(
-            f"NVIDIA response observations.{category}[{index}] has endSec < startSec."
-        )
-
-    start_sec = clamp_observation_time(raw_start_sec, duration_sec, category, index, "startSec")
-    end_sec = clamp_observation_time(raw_end_sec, duration_sec, category, index, "endSec")
-
-    label = require_string(item, "label", category, index)
-    description = require_string(item, "description", category, index)
-    confidence = require_number(item, "confidence", category, index)
-    if confidence < 0 or confidence > 1:
-        raise ValueError(
-            f"NVIDIA response observations.{category}[{index}].confidence must be between 0 and 1."
-        )
-
-    return {
-        "startSec": start_sec,
-        "endSec": end_sec,
-        "label": label,
-        "description": description,
-        "confidence": confidence,
-    }
-
-
-def clamp_observation_time(
-    value: int | float,
-    duration_sec: float | None,
-    category: str,
-    index: int,
-    field: str,
-) -> int | float:
-    if value < 0:
-        logger.warning(
-            "NVIDIA_VIDEO_LLM_TIME_CLAMP category=%s index=%s field=%s original=%s durationSec=%s reason=negative",
-            category,
-            index,
-            field,
-            value,
-            duration_sec,
-        )
-        value = 0
-
-    if duration_sec is None or value <= duration_sec:
-        return value
-
-    logger.warning(
-        "NVIDIA_VIDEO_LLM_TIME_CLAMP category=%s index=%s field=%s original=%s durationSec=%s",
-        category,
-        index,
-        field,
-        value,
-        duration_sec,
-    )
-    return duration_sec
-
-
-def require_number(item: Dict[str, Any], field: str, category: str, index: int) -> int | float:
-    value = item.get(field)
-    # json.loads()는 표준 JSON 사양 밖의 확장 리터럴인 NaN/Infinity/-Infinity를 기본적으로
-    # 허용한다. 이런 값은 모든 비교 연산에서 항상 False가 되어 clamp_observation_time의
-    # 상/하한 검사와 confidence 범위 검사를 그대로 통과해버리므로, 검증 없이 최종 응답에
-    # 그대로 실려 backend로 전달된다(엄격한 JSON 파서에서 파싱 실패를 유발할 수 있고,
-    # 원래 이 값들이 걸러졌어야 할 mock FALLBACK 경로도 타지 않는다). 여기서 명시적으로
-    # 걸러낸다.
-    if (
-        not isinstance(value, (int, float))
-        or isinstance(value, bool)
-        or not math.isfinite(value)
-    ):
-        raise ValueError(
-            f"NVIDIA response observations.{category}[{index}].{field} must be a finite number."
-        )
-    return value
-
-
-def require_string(item: Dict[str, Any], field: str, category: str, index: int) -> str:
-    value = item.get(field)
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"NVIDIA response observations.{category}[{index}].{field} must be a non-empty string."
-        )
-    return value.strip()
-
-
-def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) -> Dict[str, Any]:
     return {
         "jobId": request.jobId,
         "status": "success",
@@ -1248,7 +544,7 @@ def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) 
                     "endSec": 18,
                     "label": "looking_down",
                     "description": "중간 구간에서 시선이 아래로 이동하는 장면이 관찰되었습니다.",
-                    "confidence": 0.74
+                    "confidence": 0.74,
                 }
             ],
             "facialExpression": [
@@ -1257,7 +553,7 @@ def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) 
                     "endSec": 35,
                     "label": "low_variation",
                     "description": "표정 변화가 적고 다소 경직되어 보입니다.",
-                    "confidence": 0.68
+                    "confidence": 0.68,
                 }
             ],
             "gesture": [
@@ -1266,7 +562,7 @@ def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) 
                     "endSec": 45,
                     "label": "low",
                     "description": "손동작 사용이 적어 강조 표현이 약하게 보입니다.",
-                    "confidence": 0.71
+                    "confidence": 0.71,
                 }
             ],
             "posture": [
@@ -1275,22 +571,22 @@ def build_mock_response(request: VideoLlmAnalysisRequest, generation_mode: str) 
                     "endSec": 60,
                     "label": "stable",
                     "description": "상체 자세는 전반적으로 안정적입니다.",
-                    "confidence": 0.81
+                    "confidence": 0.81,
                 }
-            ]
+            ],
         },
         "globalSummary": {
             "visualDelivery": "발표자는 전반적으로 안정적이지만 시선과 제스처에서 개선 여지가 있습니다.",
             "mainStrength": "상체 자세가 비교적 안정적입니다.",
-            "mainWeakness": "시선이 아래로 이동하는 구간과 제스처 부족이 관찰됩니다."
-        }
+            "mainWeakness": "시선이 아래로 이동하는 구간과 제스처 부족이 관찰됩니다.",
+        },
     }
 
 
 @router.post("/analyze")
 def analyze_video(
-        request: VideoLlmAnalysisRequest,
-        x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
+    request: VideoLlmAnalysisRequest,
+    x_request_id: str | None = Header(default=None, alias="X-Request-Id"),
 ) -> Dict[str, Any]:
     with bind_job_id(request.jobId), bind_request_id(x_request_id):
         settings = get_settings()

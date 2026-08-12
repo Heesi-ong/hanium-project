@@ -21,7 +21,14 @@ public class AdminPasswordResetEmailTaskActionService {
     }
 
     @Transactional
-    public void requeueDeadLetter(Long adminId, String adminEmail, Long taskId) {
+    public void requeueDeadLetter(
+            Long adminId,
+            String adminEmail,
+            Long taskId,
+            String reason,
+            String requestId,
+            String incidentId
+    ) {
         taskService.requeueDeadLetter(taskId);
         auditLogService.record(
                 adminId,
@@ -29,7 +36,10 @@ public class AdminPasswordResetEmailTaskActionService {
                 AdminAuditAction.REQUEUE_PASSWORD_RESET_EMAIL_TASK,
                 AdminAuditTargetType.PASSWORD_RESET_EMAIL_TASK,
                 String.valueOf(taskId),
-                null
+                null,
+                reason,
+                requestId,
+                incidentId
         );
     }
 }

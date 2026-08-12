@@ -1,8 +1,10 @@
 package com.hanium.presentation.application.result;
 
+import com.hanium.presentation.common.contract.ResultSchemaVersion;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
+import com.hanium.presentation.presentation.dto.response.ScoreSummary;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -22,6 +24,7 @@ public class ResultMergeService {
     ) {
         Map<String, Object> finalResult = new LinkedHashMap<>();
 
+        finalResult.put(ResultSchemaVersion.FIELD, ResultSchemaVersion.CURRENT);
         finalResult.put("jobId", jobId);
         finalResult.put("status", "COMPLETED");
         finalResult.put("createdAt", LocalDateTime.now().toString());
@@ -44,12 +47,13 @@ public class ResultMergeService {
     ) {
         Map<String, Object> failureResult = new LinkedHashMap<>();
 
+        failureResult.put(ResultSchemaVersion.FIELD, ResultSchemaVersion.CURRENT);
         failureResult.put("jobId", jobId);
         failureResult.put("status", "CANCELLED".equals(failedStep) ? "CANCELLED" : "FAILED");
         failureResult.put("createdAt", LocalDateTime.now().toString());
         failureResult.put("failedStep", failedStep == null ? "UNKNOWN" : failedStep);
         failureResult.put("failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason);
-        failureResult.put("scoreSummary", createFailedScoreSummary());
+        failureResult.put("scoreSummary", ScoreSummary.failed());
         failureResult.put("basicAnalysis", createFailedBasicAnalysis());
         failureResult.put("visualAnalysis", createFailedVisualAnalysis());
         failureResult.put("feedback", createFailedFeedback());
@@ -61,22 +65,21 @@ public class ResultMergeService {
         return failureResult;
     }
 
-    private Map<String, Object> createScoreSummary(
+    private ScoreSummary createScoreSummary(
             AnalysisEngineResponse analysisEngineResponse
     ) {
         Map<String, Object> score = nullSafeMap(analysisEngineResponse.score());
+        int totalScore = getNumberValue(score, "totalScore");
 
-        Map<String, Object> scoreSummary = new LinkedHashMap<>();
-
-        scoreSummary.put("totalScore", getOrDefault(score, "totalScore", 0));
-        scoreSummary.put("postureScore", getOrDefault(score, "postureScore", 0));
-        scoreSummary.put("gazeScore", getOrDefault(score, "gazeScore", 0));
-        scoreSummary.put("speechScore", getOrDefault(score, "speechScore", 0));
-        scoreSummary.put("gestureScore", getOrDefault(score, "gestureScore", 0));
-        scoreSummary.put("expressionScore", getOrDefault(score, "expressionScore", 0));
-        scoreSummary.put("level", resolveLevel(getNumberValue(score, "totalScore")));
-
-        return scoreSummary;
+        return new ScoreSummary(
+                totalScore,
+                getNumberValue(score, "postureScore"),
+                getNumberValue(score, "gazeScore"),
+                getNumberValue(score, "speechScore"),
+                getNumberValue(score, "gestureScore"),
+                getNumberValue(score, "expressionScore"),
+                resolveLevel(totalScore)
+        );
     }
 
     private Map<String, Object> createBasicAnalysis(
@@ -345,6 +348,10 @@ public class ResultMergeService {
             return "openai mock";
         }
 
+        if ("SKIPPED".equals(generationMode)) {
+            return "openai skipped";
+        }
+
         return "openai unknown";
     }
 
@@ -358,20 +365,6 @@ public class ResultMergeService {
         pipeline.put("finalMerge", resolvePipelineStatus(failedStep, "MERGING_RESULT"));
 
         return pipeline;
-    }
-
-    private Map<String, Object> createFailedScoreSummary() {
-        Map<String, Object> scoreSummary = new LinkedHashMap<>();
-
-        scoreSummary.put("totalScore", 0);
-        scoreSummary.put("postureScore", 0);
-        scoreSummary.put("gazeScore", 0);
-        scoreSummary.put("speechScore", 0);
-        scoreSummary.put("gestureScore", 0);
-        scoreSummary.put("expressionScore", 0);
-        scoreSummary.put("level", "FAILED");
-
-        return scoreSummary;
     }
 
     private Map<String, Object> createFailedBasicAnalysis() {
@@ -503,15 +496,6 @@ public class ResultMergeService {
         }
 
         return value;
-    }
-
-    private Object getOrDefault(
-            Map<String, Object> map,
-            String key,
-            Object defaultValue
-    ) {
-        Object value = map.get(key);
-        return value == null ? defaultValue : value;
     }
 
     private int getNumberValue(

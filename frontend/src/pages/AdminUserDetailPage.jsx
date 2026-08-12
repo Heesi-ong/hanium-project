@@ -9,11 +9,11 @@ import VideoLlmGenerationBadge from "../components/result-detail/VideoLlmGenerat
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import StatusBadge from "../components/StatusBadge";
-import { useConfirm } from "../context/ConfirmContext";
+import { useReasonPrompt } from "../context/ConfirmContext";
 
 function AdminUserDetailPage() {
     const { userId } = useParams();
-    const confirm = useConfirm();
+    const promptReason = useReasonPrompt();
     const [actionJobId, setActionJobId] = useState("");
     const [results, setResults] = useState([]);
     const [page, setPage] = useState(0);
@@ -101,10 +101,10 @@ function AdminUserDetailPage() {
     }
 
     async function handleDeleteResult(jobId) {
-        const confirmed = await confirm(
-            "이 분석 결과를 삭제하시겠습니까? 업로드 영상과 결과 파일도 함께 삭제되며 되돌릴 수 없습니다."
+        const actionContext = await promptReason(
+            `이 분석 결과(jobId: ${jobId})를 삭제합니다. 업로드 영상과 결과 파일도 함께 삭제되며 되돌릴 수 없습니다.`
         );
-        if (!confirmed) {
+        if (!actionContext) {
             return;
         }
 
@@ -112,7 +112,7 @@ function AdminUserDetailPage() {
             setActionJobId(jobId);
             setError("");
 
-            await deleteAdminResult(jobId);
+            await deleteAdminResult(jobId, actionContext);
 
             setResults((prevResults) => prevResults.filter((item) => item.jobId !== jobId));
         } catch (requestError) {

@@ -7,6 +7,7 @@ import ResultScoreChart from "../components/chart/ResultScoreChart";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import AnimatedSection from "../components/motion/AnimatedSection";
+import CollapsibleDetails from "../components/CollapsibleDetails";
 import AudioAnalysisSection from "../components/result-detail/AudioAnalysisSection";
 import CoachChatSection from "../components/result-detail/CoachChatSection";
 import EmotionAnalysisSection from "../components/result-detail/EmotionAnalysisSection";
@@ -420,10 +421,7 @@ function ResultDetailPage() {
             setRetrying(true);
             setError("");
 
-            await retryAnalysis(jobId, {
-                useVideoLlm: true,
-                useOpenAi: true,
-            });
+            await retryAnalysis(jobId);
 
             await fetchStatusOnce(jobId);
             startStatusPolling(jobId);
@@ -668,6 +666,40 @@ function ResultDetailPage() {
                 <EmptyState
                     title="삭제되었거나 존재하지 않는 결과입니다."
                     description="결과 목록에서 현재 접근 가능한 분석 결과를 다시 확인하세요."
+                />
+
+                <div className="button-row">
+                    <Link to="/results" className="primary-button">
+                        목록으로 이동
+                    </Link>
+                </div>
+            </section>
+        );
+    }
+
+    if (
+        !loading &&
+        !resultData &&
+        [
+            ERROR_CODES.INVALID_RESULT_SCHEMA,
+            ERROR_CODES.UNSUPPORTED_RESULT_SCHEMA,
+        ].includes(loadErrorCode)
+    ) {
+        const unsupported = loadErrorCode === ERROR_CODES.UNSUPPORTED_RESULT_SCHEMA;
+
+        return (
+            <section className="page-section">
+                <PageHeader
+                    eyebrow="Result Detail"
+                    title="분석 결과 상세"
+                    description={`현재 조회 대상 jobId: ${jobId}`}
+                />
+
+                <EmptyState
+                    title={unsupported
+                        ? "지원하지 않는 결과 형식입니다."
+                        : "결과 형식을 확인할 수 없습니다."}
+                    description={error}
                 />
 
                 <div className="button-row">
@@ -944,7 +976,13 @@ function ResultDetailPage() {
             </AnimatedSection>
 
             <AnimatedSection>
-                <OpenAiFeedbackStatusSection feedback={feedback} pipeline={pipeline} />
+                <CollapsibleDetails
+                    className="inquiry-id-details analysis-info-details"
+                    summary="분석 정보 — OpenAI/Video LLM 생성 방식 · 파이프라인 세부 정보"
+                >
+                    <OpenAiFeedbackStatusSection feedback={feedback} pipeline={pipeline} />
+                    <PipelineSection pipeline={pipeline} />
+                </CollapsibleDetails>
             </AnimatedSection>
 
             <AnimatedSection>
@@ -1029,9 +1067,6 @@ function ResultDetailPage() {
                 />
             </AnimatedSection>
 
-            <AnimatedSection>
-                <PipelineSection pipeline={pipeline} />
-            </AnimatedSection>
         </section>
     );
 }

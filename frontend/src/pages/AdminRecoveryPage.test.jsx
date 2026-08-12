@@ -13,10 +13,12 @@ const apiMock = vi.hoisted(() => ({
     requeueAdminPasswordResetEmailDeadLetter: vi.fn(),
 }));
 const confirmMock = vi.hoisted(() => vi.fn());
+const promptReasonMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/adminApi", () => apiMock);
 vi.mock("../context/ConfirmContext", () => ({
     useConfirm: () => confirmMock,
+    useReasonPrompt: () => promptReasonMock,
 }));
 
 function pagedResponse(content) {
@@ -36,6 +38,8 @@ describe("AdminRecoveryPage", () => {
         Object.values(apiMock).forEach((mockFunction) => mockFunction.mockReset());
         confirmMock.mockReset();
         confirmMock.mockResolvedValue(true);
+        promptReasonMock.mockReset();
+        promptReasonMock.mockResolvedValue({ reason: "테스트 사유", incidentId: "INC-2001" });
 
         apiMock.getAdminDeadLetterJobs.mockResolvedValue(pagedResponse([{
             jobId: "analysis-dead-1",
@@ -86,10 +90,23 @@ describe("AdminRecoveryPage", () => {
         fireEvent.click(within(emailSection).getByRole("button", { name: "다시 큐에 넣기" }));
 
         await waitFor(() => {
-            expect(apiMock.requeueAdminDeadLetterJob).toHaveBeenCalledWith("analysis-dead-1");
-            expect(apiMock.requeueAdminStorageDeletionDeadLetter).toHaveBeenCalledWith(11);
-            expect(apiMock.requeueAdminPasswordResetEmailDeadLetter).toHaveBeenCalledWith(21);
+            expect(apiMock.requeueAdminDeadLetterJob)
+                .toHaveBeenCalledWith("analysis-dead-1", { reason: "테스트 사유", incidentId: "INC-2001" });
+            expect(apiMock.requeueAdminStorageDeletionDeadLetter)
+                .toHaveBeenCalledWith(11, { reason: "테스트 사유", incidentId: "INC-2001" });
+            expect(apiMock.requeueAdminPasswordResetEmailDeadLetter)
+                .toHaveBeenCalledWith(21, { reason: "테스트 사유", incidentId: "INC-2001" });
         });
+    });
+
+    it("does not requeue a task when the reason prompt is cancelled", async () => {
+        promptReasonMock.mockResolvedValue(null);
+        renderPage();
+
+        fireEvent.click((await screen.findAllByRole("button", { name: "다시 큐에 넣기" }))[0]);
+
+        await waitFor(() => expect(promptReasonMock).toHaveBeenCalled());
+        expect(apiMock.requeueAdminDeadLetterJob).not.toHaveBeenCalled();
     });
 
     it("keeps other recovery queues usable when one queue fails", async () => {

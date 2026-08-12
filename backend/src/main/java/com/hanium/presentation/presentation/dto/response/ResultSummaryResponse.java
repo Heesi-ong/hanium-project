@@ -1,5 +1,6 @@
 package com.hanium.presentation.presentation.dto.response;
 
+import com.hanium.presentation.common.contract.ResultSchemaVersion;
 import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
@@ -22,7 +23,7 @@ public record ResultSummaryResponse(
         Long fileSize,
         LocalDateTime createdAt,
         LocalDateTime completedAt,
-        Map<String, Object> scoreSummary,
+        ScoreSummary scoreSummary,
         Map<String, Object> feedback,
         Map<String, Object> visualAnalysis,
         Map<String, Object> pipeline,
@@ -51,7 +52,7 @@ public record ResultSummaryResponse(
             UploadedVideo uploadedVideo,
             Map<String, Object> finalResult
     ) {
-        Map<String, Object> scoreSummary = extractScoreSummary(finalResult);
+        ScoreSummary scoreSummary = extractScoreSummary(finalResult);
         Map<String, Object> pipeline = extractPipeline(finalResult);
         Map<String, Object> feedback = extractFeedback(finalResult, pipeline);
         Map<String, Object> visualAnalysis = extractVisualAnalysisSummary(finalResult, pipeline);
@@ -129,7 +130,7 @@ public record ResultSummaryResponse(
                 uploadedVideo.getFileSize(),
                 analysisJob.getCreatedAt(),
                 analysisJob.getCompletedAt(),
-                createEmptyScoreSummary(),
+                ScoreSummary.empty(),
                 createUnknownFeedback(),
                 createUnknownVisualAnalysis(),
                 createUnknownPipeline(),
@@ -149,6 +150,10 @@ public record ResultSummaryResponse(
                 : new LinkedHashMap<>(finalResult);
         Map<String, Object> pipeline = extractPipeline(finalResult);
 
+        normalizedResult.put(
+                ResultSchemaVersion.FIELD,
+                ResultSchemaVersion.resolve(finalResult)
+        );
         normalizedResult.put("scoreSummary", extractScoreSummary(finalResult));
         normalizedResult.put("feedback", extractFeedback(finalResult, pipeline));
         normalizedResult.put("visualAnalysis", extractVisualAnalysisDetail(finalResult, pipeline));
@@ -157,20 +162,20 @@ public record ResultSummaryResponse(
         return normalizedResult;
     }
 
-    private static Map<String, Object> extractScoreSummary(
+    private static ScoreSummary extractScoreSummary(
             Map<String, Object> finalResult
     ) {
         if (finalResult == null) {
-            return createEmptyScoreSummary();
+            return ScoreSummary.empty();
         }
 
         Object scoreSummary = finalResult.get("scoreSummary");
 
-        if (scoreSummary instanceof Map<?, ?>) {
-            return JsonMapSupport.copyStringKeyedMap(scoreSummary);
+        if (scoreSummary instanceof Map<?, ?> rawMap) {
+            return ScoreSummary.from(rawMap);
         }
 
-        return createEmptyScoreSummary();
+        return ScoreSummary.empty();
     }
 
     private static Map<String, Object> extractFeedback(
@@ -336,20 +341,6 @@ public record ResultSummaryResponse(
         return createUnknownPipeline();
     }
 
-    private static Map<String, Object> createEmptyScoreSummary() {
-        Map<String, Object> scoreSummary = new LinkedHashMap<>();
-
-        scoreSummary.put("totalScore", 0);
-        scoreSummary.put("postureScore", 0);
-        scoreSummary.put("gazeScore", 0);
-        scoreSummary.put("speechScore", 0);
-        scoreSummary.put("gestureScore", 0);
-        scoreSummary.put("expressionScore", 0);
-        scoreSummary.put("level", "-");
-
-        return scoreSummary;
-    }
-
     private static Map<String, Object> createUnknownFeedback() {
         Map<String, Object> feedback = new LinkedHashMap<>();
 
@@ -443,10 +434,10 @@ public record ResultSummaryResponse(
     // 불필요한 이중 작업이 됩니다(값 자체는 정규화가 이미 끝나 있어 멱등이라 틀린 값이
     // 나오지는 않았지만, 낭비였습니다).
     static String resolveDataIssue(
-            Map<String, Object> scoreSummary,
+            ScoreSummary scoreSummary,
             Map<String, Object> feedback
     ) {
-        Object level = scoreSummary.get("level");
+        String level = scoreSummary.level();
         Object generationMode = feedback.get("generationMode");
         Object overall = feedback.get("overall");
 

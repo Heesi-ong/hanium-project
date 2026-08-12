@@ -3,10 +3,12 @@ package com.hanium.presentation.presentation.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.admin.repository.AdminAuditLogRepository;
+import com.hanium.presentation.domain.admin.type.AdminAuditAction;
 import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,16 +71,28 @@ class AdminUserForceWithdrawalIntegrationTest {
 
         HttpHeaders adminHeaders = new HttpHeaders();
         adminHeaders.setBearerAuth(adminToken);
+        adminHeaders.set("X-Request-Id", "withdraw-request-2001");
         ResponseEntity<String> withdrawResponse = restTemplate.exchange(
                 "/api/admin/users/" + member.getId() + "/withdraw",
                 HttpMethod.POST,
-                new HttpEntity<>(adminHeaders),
+                new HttpEntity<>(Map.of(
+                        "reason", "테스트 강제 탈퇴",
+                        "incidentId", "INC-2001"
+                ), adminHeaders),
                 String.class
         );
         assertThat(withdrawResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         assertThat(userRepository.findByEmail("member@example.com")).isEmpty();
-        assertThat(adminAuditLogRepository.findAll()).hasSize(1);
+        assertThat(adminAuditLogRepository.findAll())
+                .singleElement()
+                .satisfies(log -> {
+                    assertThat(log.getAction()).isEqualTo(AdminAuditAction.FORCE_WITHDRAW_USER);
+                    assertThat(log.getReason()).isEqualTo("테스트 강제 탈퇴");
+                    assertThat(log.getIncidentId()).isEqualTo("INC-2001");
+                    assertThat(log.getRequestId()).isEqualTo("withdraw-request-2001");
+                    assertThat(log.getDetail()).isNull();
+                });
 
         ResponseEntity<String> afterWithdraw = restTemplate.exchange(
                 "/api/results",
@@ -100,7 +114,7 @@ class AdminUserForceWithdrawalIntegrationTest {
         ResponseEntity<String> response = restTemplate.exchange(
                 "/api/admin/users/" + admin.getId() + "/withdraw",
                 HttpMethod.POST,
-                new HttpEntity<>(headers),
+                new HttpEntity<>(Map.of("reason", "테스트 강제 탈퇴"), headers),
                 String.class
         );
 
@@ -117,7 +131,7 @@ class AdminUserForceWithdrawalIntegrationTest {
         ResponseEntity<String> response = restTemplate.exchange(
                 "/api/admin/users/999999/withdraw",
                 HttpMethod.POST,
-                new HttpEntity<>(headers),
+                new HttpEntity<>(Map.of("reason", "테스트 강제 탈퇴"), headers),
                 String.class
         );
 
@@ -136,12 +150,20 @@ class AdminUserForceWithdrawalIntegrationTest {
         ResponseEntity<String> response = restTemplate.exchange(
                 "/api/admin/users/" + target.getId() + "/withdraw",
                 HttpMethod.POST,
-                new HttpEntity<>(headers),
+                new HttpEntity<>(Map.of("reason", "테스트 강제 탈퇴"), headers),
                 String.class
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(userRepository.findByEmail("target@example.com")).isPresent();
+    }
+
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
     }
 
     private String signupAndLogin(String email) throws Exception {
@@ -154,8 +176,7 @@ class AdminUserForceWithdrawalIntegrationTest {
         restTemplate.postForEntity("/api/auth/signup", request, String.class);
 
         ResponseEntity<String> loginResponse = restTemplate.postForEntity("/api/auth/login", request, String.class);
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03

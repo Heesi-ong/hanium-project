@@ -19,6 +19,10 @@ repositories {
     mavenCentral()
 }
 
+// Spring Boot 3.5.3 기본 Flyway 11.7.2는 MySQL 8.4를 검증 상한(8.3)보다
+// 새 버전으로 경고합니다. 같은 11.x 계열에서 MySQL 9.4까지 판정하는 최신 패치로 맞춥니다.
+ext['flyway.version'] = '11.20.3'
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
@@ -73,5 +77,27 @@ tasks.named('jacocoTestReport') {
     reports {
         xml.required = true   // CI 업로드/뱃지용
         html.required = true  // build/reports/jacoco/test/html/index.html
+    }
+}
+
+// coverage는 그동안 측정만 하고 최소 하락 기준이 없었다(2026-08-03 서비스화 점검 P2-06).
+// 현재 instruction coverage가 약 90%라 85%를 바닥선으로 둔다 — 실질적인 회귀만 잡아내고
+// 사소한 변동으로 매번 실패하지 않도록 현재 수준보다 약간 낮게 잡았다. CI(backend job)는
+// 전체 test 실행 직후 이 task를 별도로 돌린다. test에 finalizedBy로 자동 연결하지 않는
+// 이유는 CI가 이후 특정 통합 테스트만 --rerun-tasks로 다시 돌리는 단계가 있어(MinIO
+// 통합 테스트), 거기 걸리면 부분 실행 데이터만으로 커버리지가 오탐 실패하기 때문이다.
+tasks.named('jacocoTestCoverageVerification') {
+    dependsOn tasks.named('jacocoTestReport')
+    violationRules {
+        rule {
+            limit {
+                counter = 'INSTRUCTION'
+                minimum = 0.85
+            }
+            limit {
+                counter = 'LINE'
+                minimum = 0.85
+            }
+        }
     }
 }

@@ -11,6 +11,7 @@ import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.support.AsyncAnalysisTestSupport;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -225,6 +226,14 @@ class AnalysisRateLimitIntegrationTest {
         };
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -244,8 +253,7 @@ class AnalysisRateLimitIntegrationTest {
                 String.class
         );
 
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     private void createUploadedJob(String jobId, Long ownerId) {

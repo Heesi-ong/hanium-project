@@ -52,6 +52,16 @@ function renderResultListPageWithCompareRoute() {
     );
 }
 
+// 목록 화면의 문의용 ID 고급 검색은 기본적으로 접혀 있어, 그 안의 입력을 찾기 전에
+// 먼저 펼쳐야 합니다. jsdom은 실제 브라우저와 달리
+// <summary> 클릭 시 <details>의 open을 자동으로 토글하지 않으므로, CollapsibleDetails
+// 자체 테스트와 동일하게 open 속성 변경 + toggle 이벤트를 직접 시뮬레이션합니다.
+function openAdvancedFilters(container) {
+    const details = container.querySelector(".inquiry-id-details");
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+}
+
 describe("ResultListPage", () => {
     beforeEach(() => {
         analysisApiMock.deleteResult.mockReset();
@@ -79,6 +89,7 @@ describe("ResultListPage", () => {
                             model: "gpt-4.1-mini",
                             realApiUsed: true,
                             overall: "전체 피드백",
+                            improvements: ["시선 처리를 더 자연스럽게 개선해보세요."],
                         },
                     },
                     {
@@ -133,58 +144,64 @@ describe("ResultListPage", () => {
         });
     });
 
-    it("shows both OpenAI and Video LLM generation modes on result cards", async () => {
+    it("limits the default card to filename, date, score, improvement point and status", async () => {
         renderResultListPage();
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
-        expect(screen.getAllByText("실제 OpenAI").length).toBeGreaterThanOrEqual(1);
-        expect(screen.getByText("샘플 시각 분석")).toBeInTheDocument();
-        expect(screen.getByText("Video LLM · video-llm-engine mock")).toBeInTheDocument();
+        expect(screen.getAllByText("분석 완료").length).toBeGreaterThanOrEqual(1);
+        expect(screen.getByText("2026. 07. 15. 오전 09:00")).toBeInTheDocument();
+        expect(
+            screen.getByText("개선 포인트: 시선 처리를 더 자연스럽게 개선해보세요.")
+        ).toBeInTheDocument();
+
+        // 생성 방식 배지는 더 이상 목록 카드에 표시되지 않고 상세 화면의 "분석 정보"
+        // 접힘 영역으로 옮겨졌습니다(P1-04).
+        expect(screen.queryByText("실제 OpenAI")).not.toBeInTheDocument();
+        expect(screen.queryByText("샘플 시각 분석")).not.toBeInTheDocument();
     });
 
-    it("labels OpenAI-only filters clearly and searches Video LLM metadata", async () => {
+    it("keeps only the support-oriented jobId search behind an advanced panel", async () => {
+        const { container } = renderResultListPage();
+
+        await screen.findByText("presentation.mp4");
+
+        expect(screen.queryByText("OpenAI Mock")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "REAL" })).not.toBeInTheDocument();
+
+        openAdvancedFilters(container);
+
+        expect(screen.getByText("고급 검색 — 문의용 ID")).toBeInTheDocument();
+        expect(
+            screen.getByPlaceholderText("문의 시 안내받은 결과 ID(jobId)로 검색")
+        ).toBeInTheDocument();
+    });
+
+    it("searches only by filename or memo through the basic search box", async () => {
         renderResultListPage();
 
-        expect(await screen.findByRole("button", { name: "OpenAI 전체" }))
-            .toBeInTheDocument();
-        expect(screen.getByText("OpenAI Mock")).toBeInTheDocument();
-        expect(screen.getByText("OpenAI Real")).toBeInTheDocument();
-        expect(screen.getByText("OpenAI Fallback")).toBeInTheDocument();
+        await screen.findByText("presentation.mp4");
 
-        fireEvent.change(
-            screen.getByPlaceholderText("파일명, jobId, OpenAI/Video LLM 방식 검색"),
-            {
-                target: {
-                    value: "video-llm-engine mock",
-                },
-            }
-        );
+        fireEvent.change(screen.getByPlaceholderText("파일명 또는 메모 검색"), {
+            target: { value: "demo" },
+        });
 
         await waitFor(() => {
-            expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
-            expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
+            expect(screen.getByText("demo.mp4")).toBeInTheDocument();
+            expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
         });
     });
 
-    it("filters OpenAI modes with pipeline metadata when feedback metadata is a placeholder", async () => {
-        renderResultListPage();
+    it("searches by jobId only through the advanced search", async () => {
+        const { container } = renderResultListPage();
 
         expect(await screen.findByText("pipeline-openai.mp4")).toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("button", { name: "REAL" }));
-
-        await waitFor(() => {
-            expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
-            expect(screen.getByText("pipeline-openai.mp4")).toBeInTheDocument();
-            expect(screen.queryByText("demo.mp4")).not.toBeInTheDocument();
-        });
-
-        fireEvent.click(screen.getByRole("button", { name: "OpenAI 전체" }));
+        openAdvancedFilters(container);
         fireEvent.change(
-            screen.getByPlaceholderText("파일명, jobId, OpenAI/Video LLM 방식 검색"),
+            screen.getByPlaceholderText("문의 시 안내받은 결과 ID(jobId)로 검색"),
             {
                 target: {
-                    value: "pipeline-openai-model",
+                    value: "job-list-pipeline-openai",
                 },
             }
         );
@@ -305,5 +322,143 @@ describe("ResultListPage", () => {
         expect(
             within(card).getByPlaceholderText("예: 1차 리허설, 발표 대회 최종본")
         ).toHaveValue("실패할 메모");
+    });
+
+    it("shows only guidance and an upload CTA when there are no results", async () => {
+        analysisApiMock.getResults.mockResolvedValue({
+            data: { content: [], last: true },
+        });
+
+        renderResultListPage();
+
+        expect(await screen.findByText("아직 분석 결과가 없습니다.")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "첫 영상 업로드하기" })).toHaveAttribute(
+            "href",
+            "/upload"
+        );
+        expect(screen.getByRole("link", { name: "홈에서 샘플 지표 보기" })).toHaveAttribute(
+            "href",
+            "/"
+        );
+
+        // 요약 카드, 추이 차트, 필터/정렬/비교 UI는 결과가 없으면 전혀 노출되지 않습니다.
+        expect(screen.queryByText("전체 결과")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("score-trend-chart")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "결과 비교" })).not.toBeInTheDocument();
+    });
+
+    it("hides the summary grid, trend chart, and comparison controls when there is only one result", async () => {
+        analysisApiMock.getResults.mockResolvedValue({
+            data: {
+                content: [
+                    {
+                        jobId: "job-list-only-one",
+                        status: "COMPLETED",
+                        statusDescription: "분석 완료",
+                        fileName: "only-one.mp4",
+                        createdAt: "2026-07-15T09:00:00",
+                        scoreSummary: { totalScore: 77, level: "B" },
+                        feedback: { improvements: ["발음 속도를 조금 늦춰보세요."] },
+                    },
+                ],
+                last: true,
+            },
+        });
+
+        renderResultListPage();
+
+        expect(await screen.findByText("only-one.mp4")).toBeInTheDocument();
+        expect(screen.getByText("총 1개")).toBeInTheDocument();
+
+        expect(screen.queryByText("전체 결과")).not.toBeInTheDocument();
+        expect(screen.queryByTestId("score-trend-chart")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "결과 비교" })).not.toBeInTheDocument();
+        expect(
+            screen.queryByText("고급 검색 — 문의용 ID")
+        ).not.toBeInTheDocument();
+    });
+
+    it("shows a retry state instead of an empty-account state when the initial request fails", async () => {
+        analysisApiMock.getResults.mockRejectedValue({
+            message: "결과 서버에 일시적으로 연결할 수 없습니다.",
+        });
+
+        renderResultListPage();
+
+        expect(
+            await screen.findByText("결과 목록을 불러오지 못했습니다.")
+        ).toBeInTheDocument();
+        expect(screen.getByText("결과 서버에 일시적으로 연결할 수 없습니다.")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
+        expect(screen.queryByText("아직 분석 결과가 없습니다.")).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "첫 영상 업로드하기" })).not.toBeInTheDocument();
+    });
+
+    it("uses the server totalElements instead of the currently loaded page length", async () => {
+        analysisApiMock.getResults.mockResolvedValue({
+            data: {
+                content: [
+                    {
+                        jobId: "job-list-page-one",
+                        status: "COMPLETED",
+                        statusDescription: "분석 완료",
+                        fileName: "page-one.mp4",
+                        createdAt: "2026-07-15T09:00:00",
+                        scoreSummary: { totalScore: 77, level: "B" },
+                    },
+                ],
+                totalElements: 3,
+                last: false,
+            },
+        });
+
+        renderResultListPage();
+
+        expect(await screen.findByText("page-one.mp4")).toBeInTheDocument();
+        expect(screen.getByText("총 3개")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "결과 비교" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "더 보기" })).toBeInTheDocument();
+    });
+
+    it("shows an unavailable score as neutral and keeps it last for score sorting", async () => {
+        analysisApiMock.getResults.mockResolvedValue({
+            data: {
+                content: [
+                    {
+                        jobId: "job-list-no-score",
+                        status: "FAILED",
+                        statusDescription: "분석 실패",
+                        fileName: "failed.mp4",
+                        createdAt: "2026-07-15T11:00:00",
+                        scoreSummary: { totalScore: null },
+                    },
+                    {
+                        jobId: "job-list-low-score",
+                        status: "COMPLETED",
+                        statusDescription: "분석 완료",
+                        fileName: "scored.mp4",
+                        createdAt: "2026-07-15T10:00:00",
+                        scoreSummary: { totalScore: 20 },
+                    },
+                ],
+                totalElements: 2,
+                last: true,
+            },
+        });
+
+        renderResultListPage();
+
+        const failedCard = (await screen.findByText("failed.mp4")).closest("article");
+        expect(within(failedCard).getByText("-")).toHaveClass("score-muted");
+
+        fireEvent.change(screen.getByRole("combobox"), {
+            target: { value: "SCORE_ASC" },
+        });
+
+        const cards = screen.getAllByRole("article").filter((article) =>
+            article.classList.contains("result-card")
+        );
+        expect(within(cards[0]).getByText("scored.mp4")).toBeInTheDocument();
+        expect(within(cards[1]).getByText("failed.mp4")).toBeInTheDocument();
     });
 });

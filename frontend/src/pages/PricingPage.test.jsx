@@ -13,12 +13,19 @@ function renderPricingPage() {
 }
 
 describe("PricingPage", () => {
-    it("renders the pricing placeholder notice", () => {
+    it("renders the beta usage notice", () => {
         renderPricingPage();
 
-        expect(screen.getByRole("heading", { name: "요금제" }))
+        expect(screen.getByRole("heading", { name: "베타 이용 안내" }))
             .toBeInTheDocument();
-        expect(screen.getByText("요금제는 아직 준비 중입니다. 실제 요금, 결제 수단, 등급별 제공 범위는 서비스 정식", { exact: false }))
+        expect(screen.getByText("현재는 결제·유료 요금제가 없는 베타 서비스입니다.", { exact: false }))
+            .toBeInTheDocument();
+    });
+
+    it("discloses analysis scope and limitations", () => {
+        renderPricingPage();
+
+        expect(screen.getByRole("heading", { name: "제공 범위와 한계" }))
             .toBeInTheDocument();
     });
 

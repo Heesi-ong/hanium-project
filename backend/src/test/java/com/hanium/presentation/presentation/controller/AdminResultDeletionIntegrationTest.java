@@ -12,6 +12,7 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +23,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.Map;
 
@@ -84,12 +88,8 @@ class AdminResultDeletionIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(adminToken);
 
-        ResponseEntity<String> response = restTemplate.exchange(
-                "/api/admin/results/" + job.getJobId(),
-                HttpMethod.DELETE,
-                new HttpEntity<>(headers),
-                String.class
-        );
+        ResponseEntity<String> response = deleteWithReason(
+                "/api/admin/results/" + job.getJobId(), headers, "테스트 삭제");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(analysisJobRepository.findByJobId(job.getJobId())).isEmpty();
@@ -103,12 +103,8 @@ class AdminResultDeletionIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(adminToken);
 
-        ResponseEntity<String> response = restTemplate.exchange(
-                "/api/admin/results/does-not-exist",
-                HttpMethod.DELETE,
-                new HttpEntity<>(headers),
-                String.class
-        );
+        ResponseEntity<String> response = deleteWithReason(
+                "/api/admin/results/does-not-exist", headers, "테스트 삭제");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
@@ -126,12 +122,8 @@ class AdminResultDeletionIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(adminToken);
 
-        ResponseEntity<String> response = restTemplate.exchange(
-                "/api/admin/results/" + job.getJobId(),
-                HttpMethod.DELETE,
-                new HttpEntity<>(headers),
-                String.class
-        );
+        ResponseEntity<String> response = deleteWithReason(
+                "/api/admin/results/" + job.getJobId(), headers, "테스트 삭제");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(analysisJobRepository.findByJobId(job.getJobId())).isPresent();
@@ -149,15 +141,41 @@ class AdminResultDeletionIntegrationTest {
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth(memberToken);
 
-        ResponseEntity<String> response = restTemplate.exchange(
-                "/api/admin/results/" + job.getJobId(),
-                HttpMethod.DELETE,
-                new HttpEntity<>(headers),
-                String.class
-        );
+        ResponseEntity<String> response = deleteWithReason(
+                "/api/admin/results/" + job.getJobId(), headers, "테스트 삭제");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(analysisJobRepository.findByJobId(job.getJobId())).isPresent();
+    }
+
+    // TestRestTemplate의 기본 요청 팩토리(JdkClientHttpRequestFactory, Spring Boot 3.5
+    // 기본값)는 java.net.http.HttpRequest.Builder#DELETE()의 무본문(no-body) 오버로드를
+    // 그대로 사용하도록 하드코딩되어 있어, HttpEntity에 담은 본문이 DELETE 요청에서는
+    // 조용히 버려진다(POST/PUT 등 다른 메서드는 영향 없음). 이 테스트 클래스에서만 HTTP
+    // 요청 시점에 SimpleClientHttpRequestFactory(HttpURLConnection 기반, DELETE 본문 지원)
+    // 로 일시적으로 교체해 우회한다.
+    private ResponseEntity<String> deleteWithReason(String path, HttpHeaders headers, String reason) {
+        RestTemplate underlying = restTemplate.getRestTemplate();
+        ClientHttpRequestFactory originalFactory = underlying.getRequestFactory();
+        underlying.setRequestFactory(new SimpleClientHttpRequestFactory());
+        try {
+            return restTemplate.exchange(
+                    path,
+                    HttpMethod.DELETE,
+                    new HttpEntity<>(Map.of("reason", reason), headers),
+                    String.class
+            );
+        } finally {
+            underlying.setRequestFactory(originalFactory);
+        }
+    }
+
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
     }
 
     private String signupAndLogin(String email) throws Exception {
@@ -170,8 +188,7 @@ class AdminResultDeletionIntegrationTest {
         restTemplate.postForEntity("/api/auth/signup", request, String.class);
 
         ResponseEntity<String> loginResponse = restTemplate.postForEntity("/api/auth/login", request, String.class);
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03

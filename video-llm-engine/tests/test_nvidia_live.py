@@ -10,6 +10,7 @@ import pytest
 
 from app.api import video_llm_analysis
 from app.api.video_llm_analysis import VideoLlmAnalysisRequest
+from app.services import nvidia_response
 
 
 ENV_KEYS = {
@@ -87,7 +88,7 @@ def test_nvidia_nemotron_omni_live_payload_and_response(monkeypatch, tmp_path):
 
     sample_video = create_sample_mp4(tmp_path)
     captured = {}
-    original_extract = video_llm_analysis.extract_chat_completion_content
+    original_extract = nvidia_response.extract_chat_completion_content
 
     def capture_raw_response(response_json):
         captured["response_json"] = response_json
@@ -95,7 +96,7 @@ def test_nvidia_nemotron_omni_live_payload_and_response(monkeypatch, tmp_path):
         return original_extract(response_json)
 
     monkeypatch.setattr(
-        video_llm_analysis,
+        nvidia_response,
         "extract_chat_completion_content",
         capture_raw_response,
     )

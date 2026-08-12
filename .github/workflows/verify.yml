@@ -248,7 +248,7 @@ jobs:
           docker run --rm
           --entrypoint python
           hanium-video-llm-engine:ci
-          -c 'import logging, tempfile; from logging.handlers import TimedRotatingFileHandler; from app.main import app; from app.api.video_llm_analysis import resolve_video_max_size_bytes; from app.core.logging_config import configure_logging; assert resolve_video_max_size_bytes() == 500 * 1024 * 1024; logger = logging.getLogger("video-llm-engine"); logger.handlers.clear(); import os; os.environ["LOG_DIR"] = tempfile.mkdtemp(); configure_logging(); handlers = [handler for handler in logger.handlers if isinstance(handler, TimedRotatingFileHandler)]; assert len(handlers) == 1; assert handlers[0].when == "MIDNIGHT"; assert handlers[0].backupCount == 30; print(app.title)'
+          -c 'import logging, tempfile; from logging.handlers import TimedRotatingFileHandler; from app.main import app; from app.services.media_io import resolve_video_max_size_bytes; from app.core.logging_config import configure_logging; assert resolve_video_max_size_bytes() == 500 * 1024 * 1024; logger = logging.getLogger("video-llm-engine"); logger.handlers.clear(); import os; os.environ["LOG_DIR"] = tempfile.mkdtemp(); configure_logging(); handlers = [handler for handler in logger.handlers if isinstance(handler, TimedRotatingFileHandler)]; assert len(handlers) == 1; assert handlers[0].when == "MIDNIGHT"; assert handlers[0].backupCount == 30; print(app.title)'
       - name: Verify Python runtime image dependencies
         if: matrix.image == 'analysis-engine' || matrix.image == 'video-llm-engine'
         run: >-

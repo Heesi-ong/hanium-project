@@ -60,7 +60,7 @@ test.describe("public pages", () => {
     test("primary navigation and footer links route correctly", async ({ page }) => {
         await page.goto("/");
 
-        await page.getByRole("link", { name: "요금제" }).first().click();
+        await page.getByRole("link", { name: "베타 이용 안내" }).first().click();
         await expect(page).toHaveURL(/\/pricing$/);
 
         await page.getByRole("link", { name: "개인정보처리방침" }).first().click();

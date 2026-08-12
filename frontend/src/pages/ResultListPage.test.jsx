@@ -149,7 +149,11 @@ describe("ResultListPage", () => {
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
         expect(screen.getAllByText("분석 완료").length).toBeGreaterThanOrEqual(1);
-        expect(screen.getByText("2026. 07. 15. 오전 09:00")).toBeInTheDocument();
+        // 오전/오후 vs AM/PM 표기는 실행 환경의 ICU 데이터에 따라 달라질 수 있어(로컬 macOS와
+        // GitHub Actions 러너에서 다르게 관찰됨, 2026-08-12) 날짜/시간 값만 고정 검증합니다.
+        expect(
+            screen.getByText(/^2026\. 07\. 15\. (오전|AM) 09:00$/)
+        ).toBeInTheDocument();
         expect(
             screen.getByText("개선 포인트: 시선 처리를 더 자연스럽게 개선해보세요.")
         ).toBeInTheDocument();

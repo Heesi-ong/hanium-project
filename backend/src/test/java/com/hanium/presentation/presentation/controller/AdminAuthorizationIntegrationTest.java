@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.config.UserRateLimiter;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,6 +83,14 @@ class AdminAuthorizationIntegrationTest {
         assertThat(pingResponse.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email, boolean expectedAdmin) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -95,6 +104,6 @@ class AdminAuthorizationIntegrationTest {
         JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
         assertThat(loginBody.path("data").path("user").path("admin").asBoolean()).isEqualTo(expectedAdmin);
 
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 }

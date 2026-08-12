@@ -24,6 +24,7 @@ import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngine
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.support.AsyncAnalysisTestSupport;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,7 @@ class AnalysisOpenAiReuseIntegrationTest {
     private static final String REAL_REUSE_JOB_ID = "20260703130000-aaaabbbb";
     private static final String MOCK_RETRY_JOB_ID = "20260703130001-ccccdddd";
     private static final String BROKEN_FILE_JOB_ID = "20260703130002-eeeeffff";
+    private static final String NO_EXTERNAL_AI_RETRY_JOB_ID = "20260703130003-11112222";
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -177,6 +179,39 @@ class AnalysisOpenAiReuseIntegrationTest {
         assertFinalFeedback(BROKEN_FILE_JOB_ID, "REAL", "손상 파일 이후 새 피드백");
     }
 
+    @Test
+    void retryWithoutBodyPreservesDisabledExternalAiOptions() throws Exception {
+        String token = signupAndLogin("retry-without-external-ai@example.com");
+        Long ownerId = findUserId("retry-without-external-ai@example.com");
+        createFailedJobWithUploadedVideo(
+                NO_EXTERNAL_AI_RETRY_JOB_ID,
+                ownerId,
+                false,
+                false
+        );
+
+        ResponseEntity<String> response = retry(token, NO_EXTERNAL_AI_RETRY_JOB_ID);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        AsyncAnalysisTestSupport.awaitJobsNotRunning(
+                analysisJobRepository,
+                NO_EXTERNAL_AI_RETRY_JOB_ID
+        );
+
+        verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
+        verify(openAiClient, never()).generateFeedback(any(OpenAiFeedbackRequest.class));
+
+        AnalysisJob retriedJob = analysisJobRepository.findByJobId(NO_EXTERNAL_AI_RETRY_JOB_ID)
+                .orElseThrow();
+        assertThat(retriedJob.isUseVideoLlm()).isFalse();
+        assertThat(retriedJob.isUseOpenAi()).isFalse();
+        assertFinalFeedback(
+                NO_EXTERNAL_AI_RETRY_JOB_ID,
+                "SKIPPED",
+                "OpenAI 피드백 생성을 사용하지 않았습니다. 기본 분석 결과만 저장되었습니다."
+        );
+    }
+
     private void stubEngineClients() {
         when(analysisEngineClient.analyze(any(AnalysisEngineRequest.class)))
                 .thenAnswer(invocation -> {
@@ -200,6 +235,14 @@ class AnalysisOpenAiReuseIntegrationTest {
         );
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -219,8 +262,7 @@ class AnalysisOpenAiReuseIntegrationTest {
                 String.class
         );
 
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     private Long findUserId(String email) {
@@ -236,7 +278,17 @@ class AnalysisOpenAiReuseIntegrationTest {
     }
 
     private void createFailedJobWithUploadedVideo(String jobId, Long ownerId) {
+        createFailedJobWithUploadedVideo(jobId, ownerId, true, true);
+    }
+
+    private void createFailedJobWithUploadedVideo(
+            String jobId,
+            Long ownerId,
+            boolean useVideoLlm,
+            boolean useOpenAi
+    ) {
         AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
+        analysisJob.enqueue(useVideoLlm, useOpenAi);
         analysisJob.fail("테스트 실패 상태");
         analysisJobRepository.save(analysisJob);
 

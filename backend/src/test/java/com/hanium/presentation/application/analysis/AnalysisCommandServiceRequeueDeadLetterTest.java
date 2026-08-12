@@ -66,9 +66,9 @@ class AnalysisCommandServiceRequeueDeadLetterTest {
                 mock(AnalysisProgressService.class),
                 mock(AnalysisJobStatusService.class),
                 executor,
-                new AnalysisRetryProperties(3),
                 new AnalysisQueueProperties(100, 3),
-                new SimpleMeterRegistry()
+                new SimpleMeterRegistry(),
+                new AnalysisJobValidator(new AnalysisRetryProperties(3))
         );
     }
 

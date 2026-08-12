@@ -41,6 +41,20 @@ public class AdminAuditLog {
     @Column(name = "detail", length = 500)
     private String detail;
 
+    // 파괴적 조치(정지, 강제 탈퇴, 결과 삭제, 수동 재큐잉)는 관리자가 입력한 사유를
+    // 필수로 남긴다. 그 외 액션(예: 계정 활성화)은 이전과 동일하게 null이다(P2-03).
+    @Column(name = "reason", length = 500)
+    private String reason;
+
+    // 같은 요청을 여러 시스템에서 추적할 수 있도록 컨트롤러가 발급하는 상관 ID입니다.
+    // 관리자가 입력하지 않으므로 항상 값이 있습니다(파괴적 조치에 한함).
+    @Column(name = "request_id", length = 100)
+    private String requestId;
+
+    // 관리자가 외부 인시던트/문의 티켓 번호를 선택적으로 남길 수 있는 필드입니다.
+    @Column(name = "incident_id", length = 100)
+    private String incidentId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -53,7 +67,10 @@ public class AdminAuditLog {
             AdminAuditAction action,
             AdminAuditTargetType targetType,
             String targetId,
-            String detail
+            String detail,
+            String reason,
+            String requestId,
+            String incidentId
     ) {
         this.adminId = adminId;
         this.adminEmail = adminEmail;
@@ -61,6 +78,9 @@ public class AdminAuditLog {
         this.targetType = targetType;
         this.targetId = targetId;
         this.detail = detail;
+        this.reason = reason;
+        this.requestId = requestId;
+        this.incidentId = incidentId;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -70,9 +90,22 @@ public class AdminAuditLog {
             AdminAuditAction action,
             AdminAuditTargetType targetType,
             String targetId,
-            String detail
+            String detail,
+            String reason,
+            String requestId,
+            String incidentId
     ) {
-        return new AdminAuditLog(adminId, adminEmail, action, targetType, targetId, detail);
+        return new AdminAuditLog(
+                adminId,
+                adminEmail,
+                action,
+                targetType,
+                targetId,
+                detail,
+                reason,
+                requestId,
+                incidentId
+        );
     }
 
     public Long getId() {
@@ -101,6 +134,18 @@ public class AdminAuditLog {
 
     public String getDetail() {
         return detail;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public String getRequestId() {
+        return requestId;
+    }
+
+    public String getIncidentId() {
+        return incidentId;
     }
 
     public LocalDateTime getCreatedAt() {

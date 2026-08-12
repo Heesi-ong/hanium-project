@@ -21,8 +21,9 @@ public class AdminAuditLogService {
         this.adminAuditLogRepository = adminAuditLogRepository;
     }
 
-    // 5-5f/g/h(정지, 강제 탈퇴, 결과 삭제)에서 관리 액션을 실행하기 직전/직후 호출해
-    // 감사 기록을 남기는 용도입니다. 이 Unit 자체에는 호출하는 액션이 아직 없습니다.
+    // 관리 액션을 실행하기 직전/직후 호출해 감사 기록을 남기는 용도입니다.
+    // reason/requestId/incidentId는 파괴적 조치(정지, 강제 탈퇴, 결과 삭제, 수동
+    // 재큐잉)에서만 값이 채워지고, 그 외 액션은 이전과 동일하게 null입니다(P2-03).
     @Transactional
     public void record(
             Long adminId,
@@ -30,7 +31,10 @@ public class AdminAuditLogService {
             AdminAuditAction action,
             AdminAuditTargetType targetType,
             String targetId,
-            String detail
+            String detail,
+            String reason,
+            String requestId,
+            String incidentId
     ) {
         adminAuditLogRepository.save(AdminAuditLog.create(
                 adminId,
@@ -38,7 +42,10 @@ public class AdminAuditLogService {
                 action,
                 targetType,
                 targetId,
-                detail
+                detail,
+                reason,
+                requestId,
+                incidentId
         ));
     }
 

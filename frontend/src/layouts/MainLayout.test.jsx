@@ -3,6 +3,13 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import MainLayout from "./MainLayout";
+import HomePage from "../pages/HomePage";
+
+vi.mock("../api/analysisApi", () => ({
+    healthCheck: vi.fn(),
+    getServiceStatus: vi.fn(),
+    getResults: vi.fn().mockResolvedValue({ data: { content: [], last: true } }),
+}));
 
 const authMock = vi.hoisted(() => ({
     isAuthenticated: false,
@@ -127,5 +134,38 @@ describe("MainLayout", () => {
         fireEvent.keyDown(window, { key: "Escape" });
 
         expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
+    });
+
+    // HomePage가 한때 자체 footer를 렌더링해 이 전역 footer와 연속으로 두 번 표시된
+    // 적이 있습니다(P1-05). 실제 HomePage를 "/"에 렌더링해 footer가 한 번만 나오는지
+    // 확인합니다.
+    it("renders exactly one footer when the real home page is shown", () => {
+        authMock.isAuthenticated = false;
+        authMock.user = null;
+
+        render(
+            <MemoryRouter initialEntries={["/"]}>
+                <Routes>
+                    <Route element={<MainLayout />}>
+                        <Route path="/" element={<HomePage />} />
+                    </Route>
+                </Routes>
+            </MemoryRouter>
+        );
+
+        expect(screen.getAllByRole("link", { name: "개인정보처리방침" })).toHaveLength(1);
+        expect(screen.getAllByRole("link", { name: "이용약관" })).toHaveLength(1);
+    });
+
+    it("labels the pricing entry point as beta usage guidance", () => {
+        authMock.isAuthenticated = false;
+        authMock.user = null;
+
+        renderMainLayout();
+
+        expect(screen.getByRole("link", { name: "베타 이용 안내" })).toHaveAttribute(
+            "href",
+            "/pricing"
+        );
     });
 });

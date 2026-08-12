@@ -7,13 +7,17 @@ import { expect, request, test } from "@playwright/test";
 //   E2E_FULL_STACK=true API_BASE_URL=http://localhost:8080 npm run test:e2e
 const FULL_STACK = process.env.E2E_FULL_STACK === "true";
 const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:8080";
+const UI_ORIGIN = new URL(process.env.BASE_URL || "http://127.0.0.1:5173").origin;
 
 test.describe("auth contract (full stack)", () => {
     test.skip(!FULL_STACK, "E2E_FULL_STACK=true 와 실행 중인 백엔드가 필요합니다.");
 
     test("signup, login, whoami, logout round-trip", async () => {
         // 쿠키를 유지하는 요청 컨텍스트(httpOnly 세션 쿠키 기반 인증과 일치).
-        const api = await request.newContext({ baseURL: API_BASE_URL });
+        const api = await request.newContext({
+            baseURL: API_BASE_URL,
+            extraHTTPHeaders: { Origin: UI_ORIGIN },
+        });
         const email = `e2e+${Date.now()}@example.com`;
         const password = "E2eTest!2026aB";
 
@@ -36,6 +40,11 @@ test.describe("auth contract (full stack)", () => {
 
         const logout = await api.post("/api/auth/logout");
         expect(logout.ok()).toBeTruthy();
+
+        const anonymousMe = await api.get("/api/auth/me");
+        expect(anonymousMe.ok(), await anonymousMe.text()).toBeTruthy();
+        const anonymousMeBody = await anonymousMe.json();
+        expect(anonymousMeBody.data).toBeNull();
 
         await api.dispose();
     });

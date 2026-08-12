@@ -9,7 +9,7 @@ require_string / 관찰 구간 검증은 모델이 이상한 JSON을 돌려줘�
 
 import pytest
 
-from app.api import video_llm_analysis as v
+from app.services import nvidia_response as v
 
 
 class TestParseModelJson:
@@ -51,6 +51,22 @@ class TestExtractChatCompletionContent:
     def test_raises_when_content_missing(self):
         with pytest.raises(ValueError, match="missing choices"):
             v.extract_chat_completion_content({"choices": []})
+
+    def test_rejects_non_string_text_part_as_invalid_provider_content(self):
+        response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": 42},
+                        ]
+                    }
+                }
+            ]
+        }
+
+        with pytest.raises(ValueError, match="content must be a JSON string"):
+            v.extract_chat_completion_content(response)
 
 
 class TestRequireNumberAndString:
@@ -110,3 +126,67 @@ class TestObservationRangeValidation:
         }
         with pytest.raises(ValueError, match="confidence must be between 0 and 1"):
             v.normalize_observation_list(obs, "eyeContact", None)
+
+
+class TestNormalizeVideoLlmResponse:
+    def test_builds_exact_public_response_and_trims_model_strings(self):
+        item = {
+            "startSec": 1,
+            "endSec": 2.5,
+            "label": "  steady  ",
+            "description": "  안정적인 전달  ",
+            "confidence": 0.8,
+            "ignored": "provider-only-field",
+        }
+        model_json = {
+            "observations": {
+                "eyeContact": [item],
+                "facialExpression": [],
+                "gesture": [],
+                "posture": [],
+                "ignoredCategory": [item],
+            },
+            "globalSummary": {
+                "visualDelivery": "  전반 요약  ",
+                "mainStrength": "  강점  ",
+                "mainWeakness": "  약점  ",
+                "ignoredSummary": "provider-only-field",
+            },
+            "ignoredTopLevel": True,
+        }
+
+        response = v.normalize_video_llm_response(
+            "response-contract-job",
+            "test-model",
+            model_json,
+            duration_sec=10.0,
+        )
+
+        assert response == {
+            "jobId": "response-contract-job",
+            "status": "success",
+            "model": {
+                "name": "test-model",
+                "version": "nvidia-nim",
+                "generationMode": "REAL",
+            },
+            "observations": {
+                "eyeContact": [
+                    {
+                        "startSec": 1,
+                        "endSec": 2.5,
+                        "label": "steady",
+                        "description": "안정적인 전달",
+                        "confidence": 0.8,
+                    }
+                ],
+                "facialExpression": [],
+                "gesture": [],
+                "posture": [],
+            },
+            "globalSummary": {
+                "visualDelivery": "전반 요약",
+                "mainStrength": "강점",
+                "mainWeakness": "약점",
+            },
+        }

@@ -320,21 +320,14 @@ pre {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
 }
 
-.option-panel {
+.upload-options-details {
+  margin-top: 22px;
+}
+
+.upload-option-list {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 22px;
-  padding: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 18px;
-  background: #211A14;
-}
-
-.option-panel h3 {
-  margin: 0;
-  color: #F5EFE8;
-  font-size: 16px;
 }
 
 .option-row {
@@ -362,6 +355,12 @@ pre {
   color: #B7ADA4;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.option-row small.option-unavailable {
+  margin-top: 4px;
+  color: #E7A93F;
+  font-weight: 700;
 }
 
 .error-message {
@@ -522,6 +521,23 @@ pre {
   margin-top: 22px;
 }
 
+.reason-prompt-label {
+  display: block;
+  margin-top: 16px;
+  color: #B7ADA4;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reason-prompt-input {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  margin-top: 8px;
+  resize: vertical;
+  font-family: inherit;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -625,6 +641,26 @@ pre {
   width: 100%;
   overflow-x: auto;
   padding: 12px;
+  white-space: nowrap;
+}
+
+.inquiry-id-details {
+  padding-top: 8px;
+  color: #B7ADA4;
+  font-size: 13px;
+}
+
+.inquiry-id-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.inquiry-id-details code {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 8px;
+  padding: 10px 12px;
   white-space: nowrap;
 }
 

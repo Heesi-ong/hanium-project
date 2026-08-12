@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import BusinessInfoSection from "../components/BusinessInfoSection";
 
 function TermsPage() {
     return (
@@ -12,17 +13,7 @@ function TermsPage() {
                     실제 서비스 출시 전 반드시 법률 전문가 검토가 필요합니다.
                 </div>
 
-                <div className="policy-section">
-                    <h3>사업자 정보</h3>
-                    <ul>
-                        <li>상호: [실제 서비스명/사업자명 입력 필요]</li>
-                        <li>대표자: [실제 대표자명 입력 필요]</li>
-                        <li>사업자등록번호: [실제 사업자등록번호 입력 필요]</li>
-                        <li>주소: [실제 사업장 주소 입력 필요]</li>
-                        <li>전화: [실제 연락처 입력 필요]</li>
-                        <li>이메일: [실제 고객문의 이메일 입력 필요]</li>
-                    </ul>
-                </div>
+                <BusinessInfoSection />
 
                 <div className="policy-section">
                     <h3>서비스의 목적</h3>

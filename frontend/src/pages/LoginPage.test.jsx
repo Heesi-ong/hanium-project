@@ -44,7 +44,6 @@ describe("LoginPage", () => {
         sessionStorage.setItem("redirectAfterLogin", "/results/job-1");
         sessionStorage.setItem("sessionExpired", "true");
         authMock.login.mockResolvedValue({
-            accessToken: "token",
             user: { email: "user@example.com" },
         });
 
@@ -80,8 +79,7 @@ describe("LoginPage", () => {
 
     it("redirects to onboarding when the logged-in user has not completed it", async () => {
         authMock.login.mockResolvedValue({
-            accessToken: "token",
-            user: { email: "user@example.com", onboardingCompleted: false },
+            user: { email: "user@example.com", onboardingCompleted: false, onboardingSkipped: false },
         });
 
         renderLoginPage();
@@ -97,5 +95,29 @@ describe("LoginPage", () => {
         await waitFor(() => {
             expect(screen.getByText("온보딩")).toBeInTheDocument();
         });
+    });
+
+    // 2026-08-06 이전에는 "나중에 하기"를 서버가 기록하지 않아 onboardingSkipped가
+    // 없었고, 로그인할 때마다 다시 온보딩으로 보내졌다(P1-02). 이미 건너뛴 사용자는
+    // 다시 보내지 않아야 한다.
+    it("does not redirect to onboarding when the user already skipped it", async () => {
+        authMock.login.mockResolvedValue({
+            user: { email: "user@example.com", onboardingCompleted: false, onboardingSkipped: true },
+        });
+
+        renderLoginPage();
+
+        fireEvent.change(screen.getByLabelText("이메일"), {
+            target: { value: "user@example.com" },
+        });
+        fireEvent.change(screen.getByLabelText("비밀번호"), {
+            target: { value: "password123" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+        await waitFor(() => {
+            expect(screen.getByText("홈")).toBeInTheDocument();
+        });
+        expect(screen.queryByText("온보딩")).not.toBeInTheDocument();
     });
 });

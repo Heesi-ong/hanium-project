@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // UploadPage와 ResultDetailPage 둘 다 setInterval로 분석 상태(getAnalysisStatus)를
 // 반복 조회하며 경과 시간 타임아웃과 종료 상태(COMPLETED/FAILED/CANCELLED) 판별
@@ -12,6 +12,7 @@ export function useJobStatusPolling({
     timeoutMs,
     maxConsecutiveFailures = 1,
     fetchStatus,
+    onStatus,
     onCompleted,
     onFailed,
     onCancelled,
@@ -21,7 +22,30 @@ export function useJobStatusPolling({
     const timerRef = useRef(null);
     const startedAtRef = useRef(null);
     const failureCountRef = useRef(0);
+    const handlersRef = useRef({
+        fetchStatus,
+        onStatus,
+        onCompleted,
+        onFailed,
+        onCancelled,
+        onTimeout,
+        onPollError,
+    });
     const [polling, setPolling] = useState(false);
+
+    // 페이지의 상태 변경으로 콜백 함수가 다시 만들어져도 이미 실행 중인 타이머와
+    // startPolling 함수 정체성은 유지하고, 실제 호출 시점에는 최신 콜백을 사용합니다.
+    useEffect(() => {
+        handlersRef.current = {
+            fetchStatus,
+            onStatus,
+            onCompleted,
+            onFailed,
+            onCancelled,
+            onTimeout,
+            onPollError,
+        };
+    }, [fetchStatus, onStatus, onCompleted, onFailed, onCancelled, onTimeout, onPollError]);
 
     const stopPolling = useCallback(() => {
         if (timerRef.current) {
@@ -48,35 +72,36 @@ export function useJobStatusPolling({
 
                     if (elapsedMs > timeoutMs) {
                         stopPolling();
-                        onTimeout?.();
+                        handlersRef.current.onTimeout?.();
                         return;
                     }
 
-                    const statusData = await fetchStatus(jobId);
+                    const statusData = await handlersRef.current.fetchStatus(jobId);
                     failureCountRef.current = 0;
+                    await handlersRef.current.onStatus?.(statusData);
 
                     if (statusData.status === "COMPLETED") {
                         stopPolling();
-                        await onCompleted?.(statusData);
+                        await handlersRef.current.onCompleted?.(statusData);
                         return;
                     }
 
-                    if (statusData.status === "FAILED") {
+                    if (["FAILED", "DEAD_LETTER"].includes(statusData.status)) {
                         stopPolling();
-                        await onFailed?.(statusData);
+                        await handlersRef.current.onFailed?.(statusData);
                         return;
                     }
 
                     if (statusData.status === "CANCELLED") {
                         stopPolling();
-                        await onCancelled?.(statusData);
+                        await handlersRef.current.onCancelled?.(statusData);
                     }
                 } catch (requestError) {
                     failureCountRef.current += 1;
 
                     if (failureCountRef.current >= maxConsecutiveFailures) {
                         stopPolling();
-                        onPollError?.(requestError);
+                        handlersRef.current.onPollError?.(requestError);
                     }
                     // 임계치 미만이면 다음 폴링 주기에 자동 재시도합니다.
                 }
@@ -86,12 +111,6 @@ export function useJobStatusPolling({
             intervalMs,
             timeoutMs,
             maxConsecutiveFailures,
-            fetchStatus,
-            onCompleted,
-            onFailed,
-            onCancelled,
-            onTimeout,
-            onPollError,
             stopPolling,
         ]
     );

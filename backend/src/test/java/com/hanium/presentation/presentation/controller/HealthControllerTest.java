@@ -1,5 +1,7 @@
 package com.hanium.presentation.presentation.controller;
 
+import com.hanium.presentation.global.properties.FeedbackLlmProperties;
+import com.hanium.presentation.global.properties.OpenAiProperties;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
 import com.hanium.presentation.infrastructure.client.videollm.VideoLlmEngineClient;
@@ -34,6 +36,8 @@ class HealthControllerTest {
         HealthController healthController = new HealthController(
                 analysisEngineClient,
                 videoLlmEngineClient,
+                configuredOpenAiProperties(),
+                new FeedbackLlmProperties(),
                 true,
                 "smtp.example.com"
         );
@@ -60,6 +64,7 @@ class HealthControllerTest {
         assertThat(response.data().backend().status()).isEqualTo(Availability.AVAILABLE);
         assertThat(response.data().analysisEngine().status()).isEqualTo(Availability.DEGRADED);
         assertThat(response.data().videoLlmEngine().status()).isEqualTo(Availability.UNAVAILABLE);
+        assertThat(response.data().aiFeedback().status()).isEqualTo(Availability.AVAILABLE);
         assertThat(response.data().passwordReset().status()).isEqualTo(Availability.AVAILABLE);
         assertThat(response.data().toString())
                 .doesNotContain("NVIDIA_API_KEY")
@@ -80,6 +85,97 @@ class HealthControllerTest {
                 .doesNotContain("SMTP");
     }
 
+    @Test
+    void serviceStatusMarksAiFeedbackUnavailableWhenNeitherProviderIsConfigured() {
+        AnalysisEngineClient analysisEngineClient = mock(AnalysisEngineClient.class);
+        VideoLlmEngineClient videoLlmEngineClient = mock(VideoLlmEngineClient.class);
+        when(analysisEngineClient.checkReadiness()).thenReturn(Map.of(
+                "reachable", true, "authenticated", true, "ready", true
+        ));
+        when(videoLlmEngineClient.checkReadiness()).thenReturn(Map.of(
+                "reachable", true, "authenticated", true, "ready", true
+        ));
+
+        // OpenAiProperties 기본값은 enabled=false, apiKey 없음 -> canUseRealApi()==false.
+        // FeedbackLlmProperties 기본 provider도 "openai"이므로 이 값을 그대로 쓴다.
+        HealthController healthController = new HealthController(
+                analysisEngineClient,
+                videoLlmEngineClient,
+                new OpenAiProperties(),
+                new FeedbackLlmProperties(),
+                true,
+                "smtp.example.com"
+        );
+
+        ApiResponse<ServiceStatusResponse> response = healthController.serviceStatus();
+
+        assertThat(response.data().aiFeedback().status()).isEqualTo(Availability.UNAVAILABLE);
+        assertThat(response.data().overallStatus()).isEqualTo(Availability.DEGRADED);
+    }
+
+    @Test
+    void serviceStatusMarksDisabledMockVideoLlmAsUnavailable() {
+        AnalysisEngineClient analysisEngineClient = mock(AnalysisEngineClient.class);
+        VideoLlmEngineClient videoLlmEngineClient = mock(VideoLlmEngineClient.class);
+        when(analysisEngineClient.checkReadiness()).thenReturn(Map.of(
+                "reachable", true, "authenticated", true, "ready", true
+        ));
+        when(videoLlmEngineClient.checkReadiness()).thenReturn(Map.of(
+                "reachable", true,
+                "authenticated", true,
+                "ready", true,
+                "response", Map.of(
+                        "mode", "MOCK",
+                        "policy", "DISABLED",
+                        "realModelReady", false
+                )
+        ));
+
+        ServiceStatusResponse status = new HealthController(
+                analysisEngineClient,
+                videoLlmEngineClient,
+                configuredOpenAiProperties(),
+                new FeedbackLlmProperties(),
+                true,
+                "smtp.example.com"
+        ).serviceStatus().data();
+
+        assertThat(status.videoLlmEngine().status()).isEqualTo(Availability.UNAVAILABLE);
+        assertThat(status.videoLlmEngine().message())
+                .isEqualTo("현재 실제 Video LLM 분석 기능을 이용할 수 없습니다.");
+        assertThat(status.overallStatus()).isEqualTo(Availability.DEGRADED);
+    }
+
+    @Test
+    void serviceStatusMarksVideoLlmAvailableOnlyWhenRealModelIsReady() {
+        AnalysisEngineClient analysisEngineClient = mock(AnalysisEngineClient.class);
+        VideoLlmEngineClient videoLlmEngineClient = mock(VideoLlmEngineClient.class);
+        when(analysisEngineClient.checkReadiness()).thenReturn(Map.of(
+                "reachable", true, "authenticated", true, "ready", true
+        ));
+        when(videoLlmEngineClient.checkReadiness()).thenReturn(Map.of(
+                "reachable", true,
+                "authenticated", true,
+                "ready", true,
+                "response", Map.of(
+                        "mode", "REAL",
+                        "policy", "STRICT",
+                        "realModelReady", true
+                )
+        ));
+
+        ServiceStatusResponse status = new HealthController(
+                analysisEngineClient,
+                videoLlmEngineClient,
+                configuredOpenAiProperties(),
+                new FeedbackLlmProperties(),
+                true,
+                "smtp.example.com"
+        ).serviceStatus().data();
+
+        assertThat(status.videoLlmEngine().status()).isEqualTo(Availability.AVAILABLE);
+    }
+
     private HealthController controller(boolean passwordResetEnabled, String smtpHost) {
         AnalysisEngineClient analysisEngineClient = mock(AnalysisEngineClient.class);
         VideoLlmEngineClient videoLlmEngineClient = mock(VideoLlmEngineClient.class);
@@ -96,8 +192,17 @@ class HealthControllerTest {
         return new HealthController(
                 analysisEngineClient,
                 videoLlmEngineClient,
+                configuredOpenAiProperties(),
+                new FeedbackLlmProperties(),
                 passwordResetEnabled,
                 smtpHost
         );
+    }
+
+    private OpenAiProperties configuredOpenAiProperties() {
+        OpenAiProperties properties = new OpenAiProperties();
+        properties.setEnabled(true);
+        properties.setApiKey("test-openai-key");
+        return properties;
     }
 }

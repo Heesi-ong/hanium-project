@@ -11,6 +11,7 @@ import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.support.AsyncAnalysisTestSupport;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -125,7 +126,7 @@ class AdminDeadLetterRequeueIntegrationTest {
         ResponseEntity<String> response = restTemplate.exchange(
                 "/api/admin/analysis-jobs/" + deadLetterJob.getJobId() + "/requeue",
                 HttpMethod.POST,
-                new HttpEntity<>(headers),
+                new HttpEntity<>(Map.of("reason", "테스트 재큐잉"), headers),
                 String.class
         );
 
@@ -159,7 +160,7 @@ class AdminDeadLetterRequeueIntegrationTest {
         ResponseEntity<String> response = restTemplate.exchange(
                 "/api/admin/analysis-jobs/" + completedJob.getJobId() + "/requeue",
                 HttpMethod.POST,
-                new HttpEntity<>(headers),
+                new HttpEntity<>(Map.of("reason", "테스트 재큐잉"), headers),
                 String.class
         );
 
@@ -185,6 +186,14 @@ class AdminDeadLetterRequeueIntegrationTest {
         assertThat(listResponse.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -195,8 +204,7 @@ class AdminDeadLetterRequeueIntegrationTest {
         restTemplate.postForEntity("/api/auth/signup", request, String.class);
 
         ResponseEntity<String> loginResponse = restTemplate.postForEntity("/api/auth/login", request, String.class);
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     // 공개 signup/login은 더 이상 ADMIN_EMAILS만으로 ADMIN을 부여하지 않는다(2026-08-03

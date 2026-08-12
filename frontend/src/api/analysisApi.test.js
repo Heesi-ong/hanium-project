@@ -7,6 +7,7 @@ import {
     UPLOAD_ANALYSIS_TIMEOUT_MS,
     cancelAnalysis,
     getAnalysisProgress,
+    getResult,
     getAnalysisStatus,
     requestVideoLlmReanalysis,
     retryAnalysis,
@@ -39,6 +40,17 @@ function captureRequestConfig() {
     return () => requestConfig;
 }
 
+function respondWith(responseData) {
+    apiClient.defaults.adapter = (config) => Promise.resolve({
+        data: responseData,
+        status: 200,
+        statusText: "OK",
+        headers: {},
+        config,
+        request: {},
+    });
+}
+
 describe("analysisApi", () => {
     it("keeps the long timeout only on video uploads", async () => {
         const getRequestConfig = captureRequestConfig();
@@ -60,6 +72,40 @@ describe("analysisApi", () => {
         await action();
 
         expect(getRequestConfig().timeout).toBe(ANALYSIS_COMMAND_TIMEOUT_MS);
+    });
+
+    it("omits retry options so the backend can preserve the stored choices", async () => {
+        const getRequestConfig = captureRequestConfig();
+
+        await retryAnalysis("20260718120000-aaaabbbb");
+
+        expect(getRequestConfig().data).toBeNull();
+    });
+
+    it("still sends explicitly selected retry options", async () => {
+        const getRequestConfig = captureRequestConfig();
+
+        await retryAnalysis("20260718120000-aaaabbbb", {
+            useVideoLlm: false,
+            useOpenAi: true,
+        });
+
+        expect(JSON.parse(getRequestConfig().data)).toEqual({
+            useVideoLlm: false,
+            useOpenAi: true,
+        });
+    });
+
+    it("does not invent a value for an omitted retry option", async () => {
+        const getRequestConfig = captureRequestConfig();
+
+        await retryAnalysis("20260718120000-aaaabbbb", {
+            useOpenAi: true,
+        });
+
+        expect(JSON.parse(getRequestConfig().data)).toEqual({
+            useOpenAi: true,
+        });
     });
 
     it("sends an idempotency key for Video LLM reanalysis", async () => {
@@ -88,5 +134,37 @@ describe("analysisApi", () => {
         await action();
 
         expect(getRequestConfig().timeout).toBe(ANALYSIS_POLL_TIMEOUT_MS);
+    });
+
+    it("normalizes an unversioned result response as legacy through getResult", async () => {
+        respondWith({
+            success: true,
+            data: {
+                jobId: "20260718120000-aaaabbbb",
+                result: { status: "COMPLETED" },
+            },
+        });
+
+        const response = await getResult("20260718120000-aaaabbbb");
+
+        expect(response.data.resultSchemaVersion).toBe(0);
+        expect(response.data.result.schemaVersion).toBe(0);
+    });
+
+    it("rejects a future result response through getResult", async () => {
+        respondWith({
+            success: true,
+            data: {
+                jobId: "20260718120000-aaaabbbb",
+                resultSchemaVersion: 2,
+                result: { status: "COMPLETED", schemaVersion: 2 },
+            },
+        });
+
+        await expect(getResult("20260718120000-aaaabbbb"))
+            .rejects.toMatchObject({
+                error: "UNSUPPORTED_RESULT_SCHEMA",
+                resultSchemaVersion: 2,
+            });
     });
 });

@@ -112,14 +112,17 @@ describe("AppRoutes route guard wiring", () => {
 
         renderAppRoutes("/admin");
 
-        // 리다이렉트 대상(HomePage)이 lazy(() => import(...)) 청크라서, 전체 스위트를
+        // 리다이렉트 대상(HomePage)이 lazy(() => import(...)) 청크이고 로그인 사용자는
+        // 공개 랜딩이 아니라 개인 대시보드를 렌더링한다. 전체 스위트를
         // 47개 파일과 함께 병렬로 돌릴 때 CPU 경합으로 청크 로드가 waitFor 기본
         // 타임아웃(1000ms)을 넘길 수 있다(단독 실행 시엔 항상 통과, 전체 스위트에서만
         // 간헐적으로 실패하는 것을 확인, 2026-08-01). 리다이렉트 로직 자체를 느슨하게
         // 검증하는 게 아니라 순수 타이밍 여유만 늘린다.
         await waitFor(
             () => {
-                expect(screen.getByText("AI 발표 코칭")).toBeInTheDocument();
+                expect(
+                    screen.getByRole("heading", { name: "다시 연습을 이어가세요" })
+                ).toBeInTheDocument();
             },
             { timeout: 5000 }
         );

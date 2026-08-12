@@ -10,9 +10,11 @@ export const ERROR_CODES = {
     FILE_NOT_FOUND: "FILE_NOT_FOUND",
     FILE_TOO_LARGE: "FILE_TOO_LARGE",
     INVALID_INPUT_VALUE: "INVALID_INPUT_VALUE",
+    INVALID_RESULT_SCHEMA: "INVALID_RESULT_SCHEMA",
     NETWORK_ERROR: "NETWORK_ERROR",
     REQUEST_TIMEOUT: "REQUEST_TIMEOUT",
     TOO_MANY_REQUESTS: "TOO_MANY_REQUESTS",
+    UNSUPPORTED_RESULT_SCHEMA: "UNSUPPORTED_RESULT_SCHEMA",
     UNSUPPORTED_MEDIA_TYPE_ERROR: "UNSUPPORTED_MEDIA_TYPE_ERROR",
 };
 
@@ -28,9 +30,11 @@ const ERROR_MESSAGES = {
     [ERROR_CODES.FILE_NOT_FOUND]: "파일을 찾을 수 없습니다.",
     [ERROR_CODES.FILE_TOO_LARGE]: "업로드 가능한 파일 최대 크기를 초과했습니다.",
     [ERROR_CODES.INVALID_INPUT_VALUE]: "잘못된 요청 값입니다. 입력 내용을 확인해주세요.",
+    [ERROR_CODES.INVALID_RESULT_SCHEMA]: "분석 결과 형식을 확인할 수 없습니다. 관리자에게 문의해주세요.",
     [ERROR_CODES.NETWORK_ERROR]: "서버와 통신할 수 없습니다. 네트워크 연결을 확인해주세요.",
     [ERROR_CODES.REQUEST_TIMEOUT]: "요청 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.",
     [ERROR_CODES.TOO_MANY_REQUESTS]: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+    [ERROR_CODES.UNSUPPORTED_RESULT_SCHEMA]: "현재 화면에서 지원하지 않는 분석 결과 형식입니다. 서비스를 업데이트한 뒤 다시 확인해주세요.",
     [ERROR_CODES.UNSUPPORTED_MEDIA_TYPE_ERROR]: "지원하지 않는 요청 형식입니다. Content-Type을 확인해주세요.",
 };
 

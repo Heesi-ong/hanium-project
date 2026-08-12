@@ -87,6 +87,13 @@ public class UserController {
         return ApiResponse.success("온보딩 정보가 저장되었습니다.");
     }
 
+    @PostMapping("/me/onboarding/skip")
+    public ApiResponse<Void> skipOnboarding(Authentication authentication) {
+        userOnboardingService.skipOnboarding(getCurrentUserId(authentication));
+
+        return ApiResponse.success("온보딩을 건너뛰었습니다.");
+    }
+
     private Long getCurrentUserId(Authentication authentication) {
         Object details = authentication.getDetails();
         if (details instanceof Long userId) {

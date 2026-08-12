@@ -1,0 +1,16 @@
+{
+  "jobId": "legacy-job",
+  "status": "COMPLETED",
+  "scoreSummary": {
+    "totalScore": 77,
+    "postureScore": 70,
+    "gazeScore": 71,
+    "speechScore": 72,
+    "gestureScore": 73,
+    "expressionScore": 74,
+    "level": "GOOD"
+  },
+  "feedback": {},
+  "visualAnalysis": {},
+  "pipeline": {}
+}

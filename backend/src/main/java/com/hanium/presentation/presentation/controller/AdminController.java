@@ -13,7 +13,9 @@ import com.hanium.presentation.domain.user.type.UserRole;
 import com.hanium.presentation.domain.user.type.UserStatus;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
+import com.hanium.presentation.global.logging.RequestIdFilter;
 import com.hanium.presentation.global.response.ApiResponse;
+import com.hanium.presentation.presentation.dto.request.AdminActionReasonRequest;
 import com.hanium.presentation.presentation.dto.response.AdminAnalysisJobSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.AdminAuditLogResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
@@ -27,6 +29,7 @@ import com.hanium.presentation.presentation.dto.response.PagedAdminPasswordReset
 import com.hanium.presentation.presentation.dto.response.PagedAdminUserSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,12 +38,15 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.slf4j.MDC;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * 관리자 전용 API입니다. 조회(사용자 목록/집계 통계/사용자별 분석 결과 목록/감사로그)에 더해
@@ -169,9 +175,17 @@ public class AdminController {
     @PostMapping("/users/{userId}/suspend")
     public ApiResponse<Void> suspendUser(
             @PathVariable Long userId,
+            @Valid @RequestBody AdminActionReasonRequest request,
             Authentication authentication
     ) {
-        adminUserActionService.suspendUser(getCurrentUserId(authentication), authentication.getName(), userId);
+        adminUserActionService.suspendUser(
+                getCurrentUserId(authentication),
+                authentication.getName(),
+                userId,
+                request.reason(),
+                currentRequestId(),
+                request.incidentId()
+        );
 
         return ApiResponse.success("사용자를 정지했습니다.");
     }
@@ -189,9 +203,17 @@ public class AdminController {
     @PostMapping("/users/{userId}/withdraw")
     public ApiResponse<Void> forceWithdrawUser(
             @PathVariable Long userId,
+            @Valid @RequestBody AdminActionReasonRequest request,
             Authentication authentication
     ) {
-        adminUserActionService.forceWithdrawUser(getCurrentUserId(authentication), authentication.getName(), userId);
+        adminUserActionService.forceWithdrawUser(
+                getCurrentUserId(authentication),
+                authentication.getName(),
+                userId,
+                request.reason(),
+                currentRequestId(),
+                request.incidentId()
+        );
 
         return ApiResponse.success("사용자를 강제 탈퇴시켰습니다.");
     }
@@ -214,12 +236,16 @@ public class AdminController {
     @PostMapping("/analysis-jobs/{jobId}/requeue")
     public ApiResponse<Void> requeueDeadLetterJob(
             @PathVariable String jobId,
+            @Valid @RequestBody AdminActionReasonRequest request,
             Authentication authentication
     ) {
         adminAnalysisJobActionService.requeueDeadLetterJob(
                 getCurrentUserId(authentication),
                 authentication.getName(),
-                jobId
+                jobId,
+                request.reason(),
+                currentRequestId(),
+                request.incidentId()
         );
 
         return ApiResponse.success("분석 작업을 다시 큐에 넣었습니다.");
@@ -243,12 +269,16 @@ public class AdminController {
     @PostMapping("/storage-deletion-tasks/{taskId}/requeue")
     public ApiResponse<Void> requeueDeadLetterStorageDeletionTask(
             @PathVariable Long taskId,
+            @Valid @RequestBody AdminActionReasonRequest request,
             Authentication authentication
     ) {
         adminStorageDeletionTaskActionService.requeueDeadLetterTask(
                 getCurrentUserId(authentication),
                 authentication.getName(),
-                taskId
+                taskId,
+                request.reason(),
+                currentRequestId(),
+                request.incidentId()
         );
 
         return ApiResponse.success("스토리지 삭제 작업을 다시 큐에 넣었습니다.");
@@ -273,12 +303,16 @@ public class AdminController {
     @PostMapping("/password-reset-email-tasks/{taskId}/requeue")
     public ApiResponse<Void> requeueDeadLetterPasswordResetEmailTask(
             @PathVariable Long taskId,
+            @Valid @RequestBody AdminActionReasonRequest request,
             Authentication authentication
     ) {
         adminPasswordResetEmailTaskActionService.requeueDeadLetter(
                 getCurrentUserId(authentication),
                 authentication.getName(),
-                taskId
+                taskId,
+                request.reason(),
+                currentRequestId(),
+                request.incidentId()
         );
         return ApiResponse.success("비밀번호 재설정 이메일 작업을 다시 큐에 넣었습니다.");
     }
@@ -286,11 +320,28 @@ public class AdminController {
     @DeleteMapping("/results/{jobId}")
     public ApiResponse<Void> deleteResult(
             @PathVariable String jobId,
+            @Valid @RequestBody AdminActionReasonRequest request,
             Authentication authentication
     ) {
-        adminResultActionService.deleteResult(getCurrentUserId(authentication), authentication.getName(), jobId);
+        adminResultActionService.deleteResult(
+                getCurrentUserId(authentication),
+                authentication.getName(),
+                jobId,
+                request.reason(),
+                currentRequestId(),
+                request.incidentId()
+        );
 
         return ApiResponse.success("분석 결과를 삭제했습니다.");
+    }
+
+    // RequestIdFilter가 응답 헤더와 모든 서버 로그에 넣은 동일한 값을 감사로그에도
+    // 저장한다. 컨트롤러가 필터 밖에서 직접 호출되는 예외적인 테스트 상황만 fallback을 쓴다.
+    private String currentRequestId() {
+        String requestId = MDC.get(RequestIdFilter.REQUEST_ID_MDC_KEY);
+        return requestId == null || requestId.isBlank()
+                ? UUID.randomUUID().toString()
+                : requestId;
     }
 
     private Long getCurrentUserId(Authentication authentication) {

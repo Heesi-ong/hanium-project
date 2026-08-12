@@ -12,11 +12,12 @@ import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
 import { useAuth } from "../context/AuthContext";
-import { useConfirm } from "../context/ConfirmContext";
+import { useConfirm, useReasonPrompt } from "../context/ConfirmContext";
 
 function AdminUsersPage() {
     const { user: currentUser } = useAuth();
     const confirm = useConfirm();
+    const promptReason = useReasonPrompt();
     const [users, setUsers] = useState([]);
     const [page, setPage] = useState(0);
     const [hasMore, setHasMore] = useState(false);
@@ -67,20 +68,29 @@ function AdminUsersPage() {
 
     async function handleToggleStatus(targetUser) {
         const isSuspending = targetUser.status !== "SUSPENDED";
-        const confirmed = await confirm(
-            isSuspending
-                ? `${targetUser.email} 계정을 정지하시겠습니까?`
-                : `${targetUser.email} 계정을 다시 활성화하시겠습니까?`
-        );
-        if (!confirmed) {
-            return;
+
+        // 활성화는 파괴적 조치가 아니라 사유 입력 없이 확인만 받고, 정지는 파괴적
+        // 조치라 사유를 필수로 받는다(P2-03).
+        let actionContext = null;
+        if (isSuspending) {
+            actionContext = await promptReason(
+                `${targetUser.email} 계정을 정지합니다. 이 계정으로는 로그인할 수 없게 됩니다.`
+            );
+            if (!actionContext) {
+                return;
+            }
+        } else {
+            const confirmed = await confirm(`${targetUser.email} 계정을 다시 활성화하시겠습니까?`);
+            if (!confirmed) {
+                return;
+            }
         }
 
         try {
             setActionUserId(targetUser.id);
             setError("");
             if (isSuspending) {
-                await suspendAdminUser(targetUser.id);
+                await suspendAdminUser(targetUser.id, actionContext);
             } else {
                 await activateAdminUser(targetUser.id);
             }
@@ -97,17 +107,17 @@ function AdminUsersPage() {
     }
 
     async function handleForceWithdraw(targetUser) {
-        const confirmed = await confirm(
-            `${targetUser.email} 계정을 강제 탈퇴시키겠습니까? 소유한 분석 데이터가 모두 삭제되며 되돌릴 수 없습니다.`
+        const actionContext = await promptReason(
+            `${targetUser.email} 계정을 강제 탈퇴시킵니다. 소유한 분석 데이터가 모두 삭제되며 되돌릴 수 없습니다.`
         );
-        if (!confirmed) {
+        if (!actionContext) {
             return;
         }
 
         try {
             setActionUserId(targetUser.id);
             setError("");
-            await forceWithdrawAdminUser(targetUser.id);
+            await forceWithdrawAdminUser(targetUser.id, actionContext);
             setUsers((previous) => previous.filter((item) => item.id !== targetUser.id));
         } catch (requestError) {
             setError(getErrorMessage(requestError, "계정을 강제 탈퇴시키는 중 오류가 발생했습니다."));

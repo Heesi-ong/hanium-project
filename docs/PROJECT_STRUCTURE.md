@@ -1,8 +1,8 @@
 # Project Structure
 
-작성일: 2026-07-05 (2026-07-20 일부 갱신: video-llm-engine/analysis-engine 내부 구조,
-video-llm-engine 실제 모델 연동 현황)
-기준 커밋/브랜치: main (2cda065)
+작성일: 2026-07-05 (2026-08-06 일부 갱신: 기준 커밋 정합화. video-llm-engine/
+analysis-engine 내부 구조, video-llm-engine 실제 모델 연동 현황은 2026-07-20 기준)
+기준 커밋/브랜치: main (296207d)
 
 ## 1. 전체 개요
 
@@ -49,6 +49,27 @@ video-llm-engine 실제 모델 연동 현황)
 - rate limit, watchdog, storage cleanup
 - Actuator/Prometheus 메트릭 노출과 구조화(JSON) 로깅
 - 인증 API rate limiting(회원가입/로그인 이메일·IP 기준)과 JWT secret 운영 안전장치
+- Video LLM 사용자 일간 1회와 전역 월간 가중 permit을 Redis Lua 한 번으로 함께 예약해
+  어느 한도라도 부족할 때 두 카운터 모두 소비하지 않는 비용 예산 경계
+
+### 분석 명령 경계
+
+- `application/analysis/AnalysisCommandService.java`: 업로드, 접수, 비동기 파이프라인 orchestration
+- `application/analysis/AnalysisJobValidator.java`: 소유권과 실행/재시도 가능 상태 검증
+- `application/analysis/AnalysisDispatchAdmissionPolicy.java`: 전역·사용자별 DB 대기열과 로컬 executor 접수 한도
+- `application/analysis/AnalysisRetryPolicy.java`: 재시도 요청에서 미지정된 Video LLM/OpenAI 옵션 보존
+- `application/analysis/AnalysisPipelineTerminationHandler.java`: 실행 중 timeout 우선 판정과 취소·종료 후처리
+- `application/analysis/AnalysisPipelineOutcomeHandler.java`: 파이프라인 최종 완료·실패 상태, 진행률, 결과와 메트릭 후처리
+- `application/analysis/AnalysisPipelineStageReporter.java`: 단계별 DB 상태와 Redis 진행률 전이 순서·메시지
+- `application/analysis/AnalysisBasicStage.java`: 원본 영상 다운로드 URL 해석과 정량 분석 엔진 요청
+- `application/analysis/AnalysisResultPersistenceStage.java`: compact/final 및 실패·취소 종료 결과 저장
+- `application/analysis/AnalysisOpenAiFeedbackStage.java`: 기존 REAL 피드백 재사용, 신규 호출, 명시적 생략과 저장
+- `application/analysis/AnalysisVideoLlmStage.java`: 활성화·원자 예산 예약·영상 길이 정책 판정과 Video LLM 호출, 재분석 REAL 강제
+
+접수 정책, 재시도 옵션 정책, timeout/cancel 종료 경계, 기본 분석, OpenAI 피드백과 Video LLM
+실행 경계, 결과 저장, 단계별 상태·진행률 전이, 최종 완료·실패 후처리는 서비스
+orchestration과 분리해 독립 단위 테스트로 경계값과 판정·후처리 순서를 고정한다.
+`AnalysisCommandService`에는 단계 실행 순서와 timeout/cancel 체크포인트 orchestration이 남아 있다.
 
 ### 주요 패키지 (`com.hanium.presentation` 하위)
 
@@ -84,10 +105,16 @@ video-llm-engine 실제 모델 연동 현황)
 ### 진입점
 
 - `analysis-engine/app/main.py`
-- 내부 구조: `app/api/`(basic_analysis.py — 프레임/오디오 추출부터 pose/gesture/face/emotion
-  분석, 점수 계산까지 대부분의 로직이 여기 한 파일에 있음. readiness.py),
-  `app/core/`(logging_config.py, model_registry.py, security.py). `services/schemas/utils`
-  같은 하위 패키지는 실제로 존재하지 않는다.
+- 내부 구조: `app/api/`(`basic_analysis.py` — 분석 orchestration과 실패 응답 조립.
+  `readiness.py`), `app/services/`(`media_io.py` — 영상 경로 검증·다운로드,
+  프레임/오디오 추출, MediaPipe 이미지 준비, 임시 파일 정리. `speech_to_text.py` —
+  Whisper 모델 풀 호출, 세그먼트 변환, timeout과 STT 성공·실패 응답. `scoring.py` —
+  최종 가중합, 신뢰도 penalty, 최종 점수 clamp와 공통 평균 계산. `pose_analysis.py` —
+  Pose Landmarker 호출, landmark 변환, 자세·어깨 균형·제스처 정량 분석.
+  `face_analysis.py` — Face Landmarker 호출, 시선·눈맞춤·표정 상태와 점수 분석.
+  `audio_analysis.py` — 말하기 속도·침묵·필러·WAV 음량 안정성과 음성 점수 분석),
+  `app/core/`(logging_config.py, model_registry.py, security.py). `schemas/utils` 같은
+  추가 하위 패키지는 아직 존재하지 않는다.
 
 ### 책임
 
@@ -97,14 +124,23 @@ video-llm-engine 실제 모델 연동 현황)
 
 ### 테스트
 
-- `analysis-engine/tests/` (`test_basic_analysis_scoring.py`, `test_security.py`), 설정은 `pytest.ini`
+- `analysis-engine/tests/` (`test_basic_analysis_scoring.py`, `test_media_io.py`,
+  `test_pose_analysis.py`, `test_face_analysis.py`, `test_audio_analysis.py`,
+  `test_speech_duration_fallback.py`, `test_whisper_transcribe_timeout.py`, `test_security.py`),
+  설정은 `pytest.ini`
 
 ## 6. Video LLM Engine: `video-llm-engine/`
 
 ### 진입점
 
 - `video-llm-engine/app/main.py`
-- 내부 구조: `app/api/`(video_llm_analysis.py, readiness.py), `app/core/`(logging_config.py, security.py). `services/model/prompts/schemas/utils` 같은 하위 패키지는 실제로 존재하지 않으며, 대부분의 로직이 `app/api/video_llm_analysis.py` 한 파일에 있다.
+- 내부 구조: `app/api/`(`video_llm_analysis.py` — prompt·분할 호출·API orchestration,
+  `readiness.py`), `app/services/`(`media_io.py` — 허용 경로 검증, presigned URL 다운로드,
+  스트리밍 크기 제한과 임시 파일 수명주기. `deadline.py` — 전체 요청 잔여 시간 계산.
+  `nvidia_provider.py` — inline/asset 입력, asset 업로드, chat, polling, cleanup HTTP client.
+  `nvidia_response.py` — chat content 추출, 모델 JSON 파싱, 관찰 구간·요약 검증과 공개 응답 정규화),
+  `app/core/`(logging_config.py, security.py, settings.py). `model/prompts/schemas/utils` 같은
+  추가 하위 패키지는 아직 존재하지 않는다.
 
 ### 현재 상태
 
@@ -136,6 +172,9 @@ video-llm-engine 실제 모델 연동 현황)
 - `storage/logs`: 로그
 - `storage/backups`: DB/데이터 백업 (`scripts/backup-mysql.sh` 참고)
 - `storage/models`: 모델 파일
+- Docker Compose는 `STORAGE_HOST_PATH`(기본 `./storage`)를 위 경로들의 호스트 루트로 사용한다.
+  별도 프로젝트명과 빈 DB로 E2E를 실행할 때는 반드시 전용 빈 디렉터리를 지정한다. 기존
+  스토리지를 새 DB와 연결하면 고아 정리 스케줄러가 기존 업로드·결과를 삭제할 수 있다.
 - `.runtime/`, `.venv/`, `node_modules/`, `dist/`, `build/`는 소스 구조 설명 대상이 아니다.
 
 ## 8. 문서 갱신 원칙

@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,6 +49,26 @@ public class UserRateLimiter {
                     + "redis.call('EXPIRE', KEYS[1], ARGV[1]) "
                     + "end "
                     + "return next",
+            Long.class
+    );
+
+    // Video LLM은 사용자 일간 1회와 전역 월간 NVIDIA 예상 호출 N회를 동시에 예약해야 한다.
+    // 두 키를 개별 tryConsume으로 처리하면 daily 성공 직후 monthly가 경쟁 요청에 의해 거절될
+    // 수 있고, 실제 provider 호출 없이 daily permit만 소모된다. 두 용량을 먼저 검사하고 둘 다
+    // 허용될 때만 함께 INCRBY하는 Lua로 이 부분 예약을 제거한다.
+    private static final RedisScript<Long> RESERVE_VIDEO_LLM_BUDGET_SCRIPT = new DefaultRedisScript<>(
+            "local daily = tonumber(redis.call('GET', KEYS[1]) or '0') "
+                    + "local monthly = tonumber(redis.call('GET', KEYS[2]) or '0') "
+                    + "local monthlyPermits = tonumber(ARGV[3]) "
+                    + "local dailyCapacity = tonumber(ARGV[4]) "
+                    + "local monthlyCapacity = tonumber(ARGV[5]) "
+                    + "if daily + 1 > dailyCapacity then return 1 end "
+                    + "if monthly + monthlyPermits > monthlyCapacity then return 2 end "
+                    + "redis.call('INCRBY', KEYS[1], 1) "
+                    + "redis.call('INCRBY', KEYS[2], monthlyPermits) "
+                    + "if daily == 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end "
+                    + "if monthly == 0 then redis.call('EXPIRE', KEYS[2], ARGV[2]) end "
+                    + "return 0",
             Long.class
     );
 
@@ -101,6 +122,68 @@ public class UserRateLimiter {
         }
     }
 
+    public VideoLlmBudgetReservation reserveVideoLlmBudget(
+            Long ownerId,
+            String monthKey,
+            int monthlyPermits
+    ) {
+        if (monthKey == null || monthKey.isBlank()) {
+            throw new IllegalArgumentException("monthKey must not be blank");
+        }
+        validatePermits(monthlyPermits);
+
+        // owner가 없는 레거시 데이터는 기존 계약대로 일간 제한을 건너뛰되 월간 예산은
+        // 반드시 예약한다. 정상 신규 작업은 ownerId가 항상 존재한다.
+        if (ownerId == null) {
+            return tryConsume("video-llm-monthly", monthKey, monthlyPermits)
+                    ? VideoLlmBudgetReservation.RESERVED
+                    : VideoLlmBudgetReservation.MONTHLY_LIMIT_EXCEEDED;
+        }
+
+        RateLimitProperties.Limit dailyLimit = resolveLimit("video-llm-daily");
+        RateLimitProperties.Limit monthlyLimit = resolveLimit("video-llm-monthly");
+        validateLimit("video-llm-daily", dailyLimit);
+        validateLimit("video-llm-monthly", monthlyLimit);
+
+        String dailyKey = buildKey("video-llm-daily", "user:" + ownerId);
+        String monthlyKey = buildKey("video-llm-monthly", monthKey);
+
+        try {
+            Long result = redisTemplate.execute(
+                    RESERVE_VIDEO_LLM_BUDGET_SCRIPT,
+                    List.of(dailyKey, monthlyKey),
+                    String.valueOf(Duration.ofMinutes(dailyLimit.refillMinutes()).toSeconds()),
+                    String.valueOf(Duration.ofMinutes(monthlyLimit.refillMinutes()).toSeconds()),
+                    String.valueOf(monthlyPermits),
+                    String.valueOf(dailyLimit.capacity()),
+                    String.valueOf(monthlyLimit.capacity())
+            );
+
+            if (result == null) {
+                throw new IllegalStateException("Redis Video LLM budget script returned null");
+            }
+
+            onRedisSuccess();
+            return switch (result.intValue()) {
+                case 0 -> VideoLlmBudgetReservation.RESERVED;
+                case 1 -> VideoLlmBudgetReservation.DAILY_LIMIT_EXCEEDED;
+                case 2 -> VideoLlmBudgetReservation.MONTHLY_LIMIT_EXCEEDED;
+                default -> throw new IllegalStateException(
+                        "Unexpected Redis Video LLM budget result: " + result
+                );
+            };
+        } catch (RuntimeException exception) {
+            onRedisFailure(exception);
+            return reserveVideoLlmBudgetLocalFallback(
+                    dailyKey,
+                    dailyLimit,
+                    monthlyKey,
+                    monthlyLimit,
+                    monthlyPermits
+            );
+        }
+    }
+
     private boolean tryConsumeSingle(String bucketName, String key) {
         RateLimitProperties.Limit limit = resolveLimit(bucketName);
         validateLimit(bucketName, limit);
@@ -122,10 +205,9 @@ public class UserRateLimiter {
         }
     }
 
-    // 여러 예산(예: 일일/월간)을 순서대로 확인해야 할 때, tryConsume으로 먼저
-    // 소비해버리면 뒤쪽 예산이 이미 소진된 경우에도 앞쪽 예산을 헛되이 낭비하게
-    // 된다. wouldAllow는 실제로 소비하지 않고 "지금 소비하면 허용될지"만 확인해,
-    // 모든 예산을 먼저 peek한 뒤 실제 소비는 전부 통과했을 때만 하도록 한다.
+    // 관리 화면의 사전 안내처럼 소비 없이 현재 허용 여부만 확인할 때 사용한다.
+    // 여러 예산을 함께 예약해야 하는 실행 경로는 peek 뒤 순차 소비하지 말고 위의
+    // reserveVideoLlmBudget처럼 단일 원자 연산을 사용해야 한다.
     public boolean wouldAllow(String bucketName, Long userId) {
         return wouldAllow(bucketName, "user:" + userId, 1);
     }
@@ -262,6 +344,57 @@ public class UserRateLimiter {
         return window.count() <= limit.capacity();
     }
 
+    private VideoLlmBudgetReservation reserveVideoLlmBudgetLocalFallback(
+            String dailyKey,
+            RateLimitProperties.Limit dailyLimit,
+            String monthlyKey,
+            RateLimitProperties.Limit monthlyLimit,
+            int monthlyPermits
+    ) {
+        Instant now = Instant.now();
+
+        // ConcurrentHashMap의 키별 compute 두 번으로는 두 키 전체의 원자성을 보장할 수 없다.
+        // Redis 장애 fallback은 이 backend 인스턴스 범위이므로 map 자체를 짧게 잠가 판정과
+        // 두 창 갱신 사이에 다른 worker가 끼어들지 못하게 한다.
+        synchronized (localFallbackWindows) {
+            LocalWindow dailyWindow = activeWindow(localFallbackWindows.get(dailyKey), now);
+            LocalWindow monthlyWindow = activeWindow(localFallbackWindows.get(monthlyKey), now);
+            int dailyCount = dailyWindow == null ? 0 : dailyWindow.count();
+            int monthlyCount = monthlyWindow == null ? 0 : monthlyWindow.count();
+
+            if ((long) dailyCount + 1 > dailyLimit.capacity()) {
+                return VideoLlmBudgetReservation.DAILY_LIMIT_EXCEEDED;
+            }
+            if ((long) monthlyCount + monthlyPermits > monthlyLimit.capacity()) {
+                return VideoLlmBudgetReservation.MONTHLY_LIMIT_EXCEEDED;
+            }
+
+            localFallbackWindows.put(
+                    dailyKey,
+                    new LocalWindow(
+                            dailyCount + 1,
+                            dailyWindow == null
+                                    ? now.plus(Duration.ofMinutes(dailyLimit.refillMinutes()))
+                                    : dailyWindow.expiresAt()
+                    )
+            );
+            localFallbackWindows.put(
+                    monthlyKey,
+                    new LocalWindow(
+                            monthlyCount + monthlyPermits,
+                            monthlyWindow == null
+                                    ? now.plus(Duration.ofMinutes(monthlyLimit.refillMinutes()))
+                                    : monthlyWindow.expiresAt()
+                    )
+            );
+            return VideoLlmBudgetReservation.RESERVED;
+        }
+    }
+
+    private LocalWindow activeWindow(LocalWindow window, Instant now) {
+        return window != null && now.isBefore(window.expiresAt()) ? window : null;
+    }
+
     private void onRedisFailure(RuntimeException exception) {
         if (!redisWarningLogged) {
             redisWarningLogged = true;
@@ -296,5 +429,11 @@ public class UserRateLimiter {
         public long remaining() {
             return Math.max(0, capacity - used);
         }
+    }
+
+    public enum VideoLlmBudgetReservation {
+        RESERVED,
+        DAILY_LIMIT_EXCEEDED,
+        MONTHLY_LIMIT_EXCEEDED
     }
 }

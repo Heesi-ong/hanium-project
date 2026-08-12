@@ -6,7 +6,13 @@ import AccountPage from "./AccountPage";
 
 const authMock = vi.hoisted(() => ({
     logout: vi.fn(),
-    user: { email: "user@example.com" },
+    user: {
+        email: "user@example.com",
+        onboardingCompleted: true,
+        purpose: "INTERVIEW",
+        experienceLevel: "BEGINNER",
+        improvementGoal: "EYE_CONTACT",
+    },
 }));
 
 const apiMock = vi.hoisted(() => ({
@@ -50,6 +56,9 @@ function renderAccountPage() {
             <Routes>
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/login" element={<div>로그인 화면</div>} />
+                <Route path="/privacy" element={<div>개인정보처리방침 화면</div>} />
+                <Route path="/terms" element={<div>이용약관 화면</div>} />
+                <Route path="/onboarding" element={<div>온보딩 설정 화면</div>} />
             </Routes>
         </MemoryRouter>
     );
@@ -228,5 +237,27 @@ describe("AccountPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
         expect(screen.queryByLabelText("현재 비밀번호")).not.toBeInTheDocument();
+    });
+
+    // 계정 화면에서 문의/데이터 권리 행사 경로를 찾을 수 있어야 한다는 요구사항(P1-05)에
+    // 대한 회귀 테스트입니다.
+    it("links to the privacy and terms pages for inquiries and data rights", () => {
+        renderAccountPage();
+
+        expect(screen.getByText("문의 및 데이터 권리")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "개인정보처리방침 보기" }))
+            .toHaveAttribute("href", "/privacy");
+        expect(screen.getByRole("link", { name: "이용약관 보기" }))
+            .toHaveAttribute("href", "/terms");
+    });
+
+    it("shows the current onboarding settings and opens the edit flow", () => {
+        renderAccountPage();
+
+        expect(screen.getByText("목적: 면접 준비 · 경험 수준: 입문 · 개선 목표: 시선 처리"))
+            .toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "온보딩 설정 수정" }));
+
+        expect(screen.getByText("온보딩 설정 화면")).toBeInTheDocument();
     });
 });

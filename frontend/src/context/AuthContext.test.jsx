@@ -81,8 +81,11 @@ describe("AuthContext logout", () => {
         });
     });
 
-    it("stays logged out when session restore fails", async () => {
-        apiMock.fetchCurrentUser.mockRejectedValue({ status: 401 });
+    it("stays logged out when the anonymous session response has no user", async () => {
+        apiMock.fetchCurrentUser.mockResolvedValue({
+            success: true,
+            data: null,
+        });
 
         renderAuthProvider();
 
@@ -92,12 +95,37 @@ describe("AuthContext logout", () => {
         });
     });
 
+    it("stays logged out when session restore fails unexpectedly", async () => {
+        apiMock.fetchCurrentUser.mockRejectedValue({ status: 503 });
+
+        renderAuthProvider();
+
+        await waitFor(() => {
+            expect(screen.getByText("초기화 완료")).toBeInTheDocument();
+            expect(screen.getByText("로그아웃됨")).toBeInTheDocument();
+        });
+    });
+
+    it("restores a pre-deployment session without a JavaScript-readable hint cookie", async () => {
+        apiMock.fetchCurrentUser.mockResolvedValue({
+            success: true,
+            data: { email: "legacy-session@example.com" },
+        });
+        renderAuthProvider();
+
+        await waitFor(() => {
+            expect(screen.getByText("초기화 완료")).toBeInTheDocument();
+            expect(screen.getByText("인증됨")).toBeInTheDocument();
+            expect(screen.getByText("legacy-session@example.com")).toBeInTheDocument();
+        });
+        expect(apiMock.fetchCurrentUser).toHaveBeenCalledOnce();
+    });
+
     it("stores only the returned user in state after login", async () => {
         apiMock.fetchCurrentUser.mockRejectedValue({ status: 401 });
         apiMock.login.mockResolvedValue({
             success: true,
             data: {
-                accessToken: "access-token",
                 user: { email: "login@example.com" },
             },
         });

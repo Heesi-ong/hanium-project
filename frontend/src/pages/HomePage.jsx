@@ -8,10 +8,22 @@ import {
     useTransform,
 } from "motion/react";
 import { useAuth } from "../context/AuthContext";
+import { getResults } from "../api/analysisApi";
 import { buttonVariantClassName } from "../components/ui/Button";
 import AnimatedSection from "../components/motion/AnimatedSection";
 import { EASE_OUT, fadeUp } from "../components/motion/animationVariants";
 import "./HomePage.css";
+
+// 실행 중 상태에 업로드만 끝나 분석 재개가 필요한 UPLOADED를 더한 홈 대시보드 기준입니다.
+const DASHBOARD_ACTIVE_STATUSES = new Set([
+    "UPLOADED",
+    "QUEUED",
+    "BASIC_ANALYZING",
+    "VIDEO_LLM_ANALYZING",
+    "COMPACTING",
+    "OPENAI_GENERATING",
+    "MERGING_RESULT",
+]);
 
 const FEATURE_ITEMS = [
     {
@@ -130,6 +142,178 @@ const FAQ_ITEMS = [
         answer: "탈퇴하면 계정과 함께 그동안 업로드한 영상, 분석 결과가 모두 삭제됩니다.",
     },
 ];
+
+function getDashboardResultTitle(result) {
+    return (
+        result?.memo ||
+        result?.fileName ||
+        result?.originalFileName ||
+        "분석 결과"
+    );
+}
+
+function getDashboardNextAction(results) {
+    const inProgressCount = results.filter((result) =>
+        DASHBOARD_ACTIVE_STATUSES.has(result.status)
+    ).length;
+
+    const uploadedCount = results.filter((result) => result.status === "UPLOADED").length;
+
+    if (uploadedCount > 0) {
+        return `업로드를 마친 분석이 ${uploadedCount}건 있습니다. 영상 업로드 화면에서 분석을 이어서 시작하세요.`;
+    }
+
+    if (inProgressCount > 0) {
+        return `현재 진행 중인 분석이 ${inProgressCount}건 있습니다. 결과 목록에서 현재 단계를 확인해보세요.`;
+    }
+
+    const latestCompletedWithImprovement = results.find(
+        (result) =>
+            result.status === "COMPLETED" &&
+            result.feedback?.improvements?.[0]
+    );
+
+    if (latestCompletedWithImprovement) {
+        return `다음 연습 포인트: ${latestCompletedWithImprovement.feedback.improvements[0]}`;
+    }
+
+    return "다음 발표 연습 영상을 업로드해 성장 추이를 이어가 보세요.";
+}
+
+function AuthenticatedDashboard({ user, results, error, onRetry }) {
+    const completedCount = results?.filter((result) => result.status === "COMPLETED").length || 0;
+    const inProgressCount = results?.filter((result) =>
+        DASHBOARD_ACTIVE_STATUSES.has(result.status)
+    ).length || 0;
+    const latestScoredResult = results?.find(
+        (result) =>
+            result.status === "COMPLETED" &&
+            typeof result.scoreSummary?.totalScore === "number"
+    );
+
+    return (
+        <div className="landing-page">
+            <section className="min-h-[calc(100vh-80px)] bg-background-primary px-6 py-16 text-text-primary sm:px-10 lg:px-16">
+                <div className="mx-auto max-w-[1200px]">
+                    <div className="mb-10 flex flex-wrap items-end justify-between gap-6">
+                        <div className="max-w-[720px]">
+                            <p className="mb-3 text-sm font-semibold tracking-wide text-primary-bright">
+                                내 대시보드
+                            </p>
+                            <h1 className="mb-4 text-3xl font-semibold leading-tight text-text-primary sm:text-5xl">
+                                다시 연습을 이어가세요
+                            </h1>
+                            <p className="text-base leading-relaxed text-text-secondary">
+                                {user?.email ? `${user.email} 계정의 ` : "내 "}
+                                진행 중 작업과 최근 분석, 다음 연습 행동을 한곳에서 확인합니다.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            <Link to="/upload" className={buttonVariantClassName("primary", "motion-cta")}>
+                                새 영상 분석하기
+                            </Link>
+                            <Link to="/results" className={buttonVariantClassName("secondary", "motion-cta")}>
+                                전체 결과 보기
+                            </Link>
+                            <Link to="/account" className={buttonVariantClassName("secondary", "motion-cta")}>
+                                계정 설정
+                            </Link>
+                        </div>
+                    </div>
+
+                    {results === null ? (
+                        <div className="rounded-2xl border border-white/10 bg-surface-primary p-9" role="status">
+                            <p className="text-sm text-text-muted">대시보드를 불러오는 중입니다.</p>
+                        </div>
+                    ) : error ? (
+                        <div className="rounded-2xl border border-red-400/30 bg-surface-primary p-9" role="alert">
+                            <h2 className="mb-2 text-xl font-semibold">대시보드를 불러오지 못했습니다.</h2>
+                            <p className="mb-5 text-sm text-text-secondary">{error}</p>
+                            <button type="button" className={buttonVariantClassName("primary")} onClick={onRetry}>
+                                다시 시도
+                            </button>
+                        </div>
+                    ) : results.length === 0 ? (
+                        <div className="rounded-2xl border border-white/10 bg-surface-primary p-9">
+                            <h2 className="mb-2 text-xl font-semibold">첫 분석을 시작해보세요</h2>
+                            <p className="mb-5 text-sm text-text-secondary">
+                                아직 분석한 발표 영상이 없습니다. 첫 영상을 업로드하고 개선 포인트를 확인해보세요.
+                            </p>
+                            <Link to="/upload" className={buttonVariantClassName("primary", "motion-cta")}>
+                                영상 업로드하기
+                            </Link>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="mb-6 rounded-2xl border border-primary-orange/30 bg-surface-secondary p-6">
+                                <p className="mb-2 text-sm font-semibold text-primary-bright">다음 행동</p>
+                                <p className="text-base text-text-primary">{getDashboardNextAction(results)}</p>
+                            </div>
+
+                            <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
+                                <article className="rounded-2xl border border-white/10 bg-surface-primary p-6">
+                                    <p className="mb-2 text-sm text-text-muted">진행 또는 재개 필요</p>
+                                    <strong className="text-3xl text-primary-bright">{inProgressCount}건</strong>
+                                </article>
+                                <article className="rounded-2xl border border-white/10 bg-surface-primary p-6">
+                                    <p className="mb-2 text-sm text-text-muted">최근 조회 범위의 완료</p>
+                                    <strong className="text-3xl text-text-primary">{completedCount}건</strong>
+                                </article>
+                                <article className="rounded-2xl border border-white/10 bg-surface-primary p-6">
+                                    <p className="mb-2 text-sm text-text-muted">최근 완료 점수</p>
+                                    <strong className="text-3xl text-text-primary">
+                                        {latestScoredResult?.scoreSummary.totalScore ?? "-"}
+                                    </strong>
+                                </article>
+                            </div>
+
+                            <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+                                <div>
+                                    <p className="mb-2 text-sm font-semibold tracking-wide text-primary-bright">
+                                        최근 분석
+                                    </p>
+                                    <h2 className="text-2xl font-semibold text-text-primary">최근 작업 확인</h2>
+                                </div>
+                                <Link to="/results" className={buttonVariantClassName("secondary", "motion-cta")}>
+                                    전체 결과 보기
+                                </Link>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                                {results.slice(0, 3).map((result) => (
+                                    <article
+                                        key={result.jobId}
+                                        className="rounded-2xl border border-white/10 bg-surface-primary p-6"
+                                    >
+                                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                                            {result.statusDescription || result.status}
+                                        </p>
+                                        <h3 className="mb-2 text-lg font-semibold text-text-primary">
+                                            {getDashboardResultTitle(result)}
+                                        </h3>
+                                        <p className="text-sm text-text-secondary">
+                                            총점{" "}
+                                            {typeof result.scoreSummary?.totalScore === "number"
+                                                ? result.scoreSummary.totalScore
+                                                : "-"}
+                                        </p>
+                                        <Link
+                                            to={`/results/${result.jobId}`}
+                                            className="mt-3 inline-block text-sm font-semibold text-primary-bright hover:underline"
+                                        >
+                                            상세 보기
+                                        </Link>
+                                    </article>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </section>
+        </div>
+    );
+}
 
 // 0에서 target까지 이징을 넣어 세어 올라가는 숫자를 만듭니다. 페이지에 처음 들어왔을 때
 // "이 화면은 정적인 이미지가 아니라 실제로 움직인다"는 것을 가장 직관적으로 보여주는
@@ -310,16 +494,25 @@ function HeroIllustration({ prefersReducedMotion }) {
 }
 
 function HomePage() {
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const [openFaqIndex, setOpenFaqIndex] = useState(null);
+    // null = 아직 불러오는 중, [] = 결과 없음. 로그인 사용자에게 최근 결과·진행 중인
+    // 작업·다음 연습을 보여주는 개인 대시보드(P1-05)에 사용합니다.
+    const [dashboardResults, setDashboardResults] = useState(null);
+    const [dashboardError, setDashboardError] = useState("");
+    const [dashboardReloadKey, setDashboardReloadKey] = useState(0);
     const prefersReducedMotion = useReducedMotion();
     const pageRef = useRef(null);
     const heroRef = useRef(null);
     const { scrollYProgress } = useScroll();
-    const { scrollYProgress: heroScroll } = useScroll({
-        target: heroRef,
-        offset: ["start start", "end start"],
-    });
+    const { scrollYProgress: heroScroll } = useScroll(
+        isAuthenticated
+            ? undefined
+            : {
+                target: heroRef,
+                offset: ["start start", "end start"],
+            }
+    );
     const progressScale = useSpring(scrollYProgress, {
         stiffness: 120,
         damping: 28,
@@ -329,8 +522,59 @@ function HomePage() {
     const heroVisualY = useTransform(heroScroll, [0, 1], [0, 72]);
     const heroOpacity = useTransform(heroScroll, [0, 0.8], [1, 0.18]);
 
+    // 로그아웃 상태에서는 대시보드 섹션 자체를 렌더링하지 않으므로(isAuthenticated로
+    // 감싸져 있음), 여기서는 조회를 건너뛰기만 하면 되고 남은 이전 state를 굳이
+    // 동기적으로 초기화할 필요가 없습니다.
+    useEffect(() => {
+        if (!isAuthenticated) {
+            return undefined;
+        }
+
+        let cancelled = false;
+
+        async function loadDashboardResults() {
+            try {
+                const response = await getResults({ page: 0, size: 10 });
+                const content = response.data?.content;
+
+                if (!cancelled) {
+                    setDashboardResults(Array.isArray(content) ? content : []);
+                    setDashboardError("");
+                }
+            } catch {
+                if (!cancelled) {
+                    setDashboardError("최근 분석 결과를 불러오지 못했습니다.");
+                    setDashboardResults([]);
+                }
+            }
+        }
+
+        loadDashboardResults();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isAuthenticated, dashboardReloadKey]);
+
     function toggleFaq(index) {
         setOpenFaqIndex((current) => (current === index ? null : index));
+    }
+
+    function retryDashboard() {
+        setDashboardResults(null);
+        setDashboardError("");
+        setDashboardReloadKey((previous) => previous + 1);
+    }
+
+    if (isAuthenticated) {
+        return (
+            <AuthenticatedDashboard
+                user={user}
+                results={dashboardResults}
+                error={dashboardError}
+                onRetry={retryDashboard}
+            />
+        );
     }
 
     return (
@@ -368,6 +612,7 @@ function HomePage() {
                             업로드한 발표 영상을 기반으로 자세, 시선, 제스처, 음성 속도,
                             필러 표현, 침묵 구간을 분석하고 맞춤형 피드백을 제공합니다.
                         </p>
+                        <p className="hero-metric-caption">예시 결과 — 실제 분석 시 내 점수로 대체됩니다</p>
                         <div className="hero-metric-strip" aria-label="샘플 분석 지표">
                             {HERO_METRICS.map((metric, index) => (
                                 <HeroMetric
@@ -381,33 +626,18 @@ function HomePage() {
                             ))}
                         </div>
                         <div className="hero-actions">
-                            {isAuthenticated ? (
-                                <>
-                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
-                                        <Link to="/upload" className={buttonVariantClassName("primary", "motion-cta")}>
-                                        영상 업로드 시작
-                                        </Link>
-                                    </motion.div>
-                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
-                                        <Link to="/results" className={buttonVariantClassName("secondary", "motion-cta")}>
-                                        분석 결과 보기
-                                        </Link>
-                                    </motion.div>
-                                </>
-                            ) : (
-                                <>
-                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
-                                        <Link to="/signup" className={buttonVariantClassName("primary", "motion-cta")}>
+                            <>
+                                <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
+                                    <Link to="/signup" className={buttonVariantClassName("primary", "motion-cta")}>
                                         무료로 시작하기
-                                        </Link>
-                                    </motion.div>
-                                    <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
-                                        <Link to="/login" className={buttonVariantClassName("secondary", "motion-cta")}>
+                                    </Link>
+                                </motion.div>
+                                <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
+                                    <Link to="/login" className={buttonVariantClassName("secondary", "motion-cta")}>
                                         로그인
-                                        </Link>
-                                    </motion.div>
-                                </>
-                            )}
+                                    </Link>
+                                </motion.div>
+                            </>
                         </div>
                     </motion.div>
 
@@ -602,51 +832,16 @@ function HomePage() {
                     <motion.h2 className="mb-8 text-3xl font-semibold sm:text-4xl" variants={fadeUp}>
                         지금, 데이터로 발표를 완성하세요
                     </motion.h2>
-                    {isAuthenticated ? (
-                        <motion.div variants={fadeUp} whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                            <Link
-                                to="/upload"
-                                className="final-cta-link inline-flex items-center justify-center rounded-full bg-primary-deep px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-deep/85 active:bg-primary-deep/70"
-                            >
-                                지금 업로드하기
-                            </Link>
-                        </motion.div>
-                    ) : (
-                        <motion.div variants={fadeUp} whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                            <Link
-                                to="/signup"
-                                className="final-cta-link inline-flex items-center justify-center rounded-full bg-primary-deep px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-deep/85 active:bg-primary-deep/70"
-                            >
-                                무료 회원가입
-                            </Link>
-                        </motion.div>
-                    )}
+                    <motion.div variants={fadeUp} whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <Link
+                            to="/signup"
+                            className="final-cta-link inline-flex items-center justify-center rounded-full bg-primary-deep px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-deep/85 active:bg-primary-deep/70"
+                        >
+                            무료 회원가입
+                        </Link>
+                    </motion.div>
                 </div>
             </AnimatedSection>
-
-            <footer className="border-t border-white/10 bg-background-primary px-6 py-14 text-text-primary sm:px-10 lg:px-16">
-                <div className="mx-auto max-w-[1200px]">
-                    <div className="mb-10 flex flex-wrap items-start justify-between gap-8">
-                        <div>
-                            <p className="mb-2.5 text-2xl italic text-text-primary">AI Presentation Coach</p>
-                            <p className="max-w-[280px] text-sm leading-relaxed text-text-muted">
-                                누구나 자신 있게 발표할 수 있도록, 데이터로 돕는 AI 발표 분석 서비스입니다.
-                            </p>
-                        </div>
-
-                        <div className="flex flex-col gap-2.5 text-sm">
-                            <span className="mb-1 text-xs font-semibold text-text-primary">서비스</span>
-                            <a className="text-text-secondary hover:text-primary-bright" href="#features">기능</a>
-                            <a className="text-text-secondary hover:text-primary-bright" href="#how-it-works">사용 방법</a>
-                            <a className="text-text-secondary hover:text-primary-bright" href="#faq">FAQ</a>
-                        </div>
-                    </div>
-
-                    <div className="border-t border-white/10 pt-6 text-xs text-text-muted">
-                        &copy; {new Date().getFullYear()} AI Presentation Coach. All rights reserved.
-                    </div>
-                </div>
-            </footer>
         </div>
     );
 }

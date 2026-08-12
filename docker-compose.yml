@@ -82,9 +82,9 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?.env에 MINIO_ROOT_PASSWORD를 설정하세요 (.env.example 참고). 8자 이상이어야 합니다.}
       MINIO_BACKUP_BUCKET_NAME: ${MINIO_BACKUP_BUCKET_NAME:-hanium-backups}
     volumes:
-      - ./storage/backups:/backups
-      - ./storage/logs:/logs
-      - ./storage/metrics:/metrics
+      - "${STORAGE_HOST_PATH:-./storage}/backups:/backups"
+      - "${STORAGE_HOST_PATH:-./storage}/logs:/logs"
+      - "${STORAGE_HOST_PATH:-./storage}/metrics:/metrics"
 
   redis:
     image: redis:7-alpine
@@ -174,7 +174,7 @@ services:
     ports:
       - "127.0.0.1:${ANALYSIS_ENGINE_PORT:-8001}:8001"
     volumes:
-      - ./storage:/storage
+      - "${STORAGE_HOST_PATH:-./storage}:/storage"
     # 사용자가 업로드한 영상을 ffmpeg/OpenCV/MediaPipe로 직접 처리하는 서비스라, 파서
     # 취약점이 나오더라도 컨테이너가 추가 권한을 얻지 못하도록 Linux capability를 전부
     # 제거합니다. non-privileged 포트(8001)만 쓰고 파일 소유권 변경 등도 필요 없어 추가로
@@ -231,7 +231,7 @@ services:
     ports:
       - "127.0.0.1:${VIDEO_LLM_ENGINE_PORT:-8002}:8002"
     volumes:
-      - ./storage:/storage
+      - "${STORAGE_HOST_PATH:-./storage}:/storage"
     # analysis-engine과 같은 이유(신뢰할 수 없는 영상 처리)로 capability를 전부 제거합니다.
     cap_drop:
       - ALL
@@ -304,13 +304,15 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
-      # AI 코치가 OpenAI 대신 build.nvidia.com의 무료/오픈 모델을 임시로 쓰게 하는
-      # 스위치입니다(coach.llm.provider). video-llm-engine과 같은 NVIDIA_API_KEY를 재사용합니다.
+      # AI 코치가 OpenAI 대신 build.nvidia.com의 무료/오픈 모델을 쓰게 하는 스위치입니다
+      # (coach.llm.provider). application.yaml의 coach.llm.nvidia-api-key/-base-url이 아래
+      # NVIDIA_API_KEY/NVIDIA_API_BASE_URL을 그대로 읽으므로(video-llm-engine과 동일 키
+      # 재사용), 별도 COACH_LLM_NVIDIA_API_KEY 같은 env는 필요 없습니다.
       COACH_LLM_PROVIDER: ${COACH_LLM_PROVIDER:-openai}
-      COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
-      # 분석 피드백 생성도 같은 방식으로 임시 대체할 수 있습니다.
+      COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-google/diffusiongemma-26b-a4b-it}
+      # 분석 피드백 생성도 같은 방식으로 대체합니다.
       FEEDBACK_LLM_PROVIDER: ${FEEDBACK_LLM_PROVIDER:-openai}
-      FEEDBACK_LLM_NVIDIA_MODEL: ${FEEDBACK_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      FEEDBACK_LLM_NVIDIA_MODEL: ${FEEDBACK_LLM_NVIDIA_MODEL:-google/diffusiongemma-26b-a4b-it}
       FEEDBACK_LLM_NVIDIA_TIMEOUT_MS: ${FEEDBACK_LLM_NVIDIA_TIMEOUT_MS:-90000}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_API_BASE_URL: ${NVIDIA_API_BASE_URL:-https://integrate.api.nvidia.com/v1}
@@ -410,7 +412,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./storage:/storage
+      - "${STORAGE_HOST_PATH:-./storage}:/storage"
     # non-root(appuser)로 실행되고 non-privileged 포트만 쓰므로 capability가 필요 없습니다.
     cap_drop:
       - ALL
@@ -483,13 +485,15 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_TIMEOUT_MS: ${OPENAI_TIMEOUT_MS:-15000}
-      # AI 코치가 OpenAI 대신 build.nvidia.com의 무료/오픈 모델을 임시로 쓰게 하는
-      # 스위치입니다(coach.llm.provider). video-llm-engine과 같은 NVIDIA_API_KEY를 재사용합니다.
+      # AI 코치가 OpenAI 대신 build.nvidia.com의 무료/오픈 모델을 쓰게 하는 스위치입니다
+      # (coach.llm.provider). application.yaml의 coach.llm.nvidia-api-key/-base-url이 아래
+      # NVIDIA_API_KEY/NVIDIA_API_BASE_URL을 그대로 읽으므로(video-llm-engine과 동일 키
+      # 재사용), 별도 COACH_LLM_NVIDIA_API_KEY 같은 env는 필요 없습니다.
       COACH_LLM_PROVIDER: ${COACH_LLM_PROVIDER:-openai}
-      COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
-      # 분석 피드백 생성도 같은 방식으로 임시 대체할 수 있습니다.
+      COACH_LLM_NVIDIA_MODEL: ${COACH_LLM_NVIDIA_MODEL:-google/diffusiongemma-26b-a4b-it}
+      # 분석 피드백 생성도 같은 방식으로 대체합니다.
       FEEDBACK_LLM_PROVIDER: ${FEEDBACK_LLM_PROVIDER:-openai}
-      FEEDBACK_LLM_NVIDIA_MODEL: ${FEEDBACK_LLM_NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      FEEDBACK_LLM_NVIDIA_MODEL: ${FEEDBACK_LLM_NVIDIA_MODEL:-google/diffusiongemma-26b-a4b-it}
       FEEDBACK_LLM_NVIDIA_TIMEOUT_MS: ${FEEDBACK_LLM_NVIDIA_TIMEOUT_MS:-90000}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_API_BASE_URL: ${NVIDIA_API_BASE_URL:-https://integrate.api.nvidia.com/v1}
@@ -581,7 +585,7 @@ services:
       VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_HALF_OPEN_PERMITTED_CALLS: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_HALF_OPEN_PERMITTED_CALLS:-3}
       VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_AUTO_HALF_OPEN_ENABLED: ${VIDEO_LLM_ENGINE_CIRCUIT_BREAKER_AUTO_HALF_OPEN_ENABLED:-true}
     volumes:
-      - ./storage:/storage
+      - "${STORAGE_HOST_PATH:-./storage}:/storage"
     # backend와 같은 이유(non-root, non-privileged 포트)로 capability를 전부 제거합니다.
     cap_drop:
       - ALL
@@ -599,6 +603,17 @@ services:
       context: ./frontend
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        # 약관/개인정보처리방침 사업자 정보(P0-02). 비어 있으면 화면에 placeholder가
+        # 그대로 노출됩니다 — 실제 값이 준비되면 .env만 채우고 frontend를 다시 빌드하세요.
+        VITE_BUSINESS_NAME: ${VITE_BUSINESS_NAME:-}
+        VITE_BUSINESS_REPRESENTATIVE: ${VITE_BUSINESS_REPRESENTATIVE:-}
+        VITE_BUSINESS_REGISTRATION_NUMBER: ${VITE_BUSINESS_REGISTRATION_NUMBER:-}
+        VITE_BUSINESS_ADDRESS: ${VITE_BUSINESS_ADDRESS:-}
+        VITE_BUSINESS_PHONE: ${VITE_BUSINESS_PHONE:-}
+        VITE_BUSINESS_EMAIL: ${VITE_BUSINESS_EMAIL:-}
+        VITE_PRIVACY_OFFICER_NAME: ${VITE_PRIVACY_OFFICER_NAME:-}
+        VITE_PRIVACY_OFFICER_EMAIL: ${VITE_PRIVACY_OFFICER_EMAIL:-}
+        VITE_PRIVACY_OFFICER_PHONE: ${VITE_PRIVACY_OFFICER_PHONE:-}
     restart: unless-stopped
     deploy:
       resources:

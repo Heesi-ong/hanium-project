@@ -87,9 +87,9 @@ class AnalysisCommandServiceQueueBackpressureTest {
                 mock(AnalysisProgressService.class),
                 mock(AnalysisJobStatusService.class),
                 analysisTaskExecutor,
-                new AnalysisRetryProperties(3),
                 analysisQueueProperties,
-                meterRegistry
+                meterRegistry,
+                new AnalysisJobValidator(new AnalysisRetryProperties(3))
         );
 
         ReflectionTestUtils.setField(

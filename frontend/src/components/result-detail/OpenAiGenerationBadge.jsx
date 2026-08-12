@@ -16,6 +16,10 @@ function getGenerationModeLabel(mode) {
         return "MOCK";
     }
 
+    if (mode === "SKIPPED") {
+        return "SKIPPED";
+    }
+
     if (mode === "FAILED") {
         return "FAILED";
     }
@@ -36,6 +40,10 @@ function getGenerationModeText(mode) {
         return "Mock";
     }
 
+    if (mode === "SKIPPED") {
+        return "사용 안 함";
+    }
+
     if (mode === "FAILED") {
         return "생성 실패";
     }
@@ -54,6 +62,10 @@ function getGenerationModeClassName(mode) {
 
     if (mode === "MOCK") {
         return "ai-mode-badge mock";
+    }
+
+    if (mode === "SKIPPED") {
+        return "ai-mode-badge skipped";
     }
 
     if (mode === "FAILED") {

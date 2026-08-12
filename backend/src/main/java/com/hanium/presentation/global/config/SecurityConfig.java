@@ -5,6 +5,7 @@ import com.hanium.presentation.domain.user.entity.User;
 import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.exception.ErrorResponse;
+import com.hanium.presentation.global.filter.CookieOriginProtectionFilter;
 import com.hanium.presentation.global.filter.UserRateLimitFilter;
 import com.hanium.presentation.global.properties.ApiDocsProperties;
 import io.jsonwebtoken.Claims;
@@ -52,6 +53,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            CookieOriginProtectionFilter cookieOriginProtectionFilter,
             UserRateLimitFilter userRateLimitFilter,
             ApiDocsProperties apiDocsProperties
     ) throws Exception {
@@ -77,6 +79,7 @@ public class SecurityConfig {
                                     "/api/auth/password-reset/request",
                                     "/api/auth/password-reset/confirm"
                             ).permitAll()
+                            .requestMatchers(HttpMethod.GET, "/api/auth/me").permitAll()
                             .requestMatchers("/api/health").permitAll()
                             .requestMatchers(HttpMethod.GET, "/api/results/*/video").permitAll();
 
@@ -94,9 +97,18 @@ public class SecurityConfig {
                             .requestMatchers("/api/**").authenticated()
                             .anyRequest().permitAll();
                 })
+                .addFilterBefore(cookieOriginProtectionFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(userRateLimitFilter, JwtAuthenticationFilter.class)
                 .build();
+    }
+
+    @Bean
+    public CookieOriginProtectionFilter cookieOriginProtectionFilter(
+            @Value("${cors.allowed-origins}") String allowedOriginsCsv,
+            ObjectMapper objectMapper
+    ) {
+        return new CookieOriginProtectionFilter(allowedOriginsCsv, objectMapper);
     }
 
     @Bean

@@ -50,7 +50,7 @@ function LoginPage() {
             sessionStorage.removeItem("sessionExpired");
             setSessionExpired(false);
 
-            if (result.user?.onboardingCompleted === false) {
+            if (result.user?.onboardingCompleted === false && result.user?.onboardingSkipped === false) {
                 navigate("/onboarding", { replace: true, state: { from: redirectPath } });
                 return;
             }

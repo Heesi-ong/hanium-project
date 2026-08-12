@@ -28,11 +28,25 @@ E2E_FULL_STACK=true API_BASE_URL=http://localhost:8080 npm run test:e2e
 사용하며 Video LLM/OpenAI 외부 호출은 끄고 정량 분석 엔진과 워커는 실제 구현을 사용합니다.
 
 ```bash
+E2E_STORAGE_DIR="$(mktemp -d)"
+
+OPENAI_ENABLED=false FEEDBACK_LLM_PROVIDER=openai NVIDIA_API_KEY= \
+VIDEO_LLM_POLICY=DISABLED VIDEO_LLM_ENABLED=false \
+STORAGE_HOST_PATH="$E2E_STORAGE_DIR" docker compose up -d --wait
+
 E2E_ANALYSIS_PIPELINE=true \
-BASE_URL=http://localhost:8080 \
+BASE_URL=http://localhost:5173 \
 API_BASE_URL=http://localhost:8080 \
 npm run test:e2e -- e2e/analysis-pipeline.spec.js
 ```
+
+로컬 `.env`에 NVIDIA feedback provider와 키가 있어도 외부 호출이 켜지지 않도록 위 provider와
+빈 키 값을 함께 지정합니다. 스펙의 인증된 직접 API 요청은 `BASE_URL`의 Origin을 보내므로,
+backend의 쿠키 Origin 보호를 우회하지 않고 허용된 브라우저 요청으로 검증됩니다.
+`STORAGE_HOST_PATH`도 반드시 E2E 전용 빈 디렉터리로 지정해야 합니다. 격리된 Compose 프로젝트의
+빈 DB와 기존 `./storage`를 함께 사용하면, 워커의 고아 정리 스케줄러가 기존 업로드·결과를
+DB에 없는 데이터로 판단해 삭제할 수 있습니다. 검증 종료 후 해당 임시 디렉터리는 별도로
+확인한 뒤 정리합니다.
 
 기본 완료 대기 시간은 10분입니다. 느린 CI/ARM 환경에서는
 `E2E_ANALYSIS_MAX_WAIT_MS`, 폴링 간격은 `E2E_ANALYSIS_POLL_INTERVAL_MS`, 다른 영상은

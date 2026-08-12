@@ -43,6 +43,9 @@ describe("AdminAuditLogPage", () => {
                         targetType: "USER",
                         targetId: "42",
                         detail: null,
+                        reason: "어뷰징 신고 접수",
+                        requestId: "req-abc-123",
+                        incidentId: "INC-2001",
                         createdAt: "2026-07-15T09:00:00",
                     },
                 ],
@@ -55,6 +58,10 @@ describe("AdminAuditLogPage", () => {
         expect(await screen.findByText("admin@example.com")).toBeInTheDocument();
         expect(screen.getByRole("cell", { name: "계정 정지" })).toBeInTheDocument();
         expect(screen.getByRole("cell", { name: "사용자" })).toBeInTheDocument();
+        // P2-03: 파괴적 조치 사유와 상관 ID가 감사로그 목록에 그대로 보여야 한다.
+        expect(screen.getByRole("cell", { name: "어뷰징 신고 접수" })).toBeInTheDocument();
+        expect(screen.getByRole("cell", { name: "INC-2001" })).toBeInTheDocument();
+        expect(screen.getByRole("cell", { name: "req-abc-123" })).toBeInTheDocument();
     });
 
     it("shows an empty state when there are no audit logs", async () => {

@@ -15,6 +15,7 @@ import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClie
 import com.hanium.presentation.infrastructure.client.openai.OpenAiClient;
 import com.hanium.presentation.infrastructure.client.videollm.VideoLlmEngineClient;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
+import com.hanium.presentation.global.config.JwtCookieSupport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -136,6 +137,14 @@ class AnalysisQueueBackpressurePerUserIntegrationTest {
         );
     }
 
+    private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {
+        String setCookieHeader = loginResponse.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        String prefix = JwtCookieSupport.ACCESS_TOKEN_COOKIE_NAME + "=";
+        int start = setCookieHeader.indexOf(prefix) + prefix.length();
+        int end = setCookieHeader.indexOf(';', start);
+        return end == -1 ? setCookieHeader.substring(start) : setCookieHeader.substring(start, end);
+    }
+
     private String signupAndLogin(String email) throws Exception {
         Map<String, Object> request = Map.of(
                 "email", email,
@@ -151,8 +160,7 @@ class AnalysisQueueBackpressurePerUserIntegrationTest {
                 String.class
         );
 
-        JsonNode loginBody = objectMapper.readTree(loginResponse.getBody());
-        return loginBody.path("data").path("accessToken").asText();
+        return extractAccessTokenFromCookie(loginResponse);
     }
 
     private Long findUserId(String email) {

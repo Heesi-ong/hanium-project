@@ -26,6 +26,10 @@ jobs:
           cache: gradle
       - run: chmod +x ./gradlew
       - run: ./gradlew test --no-daemon
+      # coverage가 현재 수준(약 90%)보다 크게 떨어지면 빌드를 실패시킨다(P2-06).
+      # 이후 단계에서 특정 통합 테스트만 --rerun-tasks로 재실행하므로, 그 부분 실행
+      # 데이터로 오탐 실패하지 않도록 이 시점의 jacocoTestReport 결과만으로 검증한다.
+      - run: ./gradlew jacocoTestCoverageVerification --no-daemon
       - name: Start isolated MinIO for integration tests
         run: >-
           docker run -d --name hanium-minio-integration
@@ -92,7 +96,8 @@ jobs:
       # 공개(로그인 불필요) 페이지의 라우팅/렌더 회귀와 2026-07-16 P0 명암비 버그
       # 같은 유형을 잡는 E2E다. 백엔드 없이 프론트 dev 서버만으로 실행 가능한
       # public-flow.spec.js만 CI에서 돈다(E2E_FULL_STACK 미설정이면 로그인 필요
-      # 스펙은 자체적으로 skip된다) — 전체 스택 E2E는 아직 CI에 없다.
+      # 스펙은 자체적으로 skip된다). 인증 및 실제 분석 전체 스택 검증은 아래의
+      # frontend-full-stack-e2e, analysis-pipeline-e2e 전용 job에서 수행한다.
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e -- e2e/public-flow.spec.js
 
@@ -262,6 +267,26 @@ jobs:
           exit-code: "0"
           vuln-type: os
           severity: CRITICAL,HIGH
+      # 공급망 보증이 취약점 스캔뿐이라 SBOM/서명/provenance가 없었다(2026-08-03 서비스화
+      # 점검 P2-06). 우선 이미지별 CycloneDX SBOM을 생성해 아티팩트로 남긴다 — 서명/provenance
+      # 검증은 릴리스 파이프라인과 함께 별도로 설계해야 하는 더 큰 작업이라 이번에는 포함하지
+      # 않는다. 취약점 게이트를 아직 report-only(exit-code 0)로 둔 이유도 같다: 지금
+      # CRITICAL/HIGH를 바로 차단하면 이 세션에서 다루지 않은 기존 base image 취약점 때문에
+      # CI 전체가 갑자기 막힐 수 있어, 먼저 현재 스캔 결과를 검토하고 예외 목록/업그레이드
+      # 계획을 세운 뒤에 전환해야 한다.
+      - name: Generate SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: hanium-${{ matrix.image }}:ci
+          format: cyclonedx
+          output: sbom-${{ matrix.image }}.cdx.json
+          exit-code: "0"
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.image }}
+          path: sbom-${{ matrix.image }}.cdx.json
+          retention-days: 30
 
   backend-boot-smoke:
     # docker compose config(compose-validate)는 YAML 문법만 검사하고 컨테이너를 띄우지 않아서,
@@ -412,6 +437,8 @@ jobs:
       DB_ROOT_PASSWORD: ci-pipeline-db-root-password
       REDIS_PASSWORD: ci-pipeline-redis-password
       OPENAI_ENABLED: "false"
+      FEEDBACK_LLM_PROVIDER: openai
+      NVIDIA_API_KEY: ""
       VIDEO_LLM_POLICY: "DISABLED"
       VIDEO_LLM_ENABLED: "false"
       ANALYSIS_ENGINE_WHISPER_POOL_SIZE: "1"
@@ -437,7 +464,7 @@ jobs:
         run: |
           mkdir -p storage/uploads storage/results storage/temp storage/logs storage/models
           chmod -R a+rwx storage
-      - name: Build backend and analysis engine images
+      - name: Build backend, analysis engine and frontend images
         run: |
           docker buildx build --load \
             -t hanium-ci-backend:latest \
@@ -450,6 +477,11 @@ jobs:
             --cache-from type=gha,scope=analysis-engine \
             --cache-to type=gha,mode=max,scope=analysis-engine \
             analysis-engine
+          docker buildx build --load \
+            -t hanium-ci-frontend:latest \
+            --cache-from type=gha,scope=frontend \
+            --cache-to type=gha,mode=max,scope=frontend \
+            frontend
       - name: Start database/cache/object-storage dependencies
         run: docker compose up -d --wait mysql redis minio
       - name: Create MinIO buckets
@@ -458,20 +490,25 @@ jobs:
         run: docker compose up -d --wait --wait-timeout 900 --no-deps analysis-engine
       - name: Boot API and analysis worker
         run: docker compose up -d --wait --wait-timeout 180 --no-deps backend analysis-worker
+      - name: Boot frontend and wait for health check
+        run: docker compose up -d --wait --wait-timeout 120 --no-deps frontend
       - name: Install Playwright test runner
         working-directory: frontend
         run: npm ci
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
       - name: Run real analysis pipeline E2E
         working-directory: frontend
         env:
           E2E_ANALYSIS_PIPELINE: "true"
-          BASE_URL: http://localhost:8080
+          BASE_URL: http://localhost:5173
           API_BASE_URL: http://localhost:8080
           E2E_ANALYSIS_MAX_WAIT_MS: "900000"
         run: npm run test:e2e -- e2e/analysis-pipeline.spec.js
       - name: Dump pipeline service logs on failure
         if: failure()
-        run: docker compose logs backend analysis-worker analysis-engine mysql redis minio
+        run: docker compose logs backend analysis-worker analysis-engine frontend mysql redis minio
       - name: Tear down
         if: always()
         run: docker compose down -v

@@ -13,6 +13,9 @@ public record AdminAuditLogResponse(
         AdminAuditTargetType targetType,
         String targetId,
         String detail,
+        String reason,
+        String requestId,
+        String incidentId,
         LocalDateTime createdAt
 ) {
 
@@ -24,6 +27,9 @@ public record AdminAuditLogResponse(
                 auditLog.getTargetType(),
                 auditLog.getTargetId(),
                 auditLog.getDetail(),
+                auditLog.getReason(),
+                auditLog.getRequestId(),
+                auditLog.getIncidentId(),
                 auditLog.getCreatedAt()
         );
     }

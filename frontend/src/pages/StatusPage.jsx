@@ -26,6 +26,11 @@ const COMPONENTS = [
         description: "영상 흐름 기반 발표 태도 분석 기능의 이용 가능 여부입니다.",
     },
     {
+        key: "aiFeedback",
+        title: "AI 피드백",
+        description: "분석 결과를 바탕으로 한 코칭 피드백 생성 기능의 이용 가능 여부입니다.",
+    },
+    {
         key: "passwordReset",
         title: "비밀번호 재설정",
         description: "이메일을 통한 계정 복구 기능의 이용 가능 여부입니다.",

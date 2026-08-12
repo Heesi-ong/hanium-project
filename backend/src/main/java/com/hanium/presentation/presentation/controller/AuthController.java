@@ -167,7 +167,7 @@ public class AuthController {
                         .toString())
                 .body(ApiResponse.success(
                         "로그인이 완료되었습니다.",
-                        LoginResponse.from(user, accessToken)
+                        LoginResponse.from(user)
                 ));
     }
 
@@ -233,6 +233,10 @@ public class AuthController {
 
     @GetMapping("/me")
     public ApiResponse<AuthUserResponse> me(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ApiResponse.success("인증된 세션이 없습니다.", null);
+        }
+
         User user = userRepository.findById(getCurrentUserId(authentication))
                 .orElseThrow(() -> new IllegalStateException("인증된 사용자를 찾을 수 없습니다."));
 
@@ -355,6 +359,10 @@ public class AuthController {
             Long id,
             String email,
             boolean onboardingCompleted,
+            boolean onboardingSkipped,
+            String purpose,
+            String experienceLevel,
+            String improvementGoal,
             boolean admin
     ) {
 
@@ -363,21 +371,21 @@ public class AuthController {
                     user.getId(),
                     user.getEmail(),
                     user.getOnboardingCompletedAt() != null,
+                    user.getOnboardingSkippedAt() != null,
+                    user.getPurpose(),
+                    user.getExperienceLevel(),
+                    user.getImprovementGoal(),
                     user.isAdmin()
             );
         }
     }
 
     public record LoginResponse(
-            String tokenType,
-            String accessToken,
             AuthUserResponse user
     ) {
 
-        public static LoginResponse from(User user, String accessToken) {
+        public static LoginResponse from(User user) {
             return new LoginResponse(
-                    "Bearer",
-                    accessToken,
                     AuthUserResponse.from(user)
             );
         }

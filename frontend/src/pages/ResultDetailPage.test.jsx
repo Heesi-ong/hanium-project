@@ -370,4 +370,176 @@ describe("ResultDetailPage", () => {
             await screen.findByTestId("lineage-compare-destination")
         ).toHaveTextContent("job-source,job-print-test");
     });
+
+    // 이 페이지는 1000줄이 넘는 대형 컴포넌트로 지목됐다(2026-08-03 서비스화 점검 P2-02).
+    // 실제 리팩터링 전에, 동작을 바꾸지 않는다는 전제로 지금까지 커버되지 않던 로드 실패
+    // 경로(접근 거부/미존재/일반 오류)를 먼저 고정한다.
+    it("shows an access-denied empty state when the result belongs to another user", async () => {
+        analysisApiMock.getResult.mockRejectedValue({ error: "ANALYSIS_JOB_ACCESS_DENIED" });
+
+        renderResultDetailPage();
+
+        expect(await screen.findByText("접근 권한이 없는 결과입니다.")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "목록으로 이동" })).toHaveAttribute(
+            "href",
+            "/results"
+        );
+    });
+
+    it("shows a not-found empty state when the result no longer exists", async () => {
+        analysisApiMock.getResult.mockRejectedValue({ error: "ANALYSIS_JOB_NOT_FOUND" });
+
+        renderResultDetailPage();
+
+        expect(
+            await screen.findByText("삭제되었거나 존재하지 않는 결과입니다.")
+        ).toBeInTheDocument();
+    });
+
+    it("shows a non-interactive compatibility state for a future result schema", async () => {
+        analysisApiMock.getResult.mockRejectedValue({
+            error: "UNSUPPORTED_RESULT_SCHEMA",
+            message: "이 분석 결과는 현재 화면보다 새로운 형식(v2)입니다.",
+        });
+
+        renderResultDetailPage();
+
+        expect(
+            await screen.findByText("지원하지 않는 결과 형식입니다.")
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText("이 분석 결과는 현재 화면보다 새로운 형식(v2)입니다.")
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "분석 재시도" })).not.toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "목록으로 이동" }))
+            .toHaveAttribute("href", "/results");
+    });
+
+    it("shows a safe error state when result schema metadata is invalid", async () => {
+        analysisApiMock.getResult.mockRejectedValue({
+            error: "INVALID_RESULT_SCHEMA",
+            message: "분석 결과의 버전 정보가 서로 일치하지 않습니다.",
+        });
+
+        renderResultDetailPage();
+
+        expect(
+            await screen.findByText("결과 형식을 확인할 수 없습니다.")
+        ).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
+    });
+
+    it("shows a generic error message and a retry button for unrecognized load failures", async () => {
+        analysisApiMock.getResult.mockRejectedValue({ message: "네트워크 오류" });
+
+        renderResultDetailPage();
+
+        expect(await screen.findByText("네트워크 오류")).toBeInTheDocument();
+
+        const retryButton = screen.getByRole("button", { name: "다시 불러오기" });
+        analysisApiMock.getResult.mockResolvedValue(createCompletedResult());
+        fireEvent.click(retryButton);
+
+        await waitFor(() => {
+            expect(analysisApiMock.getResult).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    it("retries a failed job without forcing external AI options back on", async () => {
+        const failedResult = createCompletedResult();
+        failedResult.data.result.status = "FAILED";
+        analysisApiMock.getResult.mockResolvedValue(failedResult);
+        analysisApiMock.retryAnalysis.mockResolvedValue({ data: {} });
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId: "job-print-test",
+                status: "QUEUED",
+                statusDescription: "분석 대기 중",
+                failReason: null,
+            },
+        });
+
+        renderResultDetailPage();
+
+        fireEvent.click(await screen.findByRole("button", { name: "분석 재시도" }));
+
+        await waitFor(() => {
+            expect(analysisApiMock.retryAnalysis).toHaveBeenCalledWith("job-print-test");
+        });
+    });
+
+    // 폴링 중 분석이 실패로 끝나면, 최신 결과를 다시 불러온 뒤 실패 사유를 보여줘야 한다.
+    it("reloads the result and shows the fail reason when polling detects a FAILED status", async () => {
+        vi.useFakeTimers();
+
+        const runningResult = createCompletedResult();
+        runningResult.data.result.status = "QUEUED";
+
+        const failedResult = createCompletedResult();
+        failedResult.data.result.status = "FAILED";
+        failedResult.data.result.failReason = "분석 엔진 오류";
+
+        analysisApiMock.getResult
+            .mockResolvedValueOnce(runningResult)
+            .mockResolvedValueOnce(failedResult);
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId: "job-print-test",
+                status: "FAILED",
+                statusDescription: "분석 실패",
+                failReason: "분석 엔진 오류",
+            },
+        });
+
+        renderResultDetailPage();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1500);
+        });
+
+        expect(analysisApiMock.getResult).toHaveBeenCalledTimes(2);
+        expect(screen.getByText("분석 엔진 오류")).toBeInTheDocument();
+    });
+
+    // 폴링 중 취소되면, 최신 결과를 다시 불러오고 이전 오류 메시지를 지워야 한다.
+    it("reloads the result and clears the error when polling detects a CANCELLED status", async () => {
+        vi.useFakeTimers();
+
+        const runningResult = createCompletedResult();
+        runningResult.data.result.status = "QUEUED";
+
+        const cancelledResult = createCompletedResult();
+        cancelledResult.data.result.status = "CANCELLED";
+
+        analysisApiMock.getResult
+            .mockResolvedValueOnce(runningResult)
+            .mockResolvedValueOnce(cancelledResult);
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId: "job-print-test",
+                status: "CANCELLED",
+                statusDescription: "분석 취소됨",
+                failReason: null,
+            },
+        });
+
+        renderResultDetailPage();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1500);
+        });
+
+        expect(analysisApiMock.getResult).toHaveBeenCalledTimes(2);
+        expect(
+            screen.getByText("분석이 취소되었습니다. 필요하면 다시 시도할 수 있습니다.")
+        ).toBeInTheDocument();
+    });
+
 });

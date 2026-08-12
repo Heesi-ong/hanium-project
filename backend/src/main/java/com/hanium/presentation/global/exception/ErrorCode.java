@@ -24,6 +24,7 @@ public enum ErrorCode {
             HttpStatus.SERVICE_UNAVAILABLE,
             "인증 세션 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요."
     ),
+    AUTH_ORIGIN_FORBIDDEN(HttpStatus.FORBIDDEN, "허용되지 않은 출처의 인증 요청입니다."),
 
     ANALYSIS_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "분석 작업을 찾을 수 없습니다."),
     ANALYSIS_JOB_ACCESS_DENIED(HttpStatus.FORBIDDEN, "본인이 소유한 분석 작업이 아닙니다."),

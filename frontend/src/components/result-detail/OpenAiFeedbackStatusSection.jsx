@@ -16,6 +16,10 @@ function getGenerationModeLabel(mode) {
         return "Mock 피드백";
     }
 
+    if (mode === "SKIPPED") {
+        return "OpenAI 피드백 사용 안 함";
+    }
+
     return "알 수 없음";
 }
 
@@ -32,6 +36,10 @@ function getGenerationModeDescription(mode) {
         return "OpenAI API를 호출하지 않고 내부 Mock 로직으로 생성된 피드백입니다.";
     }
 
+    if (mode === "SKIPPED") {
+        return "사용자 설정에 따라 OpenAI 피드백 생성을 건너뛰었습니다.";
+    }
+
     return "피드백 생성 방식을 확인할 수 없습니다.";
 }
 
@@ -45,6 +53,10 @@ function getGenerationModeClassName(mode) {
     }
 
     if (mode === "MOCK") {
+        return "mini-badge muted";
+    }
+
+    if (mode === "SKIPPED") {
         return "mini-badge muted";
     }
 
@@ -105,9 +117,9 @@ function OpenAiFeedbackStatusSection({ feedback, pipeline }) {
                 </article>
 
                 <article className="metric-card">
-                    <span>대체 사유</span>
+                    <span>미사용·대체 사유</span>
                     <strong>{fallbackReason}</strong>
-                    <p>Mock 또는 Fallback 피드백이 사용된 이유입니다.</p>
+                    <p>OpenAI를 사용하지 않았거나 대체 피드백이 사용된 이유입니다.</p>
                 </article>
             </div>
         </article>

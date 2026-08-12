@@ -4,8 +4,8 @@ from typing import Any, Dict
 
 import pytest
 
-from app.api import basic_analysis
 from app.core import model_registry
+from app.services import speech_to_text
 
 
 class FakeSegment:
@@ -29,10 +29,18 @@ class FakeWhisperModel:
     그 순회 시점에 sleep해 "손상된 오디오에서 STT가 멈춘 상황"을 재현합니다.
     """
 
-    def __init__(self, hang_seconds: float | None = None):
+    def __init__(
+        self,
+        hang_seconds: float | None = None,
+        error: Exception | None = None,
+    ):
         self._hang_seconds = hang_seconds
+        self._error = error
 
     def transcribe(self, audio_path, language, beam_size, vad_filter):
+        if self._error is not None:
+            raise self._error
+
         if self._hang_seconds is not None:
             def _hanging_segments():
                 time.sleep(self._hang_seconds)
@@ -60,12 +68,73 @@ def create_audio_extraction_result(tmp_path) -> Dict[str, Any]:
 def test_transcribe_audio_succeeds_when_whisper_completes_quickly(monkeypatch, tmp_path):
     install_fake_whisper_model(monkeypatch, FakeWhisperModel())
 
-    result = basic_analysis.transcribe_audio(create_audio_extraction_result(tmp_path))
+    result = speech_to_text.transcribe_audio(create_audio_extraction_result(tmp_path))
 
-    assert result["success"] is True
-    assert result["transcript"] == "안녕하세요"
-    assert result["segmentCount"] == 1
-    assert result["language"] == "ko"
+    assert result == {
+        "success": True,
+        "analysisMethod": "faster_whisper",
+        "modelSize": "base",
+        "language": "ko",
+        "languageProbability": 0.99,
+        "transcript": "안녕하세요",
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 1.2,
+                "duration": 1.2,
+                "text": "안녕하세요",
+            }
+        ],
+        "segmentCount": 1,
+        "wordCount": 1,
+        "error": "",
+    }
+
+
+def test_transcribe_audio_skips_provider_when_audio_extraction_failed(monkeypatch):
+    monkeypatch.setattr(
+        model_registry,
+        "whisper_model_context",
+        lambda: pytest.fail("Whisper provider must not be called"),
+    )
+
+    result = speech_to_text.transcribe_audio({"success": False, "audioPath": ""})
+
+    assert result["success"] is False
+    assert result["error"] == "오디오 추출에 실패하여 STT를 수행하지 못했습니다."
+
+
+def test_transcribe_audio_skips_provider_when_audio_file_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        model_registry,
+        "whisper_model_context",
+        lambda: pytest.fail("Whisper provider must not be called"),
+    )
+
+    result = speech_to_text.transcribe_audio(
+        {"success": True, "audioPath": str(tmp_path / "missing.wav")}
+    )
+
+    assert result["success"] is False
+    assert result["error"] == "STT 대상 오디오 파일을 찾을 수 없습니다."
+
+
+def test_transcribe_audio_maps_provider_error_to_existing_failure_contract(
+    monkeypatch,
+    tmp_path,
+):
+    install_fake_whisper_model(
+        monkeypatch,
+        FakeWhisperModel(error=RuntimeError("provider failed")),
+    )
+
+    result = speech_to_text.transcribe_audio(create_audio_extraction_result(tmp_path))
+
+    assert result["success"] is False
+    assert result["analysisMethod"] == "faster_whisper"
+    assert result["segments"] == []
+    assert result["wordCount"] == 0
+    assert result["error"] == "provider failed"
 
 
 def test_transcribe_audio_times_out_instead_of_hanging_forever(monkeypatch, tmp_path):
@@ -73,7 +142,7 @@ def test_transcribe_audio_times_out_instead_of_hanging_forever(monkeypatch, tmp_
     install_fake_whisper_model(monkeypatch, FakeWhisperModel(hang_seconds=5.0))
 
     started_at = time.monotonic()
-    result = basic_analysis.transcribe_audio(create_audio_extraction_result(tmp_path))
+    result = speech_to_text.transcribe_audio(create_audio_extraction_result(tmp_path))
     elapsed_seconds = time.monotonic() - started_at
 
     assert result["success"] is False
@@ -87,17 +156,17 @@ def test_resolve_whisper_transcribe_timeout_seconds_rejects_invalid_values(monke
     monkeypatch.setenv("ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS", "not-a-number")
 
     with pytest.raises(ValueError, match="ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS"):
-        basic_analysis.resolve_whisper_transcribe_timeout_seconds()
+        speech_to_text.resolve_transcribe_timeout_seconds()
 
 
 def test_resolve_whisper_transcribe_timeout_seconds_rejects_non_positive_values(monkeypatch):
     monkeypatch.setenv("ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS", "0")
 
     with pytest.raises(ValueError, match="ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS"):
-        basic_analysis.resolve_whisper_transcribe_timeout_seconds()
+        speech_to_text.resolve_transcribe_timeout_seconds()
 
 
 def test_resolve_whisper_transcribe_timeout_seconds_defaults_to_600(monkeypatch):
     monkeypatch.delenv("ANALYSIS_ENGINE_WHISPER_TRANSCRIBE_TIMEOUT_SECONDS", raising=False)
 
-    assert basic_analysis.resolve_whisper_transcribe_timeout_seconds() == 600.0
+    assert speech_to_text.resolve_transcribe_timeout_seconds() == 600.0

@@ -12,7 +12,7 @@ import AdminNav from "../components/admin/AdminNav";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
-import { useConfirm } from "../context/ConfirmContext";
+import { useReasonPrompt } from "../context/ConfirmContext";
 
 const ANALYSIS_COLUMNS = [
     { key: "jobId", label: "작업 ID", render: (item) => item.jobId },
@@ -56,7 +56,7 @@ function AdminRecoveryPage() {
                     title="분석 작업"
                     description="분석 엔진 또는 외부 연동 실패로 재시도를 모두 소진한 작업입니다."
                     loadItems={getAdminDeadLetterJobs}
-                    requeueItem={(item) => requeueAdminDeadLetterJob(item.jobId)}
+                    requeueItem={(item, actionContext) => requeueAdminDeadLetterJob(item.jobId, actionContext)}
                     itemKey={(item) => item.jobId}
                     columns={ANALYSIS_COLUMNS}
                     emptyTitle="재시도 소진 분석 작업이 없습니다."
@@ -68,7 +68,7 @@ function AdminRecoveryPage() {
                     title="스토리지 삭제 작업"
                     description="원본 영상이나 결과 파일 삭제를 완료하지 못한 작업입니다. 스토리지 상태를 확인한 뒤 재큐잉하세요."
                     loadItems={getAdminStorageDeletionDeadLetters}
-                    requeueItem={(item) => requeueAdminStorageDeletionDeadLetter(item.id)}
+                    requeueItem={(item, actionContext) => requeueAdminStorageDeletionDeadLetter(item.id, actionContext)}
                     itemKey={(item) => item.id}
                     columns={STORAGE_COLUMNS}
                     emptyTitle="재시도 소진 스토리지 삭제 작업이 없습니다."
@@ -80,7 +80,7 @@ function AdminRecoveryPage() {
                     title="비밀번호 재설정 이메일"
                     description="이메일 발송에 반복 실패한 작업입니다. 토큰 만료 여부와 메일 발송 상태를 확인한 뒤 재큐잉하세요."
                     loadItems={getAdminPasswordResetEmailDeadLetters}
-                    requeueItem={(item) => requeueAdminPasswordResetEmailDeadLetter(item.id)}
+                    requeueItem={(item, actionContext) => requeueAdminPasswordResetEmailDeadLetter(item.id, actionContext)}
                     itemKey={(item) => item.id}
                     columns={PASSWORD_RESET_COLUMNS}
                     emptyTitle="재시도 소진 비밀번호 재설정 이메일이 없습니다."
@@ -102,7 +102,7 @@ function RecoveryQueueSection({
     emptyTitle,
     confirmMessage,
 }) {
-    const confirm = useConfirm();
+    const promptReason = useReasonPrompt();
     const [items, setItems] = useState([]);
     const [page, setPage] = useState(0);
     const [hasMore, setHasMore] = useState(false);
@@ -148,7 +148,8 @@ function RecoveryQueueSection({
     }
 
     async function handleRequeue(item) {
-        if (!await confirm(confirmMessage(item))) {
+        const actionContext = await promptReason(confirmMessage(item));
+        if (!actionContext) {
             return;
         }
 
@@ -156,7 +157,7 @@ function RecoveryQueueSection({
         try {
             setActionId(id);
             setError("");
-            await requeueItem(item);
+            await requeueItem(item, actionContext);
             setItems((previous) => previous.filter((current) => itemKey(current) !== id));
         } catch (requestError) {
             setError(getErrorMessage(requestError, `${title}을(를) 다시 큐에 넣는 중 오류가 발생했습니다.`));

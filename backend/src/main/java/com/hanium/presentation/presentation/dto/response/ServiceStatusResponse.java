@@ -5,6 +5,7 @@ public record ServiceStatusResponse(
         ComponentStatus backend,
         ComponentStatus analysisEngine,
         ComponentStatus videoLlmEngine,
+        ComponentStatus aiFeedback,
         ComponentStatus passwordReset
 ) {
 

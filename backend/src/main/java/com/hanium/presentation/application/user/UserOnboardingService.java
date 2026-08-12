@@ -28,4 +28,12 @@ public class UserOnboardingService {
 
         user.completeOnboarding(purpose, experienceLevel, improvementGoal);
     }
+
+    @Transactional
+    public void skipOnboarding(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT_VALUE));
+
+        user.skipOnboarding();
+    }
 }

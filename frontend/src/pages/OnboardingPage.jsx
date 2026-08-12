@@ -1,43 +1,39 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { completeOnboarding } from "../api/onboardingApi";
+import { completeOnboarding, skipOnboarding } from "../api/onboardingApi";
 import StateMessage from "../components/StateMessage";
 import { useAuth } from "../context/AuthContext";
+import {
+    EXPERIENCE_LEVEL_OPTIONS,
+    IMPROVEMENT_GOAL_OPTIONS,
+    PURPOSE_OPTIONS,
+} from "../constants/onboarding";
 
-const PURPOSE_OPTIONS = [
-    { value: "INTERVIEW", label: "면접 준비" },
-    { value: "PRESENTATION", label: "발표/프레젠테이션" },
-    { value: "LECTURE", label: "강의/교육" },
-    { value: "OTHER", label: "기타" },
-];
-
-const EXPERIENCE_LEVEL_OPTIONS = [
-    { value: "BEGINNER", label: "입문" },
-    { value: "INTERMEDIATE", label: "중급" },
-    { value: "ADVANCED", label: "숙련" },
-];
-
-const IMPROVEMENT_GOAL_OPTIONS = [
-    { value: "VOICE_TONE", label: "목소리 톤" },
-    { value: "PACE", label: "말하기 속도" },
-    { value: "EYE_CONTACT", label: "시선 처리" },
-    { value: "POSTURE", label: "자세" },
-    { value: "CONTENT_STRUCTURE", label: "내용 구성" },
-    { value: "OTHER", label: "기타" },
-];
+function getSkipButtonLabel(isEditingCompletedOnboarding, skipping) {
+    if (isEditingCompletedOnboarding) return "취소";
+    return skipping ? "처리 중..." : "나중에 하기";
+}
 
 function OnboardingPage() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { updateUser } = useAuth();
+    const { user, updateUser } = useAuth();
 
     const redirectPath = location.state?.from || "/";
-
-    const [purpose, setPurpose] = useState(PURPOSE_OPTIONS[0].value);
-    const [experienceLevel, setExperienceLevel] = useState(EXPERIENCE_LEVEL_OPTIONS[0].value);
-    const [improvementGoal, setImprovementGoal] = useState(IMPROVEMENT_GOAL_OPTIONS[0].value);
+    const isEditingCompletedOnboarding = Boolean(user?.onboardingCompleted);
+    // 계정 화면에서 "수정"으로 다시 들어온 경우, 이전에 저장한 값을 기본값으로 미리
+    // 채운다. 처음 온보딩하는 경우 user에 값이 없어 기존 기본값(첫 옵션)을 그대로 쓴다.
+    const [purpose, setPurpose] = useState(user?.purpose || PURPOSE_OPTIONS[0].value);
+    const [experienceLevel, setExperienceLevel] = useState(
+        user?.experienceLevel || EXPERIENCE_LEVEL_OPTIONS[0].value
+    );
+    const [improvementGoal, setImprovementGoal] = useState(
+        user?.improvementGoal || IMPROVEMENT_GOAL_OPTIONS[0].value
+    );
     const [loading, setLoading] = useState(false);
+    const [skipping, setSkipping] = useState(false);
     const [error, setError] = useState("");
+    const skipButtonLabel = getSkipButtonLabel(isEditingCompletedOnboarding, skipping);
 
     async function handleSubmit(event) {
         event.preventDefault();
@@ -47,7 +43,13 @@ function OnboardingPage() {
             setError("");
 
             await completeOnboarding({ purpose, experienceLevel, improvementGoal });
-            updateUser({ onboardingCompleted: true });
+            updateUser({
+                onboardingCompleted: true,
+                onboardingSkipped: false,
+                purpose,
+                experienceLevel,
+                improvementGoal,
+            });
             navigate(redirectPath, { replace: true });
         } catch (requestError) {
             setError(requestError.message || "온보딩 정보 저장 중 오류가 발생했습니다.");
@@ -56,8 +58,26 @@ function OnboardingPage() {
         }
     }
 
-    function handleSkip() {
-        navigate(redirectPath, { replace: true });
+    // 예전에는 이 버튼이 화면만 넘기고 서버에 아무것도 남기지 않아, 다음 로그인 때마다
+    // 다시 온보딩으로 보내졌다. 이제는 건너뛴 사실 자체를 서버에 기록해 반복 노출을 막는다.
+    async function handleSkip() {
+        if (isEditingCompletedOnboarding) {
+            navigate(redirectPath, { replace: true });
+            return;
+        }
+
+        try {
+            setSkipping(true);
+            setError("");
+
+            await skipOnboarding();
+            updateUser({ onboardingSkipped: true });
+            navigate(redirectPath, { replace: true });
+        } catch (requestError) {
+            setError(requestError.message || "건너뛰기 처리 중 오류가 발생했습니다.");
+        } finally {
+            setSkipping(false);
+        }
     }
 
     return (
@@ -67,7 +87,7 @@ function OnboardingPage() {
                     <p className="eyebrow">Get started</p>
                     <h2>서비스를 어떻게 이용하실 건가요?</h2>
                     <p className="card-description">
-                        답변을 바탕으로 발표 분석 피드백을 더 맞춤화할 수 있습니다. 언제든 건너뛸 수 있습니다.
+                        답변은 향후 추천 설정에 활용할 예정입니다. 언제든 건너뛸 수 있고, 계정 설정에서 다시 확인하거나 수정할 수 있습니다.
                     </p>
 
                     <form className="option-panel" onSubmit={handleSubmit}>
@@ -128,7 +148,7 @@ function OnboardingPage() {
                             <button
                                 type="submit"
                                 className="primary-button"
-                                disabled={loading}
+                                disabled={loading || skipping}
                             >
                                 {loading ? "저장 중..." : "저장하고 시작하기"}
                             </button>
@@ -137,9 +157,9 @@ function OnboardingPage() {
                                 type="button"
                                 className="secondary-button"
                                 onClick={handleSkip}
-                                disabled={loading}
+                                disabled={loading || skipping}
                             >
-                                나중에 하기
+                                {skipButtonLabel}
                             </button>
                         </div>
                     </form>

@@ -11,6 +11,7 @@ const apiMock = vi.hoisted(() => ({
     forceWithdrawAdminUser: vi.fn(),
 }));
 const confirmMock = vi.hoisted(() => vi.fn());
+const promptReasonMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/adminApi", () => apiMock);
 vi.mock("../context/AuthContext", () => ({
@@ -18,6 +19,7 @@ vi.mock("../context/AuthContext", () => ({
 }));
 vi.mock("../context/ConfirmContext", () => ({
     useConfirm: () => confirmMock,
+    useReasonPrompt: () => promptReasonMock,
 }));
 
 const USERS_RESPONSE = {
@@ -60,6 +62,8 @@ describe("AdminUsersPage", () => {
         apiMock.getAdminUsers.mockResolvedValue(USERS_RESPONSE);
         confirmMock.mockReset();
         confirmMock.mockResolvedValue(true);
+        promptReasonMock.mockReset();
+        promptReasonMock.mockResolvedValue({ reason: "테스트 사유", incidentId: "INC-2001" });
     });
 
     it("renders users separately from recovery work", async () => {
@@ -82,7 +86,10 @@ describe("AdminUsersPage", () => {
         expect(screen.getAllByRole("button", { name: "정지" })).toHaveLength(1);
         fireEvent.click(screen.getByRole("button", { name: "정지" }));
 
-        await waitFor(() => expect(apiMock.suspendAdminUser).toHaveBeenCalledWith(2));
+        await waitFor(() => expect(apiMock.suspendAdminUser).toHaveBeenCalledWith(2, {
+            reason: "테스트 사유",
+            incidentId: "INC-2001",
+        }));
         expect(await screen.findByRole("button", { name: "활성화" })).toBeInTheDocument();
     });
 
@@ -93,8 +100,22 @@ describe("AdminUsersPage", () => {
 
         fireEvent.click(screen.getByRole("button", { name: "강제 탈퇴" }));
 
-        await waitFor(() => expect(apiMock.forceWithdrawAdminUser).toHaveBeenCalledWith(2));
+        await waitFor(() => expect(apiMock.forceWithdrawAdminUser).toHaveBeenCalledWith(2, {
+            reason: "테스트 사유",
+            incidentId: "INC-2001",
+        }));
         expect(screen.queryByText("member@example.com")).not.toBeInTheDocument();
+    });
+
+    it("does not suspend a user when the reason prompt is cancelled", async () => {
+        promptReasonMock.mockResolvedValue(null);
+        renderPage();
+        await screen.findByText("member@example.com");
+
+        fireEvent.click(screen.getByRole("button", { name: "정지" }));
+
+        await waitFor(() => expect(promptReasonMock).toHaveBeenCalled());
+        expect(apiMock.suspendAdminUser).not.toHaveBeenCalled();
     });
 
     it("sends email, status, and role filters to the server", async () => {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { changePassword, withdrawAccount } from "../api/authApi";
 import { getErrorMessage } from "../api/errorUtils";
 import StateMessage from "../components/StateMessage";
@@ -7,6 +7,11 @@ import PasswordToggleButton from "../components/PasswordToggleButton";
 import { useAuth } from "../context/AuthContext";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+import {
+    getExperienceLevelLabel,
+    getImprovementGoalLabel,
+    getPurposeLabel,
+} from "../constants/onboarding";
 
 const hintStyle = {
     display: "block",
@@ -97,7 +102,7 @@ function AccountPage() {
                 <p className="eyebrow">Account</p>
                 <h2>계정</h2>
                 <p className="card-description">
-                    현재 로그인한 계정과 데이터 삭제 요청을 관리합니다.
+                    로그인 정보, 발표 분석 설정, 문의·데이터 권리 요청을 관리합니다.
                 </p>
 
                 <div className="option-panel">
@@ -199,6 +204,55 @@ function AccountPage() {
                     )}
                 </div>
 
+                <div className="option-panel">
+                    <strong>온보딩 설정</strong>
+
+                    {user?.onboardingCompleted ? (
+                        <>
+                            <p className="card-description">
+                                목적: {getPurposeLabel(user.purpose)} · 경험 수준: {getExperienceLevelLabel(user.experienceLevel)} · 개선 목표: {getImprovementGoalLabel(user.improvementGoal)}
+                            </p>
+                            <p className="card-description">
+                                답변은 향후 추천 설정에 활용할 예정입니다.
+                            </p>
+                        </>
+                    ) : (
+                        <p className="card-description">
+                            {user?.onboardingSkipped
+                                ? "온보딩 질문에 아직 답변하지 않았습니다(건너뜀)."
+                                : "온보딩 질문에 아직 답변하지 않았습니다."}
+                        </p>
+                    )}
+
+                    <div className="button-row">
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => navigate("/onboarding", { state: { from: "/account" } })}
+                        >
+                            {user?.onboardingCompleted ? "온보딩 설정 수정" : "온보딩 질문에 답변하기"}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="option-panel">
+                    <strong>문의 및 데이터 권리</strong>
+                    <p className="card-description">
+                        서비스 이용 중 문의사항이나 개인정보 열람·정정·삭제 요청은 아래 정책
+                        페이지에서 안내하는 절차를 따라주세요. 보유한 업로드 영상과 분석 결과를
+                        모두 삭제하려면 이 페이지 아래의 회원탈퇴를 이용하면 됩니다.
+                    </p>
+
+                    <div className="button-row">
+                        <Link to="/privacy" className="secondary-button">
+                            개인정보처리방침 보기
+                        </Link>
+                        <Link to="/terms" className="secondary-button">
+                            이용약관 보기
+                        </Link>
+                    </div>
+                </div>
+
                 <form className="option-panel" onSubmit={handleWithdraw}>
                     <label>
                         <span>
@@ -225,7 +279,7 @@ function AccountPage() {
                     <div className="button-row">
                         <button
                             type="submit"
-                            className="primary-button"
+                            className="danger-button"
                             disabled={loading}
                         >
                             {loading ? "처리 중..." : "회원탈퇴"}

@@ -5,16 +5,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.api import basic_analysis as basic
+from app.services import audio_analysis, face_analysis, media_io, pose_analysis, scoring
 
 
 def point(x: float, y: float) -> SimpleNamespace:
     return SimpleNamespace(x=x, y=y)
 
 
-def write_pcm16_wav(path: Path, amplitudes: list[int], sample_rate: int = 16000) -> None:
+def write_pcm16_wav(
+    path: Path, amplitudes: list[int], sample_rate: int = 16000
+) -> None:
     samples = array("h")
-    window_sample_count = int(sample_rate * basic.VOLUME_ANALYSIS_WINDOW_SEC)
+    window_sample_count = int(sample_rate * audio_analysis.VOLUME_ANALYSIS_WINDOW_SEC)
 
     for amplitude in amplitudes:
         samples.extend([amplitude] * window_sample_count)
@@ -53,7 +55,7 @@ def write_pcm16_wav(path: Path, amplitudes: list[int], sample_rate: int = 16000)
 )
 def test_calculate_score_uses_documented_weights(scores, expected_total):
     # 검출률이 충분하고 STT가 성공한(=패널티 0) 상황을 가정합니다.
-    result = basic.calculate_score(
+    result = scoring.calculate_score(
         pose_result={"postureScore": scores["posture"], "detectionRate": 1.0},
         face_result={"gazeScore": scores["gaze"], "detectionRate": 1.0},
         audio_result={
@@ -78,7 +80,7 @@ def test_calculate_score_uses_documented_weights(scores, expected_total):
 
 
 def test_calculate_score_applies_total_penalty_on_low_reliability():
-    result = basic.calculate_score(
+    result = scoring.calculate_score(
         pose_result={"postureScore": 80, "detectionRate": 0.3},
         face_result={"gazeScore": 80, "detectionRate": 0.3},
         audio_result={
@@ -92,14 +94,14 @@ def test_calculate_score_applies_total_penalty_on_low_reliability():
 
     # 가중합 80점, 감점 = 검출률(5+5) + STT 실패(3) + 짧은 영상(5) = 18 → 상한 15점.
     assert result["rawScore"] == 80
-    assert result["penalty"] == basic.MAX_TOTAL_PENALTY
-    assert result["totalScore"] == 80 - basic.MAX_TOTAL_PENALTY
+    assert result["penalty"] == scoring.MAX_TOTAL_PENALTY
+    assert result["totalScore"] == 80 - scoring.MAX_TOTAL_PENALTY
     assert result["reliability"]["lowConfidence"] is True
     assert len(result["reliability"]["penaltyReasons"]) == 4
 
 
 def test_calculate_total_penalty_weak_detection_is_mild():
-    penalty = basic.calculate_total_penalty(
+    penalty = scoring.calculate_total_penalty(
         pose_result={"detectionRate": 0.6},
         face_result={"detectionRate": 0.6},
         audio_result={"analysisMethod": "stt_based_analysis", "durationSec": 60},
@@ -109,22 +111,149 @@ def test_calculate_total_penalty_weak_detection_is_mild():
     assert penalty["lowConfidence"] is False
 
 
+@pytest.mark.parametrize(
+    (
+        "pose_rate",
+        "face_rate",
+        "analysis_method",
+        "duration_sec",
+        "expected_penalty",
+        "expected_low_confidence",
+        "expected_reasons",
+    ),
+    [
+        (
+            0.49,
+            1.0,
+            "stt_based_analysis",
+            60,
+            5,
+            True,
+            ["자세 검출률이 50% 미만입니다."],
+        ),
+        (
+            0.50,
+            1.0,
+            "stt_based_analysis",
+            60,
+            2,
+            False,
+            ["자세 검출률이 70% 미만입니다."],
+        ),
+        (
+            0.6999,
+            1.0,
+            "stt_based_analysis",
+            60,
+            2,
+            False,
+            ["자세 검출률이 70% 미만입니다."],
+        ),
+        (0.70, 1.0, "stt_based_analysis", 60, 0, False, []),
+        (
+            1.0,
+            0.49,
+            "stt_based_analysis",
+            60,
+            5,
+            True,
+            ["얼굴 검출률이 50% 미만입니다."],
+        ),
+        (
+            1.0,
+            1.0,
+            "audio_extracted_duration_based_estimation",
+            60,
+            3,
+            False,
+            ["STT에 실패해 음성 추정값을 사용했습니다."],
+        ),
+        (1.0, 1.0, "", 5, 5, False, ["영상이 너무 짧아 분석 신뢰도가 낮습니다."]),
+        (1.0, 1.0, "stt_based_analysis", 0, 0, False, []),
+        (1.0, 1.0, "stt_based_analysis", 10, 0, False, []),
+        (
+            0.49,
+            0.49,
+            "audio_extracted_duration_based_estimation",
+            5,
+            15,
+            True,
+            [
+                "자세 검출률이 50% 미만입니다.",
+                "얼굴 검출률이 50% 미만입니다.",
+                "STT에 실패해 음성 추정값을 사용했습니다.",
+                "영상이 너무 짧아 분석 신뢰도가 낮습니다.",
+            ],
+        ),
+    ],
+)
+def test_calculate_total_penalty_preserves_threshold_boundaries(
+    pose_rate,
+    face_rate,
+    analysis_method,
+    duration_sec,
+    expected_penalty,
+    expected_low_confidence,
+    expected_reasons,
+):
+    result = scoring.calculate_total_penalty(
+        pose_result={"detectionRate": pose_rate},
+        face_result={"detectionRate": face_rate},
+        audio_result={
+            "analysisMethod": analysis_method,
+            "durationSec": duration_sec,
+        },
+    )
+
+    assert result["penalty"] == expected_penalty
+    assert result["lowConfidence"] is expected_low_confidence
+    assert result["reasons"] == expected_reasons
+
+
+@pytest.mark.parametrize(
+    ("component_score", "expected_raw", "expected_total"),
+    [(-100, -100, 0), (200, 200, 100)],
+)
+def test_calculate_score_clamps_only_final_total(
+    component_score,
+    expected_raw,
+    expected_total,
+):
+    result = scoring.calculate_score(
+        pose_result={"postureScore": component_score, "detectionRate": 1.0},
+        face_result={"gazeScore": component_score, "detectionRate": 1.0},
+        audio_result={
+            "speechScore": component_score,
+            "analysisMethod": "stt_based_analysis",
+            "durationSec": 60,
+        },
+        gesture_result={"gestureScore": component_score},
+        emotion_result={"expressionScore": component_score},
+    )
+
+    assert result["rawScore"] == expected_raw
+    assert result["totalScore"] == expected_total
+
+
 def test_finalize_speech_score_blends_documented_weights():
     audio_result = {
         "speechSpeedScore": 100,
         "silenceScore": 80,
-        "volumeStabilityScore": basic.VOLUME_STABILITY_BASELINE_SCORE,
+        "volumeStabilityScore": audio_analysis.VOLUME_STABILITY_BASELINE_SCORE,
         "volumeStabilityImplemented": True,
         "speechScore": 0,
     }
     filler_result = {"fillerScore": 60}
 
-    finalized = basic.finalize_speech_score(audio_result, filler_result)
+    finalized = audio_analysis.finalize_speech_score(audio_result, filler_result)
 
     # 100*0.35 + 80*0.25 + 60*0.25 + 80*0.15 = 35 + 20 + 15 + 12 = 82
     assert finalized["speechScore"] == 82
     assert finalized["fillerScore"] == 60
-    assert finalized["volumeStabilityScore"] == basic.VOLUME_STABILITY_BASELINE_SCORE
+    assert (
+        finalized["volumeStabilityScore"]
+        == audio_analysis.VOLUME_STABILITY_BASELINE_SCORE
+    )
     assert finalized["volumeStabilityImplemented"] is True
 
 
@@ -132,7 +261,7 @@ def test_analyze_volume_stability_scores_consistent_non_silent_audio(tmp_path):
     audio_path = tmp_path / "steady.wav"
     write_pcm16_wav(audio_path, [8000, 8000, 8000, 8000])
 
-    result = basic.calculate_volume_stability_from_wav(audio_path)
+    result = audio_analysis.calculate_volume_stability_from_wav(audio_path)
 
     assert result["volumeStabilityScore"] == 100
     assert result["volumeStabilityImplemented"] is True
@@ -146,7 +275,7 @@ def test_analyze_volume_stability_penalizes_large_volume_swings(tmp_path):
     audio_path = tmp_path / "swing.wav"
     write_pcm16_wav(audio_path, [1000, 20000, 1000, 20000])
 
-    result = basic.calculate_volume_stability_from_wav(audio_path)
+    result = audio_analysis.calculate_volume_stability_from_wav(audio_path)
 
     assert result["volumeStabilityScore"] == 40
     assert result["volumeStabilityImplemented"] is True
@@ -154,10 +283,12 @@ def test_analyze_volume_stability_penalizes_large_volume_swings(tmp_path):
 
 
 def test_analyze_volume_stability_falls_back_when_audio_is_missing():
-    result = basic.analyze_volume_stability({"success": False, "audioPath": ""})
+    result = audio_analysis.analyze_volume_stability(
+        {"success": False, "audioPath": ""}
+    )
 
     assert result == {
-        "volumeStabilityScore": basic.VOLUME_STABILITY_BASELINE_SCORE,
+        "volumeStabilityScore": audio_analysis.VOLUME_STABILITY_BASELINE_SCORE,
         "volumeStabilityImplemented": False,
         "volumeStabilityFallbackReason": "audio_unavailable",
         "volumeRmsDbStdDev": None,
@@ -167,8 +298,8 @@ def test_analyze_volume_stability_falls_back_when_audio_is_missing():
 
 
 def test_blend_speech_score_clamps_to_valid_range():
-    assert basic.blend_speech_score(100, 100, 100, 100) == 100
-    assert basic.blend_speech_score(0, 0, 0, 0) == 0
+    assert audio_analysis.blend_speech_score(100, 100, 100, 100) == 100
+    assert audio_analysis.blend_speech_score(0, 0, 0, 0) == 0
 
 
 @pytest.mark.parametrize(
@@ -181,7 +312,7 @@ def test_blend_speech_score_clamps_to_valid_range():
     ],
 )
 def test_calculate_shoulder_balance_score_boundaries(shoulder_diff, expected):
-    assert basic.calculate_shoulder_balance_score(shoulder_diff) == expected
+    assert pose_analysis.calculate_shoulder_balance_score(shoulder_diff) == expected
 
 
 @pytest.mark.parametrize(
@@ -193,8 +324,13 @@ def test_calculate_shoulder_balance_score_boundaries(shoulder_diff, expected):
         (-1.0, 40, 0),
     ],
 )
-def test_calculate_posture_score_clamps_weighted_score(detection_rate, shoulder_score, expected):
-    assert basic.calculate_posture_score(detection_rate, shoulder_score) == expected
+def test_calculate_posture_score_clamps_weighted_score(
+    detection_rate, shoulder_score, expected
+):
+    assert (
+        pose_analysis.calculate_posture_score(detection_rate, shoulder_score)
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -210,7 +346,7 @@ def test_calculate_posture_score_clamps_weighted_score(detection_rate, shoulder_
     ],
 )
 def test_calculate_gesture_variety_score_boundaries(gesture_rate, expected):
-    assert basic.calculate_gesture_variety_score(gesture_rate) == expected
+    assert pose_analysis.calculate_gesture_variety_score(gesture_rate) == expected
 
 
 @pytest.mark.parametrize(
@@ -226,7 +362,7 @@ def test_calculate_gesture_variety_score_boundaries(gesture_rate, expected):
     ],
 )
 def test_calculate_gesture_movement_score_boundaries(movement, expected):
-    assert basic.calculate_gesture_movement_score(movement) == expected
+    assert pose_analysis.calculate_gesture_movement_score(movement) == expected
 
 
 def test_hand_activity_and_wrist_movement_helpers():
@@ -235,125 +371,156 @@ def test_hand_activity_and_wrist_movement_helpers():
     active_wrist = {"x": 0.7, "y": 0.55, "visibility": 1.0}
     hidden_wrist = {"x": 0.7, "y": 0.55, "visibility": 0.1}
 
-    assert basic.is_hand_active(shoulder, elbow, active_wrist) is True
-    assert basic.is_hand_active(shoulder, elbow, hidden_wrist) is False
-    assert basic.calculate_wrist_movement(None, active_wrist) is None
-    assert basic.calculate_wrist_movement(
+    assert pose_analysis.is_hand_active(shoulder, elbow, active_wrist) is True
+    assert pose_analysis.is_hand_active(shoulder, elbow, hidden_wrist) is False
+    assert pose_analysis.calculate_wrist_movement(None, active_wrist) is None
+    assert pose_analysis.calculate_wrist_movement(
         {"x": 0.0, "y": 0.0, "visibility": 1.0},
         {"x": 0.3, "y": 0.4, "visibility": 1.0},
     ) == pytest.approx(0.5)
 
 
 def test_mouth_eye_and_gaze_ratio_helpers():
-    assert basic.calculate_mouth_openness(
-        point(0.5, 0.4),
-        point(0.5, 0.5),
-        point(0.4, 0.45),
-        point(0.6, 0.45),
-    ) == 0.5
-    assert basic.calculate_mouth_openness(
-        point(0.5, 0.4),
-        point(0.5, 0.5),
-        point(0.4, 0.45),
-        point(0.4, 0.45),
-    ) == 0
+    assert (
+        face_analysis.calculate_mouth_openness(
+            point(0.5, 0.4),
+            point(0.5, 0.5),
+            point(0.4, 0.45),
+            point(0.6, 0.45),
+        )
+        == 0.5
+    )
+    assert (
+        face_analysis.calculate_mouth_openness(
+            point(0.5, 0.4),
+            point(0.5, 0.5),
+            point(0.4, 0.45),
+            point(0.4, 0.45),
+        )
+        == 0
+    )
 
-    assert basic.calculate_eye_openness(
-        point(0.2, 0.2),
-        point(0.2, 0.24),
-        point(0.8, 0.2),
-        point(0.8, 0.24),
-        point(0.1, 0.2),
-        point(0.9, 0.2),
-    ) == 0.05
-    assert basic.calculate_eye_openness(
-        point(0.2, 0.2),
-        point(0.2, 0.24),
-        point(0.8, 0.2),
-        point(0.8, 0.24),
-        point(0.1, 0.2),
-        point(0.1, 0.2),
-    ) == 0
+    assert (
+        face_analysis.calculate_eye_openness(
+            point(0.2, 0.2),
+            point(0.2, 0.24),
+            point(0.8, 0.2),
+            point(0.8, 0.24),
+            point(0.1, 0.2),
+            point(0.9, 0.2),
+        )
+        == 0.05
+    )
+    assert (
+        face_analysis.calculate_eye_openness(
+            point(0.2, 0.2),
+            point(0.2, 0.24),
+            point(0.8, 0.2),
+            point(0.8, 0.24),
+            point(0.1, 0.2),
+            point(0.1, 0.2),
+        )
+        == 0
+    )
 
-    assert basic.calculate_iris_gaze_ratio(
+    assert face_analysis.calculate_iris_gaze_ratio(
         point(0.5, 0.5),
         point(0.3, 0.0),
         point(0.7, 0.0),
         point(0.0, 0.4),
         point(0.0, 0.6),
     ) == {"horizontalRatio": pytest.approx(0.5), "verticalRatio": pytest.approx(0.5)}
-    assert basic.calculate_iris_gaze_ratio(
-        point(0.5, 0.5),
-        point(0.3, 0.0),
-        point(0.3, 0.0),
-        point(0.0, 0.4),
-        point(0.0, 0.6),
-    ) is None
+    assert (
+        face_analysis.calculate_iris_gaze_ratio(
+            point(0.5, 0.5),
+            point(0.3, 0.0),
+            point(0.3, 0.0),
+            point(0.0, 0.4),
+            point(0.0, 0.6),
+        )
+        is None
+    )
 
 
 def test_gaze_score_and_eye_contact_helpers():
-    assert basic.average_gaze_ratios(
+    assert face_analysis.average_gaze_ratios(
         {"horizontalRatio": 0.4, "verticalRatio": 0.6},
         {"horizontalRatio": 0.6, "verticalRatio": 0.4},
     ) == (0.5, 0.5)
     # 양쪽 눈 모두 측정 실패 시 "정면 응시"로 오인시키지 않도록 None을 반환해야 합니다.
-    assert basic.average_gaze_ratios(None, None) is None
-    assert basic.is_gazing_at_camera(0.5, 0.5) is True
-    assert basic.is_gazing_at_camera(0.7, 0.5) is False
-    assert basic.calculate_gaze_score_from_ratios(0.5, 0.5) == 100
-    assert basic.calculate_gaze_score_from_ratios(0.65, 0.5) == 80
-    assert basic.calculate_gaze_score_from_ratios(0.75, 0.5) == 60
-    assert basic.calculate_gaze_score_from_ratios(0.9, 0.5) == 40
-    assert basic.calculate_gaze_score_from_camera_ratio(0.70) == 90
-    assert basic.calculate_gaze_score_from_camera_ratio(0.55) == 74
-    assert basic.calculate_gaze_score_from_camera_ratio(0.20) == 29
-    assert basic.resolve_eye_contact_level(85) == "good"
-    assert basic.resolve_eye_contact_level(70) == "normal"
-    assert basic.resolve_eye_contact_level(50) == "weak"
-    assert basic.resolve_eye_contact_level(49) == "poor"
+    assert face_analysis.average_gaze_ratios(None, None) is None
+    assert face_analysis.is_gazing_at_camera(0.5, 0.5) is True
+    assert face_analysis.is_gazing_at_camera(0.7, 0.5) is False
+    assert face_analysis.calculate_gaze_score_from_ratios(0.5, 0.5) == 100
+    assert face_analysis.calculate_gaze_score_from_ratios(0.65, 0.5) == 80
+    assert face_analysis.calculate_gaze_score_from_ratios(0.75, 0.5) == 60
+    assert face_analysis.calculate_gaze_score_from_ratios(0.9, 0.5) == 40
+    assert face_analysis.calculate_gaze_score_from_camera_ratio(0.70) == 90
+    assert face_analysis.calculate_gaze_score_from_camera_ratio(0.55) == 74
+    assert face_analysis.calculate_gaze_score_from_camera_ratio(0.20) == 29
+    assert face_analysis.resolve_eye_contact_level(85) == "good"
+    assert face_analysis.resolve_eye_contact_level(70) == "normal"
+    assert face_analysis.resolve_eye_contact_level(50) == "weak"
+    assert face_analysis.resolve_eye_contact_level(49) == "poor"
 
 
 def test_expression_helpers():
-    assert basic.estimate_emotion_label(0.28, 0.035, 50) == "speaking"
-    assert basic.estimate_emotion_label(0.1, 0.03, 80) == "engaged"
-    assert basic.estimate_emotion_label(0.1, 0.017, 80) == "low_energy"
-    assert basic.estimate_emotion_label(0.1, 0.02, 50) == "neutral"
-    assert basic.calculate_expression_score("engaged", 0.1, 0.03, 90) == 92
-    assert basic.calculate_expression_score("speaking", 0.3, 0.04, 50) == 75
-    assert basic.calculate_expression_score("neutral", 0.1, 0.02, 50) == 70
-    assert basic.calculate_expression_score("low_energy", 0.1, 0.01, 50) == 45
-    assert basic.calculate_expression_score("unknown", 0.1, 0.02, 50) == 0
-    assert basic.calculate_expression_variety_score({"neutral": 1, "engaged": 1, "speaking": 1}) == 100
-    assert basic.calculate_expression_variety_score({"neutral": 1, "engaged": 1}) == 80
-    assert basic.calculate_expression_variety_score({"unknown": 3}) == 40
-    assert basic.resolve_dominant_emotion({"unknown": 4}) == "unknown"
-    assert basic.resolve_dominant_emotion({"neutral": 2, "engaged": 5, "unknown": 9}) == "engaged"
+    assert face_analysis.estimate_emotion_label(0.28, 0.035, 50) == "speaking"
+    assert face_analysis.estimate_emotion_label(0.1, 0.03, 80) == "engaged"
+    assert face_analysis.estimate_emotion_label(0.1, 0.017, 80) == "low_energy"
+    assert face_analysis.estimate_emotion_label(0.1, 0.02, 50) == "neutral"
+    assert face_analysis.calculate_expression_score("engaged", 0.1, 0.03, 90) == 92
+    assert face_analysis.calculate_expression_score("speaking", 0.3, 0.04, 50) == 75
+    assert face_analysis.calculate_expression_score("neutral", 0.1, 0.02, 50) == 70
+    assert face_analysis.calculate_expression_score("low_energy", 0.1, 0.01, 50) == 45
+    assert face_analysis.calculate_expression_score("unknown", 0.1, 0.02, 50) == 0
+    assert (
+        face_analysis.calculate_expression_variety_score(
+            {"neutral": 1, "engaged": 1, "speaking": 1}
+        )
+        == 100
+    )
+    assert (
+        face_analysis.calculate_expression_variety_score({"neutral": 1, "engaged": 1})
+        == 80
+    )
+    assert face_analysis.calculate_expression_variety_score({"unknown": 3}) == 40
+    assert face_analysis.resolve_dominant_emotion({"unknown": 4}) == "unknown"
+    assert (
+        face_analysis.resolve_dominant_emotion(
+            {"neutral": 2, "engaged": 5, "unknown": 9}
+        )
+        == "engaged"
+    )
     # 얼굴이 한 번도 검출되지 않아 unknown만 쌓인 실제 상황을 흉내낸 케이스입니다.
     # analyze_emotion_from_face_result가 미리 채워두는 것과 같은 형태(0으로 초기화된
     # 4개 키 + unknown)입니다. "neutral"로 오인되면 안 됩니다.
-    assert basic.resolve_dominant_emotion(
-        {"neutral": 0, "engaged": 0, "speaking": 0, "low_energy": 0, "unknown": 20}
-    ) == "unknown"
+    assert (
+        face_analysis.resolve_dominant_emotion(
+            {"neutral": 0, "engaged": 0, "speaking": 0, "low_energy": 0, "unknown": 20}
+        )
+        == "unknown"
+    )
 
 
 def test_speech_speed_silence_and_pause_helpers():
-    assert basic.calculate_speech_speed_wpm(130, 60) == 130
-    assert basic.calculate_speech_speed_wpm(130, 0) == 0
-    assert basic.calculate_speech_speed_score(110) == 100
-    assert basic.calculate_speech_speed_score(90) == 80
-    assert basic.calculate_speech_speed_score(170) == 80
-    assert basic.calculate_speech_speed_score(70) == 60
-    assert basic.calculate_speech_speed_score(190) == 60
-    assert basic.calculate_speech_speed_score(191) == 40
+    assert audio_analysis.calculate_speech_speed_wpm(130, 60) == 130
+    assert audio_analysis.calculate_speech_speed_wpm(130, 0) == 0
+    assert audio_analysis.calculate_speech_speed_score(110) == 100
+    assert audio_analysis.calculate_speech_speed_score(90) == 80
+    assert audio_analysis.calculate_speech_speed_score(170) == 80
+    assert audio_analysis.calculate_speech_speed_score(70) == 60
+    assert audio_analysis.calculate_speech_speed_score(190) == 60
+    assert audio_analysis.calculate_speech_speed_score(191) == 40
 
-    assert basic.calculate_silence_ratio(15, 100) == 0.15
-    assert basic.calculate_silence_ratio(15, 0) == 0
-    assert basic.calculate_silence_score(0.15) == 100
-    assert basic.calculate_silence_score(0.25) == 80
-    assert basic.calculate_silence_score(0.35) == 60
-    assert basic.calculate_silence_score(0.36) == 40
+    assert audio_analysis.calculate_silence_ratio(15, 100) == 0.15
+    assert audio_analysis.calculate_silence_ratio(15, 0) == 0
+    assert audio_analysis.calculate_silence_score(0.15) == 100
+    assert audio_analysis.calculate_silence_score(0.25) == 80
+    assert audio_analysis.calculate_silence_score(0.35) == 60
+    assert audio_analysis.calculate_silence_score(0.36) == 40
 
-    pauses = basic.analyze_pauses_from_segments(
+    pauses = audio_analysis.analyze_pauses_from_segments(
         segments=[
             {"start": 0, "end": 2},
             {"start": 1, "end": 4},
@@ -367,7 +534,7 @@ def test_speech_speed_silence_and_pause_helpers():
         "totalSilenceTime": 6.2,
         "silenceRatio": 0.5167,
     }
-    assert basic.analyze_pauses_from_segments([], 12) == {
+    assert audio_analysis.analyze_pauses_from_segments([], 12) == {
         "silenceCount": 0,
         "totalSilenceTime": 0,
         "silenceRatio": 0,
@@ -375,7 +542,9 @@ def test_speech_speed_silence_and_pause_helpers():
 
 
 def test_filler_helpers():
-    result = basic.count_filler_words("음 어, 어. 그러니까 발표를 이제 시작합니다")
+    result = audio_analysis.count_filler_words(
+        "음 어, 어. 그러니까 발표를 이제 시작합니다"
+    )
 
     assert result["totalCount"] == 5
     assert {item["word"]: item["count"] for item in result["items"]} == {
@@ -384,22 +553,22 @@ def test_filler_helpers():
         "그러니까": 1,
         "이제": 1,
     }
-    assert basic.calculate_filler_ratio(3, 100) == 0.03
-    assert basic.calculate_filler_ratio(3, 0) == 0
-    assert basic.calculate_filler_score(0.01) == 100
-    assert basic.calculate_filler_score(0.03) == 80
-    assert basic.calculate_filler_score(0.06) == 60
-    assert basic.calculate_filler_score(0.061) == 40
+    assert audio_analysis.calculate_filler_ratio(3, 100) == 0.03
+    assert audio_analysis.calculate_filler_ratio(3, 0) == 0
+    assert audio_analysis.calculate_filler_score(0.01) == 100
+    assert audio_analysis.calculate_filler_score(0.03) == 80
+    assert audio_analysis.calculate_filler_score(0.06) == 60
+    assert audio_analysis.calculate_filler_score(0.061) == 40
 
 
 def test_calculate_sample_frame_indexes_handles_empty_and_caps_result_count():
-    assert basic.calculate_sample_frame_indexes(0, 100) == []
-    assert basic.calculate_sample_frame_indexes(30, 0) == []
-    assert basic.calculate_sample_frame_indexes(30, 60) == [0, 30]
+    assert media_io.calculate_sample_frame_indexes(0, 100) == []
+    assert media_io.calculate_sample_frame_indexes(30, 0) == []
+    assert media_io.calculate_sample_frame_indexes(30, 60) == [0, 30]
 
-    frame_indexes = basic.calculate_sample_frame_indexes(1, 100)
+    frame_indexes = media_io.calculate_sample_frame_indexes(1, 100)
 
-    assert len(frame_indexes) == basic.MAX_EXTRACTED_FRAMES
+    assert len(frame_indexes) == media_io.MAX_EXTRACTED_FRAMES
     assert frame_indexes == sorted(set(frame_indexes))
     assert frame_indexes[0] == 0
     assert frame_indexes[-1] < 100
@@ -409,15 +578,17 @@ def test_resolve_video_path_finds_absolute_and_relative_files(tmp_path, monkeypa
     video_file = tmp_path / "sample.mp4"
     video_file.write_bytes(b"video")
 
-    assert basic.resolve_video_path(str(video_file)) == video_file.resolve()
+    assert media_io.resolve_video_path(str(video_file)) == video_file.resolve()
 
     monkeypatch.chdir(tmp_path)
 
-    assert basic.resolve_video_path("sample.mp4") == video_file.resolve()
-    assert basic.resolve_video_path("missing.mp4") is None
+    assert media_io.resolve_video_path("sample.mp4") == video_file.resolve()
+    assert media_io.resolve_video_path("missing.mp4") is None
 
 
-def test_resolve_video_path_rejects_file_outside_allowed_base_dir(tmp_path, monkeypatch):
+def test_resolve_video_path_rejects_file_outside_allowed_base_dir(
+    tmp_path, monkeypatch
+):
     allowed_dir = tmp_path / "allowed"
     allowed_dir.mkdir()
     monkeypatch.setenv("ANALYSIS_ENGINE_ALLOWED_VIDEO_BASE_DIR", str(allowed_dir))
@@ -426,7 +597,7 @@ def test_resolve_video_path_rejects_file_outside_allowed_base_dir(tmp_path, monk
     outside_file.parent.mkdir()
     outside_file.write_bytes(b"video")
 
-    assert basic.resolve_video_path(str(outside_file)) is None
+    assert media_io.resolve_video_path(str(outside_file)) is None
 
 
 class FakeDownloadResponse:
@@ -438,7 +609,7 @@ class FakeDownloadResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise basic.requests.HTTPError(f"status {self.status_code}")
+            raise media_io.requests.HTTPError(f"status {self.status_code}")
 
     def iter_content(self, chunk_size):
         for chunk in self._chunks:
@@ -451,15 +622,15 @@ class FakeDownloadResponse:
 
 
 def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     response = FakeDownloadResponse([b"video-bytes"])
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
         lambda url, stream, timeout, allow_redirects: response,
     )
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-download",
         "https://minio.local/uploads/job-download/original.mp4",
         "/storage/uploads/job-download/original.mp4",
@@ -472,14 +643,14 @@ def test_download_video_from_url_saves_file_and_returns_path(tmp_path, monkeypat
 
 
 def test_download_video_from_url_returns_none_when_request_fails(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
 
     def raise_error(url, stream, timeout, allow_redirects):
-        raise basic.requests.ConnectionError("connection failed")
+        raise media_io.requests.ConnectionError("connection failed")
 
-    monkeypatch.setattr(basic.requests, "get", raise_error)
+    monkeypatch.setattr(media_io.requests, "get", raise_error)
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-download-fail",
         "https://minio.local/uploads/job-download-fail/original.mp4",
         "/storage/uploads/job-download-fail/original.mp4",
@@ -492,45 +663,54 @@ def test_download_video_from_url_removes_partial_file_and_closes_response(
     tmp_path,
     monkeypatch,
 ):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
-    response = FakeDownloadResponse([
-        b"partial-video",
-        basic.requests.ConnectionError("stream interrupted"),
-    ])
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
+    response = FakeDownloadResponse(
+        [
+            b"partial-video",
+            media_io.requests.ConnectionError("stream interrupted"),
+        ]
+    )
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
         lambda url, stream, timeout, allow_redirects: response,
     )
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-partial-download",
         "https://minio.local/uploads/job-partial-download/original.mp4",
         "/storage/uploads/job-partial-download/original.mp4",
     )
 
     expected_path = (
-        tmp_path / "storage" / "temp" / "job-partial-download" / "download" / "original.mp4"
+        tmp_path
+        / "storage"
+        / "temp"
+        / "job-partial-download"
+        / "download"
+        / "original.mp4"
     )
     assert downloaded_path is None
     assert expected_path.exists() is False
     assert response.closed is True
 
 
-def test_download_video_from_url_rejects_oversized_content_length(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+def test_download_video_from_url_rejects_oversized_content_length(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     monkeypatch.setenv("ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB", "1")
     response = FakeDownloadResponse(
         [b"not-written"],
         headers={"content-length": str(1024 * 1024 + 1)},
     )
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
         lambda url, stream, timeout, allow_redirects: response,
     )
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-oversized-header",
         "https://minio.local/uploads/job-oversized-header/original.mp4",
         "/storage/uploads/job-oversized-header/original.mp4",
@@ -544,23 +724,28 @@ def test_download_video_from_url_rejects_oversized_stream_and_removes_file(
     tmp_path,
     monkeypatch,
 ):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     monkeypatch.setenv("ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB", "1")
     response = FakeDownloadResponse([b"x" * (1024 * 1024), b"overflow"])
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
         lambda url, stream, timeout, allow_redirects: response,
     )
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-oversized-stream",
         "https://minio.local/uploads/job-oversized-stream/original.mp4",
         "/storage/uploads/job-oversized-stream/original.mp4",
     )
 
     expected_path = (
-        tmp_path / "storage" / "temp" / "job-oversized-stream" / "download" / "original.mp4"
+        tmp_path
+        / "storage"
+        / "temp"
+        / "job-oversized-stream"
+        / "download"
+        / "original.mp4"
     )
     assert downloaded_path is None
     assert expected_path.exists() is False
@@ -571,22 +756,27 @@ def test_download_video_from_url_rejects_empty_response_and_removes_file(
     tmp_path,
     monkeypatch,
 ):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     response = FakeDownloadResponse([])
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
         lambda url, stream, timeout, allow_redirects: response,
     )
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-empty-download",
         "https://minio.local/uploads/job-empty-download/original.mp4",
         "/storage/uploads/job-empty-download/original.mp4",
     )
 
     expected_path = (
-        tmp_path / "storage" / "temp" / "job-empty-download" / "download" / "original.mp4"
+        tmp_path
+        / "storage"
+        / "temp"
+        / "job-empty-download"
+        / "download"
+        / "original.mp4"
     )
     assert downloaded_path is None
     assert expected_path.exists() is False
@@ -596,15 +786,15 @@ def test_download_video_from_url_rejects_empty_response_and_removes_file(
 def test_download_video_from_url_rejects_host_outside_allowlist_without_calling_requests(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     monkeypatch.setenv("ANALYSIS_ENGINE_ALLOWED_DOWNLOAD_HOSTS", "minio.local:443")
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("requests.get must not be called for a disallowed host")
 
-    monkeypatch.setattr(basic.requests, "get", fail_if_called)
+    monkeypatch.setattr(media_io.requests, "get", fail_if_called)
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-ssrf-attempt",
         "http://169.254.169.254/latest/meta-data/",
         "/storage/uploads/job-ssrf-attempt/original.mp4",
@@ -614,15 +804,15 @@ def test_download_video_from_url_rejects_host_outside_allowlist_without_calling_
 
 
 def test_download_video_from_url_rejects_redirect_response(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     response = FakeDownloadResponse([b"not-written"], status_code=302)
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
         lambda url, stream, timeout, allow_redirects: response,
     )
 
-    downloaded_path = basic.download_video_from_url(
+    downloaded_path = media_io.download_video_from_url(
         "job-redirect",
         "https://minio.local/uploads/job-redirect/original.mp4",
         "/storage/uploads/job-redirect/original.mp4",
@@ -640,18 +830,20 @@ def test_resolve_analysis_engine_max_video_size_rejects_invalid_values(
     monkeypatch.setenv("ANALYSIS_ENGINE_MAX_VIDEO_SIZE_MB", configured_value)
 
     with pytest.raises(RuntimeError, match="must be a positive integer"):
-        basic.resolve_analysis_engine_max_video_size_bytes()
+        media_io.resolve_analysis_engine_max_video_size_bytes()
 
 
 def test_resolve_or_download_video_path_prefers_download_url(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     monkeypatch.setattr(
-        basic.requests,
+        media_io.requests,
         "get",
-        lambda url, stream, timeout, allow_redirects: FakeDownloadResponse([b"video-bytes"]),
+        lambda url, stream, timeout, allow_redirects: FakeDownloadResponse(
+            [b"video-bytes"]
+        ),
     )
 
-    resolved_path = basic.resolve_or_download_video_path(
+    resolved_path = media_io.resolve_or_download_video_path(
         "job-prefer-url",
         "missing-local-file.mp4",
         "https://minio.local/uploads/job-prefer-url/original.mp4",
@@ -661,18 +853,20 @@ def test_resolve_or_download_video_path_prefers_download_url(tmp_path, monkeypat
     assert resolved_path.read_bytes() == b"video-bytes"
 
 
-def test_resolve_or_download_video_path_falls_back_to_local_path_when_download_fails(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+def test_resolve_or_download_video_path_falls_back_to_local_path_when_download_fails(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
 
     def raise_error(url, stream, timeout, allow_redirects):
-        raise basic.requests.ConnectionError("connection failed")
+        raise media_io.requests.ConnectionError("connection failed")
 
-    monkeypatch.setattr(basic.requests, "get", raise_error)
+    monkeypatch.setattr(media_io.requests, "get", raise_error)
 
     video_file = tmp_path / "sample.mp4"
     video_file.write_bytes(b"local-video")
 
-    resolved_path = basic.resolve_or_download_video_path(
+    resolved_path = media_io.resolve_or_download_video_path(
         "job-fallback",
         str(video_file),
         "https://minio.local/uploads/job-fallback/original.mp4",
@@ -685,7 +879,7 @@ def test_resolve_or_download_video_path_uses_local_path_when_no_download_url(tmp
     video_file = tmp_path / "sample.mp4"
     video_file.write_bytes(b"local-video")
 
-    resolved_path = basic.resolve_or_download_video_path(
+    resolved_path = media_io.resolve_or_download_video_path(
         "job-no-url",
         str(video_file),
         None,
@@ -695,23 +889,23 @@ def test_resolve_or_download_video_path_uses_local_path_when_no_download_url(tmp
 
 
 def test_cleanup_temp_directory_deletes_only_job_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     job_dir = tmp_path / "storage" / "temp" / "job-1"
     job_dir.mkdir(parents=True)
     (job_dir / "frame.jpg").write_bytes(b"frame")
 
-    basic.cleanup_temp_directory("job-1")
+    media_io.cleanup_temp_directory("job-1")
 
     assert not job_dir.exists()
 
 
 def test_cleanup_temp_directory_rejects_path_traversal(tmp_path, monkeypatch):
-    monkeypatch.setattr(basic, "resolve_project_root", lambda: tmp_path)
+    monkeypatch.setattr(media_io, "resolve_project_root", lambda: tmp_path)
     outside_dir = tmp_path / "storage" / "outside-job"
     outside_dir.mkdir(parents=True)
     (outside_dir / "keep.txt").write_text("must stay")
 
-    basic.cleanup_temp_directory("../outside-job")
+    media_io.cleanup_temp_directory("../outside-job")
 
     assert outside_dir.exists()
     assert (outside_dir / "keep.txt").read_text() == "must stay"

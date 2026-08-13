@@ -110,7 +110,7 @@ function StatusPage() {
                     <PageHeader
                         eyebrow="Service Status"
                         title="서비스 상태"
-                        description="현재 각 기능을 이용할 수 있는지 확인합니다. 상세 운영 지표와 내부 구성은 운영 모니터링에서 별도로 관리합니다."
+                        description="현재 각 테스트 기능을 이용할 수 있는지 확인합니다. 상세 분석 단계와 오류는 터미널의 로컬 로그에서 확인합니다."
                     />
 
                     <button

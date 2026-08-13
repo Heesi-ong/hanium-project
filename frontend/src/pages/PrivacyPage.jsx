@@ -1,137 +1,75 @@
 import { Link } from "react-router-dom";
-import BusinessInfoSection from "../components/BusinessInfoSection";
-import {
-    PRIVACY_OFFICER_EMAIL,
-    PRIVACY_OFFICER_NAME,
-    PRIVACY_OFFICER_PHONE,
-} from "../constants/businessInfo";
 
 function PrivacyPage() {
     return (
         <section className="page-section">
             <article className="upload-card policy-card">
-                <p className="eyebrow">Privacy Policy Draft</p>
-                <h1>개인정보처리방침</h1>
+                <p className="eyebrow">Student Project Data Guide</p>
+                <h1>테스트 데이터 처리 안내</h1>
 
                 <div className="policy-disclaimer">
-                    이 문서는 초안이며 법률 전문가의 검토를 거치지 않았습니다.
-                    실제 서비스 출시 전 반드시 법률 전문가 검토가 필요합니다.
-                </div>
-
-                <BusinessInfoSection />
-
-                <div className="policy-section">
-                    <h3>개인정보 보호책임자</h3>
-                    <ul>
-                        <li>이름 또는 직책: {PRIVACY_OFFICER_NAME}</li>
-                        <li>이메일: {PRIVACY_OFFICER_EMAIL}</li>
-                        <li>전화: {PRIVACY_OFFICER_PHONE}</li>
-                    </ul>
+                    이 프로젝트는 공개 온라인 서비스가 아닌 로컬/통제된 테스트 시연용입니다.
+                    실제 사람의 얼굴·음성·개인정보가 포함된 영상은 반드시 본인과 찍힌 사람의
+                    명시적 동의를 받은 경우에만 사용하세요.
                 </div>
 
                 <div className="policy-section">
-                    <h3>수집하는 정보</h3>
+                    <h3>처리하는 테스트 데이터</h3>
                     <p>
-                        회원가입과 서비스 이용 과정에서 이메일, 비밀번호 해시, 업로드한 발표 영상 파일,
-                        분석 작업 상태, 분석 결과와 AI 피드백을 처리합니다. 비밀번호는 평문으로 저장하지 않고
-                        서버에서 해시 값으로 저장합니다.
+                        계정 테스트를 위한 이메일과 비밀번호 해시, 업로드한 발표 영상,
+                        분석 job 상태, 정량 분석 결과, AI 피드백과 오류 로그를 로컬 테스트
+                        환경에서 처리합니다. 비밀번호 평문은 저장하지 않습니다.
                     </p>
                 </div>
 
                 <div className="policy-section">
-                    <h3>이용 목적</h3>
+                    <h3>처리 목적</h3>
                     <p>
-                        수집한 정보는 계정 생성과 로그인, 발표 영상 업로드, 자세·시선·음성·표정·제스처 분석,
-                        AI 기반 발표 코칭 피드백 생성, 결과 조회와 삭제 기능 제공에 사용됩니다.
+                        영상 업로드→비동기 분석→진행 상태→결과 조회 흐름을 검증하고,
+                        자세·시선·음성·표정·제스처 분석과 발표 코칭 피드백을 시연하는 데
+                        사용합니다.
                     </p>
                 </div>
 
                 <div className="policy-section">
-                    <h3>외부 AI 처리</h3>
+                    <h3>외부 AI 호출</h3>
                     <p>
-                        분석 기능을 제공하기 위해 업로드한 영상, 영상에서 추출되거나 압축된 분석 데이터,
-                        결과 요약이 OpenAI 및 NVIDIA API로 전송될 수 있습니다. OpenAI는 종합 피드백 생성에,
-                        NVIDIA는 Video LLM 기반 시각 분석에 사용될 수 있습니다.
+                        기본 로컬 설정에서 OpenAI 피드백과 Video LLM 실제 호출은 비활성화됩니다.
+                        테스트 담당자가 명시적으로 활성화하면 영상에서 추출한 분석 요약이
+                        OpenAI API로, 영상 파일 또는 asset 참조가 NVIDIA API로 전송될 수 있습니다.
+                        외부 AI 테스트 전에 동의 여부와 사용할 데이터를 다시 확인하세요.
                     </p>
                 </div>
 
                 <div className="policy-section">
-                    <h3>국외 이전에 관한 사항</h3>
+                    <h3>보관과 삭제</h3>
                     <p>
-                        발표 코칭 분석 기능을 제공하기 위해 아래와 같이 국외 사업자의 API로 데이터가
-                        전송될 수 있습니다. OpenAI 연동은 서버에서 생성한
-                        <code> compactAnalysis </code>
-                        기반 피드백 요청을 전송하고, NVIDIA 연동은 영상 파일을 base64 data URL 또는
-                        NVCF asset 참조 방식으로 전송하는 현재 구현을 기준으로 작성했습니다.
-                    </p>
-                    <ul>
-                        <li>
-                            OpenAI: 이전받는 자는 OpenAI, L.L.C. 및 관련 계열사입니다. 이전 항목은
-                            작업 식별자, 영상에서 추출·압축된 분석 데이터, 점수 요약, 음성·시각·전사
-                            요약, 피드백 생성에 필요한 입력입니다. 이전 국가는 미국 및 OpenAI의
-                            계열사·파트너·서비스 제공자 소재 국가입니다. 이전 목적은 종합 발표 피드백
-                            생성이며, 이전 방법은 OpenAI Responses API 호출입니다. 보유·이용 기간은
-                            OpenAI API 정책 및 계약에 따르며, OpenAI는 일반 API 입력과 출력을 서비스
-                            제공과 남용 탐지를 위해 최대 30일 보관할 수 있다고 안내합니다.
-                        </li>
-                        <li>
-                            NVIDIA: 이전받는 자는 NVIDIA Corporation 및 관련 계열사입니다. 이전 항목은
-                            업로드한 발표 영상 파일, 작업 식별자, 영상 길이·샘플링 힌트, 시각 분석
-                            프롬프트입니다. 이전 국가는 미국 및 NVIDIA의 계열사·처리 인프라 소재
-                            국가입니다. 이전 목적은 Video LLM 기반 시선·표정·제스처·자세 분석이며,
-                            이전 방법은 NVIDIA chat completions API 호출 및 필요한 경우 NVCF Asset API
-                            업로드입니다. 이 프로젝트는 NVCF asset을 요청 종료 후 삭제하도록 시도하지만,
-                            NVIDIA 측 보유·이용 기간은 NVIDIA 정책 및 계약에 따릅니다.
-                        </li>
-                    </ul>
-                </div>
-
-                <div className="policy-section">
-                    <h3>보관 기간과 삭제</h3>
-                    <p>
-                        원본 영상은 분석 완료 후 기본 30일 동안 보관되며, 설정값
-                        <code> STORAGE_RETENTION_ORIGINAL_VIDEO_DAYS </code>
-                        로 조정될 수 있습니다. 보존 기간이 지난 완료 작업의 원본 영상 업로드 디렉터리는 매일
-                        새벽 3시 기본 스케줄로 정리됩니다. 분석 결과는 사용자가 결과를 삭제하거나 회원탈퇴를
-                        요청할 때, 서버에 저장된 사본(로컬 디스크와 오브젝트 스토리지 사본 모두)이 함께
-                        삭제됩니다.
+                        원본 영상은 분석 완료 후 기본 30일이 지나면 정리 대상이 됩니다.
+                        사용자는 결과 삭제 또는 회원탈퇴로 자신의 job, 영상, 결과 삭제를
+                        요청할 수 있습니다. 시연이 끝나면 테스트 계정과 영상을 직접 삭제하세요.
                     </p>
                 </div>
 
                 <div className="policy-section">
-                    <h3>회원탈퇴와 데이터 삭제</h3>
+                    <h3>선택적 백업 주의</h3>
                     <p>
-                        사용자는 계정 설정에서 비밀번호를 재확인한 뒤 회원탈퇴를 요청할 수 있습니다.
-                        회원탈퇴가 처리되면 계정과 사용자가 소유한 분석 작업, 업로드 영상, 결과 파일 삭제를
-                        시도하며, 일부 분석 데이터 삭제에 실패하면 탈퇴 처리가 중단될 수 있습니다.
+                        기본 `docker compose up`은 자동 백업을 실행하지 않습니다.
+                        테스트 담당자가 `ops` 프로필로 백업을 직접 실행했다면 결과 삭제나
+                        회원탈퇴 후에도 백업 파일을 별도로 정리해야 합니다.
                     </p>
                 </div>
 
                 <div className="policy-section">
-                    <h3>백업 보관</h3>
+                    <h3>로그</h3>
                     <p>
-                        서비스 데이터베이스(이메일, 비밀번호 해시, 분석 작업 메타데이터 등)는 장애 복구를
-                        위해 정기적으로 백업됩니다. 백업 파일은 설정값
-                        <code> BACKUP_RETENTION_DAYS </code>
-                        (기본 14일) 동안 보관된 뒤 자동으로 삭제되며, 암호화 설정이 활성화된 경우 AES-256으로
-                        암호화되어 저장됩니다. 운영 환경에서는 로컬 백업과 별도로 오브젝트 스토리지에도
-                        반출되어 보관될 수 있습니다. 따라서 결과 삭제나 회원탈퇴 직후에도, 삭제 시점 이전에
-                        생성된 백업 안에는 최대 백업 보존 기간만큼 데이터 사본이 남아 있을 수 있습니다.
-                    </p>
-                </div>
-
-                <div className="policy-section">
-                    <h3>로그 보관</h3>
-                    <p>
-                        서비스 운영 및 장애 대응을 위해 요청 식별자(requestId), 분석 작업 식별자(jobId) 등이
-                        포함된 서버 로그를 기록합니다. 백엔드 로그는 최대 30일 또는 총 1GB 중 먼저 도달하는
-                        기준까지 보관된 뒤 자동으로 삭제됩니다. 분석 엔진(analysis-engine, video-llm-engine)의
-                        파일 로그도 일 단위로 순환되며 최대 30일 동안 보관된 뒤 삭제됩니다.
+                        분석 진행과 오류 확인을 위해 requestId, jobId, 분석 단계가 로그에
+                        기록됩니다. 영상 내용, 비밀번호, 인증 토큰을 로그에 직접 남기지 마세요.
+                        로컬 파일 로그는 현재 설정에서 최대 30일 범위로 순환됩니다.
                     </p>
                 </div>
 
                 <p className="policy-links">
-                    <Link to="/terms">이용약관 보기</Link>
+                    <Link to="/terms">프로젝트 이용 안내 보기</Link>
                 </p>
             </article>
         </section>

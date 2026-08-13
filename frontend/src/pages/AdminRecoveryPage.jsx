@@ -46,7 +46,7 @@ function AdminRecoveryPage() {
             <PageHeader
                 eyebrow="Admin"
                 title="복구 작업"
-                description="자동 재시도를 모두 소진해 관리자 판단이 필요한 업무 작업만 관리합니다. 시스템 지표와 장애 추세는 운영 모니터링에서 확인합니다."
+                description="자동 재시도를 모두 소진해 관리자 판단이 필요한 테스트 작업만 관리합니다. 상세 원인은 jobId로 로컬 분석 로그를 추적해 확인합니다."
             />
             <AdminNav />
 

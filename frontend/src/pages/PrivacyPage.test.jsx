@@ -13,58 +13,38 @@ function renderPrivacyPage() {
 }
 
 describe("PrivacyPage", () => {
-    it("renders business operator placeholders", () => {
+    it("identifies the project as a local controlled test", () => {
         renderPrivacyPage();
 
-        expect(screen.getByRole("heading", { name: "사업자 정보" }))
+        expect(screen.getByRole("heading", { name: "테스트 데이터 처리 안내" }))
             .toBeInTheDocument();
-        expect(screen.getByText("상호: [실제 서비스명/사업자명 입력 필요]"))
+        expect(screen.getByText(/공개 온라인 서비스가 아닌 로컬\/통제된 테스트/))
             .toBeInTheDocument();
-        expect(screen.getByText("사업자등록번호: [실제 사업자등록번호 입력 필요]"))
+        expect(screen.queryByText(/실제 사업자/)).not.toBeInTheDocument();
+    });
+
+    it("requires consent and discloses optional external AI transfer", () => {
+        renderPrivacyPage();
+
+        expect(screen.getByText(/명시적 동의를 받은 경우에만/)).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "외부 AI 호출" })).toBeInTheDocument();
+        expect(screen.getByText(/OpenAI API/)).toBeInTheDocument();
+        expect(screen.getByText(/NVIDIA API/)).toBeInTheDocument();
+    });
+
+    it("explains deletion and opt-in backup behavior", () => {
+        renderPrivacyPage();
+
+        expect(screen.getByRole("heading", { name: "보관과 삭제" })).toBeInTheDocument();
+        expect(screen.getByText(/분석 완료 후 기본 30일/)).toBeInTheDocument();
+        expect(screen.getByText(/기본 `docker compose up`은 자동 백업을 실행하지 않습니다/))
             .toBeInTheDocument();
     });
 
-    it("renders privacy officer placeholders", () => {
+    it("links to the project usage guide", () => {
         renderPrivacyPage();
 
-        expect(screen.getByRole("heading", { name: "개인정보 보호책임자" }))
-            .toBeInTheDocument();
-        expect(screen.getByText(/실제 개인정보 보호책임자 이름 또는 직책 입력 필요/))
-            .toBeInTheDocument();
-        expect(screen.getByText("전화: [실제 개인정보 문의 전화번호 입력 필요]"))
-            .toBeInTheDocument();
-    });
-
-    it("renders cross-border transfer notice for OpenAI and NVIDIA", () => {
-        renderPrivacyPage();
-
-        expect(screen.getByRole("heading", { name: "국외 이전에 관한 사항" }))
-            .toBeInTheDocument();
-        expect(screen.getByText(/OpenAI Responses API 호출/))
-            .toBeInTheDocument();
-        expect(screen.getByText(/NVCF Asset API 업로드/))
-            .toBeInTheDocument();
-    });
-
-    it("discloses backup retention period and encryption", () => {
-        renderPrivacyPage();
-
-        expect(screen.getByRole("heading", { name: "백업 보관" }))
-            .toBeInTheDocument();
-        expect(screen.getByText(/BACKUP_RETENTION_DAYS/))
-            .toBeInTheDocument();
-        expect(screen.getByText(/AES-256으로/))
-            .toBeInTheDocument();
-    });
-
-    it("discloses backend and analysis engine log retention periods", () => {
-        renderPrivacyPage();
-
-        expect(screen.getByRole("heading", { name: "로그 보관" }))
-            .toBeInTheDocument();
-        expect(screen.getByText(/최대 30일 또는 총 1GB/))
-            .toBeInTheDocument();
-        expect(screen.getByText(/파일 로그도 일 단위로 순환되며 최대 30일 동안 보관/))
-            .toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "프로젝트 이용 안내 보기" }))
+            .toHaveAttribute("href", "/terms");
     });
 });

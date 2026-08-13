@@ -1,9 +1,11 @@
 # MySQL 백업/복구 런북
 
+> **선택 실습 상태(2026-08-13):** 기본 `docker compose up`은 백업을 실행하지 않는다. 이 런북은 `--profile ops`로 백업/복구를 별도 실습할 때만 사용한다.
+
 ## 백업
 
 - 스크립트: `scripts/backup-mysql.sh`
-- 운영 배선: `docker-compose.yml`의 `backup` 서비스가 주기적으로 실행합니다(기본 24시간 간격, `BACKUP_INTERVAL_HOURS`). 실패한 시도는 정상 주기까지 기다리지 않고 `BACKUP_FAILURE_RETRY_MINUTES`(기본 15분) 후 다시 실행합니다.
+- 선택 배선: `docker-compose.yml`의 `backup` 서비스는 `ops` 프로필에서만 실행합니다(기본 24시간 간격, `BACKUP_INTERVAL_HOURS`).
 - 실행 이미지: `infra/backup/Dockerfile`이 `mysql:8.4`에 공식 `minio/mc` 바이너리를 멀티 스테이지로 포함합니다. 컨테이너 시작 때 외부 바이너리를 내려받지 않으며, AMD64/ARM64 플랫폼에 맞는 `mc`가 이미지 빌드 시 고정됩니다.
 - 저장 위치: `storage/backups/*.sql.gz` (기본 보존 기간 14일, `BACKUP_RETENTION_DAYS`)
 - 무결성: 매 백업 후 `gzip -t`와 최소 파일 크기(200바이트) 검사를 통과해야 성공으로 기록됨

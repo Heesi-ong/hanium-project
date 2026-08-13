@@ -59,10 +59,10 @@ describe("MainLayout", () => {
         expect(screen.queryByRole("link", { name: "서비스 상태" })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "로그아웃" })).not.toBeInTheDocument();
         expect(screen.queryByText("user@example.com")).not.toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "개인정보처리방침" }))
+        expect(screen.getByRole("link", { name: "테스트 데이터 처리 안내" }))
             .toHaveAttribute("href", "/privacy")
             .toHaveClass("text-text-secondary");
-        expect(screen.getByRole("link", { name: "이용약관" }))
+        expect(screen.getByRole("link", { name: "프로젝트 이용 안내" }))
             .toHaveAttribute("href", "/terms")
             .toHaveClass("text-text-secondary");
     });
@@ -153,17 +153,17 @@ describe("MainLayout", () => {
             </MemoryRouter>
         );
 
-        expect(screen.getAllByRole("link", { name: "개인정보처리방침" })).toHaveLength(1);
-        expect(screen.getAllByRole("link", { name: "이용약관" })).toHaveLength(1);
+        expect(screen.getAllByRole("link", { name: "테스트 데이터 처리 안내" })).toHaveLength(1);
+        expect(screen.getAllByRole("link", { name: "프로젝트 이용 안내" })).toHaveLength(1);
     });
 
-    it("labels the pricing entry point as beta usage guidance", () => {
+    it("labels the pricing entry point as project usage guidance", () => {
         authMock.isAuthenticated = false;
         authMock.user = null;
 
         renderMainLayout();
 
-        expect(screen.getByRole("link", { name: "베타 이용 안내" })).toHaveAttribute(
+        expect(screen.getByRole("link", { name: "프로젝트 안내" })).toHaveAttribute(
             "href",
             "/pricing"
         );

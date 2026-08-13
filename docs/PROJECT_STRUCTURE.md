@@ -1,13 +1,13 @@
 # Project Structure
 
-작성일: 2026-07-05 (2026-08-06 일부 갱신: 기준 커밋 정합화. video-llm-engine/
-analysis-engine 내부 구조, video-llm-engine 실제 모델 연동 현황은 2026-07-20 기준)
+작성일: 2026-07-05 (2026-08-13 갱신: 학생 프로젝트 로컬/테스트 범위 반영)
 기준 커밋/브랜치: main (296207d)
 
 ## 1. 전체 개요
 
-- 이 프로젝트는 발표 분석 서비스다.
+- 이 프로젝트는 학생 프로젝트의 로컬/통제된 테스트 시연용 발표 분석 시스템이다.
 - 현재 핵심 서비스는 `backend/`, `frontend/`, `analysis-engine/`, `video-llm-engine/` 네 개다.
+- 공개 온라인 배포, GHCR 릴리스, production 호스트, 상시 운영 관제와 원격 백업은 현재 범위가 아니다.
 - 과거 `Back/`, `Front/` 기준 문서나 기억은 현재 구조와 다를 수 있으므로 사용하지 않는다.
 
 ## 2. 루트 디렉터리
@@ -17,12 +17,12 @@ analysis-engine 내부 구조, video-llm-engine 실제 모델 연동 현황은 2
 - `analysis-engine/`: FastAPI 기반 정량 분석 엔진. 음성/자세/표정 등 기본 분석 담당.
 - `video-llm-engine/`: FastAPI 기반 Video LLM 경계 서비스. DISABLED mock, DEGRADED fallback,
   STRICT 실패 및 NVIDIA hosted API 실제 호출을 정책으로 분리한다.
-- `docs/`: 설계/운영/서비스화 문서 (`analysis-criteria/`, `api/`, `architecture/`, `database/`, `llm/`, `presentation/`, `service-plan/`).
-- `infra/`: Docker, nginx, MySQL, env, 모니터링(Prometheus/Alertmanager/Grafana) 등 배포 보조 설정 (`docker/`, `env/`, `mysql/`, `nginx/`, `prometheus/`, `alertmanager/`, `grafana/`). `infra/nginx/Dockerfile`은 운영 TLS 부트스트랩에 필요한 `openssl` 포함 nginx 이미지를 만든다.
-- `scripts/`: 운영/백업 스크립트 (현재 `backup-mysql.sh`).
-- `storage/`: 업로드, 결과, 로그, temp, 백업, 모델 등 런타임 데이터. 소스 구조가 아니라 운영 데이터로 취급.
+- `docs/`: 분석 기준, API, 아키텍처, DB, LLM, 발표 및 이전 운영 설계 문서.
+- `infra/`: Docker/MySQL 로컬 실행 보조 설정과 nginx/TLS/모니터링 학습 자산. production 관련 자산은 현재 실행 기준이 아니다.
+- `scripts/`: 로컬 실행·검증 스크립트와 선택적 백업 학습 스크립트.
+- `storage/`: 업로드, 결과, 로그, temp, 백업, 모델 등 로컬 런타임 데이터.
 - `Project/`: 기획/발표/회의 자료. 애플리케이션 런타임 코드는 아님.
-- 루트의 `docker-compose.yml`(기본), `docker-compose.prod.yml`(운영 오버레이), `docker-compose.monitoring.yml`(모니터링 오버레이, opt-in), `.env.example`, `.github/workflows/verify.yml`(CI), `.github/dependabot.yml`(의존성 자동 업데이트)도 실행/배포 기준 파일이다.
+- 현재 실행 기준은 `docker-compose.yml`, `.env.example`, `.github/workflows/verify.yml`이다. `docker-compose.prod.yml`, `docker-compose.release.yml`, `docker-compose.monitoring.yml`은 학습/선택 자료로 분리한다. 이전 GHCR workflow는 `docs/archive/operations/release.workflow.yml`로 이동해 실행 경로에서 제거했다.
 
 ## 3. Backend: `backend/`
 
@@ -98,7 +98,7 @@ orchestration과 분리해 독립 단위 테스트로 경계값과 판정·후�
 
 - `frontend/package.json`
 - `frontend/vite.config.js`
-- 배포: `frontend/Dockerfile`, `frontend/nginx.conf`
+- 로컬 컨테이너 빌드: `frontend/Dockerfile`, `frontend/nginx.conf`
 
 ## 5. Analysis Engine: `analysis-engine/`
 
@@ -180,5 +180,5 @@ orchestration과 분리해 독립 단위 테스트로 경계값과 판정·후�
 ## 8. 문서 갱신 원칙
 
 - 구조가 바뀌면 이 문서를 먼저 갱신한다.
-- stale 가능성이 높은 서비스화 판단은 `docs/service-plan/` 문서와 실제 코드를 함께 확인한다.
+- stale 가능성이 높은 서비스화/운영 판단은 현재 로컬/테스트 범위와 실제 코드를 함께 확인한다.
 - 코드 위치를 적을 때는 파일명만 쓰지 말고 실제 진입점과 호출 흐름을 같이 적는다.

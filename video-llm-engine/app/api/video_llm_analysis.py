@@ -1,24 +1,22 @@
-from contextlib import contextmanager
 import logging
 import math
-from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-import threading
 import time
-from typing import Any, Dict, Iterator
+from typing import Any, Dict
 
-import imageio_ffmpeg
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from app.core.logging_config import bind_job_id, bind_request_id
 from app.core.security import verify_internal_api_key
-from app.services import deadline, media_io, nvidia_provider, nvidia_response
+from app.services import (
+    media_io,
+    nvidia_prompt,
+    nvidia_response,
+    nvidia_runtime,
+    video_pipeline,
+)
 from app.core.settings import (
     NVIDIA_DEFAULT_MODEL as NVIDIA_DEFAULT_MODEL,
-    VideoLlmSettings,
     get_settings,
 )
 
@@ -54,23 +52,11 @@ def resolve_video_llm_backend() -> str:
     return get_settings().installed_backend
 
 
-# NVIDIA hosted API의 공식 SLA 문서는 없지만, 계정당 약 40 RPM을 공유한다는 보고가
-# 있습니다(docs/service-plan/video-llm-model-options.md 참고). 여러 분석 작업이 동시에
-# 겹치면 이 순간 대역에 몰려 429가 날 수 있어, 앱 레벨에서 실제 모델 호출의 동시
-# 실행 수 자체를 낮게 제한합니다. 이 라우트는 sync def라 FastAPI가 스레드풀에서
-# 실행하므로 threading.Semaphore를 씁니다. 세마포어의 초기 permit 수는 객체 생성
-# 시점에 고정되는 값이라(다른 resolve_* 함수들과 달리) 프로세스 기동 시 한 번만
-# 읽습니다. 대기 timeout은 호출마다 다시 읽을 수 있어 resolve 함수로 분리했습니다.
-_REAL_MODEL_SEMAPHORE = threading.Semaphore(3)
-
-
-def configure_runtime(settings: VideoLlmSettings) -> None:
-    global _REAL_MODEL_SEMAPHORE
-    _REAL_MODEL_SEMAPHORE = threading.Semaphore(settings.real_model_max_concurrency)
-
-
-def resolve_real_model_semaphore_timeout_seconds() -> float:
-    return get_settings().real_model_semaphore_timeout_seconds
+# 기존 애플리케이션 초기화 경로와 내부 호출자를 위한 호환 alias입니다.
+configure_runtime = nvidia_runtime.configure_runtime
+resolve_real_model_semaphore_timeout_seconds = (
+    nvidia_runtime.resolve_semaphore_timeout_seconds
+)
 
 
 # 라이브 테스트에서 성공이 확인된 안전 구간(120초)보다 여유를 둔 기본값입니다. 이보다
@@ -180,167 +166,22 @@ def call_real_video_llm_model_in_chunks(
     chunk_duration_seconds: float,
     deadline_monotonic: float | None = None,
 ) -> Dict[str, Any]:
-    """긴 영상을 chunk_duration_seconds 단위로 실제로 잘라(ffmpeg) NVIDIA를 구간마다
-    호출하고 결과를 하나로 합칩니다. 세그먼트 하나라도 생성 또는 분석에 실패하면 전체
-    호출을 실패시킵니다. 누락 구간이 있는 부분 결과를 REAL로 표시하면 STRICT/requireReal
-    계약을 위반하므로, 상위 analyze_video()가 정책에 따라 502 또는 전체 FALLBACK으로
-    처리하게 합니다.
-    """
-    total_segment_count = math.ceil(request.durationSec / chunk_duration_seconds)
-
-    with media_io.resolve_video_file(request, deadline_monotonic) as (
-        video_path,
-        content_type,
-    ):
-        with split_video_into_segments(
-            video_path,
-            chunk_duration_seconds,
-            request.durationSec,
-            deadline_monotonic,
-        ) as segment_paths:
-            merged_observations: Dict[str, list] = {
-                category: [] for category in nvidia_response.OBSERVATION_CATEGORIES
-            }
-            summary_parts: Dict[str, list] = {
-                field: [] for field in nvidia_response.SUMMARY_FIELDS
-            }
-
-            if len(segment_paths) != total_segment_count:
-                raise RuntimeError(
-                    "Video LLM 세그먼트 생성 결과가 예상 개수와 다릅니다. "
-                    f"expected={total_segment_count}, actual={len(segment_paths)}"
-                )
-
-            # segment_paths는 (원래 청크 인덱스, 파일 경로) 튜플 목록입니다. 원래 인덱스로
-            # 시간 오프셋을 계산해 startSec/endSec이 정확한 전체 영상 시각을 유지합니다.
-            for original_index, segment_path in segment_paths:
-                segment_start_offset = original_index * chunk_duration_seconds
-                segment_local_duration = min(
-                    chunk_duration_seconds, request.durationSec - segment_start_offset
-                )
-
-                segment_model_json = call_nvidia_chat_completion(
-                    api_key=api_key,
-                    model=model,
-                    base_url=base_url,
-                    asset_base_url=asset_base_url,
-                    timeout_seconds=timeout_seconds,
-                    job_id=f"{request.jobId}-segment-{original_index}",
-                    video_path=segment_path,
-                    content_type=content_type,
-                    duration_hint_sec=segment_local_duration,
-                    sample_fps=request.sampleFps,
-                    max_frames=request.maxFrames,
-                    deadline_monotonic=deadline_monotonic,
-                )
-                segment_normalized = nvidia_response.normalize_video_llm_response(
-                    request.jobId, model, segment_model_json, segment_local_duration
-                )
-
-                for category in nvidia_response.OBSERVATION_CATEGORIES:
-                    for item in segment_normalized["observations"][category]:
-                        offset_item = dict(item)
-                        offset_item["startSec"] = round(
-                            item["startSec"] + segment_start_offset, 3
-                        )
-                        offset_item["endSec"] = round(
-                            item["endSec"] + segment_start_offset, 3
-                        )
-                        merged_observations[category].append(offset_item)
-
-                segment_end_offset = segment_start_offset + segment_local_duration
-                for field in nvidia_response.SUMMARY_FIELDS:
-                    summary_parts[field].append(
-                        f"[{segment_start_offset:.0f}-{segment_end_offset:.0f}s] "
-                        f"{segment_normalized['globalSummary'][field]}"
-                    )
-
-    merged_model_json = {
-        "observations": merged_observations,
-        "globalSummary": {
-            field: " ".join(parts) for field, parts in summary_parts.items()
-        },
-    }
-
-    # 세그먼트별로는 각자의 로컬 구간 길이로 이미 클램프했지만, 반올림/마지막 구간 오차에
-    # 대비해 전체 영상 길이 기준으로 한 번 더 검증/클램프합니다.
-    return nvidia_response.normalize_video_llm_response(
-        request.jobId, model, merged_model_json, request.durationSec
+    return video_pipeline.analyze_video_in_chunks(
+        request=request,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        asset_base_url=asset_base_url,
+        timeout_seconds=timeout_seconds,
+        chunk_duration_seconds=chunk_duration_seconds,
+        deadline_monotonic=deadline_monotonic,
+        call_chat_completion=call_nvidia_chat_completion,
+        split_timeout_seconds=resolve_video_llm_segment_split_timeout_seconds(),
     )
 
 
-@contextmanager
-def split_video_into_segments(
-    video_path: Path,
-    chunk_duration_seconds: float,
-    total_duration_sec: float,
-    deadline_monotonic: float | None = None,
-) -> Iterator[list[tuple[int, Path]]]:
-    """ffmpeg -c copy로 원본을 재인코딩 없이 chunk_duration_seconds 단위로 잘라, 생성된
-    세그먼트의 (원래 청크 인덱스, 파일 경로) 목록을 만듭니다. 임시 디렉터리는 이 컨텍스트를
-    벗어나면 정리됩니다. 인덱스를 함께 반환하는 이유는, 일부 세그먼트가 생성에 실패해
-    목록에서 빠지더라도 호출부가 시간 오프셋을 원래 위치 기준으로 정확히 계산할 수 있게
-    하기 위해서입니다(단순 목록 위치로 계산하면 실패 이후 모든 구간의 시간이 밀립니다).
-    """
-    segment_count = math.ceil(total_duration_sec / chunk_duration_seconds)
-    output_dir = Path(tempfile.mkdtemp(prefix="video-llm-segments-"))
-    ffmpeg_executable = imageio_ffmpeg.get_ffmpeg_exe()
-    split_timeout_seconds = resolve_video_llm_segment_split_timeout_seconds()
-    suffix = video_path.suffix or ".mp4"
-
-    try:
-        segment_paths: list[tuple[int, Path]] = []
-
-        for index in range(segment_count):
-            start_sec = index * chunk_duration_seconds
-            output_path = output_dir / f"segment-{index}{suffix}"
-            effective_split_timeout_seconds = deadline.remaining_timeout_seconds(
-                deadline_monotonic,
-                split_timeout_seconds,
-                f"segment_split_{index}",
-            )
-
-            subprocess.run(
-                [
-                    ffmpeg_executable,
-                    "-y",
-                    "-ss",
-                    str(start_sec),
-                    "-t",
-                    str(chunk_duration_seconds),
-                    "-i",
-                    str(video_path),
-                    "-c",
-                    "copy",
-                    "-avoid_negative_ts",
-                    "make_zero",
-                    str(output_path),
-                ],
-                check=True,
-                capture_output=True,
-                timeout=effective_split_timeout_seconds,
-            )
-            deadline.ensure_within(
-                deadline_monotonic,
-                f"segment_split_{index}",
-            )
-
-            if output_path.exists() and output_path.stat().st_size > 0:
-                segment_paths.append((index, output_path))
-            else:
-                raise RuntimeError(
-                    "ffmpeg가 세그먼트를 만들지 못했습니다(빈 출력). "
-                    f"segment={index + 1}/{segment_count}"
-                )
-
-        if not segment_paths:
-            raise RuntimeError(
-                "ffmpeg가 영상을 세그먼트로 나누지 못했습니다(생성된 세그먼트 없음)."
-            )
-
-        yield segment_paths
-    finally:
-        shutil.rmtree(output_dir, ignore_errors=True)
+# 기존 내부 import 경로를 사용하는 테스트/도구를 위한 호환 alias입니다.
+split_video_into_segments = video_pipeline.split_video_into_segments
 
 
 def call_nvidia_chat_completion(
@@ -350,180 +191,33 @@ def call_nvidia_chat_completion(
     asset_base_url: str,
     timeout_seconds: float,
     job_id: str,
-    video_path: Path,
+    video_path,
     content_type: str,
     duration_hint_sec: float | None,
     sample_fps: int,
     max_frames: int,
     deadline_monotonic: float | None = None,
 ) -> Dict[str, Any]:
-    """세마포어로 보호된 단일 NVIDIA chat/completions 호출입니다."""
-    semaphore_timeout_seconds = deadline.remaining_timeout_seconds(
-        deadline_monotonic,
-        resolve_real_model_semaphore_timeout_seconds(),
-        "real_model_semaphore",
-    )
-    acquired = _REAL_MODEL_SEMAPHORE.acquire(timeout=semaphore_timeout_seconds)
-    if not acquired:
-        raise RuntimeError(
-            "Video LLM 실제 모델 동시 호출 제한에 걸려 "
-            f"{semaphore_timeout_seconds}초 안에 순번을 확보하지 못했습니다."
-        )
-
-    try:
-        provider_result = nvidia_provider.execute_chat_completion(
-            api_key=api_key,
-            model=model,
-            base_url=base_url,
-            asset_base_url=asset_base_url,
-            timeout_seconds=timeout_seconds,
-            job_id=job_id,
-            video_path=video_path,
-            content_type=content_type,
-            payload_builder=lambda video_input: build_nvidia_chat_completion_payload(
-                duration_hint_sec,
-                sample_fps,
-                max_frames,
-                model,
-                video_input,
-            ),
-            deadline_monotonic=deadline_monotonic,
-        )
-        content = nvidia_response.extract_chat_completion_content(
-            provider_result.response_json
-        )
-        return nvidia_response.parse_model_json(content)
-    finally:
-        _REAL_MODEL_SEMAPHORE.release()
-
-
-def build_nvidia_chat_completion_payload(
-    duration_hint_sec: float | None,
-    sample_fps: int,
-    max_frames: int,
-    model: str,
-    video_input: Dict[str, str | None],
-) -> Dict[str, Any]:
-    system_prompt = (
-        "/no_think\n"
-        "You are a presentation-coaching video analyst. Return only strict JSON. "
-        "Do not wrap the JSON in Markdown. The JSON must match the requested schema exactly."
-    )
-    duration_prompt = build_duration_prompt(duration_hint_sec)
-    user_prompt = (
-        "Analyze the uploaded presentation video for visible delivery behavior. "
-        "Return JSON with this exact shape: "
-        "{"
-        '"observations":{'
-        '"eyeContact":[{"startSec":0,"endSec":0,"label":"string",'
-        '"description":"string","confidence":0.0}],'
-        '"facialExpression":[{"startSec":0,"endSec":0,"label":"string",'
-        '"description":"string","confidence":0.0}],'
-        '"gesture":[{"startSec":0,"endSec":0,"label":"string",'
-        '"description":"string","confidence":0.0}],'
-        '"posture":[{"startSec":0,"endSec":0,"label":"string",'
-        '"description":"string","confidence":0.0}]'
-        "},"
-        '"globalSummary":{'
-        '"visualDelivery":"string",'
-        '"mainStrength":"string",'
-        '"mainWeakness":"string"'
-        "}"
-        "}. "
-        "Use seconds from the start of the video. Keep confidence between 0 and 1. "
-        f"{duration_prompt}"
-        f"Sampling hint from caller: sampleFps={sample_fps}, maxFrames={max_frames}."
+    return nvidia_runtime.call_chat_completion(
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        asset_base_url=asset_base_url,
+        timeout_seconds=timeout_seconds,
+        job_id=job_id,
+        video_path=video_path,
+        content_type=content_type,
+        duration_hint_sec=duration_hint_sec,
+        sample_fps=sample_fps,
+        max_frames=max_frames,
+        deadline_monotonic=deadline_monotonic,
     )
 
-    if video_input.get("asset_id"):
-        return {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        f"/no_think\n{user_prompt}\n"
-                        "Return only valid JSON. Do not include Markdown, comments, or trailing text.\n"
-                        f'<video src="{video_input["url"]}" />'
-                    ),
-                },
-            ],
-            "temperature": 0.2,
-            "max_tokens": 1200,
-            "response_format": {
-                "type": "json_object",
-            },
-        }
 
-    return {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": user_prompt,
-                    },
-                    {
-                        "type": "video_url",
-                        "video_url": {
-                            "url": video_input["url"],
-                        },
-                    },
-                ],
-            },
-        ],
-        "temperature": 0.2,
-        "max_tokens": 1200,
-        "response_format": {
-            "type": "json_object",
-        },
-    }
-
-
-# 이보다 짧은 영상에는 3구간 강제 분할을 적용하지 않습니다. 원래 3구간 강제 프롬프트는
-# 60초/120초 영상에서 모델이 관찰을 [0, duration] 하나로 뭉개버리는 문제(구간 분할
-# 실패)에 대응하려고 도입했습니다(docs/service-plan/video-llm-model-options.md 5절
-# 측정 참고). 하지만 구간 분할(chunking) 도입 이후에는 이 프롬프트가 이미 짧은
-# 세그먼트(예: 10~20초)에도 그대로 적용되어, 오히려 실제로는 하나로 이어지는 행동을
-# 억지로 3조각으로 쪼개 답하게 만들 위험이 있습니다. 짧은 영상/세그먼트는 모델이
-# 실제로 관찰한 시점을 그대로 보고하게 하는 쪽이 더 정직한 결과를 기대할 수 있습니다.
-MIN_DURATION_FOR_FORCED_SEGMENTATION_SEC = 30.0
-
-
-def build_duration_prompt(duration_sec: float | None) -> str:
-    if duration_sec is None:
-        return ""
-
-    if duration_sec < MIN_DURATION_FOR_FORCED_SEGMENTATION_SEC:
-        return (
-            f"The video is exactly {duration_sec:.3f} seconds long. "
-            f"All startSec and endSec values must be within [0, {duration_sec:.3f}]. "
-            "Report the real moments you actually observe with their true timestamps. "
-            "Do not force the video into artificial sub-segments: if a behavior genuinely "
-            f"spans the whole clip, report one observation covering [0, {duration_sec:.3f}]; "
-            "if distinct moments are visible, report them separately with their actual timing. "
-        )
-
-    first_boundary = duration_sec / 3
-    second_boundary = duration_sec * 2 / 3
-    return (
-        f"The video is exactly {duration_sec:.3f} seconds long. "
-        f"All startSec and endSec values must be within [0, {duration_sec:.3f}] "
-        "and must not all be 0 unless the entire observation truly spans the whole video. "
-        f"Divide the video into three temporal segments: [0, {first_boundary:.3f}), "
-        f"[{first_boundary:.3f}, {second_boundary:.3f}), "
-        f"and [{second_boundary:.3f}, {duration_sec:.3f}]. "
-        "For each observation category (eyeContact, facialExpression, gesture, posture), "
-        "include at least one observation for each segment when the behavior is actually visible "
-        "in that segment. Unless the behavior truly does not change for the whole video, "
-        "do not collapse all observations into a single [0, duration] range. "
-    )
+# 기존 내부 import 경로를 사용하는 테스트/도구와의 호환성을 유지합니다. 실제 구현 책임은
+# app.services.nvidia_prompt에 있습니다.
+build_nvidia_chat_completion_payload = nvidia_prompt.build_nvidia_chat_completion_payload
+build_duration_prompt = nvidia_prompt.build_duration_prompt
 
 
 def build_mock_response(

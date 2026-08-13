@@ -629,7 +629,7 @@ function HomePage() {
                             <>
                                 <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
                                     <Link to="/signup" className={buttonVariantClassName("primary", "motion-cta")}>
-                                        무료로 시작하기
+                                        로컬 테스트 시작
                                     </Link>
                                 </motion.div>
                                 <motion.div whileHover={prefersReducedMotion ? undefined : { y: -3 }} whileTap={{ scale: 0.98 }}>
@@ -837,7 +837,7 @@ function HomePage() {
                             to="/signup"
                             className="final-cta-link inline-flex items-center justify-center rounded-full bg-primary-deep px-8 py-4 text-base font-semibold text-warm-white transition-colors duration-200 hover:bg-primary-deep/85 active:bg-primary-deep/70"
                         >
-                            무료 회원가입
+                            테스트 계정 만들기
                         </Link>
                     </motion.div>
                 </div>

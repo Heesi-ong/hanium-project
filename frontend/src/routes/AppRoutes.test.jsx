@@ -38,10 +38,10 @@ describe("AppRoutes public policy pages", () => {
         renderAppRoutes("/privacy");
 
         await waitFor(() => {
-            expect(screen.getByRole("heading", { name: "개인정보처리방침" }))
+            expect(screen.getByRole("heading", { name: "테스트 데이터 처리 안내" }))
                 .toBeInTheDocument();
         });
-        expect(screen.getByText(/OpenAI 및 NVIDIA API로 전송될 수 있습니다/))
+        expect(screen.getByText(/분석 요약이 OpenAI API로/))
             .toBeInTheDocument();
     });
 
@@ -49,10 +49,10 @@ describe("AppRoutes public policy pages", () => {
         renderAppRoutes("/terms");
 
         await waitFor(() => {
-            expect(screen.getByRole("heading", { name: "이용약관" }))
+            expect(screen.getByRole("heading", { name: "프로젝트 이용 안내" }))
                 .toBeInTheDocument();
         });
-        expect(screen.getByText(/외부 AI API로 영상 또는 분석 데이터가 전송될 수 있다는 점/))
+        expect(screen.getByText(/영상 또는 분석 요약이 외부 API로 전송될 수 있습니다/))
             .toBeInTheDocument();
     });
 

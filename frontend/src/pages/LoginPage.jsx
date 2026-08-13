@@ -136,9 +136,9 @@ function LoginPage() {
                     </form>
 
                     <p className="auth-policy-links">
-                        <Link to="/privacy">개인정보처리방침</Link>
+                        <Link to="/privacy">테스트 데이터 처리 안내</Link>
                         <span aria-hidden="true"> · </span>
-                        <Link to="/terms">이용약관</Link>
+                        <Link to="/terms">프로젝트 이용 안내</Link>
                     </p>
                 </article>
             </PageFadeIn>

@@ -11,7 +11,13 @@ from fastapi.testclient import TestClient
 
 from app.api import video_llm_analysis
 from app.api.video_llm_analysis import VideoLlmAnalysisRequest
-from app.services import media_io, nvidia_provider, nvidia_response
+from app.services import (
+    media_io,
+    nvidia_provider,
+    nvidia_response,
+    nvidia_runtime,
+    video_pipeline,
+)
 
 
 def create_client(monkeypatch, tmp_path, api_key: str = "shared-secret") -> TestClient:
@@ -44,7 +50,7 @@ def create_real_video_file(
     """구간 분할(ffmpeg) 테스트는 실제로 디코딩 가능한 영상이 있어야 하므로, lavfi로
     지정한 길이만큼의 최소 동영상을 실제로 만들어 반환합니다."""
     video_path = tmp_path / name
-    ffmpeg_executable = video_llm_analysis.imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg_executable = video_pipeline.imageio_ffmpeg.get_ffmpeg_exe()
     subprocess.run(
         [
             ffmpeg_executable,
@@ -548,7 +554,7 @@ def test_call_real_video_llm_model_raises_when_concurrency_semaphore_is_exhauste
     exhausted_semaphore = threading.Semaphore(1)
     exhausted_semaphore.acquire()  # 유일한 permit을 미리 점유해 세마포어를 소진시킵니다.
     monkeypatch.setattr(
-        video_llm_analysis, "_REAL_MODEL_SEMAPHORE", exhausted_semaphore
+        nvidia_runtime, "_REAL_MODEL_SEMAPHORE", exhausted_semaphore
     )
 
     with pytest.raises(RuntimeError, match="동시 호출"):
@@ -574,7 +580,7 @@ def test_call_real_video_llm_model_releases_semaphore_after_success(
 
     single_slot_semaphore = threading.Semaphore(1)
     monkeypatch.setattr(
-        video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore
+        nvidia_runtime, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore
     )
 
     video_llm_analysis.call_real_video_llm_model(
@@ -605,7 +611,7 @@ def test_call_real_video_llm_model_releases_semaphore_even_when_call_fails(
 
     single_slot_semaphore = threading.Semaphore(1)
     monkeypatch.setattr(
-        video_llm_analysis, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore
+        nvidia_runtime, "_REAL_MODEL_SEMAPHORE", single_slot_semaphore
     )
 
     with pytest.raises(httpx.HTTPStatusError):
@@ -1895,7 +1901,7 @@ def test_call_real_video_llm_model_in_chunks_rejects_missing_middle_segment(
             return subprocess.CompletedProcess(args, returncode=0)
         return original_run(args, **kwargs)
 
-    monkeypatch.setattr(video_llm_analysis.subprocess, "run", flaky_split_run)
+    monkeypatch.setattr(video_pipeline.subprocess, "run", flaky_split_run)
 
     with pytest.raises(RuntimeError, match="빈 출력"):
         video_llm_analysis.call_real_video_llm_model(

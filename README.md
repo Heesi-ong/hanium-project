@@ -4,6 +4,10 @@ Spring Boot 백엔드, React 프론트엔드, Python 분석 엔진, Python Video
 
 사용자는 발표 영상을 업로드하고, 백엔드는 업로드된 영상을 기준으로 기본 분석 엔진과 Video LLM 엔진을 호출합니다. 이후 분석 결과를 축약하고 OpenAI 피드백 생성 단계까지 거쳐 최종 결과를 JSON으로 저장합니다.
 
+> **현재 범위:** 이 저장소는 학생 프로젝트의 로컬/통제된 테스트 시연용입니다. 공개 도메인이나 production 호스트에 배포하지 않으며, GHCR 릴리스·상시 모니터링·원격 백업·상용 SMTP·결제/요금제는 현재 완료 기준에 포함하지 않습니다. 기존 운영 설정과 문서는 학습 이력용 참고 자료입니다.
+
+현재 완성 기준은 로컬에서 MySQL/Redis/MinIO와 네 애플리케이션 서비스를 실행하고, 업로드→비동기 분석→진행 상태→결과 조회 흐름을 재현하는 것입니다. 인증·소유권·파일 보호·외부 AI 전송 고지는 테스트용이라도 유지합니다.
+
 ---
 
 ## 1. 프로젝트 구조
@@ -198,17 +202,12 @@ export VIDEO_LLM_MONTHLY_RATE_LIMIT_CAPACITY=500
 export VIDEO_LLM_MONTHLY_RATE_LIMIT_REFILL_MINUTES=44640
 ```
 
-Docker Compose 운영 배포는 `docker-compose.yml`과 `docker-compose.prod.yml`을 함께 사용합니다.
-`docker-compose.prod.yml`은 nginx/TLS 오버레이만 추가하므로, Video LLM 관련 런타임 값은 기본
-`docker-compose.yml`의 `video-llm-engine` 및 `backend` 서비스 환경으로 전달됩니다.
-compose 기반 운영에서 실제 모델을 켜려면 루트 `.env`에
-`VIDEO_LLM_POLICY=STRICT`(또는 제품 승인을 받은 `DEGRADED`), `VIDEO_LLM_ENABLED=true`,
-`NVIDIA_API_KEY`, 필요한 `NVIDIA_*` override, `VIDEO_LLM_MONTHLY_RATE_LIMIT_*` 값을 채운 뒤
-배포하세요. 키 값은 저장소에 커밋하지 말고 운영 환경변수 또는 시크릿으로 관리해야 합니다.
-배포 후 사용자가 받는 영향은 인증된 프론트엔드 `/status`에서 확인합니다. 실제 모델 설정은
-운영 네트워크 안에서 `X-Internal-Api-Key`를 사용해 video-llm-engine의
-`GET /api/internal/readiness`를 호출하고 `ready=true`, `mode=REAL`,
-`policy=<선택한 정책>`, `realModelReady=true`인지 확인하세요. 이 상세 응답을 공개 프론트나
+로컬 Compose에서 실제 모델 호출을 선택적으로 테스트하려면 루트 `.env`에
+`VIDEO_LLM_POLICY=STRICT`(또는 fallback 테스트용 `DEGRADED`), `VIDEO_LLM_ENABLED=true`,
+`NVIDIA_API_KEY`, 필요한 `NVIDIA_*` override, `VIDEO_LLM_MONTHLY_RATE_LIMIT_*` 값을 채웁니다.
+키는 저장소에 커밋하지 마세요. 테스트 전에 외부 AI 전송 동의를 확인하고,
+`GET /api/internal/readiness`의 `ready=true`, `mode=REAL`, `realModelReady=true`를 확인하세요.
+이 상세 응답을 공개 프론트나
 외부 네트워크에 노출하면 안 됩니다. `health`가 `up`이어도 readiness가 `ready=false`이면 실제
 모델 설정은 아직 완료되지 않은 상태입니다.
 
@@ -227,7 +226,7 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
 3구간 프롬프트 적용 후 시간 구간화가 개선됐지만, 일부 라벨은 실제 시각 변화보다 프롬프트 구조를
 따른 추정일 가능성이 있어 품질 검수 없이 최종 사용자 판단 근거로 과신하면 안 됩니다.
 
-#### 운영에서 `VIDEO_LLM_POLICY=STRICT|DEGRADED`로 켜기 전 결정 체크리스트
+#### 선택적 실제 Video LLM 테스트 전 체크리스트
 
 현재 기본값은 `DISABLED`이며, 실제 활성화 전에 실패 시 전체 작업을 실패시킬지(`STRICT`),
 샘플 대체 결과를 허용할지(`DEGRADED`)를 제품 정책으로 결정해야 합니다. 코드는 timeout
@@ -236,12 +235,12 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
 
 1. **NVIDIA 무료 엔드포인트의 정확한 rate limit이 아직 공식 문서로 확인되지 않았습니다.**
    `docs/service-plan/video-llm-model-options.md`의 라이브 테스트는 4초 영상 10회 연속 호출까지만
-   429 없이 성공한 것을 확인했을 뿐, 실제 분당/일당 한도나 유료 전환 조건은 모릅니다. 운영
-   트래픽 규모를 추정한 뒤 NVIDIA에 직접 확인하거나, 추가 rate limit 스트레스 테스트(예:
+   429 없이 성공한 것을 확인했을 뿐, 실제 분당/일당 한도나 유료 전환 조건은 모릅니다. 테스트
+   횟수를 보수적으로 제한하고, 필요하면 추가 rate limit 스트레스 테스트(예:
    1시간 동안 100회 호출)를 먼저 진행하는 것을 권장합니다.
 2. **영상 길이 상한(`VIDEO_MAX_DURATION_MINUTES`, 기본 30분)이 NVIDIA 실측 성공 범위(120초)보다
    훨씬 큽니다.** 120초를 넘는 영상에서 NVIDIA 호출이 성공하는지, 실패해 mock으로 계속
-   처리되는지는 확인되지 않았습니다. 운영에서 실제 모델을 켤 경우, 실제 업로드
+   처리되는지는 확인되지 않았습니다. 긴 영상으로 실제 모델을 테스트할 경우, 실제 업로드
    허용 길이 상한과 NVIDIA 검증 범위를 맞추거나(예: Video LLM 전용 별도 길이 제한 도입), 긴
    영상은 처음부터 mock/SKIPPED로 처리되는 것을 감수할지 결정해야 합니다.
 3. **시간 구간화 품질 한계가 사용자에게 어떻게 노출되는지 확인이 필요합니다.** 3구간 프롬프트
@@ -253,9 +252,8 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
    것이 아니라, OpenAI 기본값보다 보수적으로 잡은 추정값입니다. 카운터 자체는 긴 영상의
    예상 세그먼트 호출 수만큼 예약하도록 보완됐습니다.
 
-영상 데이터를 NVIDIA로 전송하는 것 자체는 이미 `frontend/src/pages/PrivacyPage.jsx`의
-"외부 AI 처리"·"국외 이전에 관한 사항" 절에 이전받는 자, 이전 항목, 이전 국가, 이전 목적,
-보유 기간까지 고지되어 있으므로 별도 체크리스트 항목이 아닙니다.
+실제 영상을 NVIDIA로 전송하기 전에 `frontend/src/pages/PrivacyPage.jsx`의
+"외부 AI 호출" 안내를 사용자에게 보여주고 명시적 동의를 확인해야 합니다.
 
 ### 5.2 비밀번호 재설정 이메일 발송 활성화
 
@@ -266,30 +264,19 @@ rate limit과 최대 영상 길이/용량은 공식 수치로 확인되지 않�
 
 | 환경변수 | 의미 |
 | --- | --- |
-| `SMTP_HOST` | SMTP 서버 호스트입니다. 비어 있으면 local/dev에서는 개발용 로그 폴백을 사용하고, prod에서는 링크를 로그에 출력하지 않습니다. |
+| `SMTP_HOST` | 선택적 SMTP 테스트 호스트입니다. 비어 있으면 로컬 로그 폴백을 사용합니다. |
 | `SMTP_PORT` | SMTP 포트입니다. 기본값은 `587`입니다. |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | SMTP 인증 계정입니다. |
 | `SMTP_AUTH` | SMTP auth 사용 여부입니다. 기본값은 `true`입니다. |
 | `SMTP_STARTTLS_ENABLE` | STARTTLS 사용 여부입니다. 기본값은 `true`입니다. |
 | `MAIL_FROM_ADDRESS` | 발신자 주소입니다. 기본값은 `no-reply@example.com`입니다. |
-| `PASSWORD_RESET_URL_BASE` | 메일에 들어갈 프론트 재설정 URL입니다. 기본값은 `http://localhost:5173/reset-password`입니다. 운영에서는 실제 도메인으로 바꾸세요. |
+| `PASSWORD_RESET_URL_BASE` | 메일이나 로그에 들어갈 프론트 재설정 URL입니다. 로컬 기본값은 `http://localhost:5173/reset-password`입니다. |
 | `PASSWORD_RESET_TOKEN_EXPIRATION_MINUTES` | 재설정 토큰 만료 시간입니다. 기본값은 `30`분입니다. |
 | `PASSWORD_RESET_RATE_LIMIT_CAPACITY` / `PASSWORD_RESET_RATE_LIMIT_REFILL_MINUTES` | 재설정 요청 rate limit입니다. 기본값은 10분당 5회입니다. |
 
-로컬 개발에서 SMTP 없이 테스트할 때는 `SMTP_HOST`를 비워 둡니다. 그러면 backend 로그에
-`PASSWORD_RESET_DEV_FALLBACK 개발용 폴백` 접두어와 함께 재설정 링크가 출력됩니다. 운영(`prod`)
-프로필에서 `SMTP_HOST`가 비어 있으면 링크를 로그에 남기지 않고, 발송 실패 로그만 남깁니다.
-
-운영 배포에서는 루트 `.env` 또는 배포 시크릿에 아래 값을 설정합니다.
-
-```bash
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USERNAME=...
-SMTP_PASSWORD=...
-MAIL_FROM_ADDRESS=no-reply@example.com
-PASSWORD_RESET_URL_BASE=https://your-domain.example/reset-password
-```
+로컬에서는 `SMTP_HOST`를 비워 두고 backend 로그의
+`PASSWORD_RESET_DEV_FALLBACK 개발용 폴백` 링크로 흐름을 검증합니다. 실제 SMTP 발송은
+현재 프로젝트 완료 기준이 아닙니다.
 
 정상 확인:
 
@@ -346,9 +333,9 @@ curl http://localhost:8081/actuator/health
 curl --cookie "access_token=<JWT>" http://localhost:8080/api/status
 ```
 
-`/api/status`는 사용자 영향만 `AVAILABLE`/`DEGRADED`/`UNAVAILABLE`로 반환하며 내부 엔진 URL, 인증 상태, 모델 정책과 원본 오류는 노출하지 않습니다. 엔진·데이터 계층의 기술 상태는 아래 운영 모니터링에서 확인합니다.
+`/api/status`는 사용자 영향만 `AVAILABLE`/`DEGRADED`/`UNAVAILABLE`로 반환하며 내부 엔진 URL, 인증 상태, 모델 정책과 원본 오류는 노출하지 않습니다. 엔진·데이터 계층의 기술 상태는 로컬 로그와 아래 개발용 메트릭으로 확인합니다.
 
-### 6.1 모니터링 엔드포인트
+### 6.1 로컬 개발용 메트릭 엔드포인트
 
 Actuator와 Prometheus 메트릭은 메인 API 포트(기본 8080)가 아니라 관리 포트(기본 8081)에서만 노출됩니다. 로컬에서 `./gradlew bootRun`으로 실행하면 `http://localhost:8081/actuator/health`, `http://localhost:8081/actuator/prometheus`로 확인할 수 있습니다.
 
@@ -368,73 +355,18 @@ JVM/HTTP 기본 메트릭 외에 분석 작업과 외부 연동 상태를 확인
 | `video_llm.generation` | Counter | `mode` = `REAL` \| `FALLBACK` \| `MOCK` \| `UNKNOWN` | Video LLM 결과가 실제 모델/폴백/mock 중 어떤 경로로 생성됐는지 |
 | `video_duration_probe.result` | Counter | `outcome`, `reason` | ffprobe 영상 길이 확인 성공/실패 및 fail-open 사유 |
 
-기본값은 기존 호환을 위해 ffprobe 실패 시 업로드를 허용합니다. 운영에서 영상 길이 제한 우회를 허용하지 않으려면 `VIDEO_DURATION_PROBE_REQUIRED=true`로 설정해 재생 시간 확인 실패를 업로드 실패로 처리하세요.
+기본값은 ffprobe 실패 시 업로드를 허용합니다. 엄격한 테스트가 필요하면 `VIDEO_DURATION_PROBE_REQUIRED=true`로 설정해 재생 시간 확인 실패를 업로드 실패로 처리하세요.
 
-메트릭 수집이 필요할 때는 모니터링 오버레이로 Prometheus 컨테이너를 함께 띄웁니다. (기본 `docker compose up`에는 포함되지 않습니다.)
+메트릭 수집 구성은 현재 필수 실행 범위가 아닌 학습/선택 자료입니다. 필요할 때만 모니터링 오버레이로 Prometheus 컨테이너를 함께 띄웁니다. (기본 `docker compose up`에는 포함되지 않습니다.)
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus
 ```
 
-Prometheus UI는 `http://127.0.0.1:9090`(로컬호스트 전용)에서 확인합니다. Blackbox Exporter가 함께 기동되어 두 Python 엔진의 `/health`, MinIO liveness, MySQL·Redis TCP 연결을 사용자 상태 페이지 호출과 무관하게 점검합니다. 현재 규칙 파일에는 28개 알림이 있으며 주요 규칙은 다음과 같습니다.
-
-- `BackendDown` (critical): backend 스크레이핑이 2분 이상 실패하면 발동
-- `ServiceDependencyProbeFailed` (critical): 엔진·MySQL·Redis·MinIO probe가 2분 이상 실패하면 발동
-- `BackendHttp5xxRateHigh`, `BackendHttpLatencyP95High`: 트래픽이 있는 상태에서 5xx 비율 또는 p95 지연이 임계값을 넘으면 발동
-- `BackendJvmHeapUsageHigh`, `BackendDatabasePoolSaturated`: JVM heap 또는 Hikari pool 포화를 감시
-- `AnalysisQueueNearCapacity`: 분석 큐가 설정 용량의 80% 이상에 근접하면 발동
-- `AnalysisJobFailureRateHigh` (warning): 최근 15분간 분석 작업 실패 비율이 시작 대비 30%를 초과한 상태가 5분 이상 지속되면 발동
-- `EngineReadinessDegraded` (warning): authenticated readiness가 `not_ready`, `unauthenticated`, `unreachable` 상태로 10분 이상 관측되면 발동
-- `ResultDataIssueDetected` (warning): 조회된 결과에서 누락 영상, 누락 결과 파일, placeholder 결과가 감지되면 발동
-- `OpenAiMonthlyBudgetNearExhaustion`, `VideoLlmMonthlyBudgetNearExhaustion` (warning): 월간 실제 API 호출량이 설정 한도의 90%를 초과하면 발동
-- `VideoLlmFallbackRateHigh` (warning): Video LLM 결과가 `FALLBACK`/`MOCK`으로 생성되는 비율이 높으면 발동
-- `VideoDurationProbeFailOpenHigh` (warning): ffprobe 실패로 영상 길이 제한이 fail-open되는 비율이 높으면 발동
-- `MysqlBackup*`, `Host*` 계열 알림: 백업 실패/원격 반출 지연, 호스트 디스크/CPU/메모리 위험을 감시
-
-알림은 Alertmanager를 통해 이메일로 발송됩니다. 실제 발송을 위해 배포 전 두 가지를 준비해야 합니다.
-
-1. `infra/alertmanager/alertmanager.yml`의 플레이스홀더(`smtp_smarthost`, `smtp_from`, `smtp_auth_username`, 수신자 `to`)를 실제 SMTP 서버/이메일 주소로 교체합니다.
-2. SMTP 비밀번호 파일을 만듭니다 (git에 커밋되지 않습니다).
-
-```bash
-cp infra/alertmanager/secrets/smtp_password.example infra/alertmanager/secrets/smtp_password
-# smtp_password 파일을 열어 실제 비밀번호 한 줄로 교체 (주석 제거)
-```
-
-Prometheus와 Alertmanager를 함께 실행합니다.
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus alertmanager
-```
-
-Alertmanager UI는 `http://127.0.0.1:9093`(로컬호스트 전용)에서 확인합니다. 이 구성은 실제 SMTP 서버 연결 없이는 검증되지 않았으므로, 배포 후 테스트 알림으로 실제 이메일 발송을 직접 확인해야 합니다.
-
-메트릭 시각화가 필요하면 Grafana를 함께 띄웁니다.
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus grafana
-```
-
-`http://127.0.0.1:3000`(로컬호스트 전용)에 접속해 `admin` / `.env`의 `GRAFANA_ADMIN_PASSWORD` 값으로 로그인합니다. Prometheus 데이터소스와 다음 대시보드가 프로비저닝으로 자동 구성됩니다.
-
-- `서비스 운영 개요`: backend·worker·엔진·데이터 계층 상태, firing 알림, HTTP 요청률·5xx·p95, 분석 큐, JVM heap, Hikari pool, 컨테이너 CPU·메모리
-- `분석 서비스 개요`: 분석 성공/실패/취소, 실패 사유, 처리 시간, 외부 모델 예산·fallback
-- `분석 큐/타임아웃`: 큐 상태, timeout, 3종 DEAD_LETTER
-- `호스트 리소스`: 디스크·CPU·메모리와 MySQL 백업 상태
-
-경보별 확인 순서와 관리자 복구 화면 연결은 `docs/ops/monitoring-alert-runbook.md`를 따릅니다. 기술 지표는 Grafana에서 확인하고 사용자·결과·DEAD_LETTER 조치는 애플리케이션 `/admin`에서 수행합니다.
-
-실제 운영 배포에서는 nginx/TLS 오버레이(`docker-compose.prod.yml`)와 모니터링 오버레이(`docker-compose.monitoring.yml`)를 함께 사용합니다. 세 파일을 동시에 지정하면 됩니다.
-
-```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.prod.yml \
-  -f docker-compose.monitoring.yml \
-  up -d
-```
-
-이 조합은 포트 충돌이나 설정 병합 문제 없이 정상 동작함을 `docker compose config`로 확인했습니다(2026-08-01). `docker-compose.prod.yml`이 강제하는 `SPRING_PROFILES_ACTIVE=prod`, `SECURITY_JWT_COOKIE_SECURE=true` 같은 보안 설정과 `analysis-worker` role-split 구성은 모니터링 오버레이를 함께 써도 그대로 유지됩니다. Alertmanager를 포함하려면 위 "SMTP 비밀번호 파일" 준비를 먼저 마쳐야 fail-fast 없이 기동됩니다.
+Prometheus UI는 `http://127.0.0.1:9090`에서 확인할 수 있습니다. Alertmanager, Grafana,
+Blackbox Exporter와 기존 경보 규칙은 이전 운영 관제 설계를 보존한 학습 자산이며,
+현재 CI와 프로젝트 완료 기준에서는 검증하지 않습니다. 로컬 분석 진행 확인은
+아래 로그 감시 스크립트를 기본 도구로 사용합니다.
 
 ### 6.2 로그
 
@@ -457,6 +389,38 @@ grep '"jobId":"<jobId>"' storage/logs/backend.log | jq .
 # 특정 요청의 로그만 추적
 grep '"requestId":"<requestId>"' storage/logs/backend.log | jq .
 ```
+
+분석 중인 단계만 여러 서비스에서 모아 사람이 읽기 쉬운 한 줄 형식으로 실시간 확인하려면
+루트 디렉터리에서 다음 스크립트를 실행합니다.
+
+```bash
+# 특정 업로드 응답에서 받은 jobId만 실시간 추적
+./scripts/watch-analysis-logs.sh 20260812051828-03f8a97d
+
+# 최근 10분 동안 시작된 모든 분석 작업을 함께 추적
+./scripts/watch-analysis-logs.sh --all --since 10m
+
+# 과거 500줄만 조회하고 종료
+./scripts/watch-analysis-logs.sh --job 20260812051828-03f8a97d --tail 500 --no-follow
+```
+
+스크립트는 `backend`, `analysis-worker`, `analysis-engine`, `video-llm-engine`의 Compose 로그를
+합치고 `jobId`를 기준으로 필터링합니다. 원본 JSON/평문 로그를 변경하지 않고 화면 표시만
+`[시간] [서비스] [jobId] [단계] 메시지`로 정규화하며, TTY에서는 단계별 색상을 사용합니다.
+`NO_COLOR=1` 또는 `--no-color`로 색상을 끌 수 있습니다. `--no-follow` 과거 조회는 서비스가
+달라도 Docker 기록 시각을 기준으로 정렬하며, 실시간 추적은 버퍼링 없이 도착 즉시 표시합니다.
+
+```text
+[05:18:29] [BACKEND  ] [20260812051828-03f8a97d] [QUEUE         ] 실행을 접수(QUEUED)했습니다.
+[05:18:31] [BASIC    ] [20260812051828-03f8a97d] [BASIC 4/9     ] 4/9 음성을 텍스트로 변환(STT)하는 중...
+[05:19:00] [WORKER   ] [20260812051828-03f8a97d] [VIDEO_LLM 40% ] Video LLM 분석 요청을 전송합니다.
+[05:19:04] [WORKER   ] [20260812051828-03f8a97d] [DONE 100%     ] 분석 파이프라인이 완료되었습니다.
+```
+
+표시 시각은 각 애플리케이션 로그에 기록된 시각을 사용합니다. 운영 서버의 컨테이너 로그가
+UTC라면 표시 시각도 UTC이며, 원본 전체 로그와 장기 보관 정책은 기존
+`storage/logs/backend.log` 및 서비스별 로그 설정을 그대로 따릅니다. 스크립트는 로그를
+읽기만 하며 분석 상태, DB, Redis 진행률을 변경하지 않습니다.
 
 ## 7. frontend 실행
 
@@ -481,28 +445,21 @@ http://localhost:5173
 
 ### 7.1 frontend 컨테이너의 API 호출 경로
 
-frontend가 `/api`를 호출하는 경로는 배포 구성에 따라 다르며, 두 정상 경로가 있습니다.
+frontend가 `/api`를 호출하는 현재 기준은 로컬 구성입니다.
 
 - **`docker-compose.yml`(기본)**: 빌드 시 `VITE_API_BASE_URL=http://localhost:8080`을 주입해,
   브라우저가 backend를 **직접** 호출합니다. frontend 컨테이너 자신의 nginx는 API 요청을
   받지 않습니다.
-- **`docker-compose.prod.yml`(운영 오버레이)**: `VITE_API_BASE_URL=""`로 비워, 브라우저가
-  같은 origin의 상대경로 `/api`를 호출합니다. 이 경로는 `infra/nginx/nginx.conf`(외부
-  reverse proxy)가 먼저 가로채 `backend:8080`으로 프록시하며, frontend 컨테이너에는
-  `/api` 요청이 도달하지 않습니다.
 
-즉 **정상 구성에서는 frontend 컨테이너 자신의 nginx가 `/api`를 처리할 일이 없습니다.**
-다만 frontend 컨테이너만 따로 떼어 실행하거나(예: 다른 오케스트레이션 도구, 수동
-`docker run`), 위 두 경로 중 하나가 아닌 조합으로 배포하면 `/api` 요청이 frontend
-컨테이너로 직접 올 수 있습니다. 이런 상황에 대비해 `frontend/nginx.conf.template`에
+frontend 컨테이너만 따로 실행할 때 `/api` 요청을 자체 nginx가 받게 하려면
+`frontend/nginx.conf.template`의
 `BACKEND_API_UPSTREAM` 환경변수로 켜는 선택적 `/api` 프록시가 있습니다.
 
 - 기본값(비어 있음): `/api/**` 요청은 (index.html을 대신 돌려주지 않고) 502/500으로
-  명확히 실패합니다. `docker-compose.yml`/`docker-compose.prod.yml`은 이 프록시가 필요
-  없으므로 기본 동작에 영향이 없습니다.
+  명확히 실패합니다. 기본 `docker-compose.yml`은 이 프록시가 필요 없습니다.
 - `BACKEND_API_UPSTREAM=backend:8080`처럼 backend와 같은 네트워크의 주소를 지정하면,
-  frontend 컨테이너가 자체적으로 `/api`를 그 주소로 프록시합니다(두 compose 파일 모두
-  기본으로 설정되어 있어, frontend 컨테이너를 단독으로 이 값과 함께 실행해도 안전합니다).
+  frontend 컨테이너가 자체적으로 `/api`를 그 주소로 프록시합니다. 기본
+  `docker-compose.yml`은 브라우저가 backend를 직접 호출하므로 이 값을 설정하지 않습니다.
 
 ## 8. 주요 기능
 
@@ -652,11 +609,11 @@ curl -c cookies.txt -H 'Content-Type: application/json' \
 curl -b cookies.txt http://localhost:8080/api/auth/me
 ```
 
-- 인증 쿠키는 `HttpOnly`, `SameSite=Lax`, `Path=/`로 설정됩니다. local/dev HTTP 환경에서는 `SECURITY_JWT_COOKIE_SECURE=false`를 쓰고, prod 프로필과 `docker-compose.prod.yml` 운영 오버레이는 `SECURITY_JWT_COOKIE_SECURE=true`를 기본 적용합니다.
+- 인증 쿠키는 `HttpOnly`, `SameSite=Lax`, `Path=/`로 설정됩니다. localhost HTTP 테스트에서는 `SECURITY_JWT_COOKIE_SECURE=false`를 사용합니다.
 - 쿠키가 첨부된 `POST`/`PUT`/`PATCH`/`DELETE` 요청은 `CORS_ALLOWED_ORIGINS`의 정확한 Origin 또는 브라우저의 `Sec-Fetch-Site: same-origin`을 요구합니다. 브라우저 Origin 누락과 `same-site` 교차 origin은 403(`AUTH_ORIGIN_FORBIDDEN`)으로 거부됩니다. 명시적 Bearer 인증과 Fetch Metadata가 없는 비브라우저 클라이언트는 이 쿠키 CSRF 경계를 적용받지 않습니다.
 - `GET /api/auth/me`는 세션 확인용 API입니다. 인증된 세션은 사용자 정보를, 익명·만료·무효 세션은 오류 대신 `200`과 `data: null`을 반환합니다. 다른 보호 API는 인증이 없으면 계속 401을 반환합니다.
-- 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일 기준과 IP 기준을 모두 적용해 rate limit이 걸립니다. 한도를 초과하면 429 응답을 반환합니다. 기본적으로 클라이언트 IP는 `request.getRemoteAddr()`를 사용하며, 신뢰 가능한 reverse proxy가 `X-Forwarded-For`를 덮어쓰는 배포에서만 `SECURITY_CLIENT_IP_TRUST_FORWARDED_HEADERS=true`로 forwarded header를 신뢰하세요. 운영 nginx는 기존 XFF 체인을 보존하지 않고 `$remote_addr`로 덮어써 스푸핑을 막습니다.
-- Swagger UI와 OpenAPI JSON은 local/dev 계약 확인 호환을 위해 기본 공개입니다. prod 프로필과 `docker-compose.prod.yml` 운영 오버레이는 `SECURITY_API_DOCS_PUBLIC_ENABLED=false`를 기본 적용해 `/v3/api-docs`와 `/swagger-ui/**`를 차단합니다.
+- 회원가입은 클라이언트 IP 기준으로, 로그인은 이메일과 IP 기준을 모두 적용해 rate limit이 걸립니다. localhost 직접 접속에서는 `SECURITY_CLIENT_IP_TRUST_FORWARDED_HEADERS=false`를 유지하세요.
+- Swagger UI와 OpenAPI JSON은 로컬 API 계약 확인을 위해 기본 공개합니다.
 - 회원가입 비밀번호는 8~72자이면서 영문자와 숫자를 각각 1자 이상 포함해야 합니다(400 응답으로 거부됩니다). 이 복잡도 규칙은 회원가입에만 적용되며, 로그인 요청의 비밀번호 필드에는 적용되지 않습니다.
 
 ### 9.3 영상 업로드
@@ -972,7 +929,9 @@ storage/logs/.gitkeep
 
 MySQL 데이터는 `mysql-data` Docker 볼륨에 저장되지만, 볼륨 손상이나 실수 삭제에 대비해 `mysqldump` 백업을 별도로 남길 수 있습니다.
 
-`docker compose up`으로 실행하면 `backup` 서비스가 함께 떠서 `BACKUP_INTERVAL_HOURS`(기본 24시간)마다 `scripts/backup-mysql.sh`를 실행합니다. 백업 파일은 `storage/backups/{DB_NAME}_YYYYMMDD_HHMMSS.sql.gz`에 저장되며, `gzip -t` 검사와 최소 크기 검사를 통과한 파일만 남깁니다. 무결성 검사에 실패한 백업 파일은 삭제되고 `storage/logs/backup.log`에 `ERROR` 로그가 남으며, 다음 실행 주기에 다시 시도합니다.
+기본 `docker compose up`은 백업을 실행하지 않습니다. 백업/복구 학습이 필요한 경우에만
+`docker compose --profile ops up -d backup`으로 선택적으로 실행하세요. 실제 영상이나 이메일이
+포함된 데이터를 백업했다면 테스트 후 `storage/backups`의 사본도 별도로 삭제하세요.
 
 수동 실행 예시:
 
@@ -990,12 +949,6 @@ BACKUP_RETENTION_DAYS=14 \
 ```
 
 `docker-compose.yml`은 `127.0.0.1:${DB_PORT:-3306}:3306`으로 MySQL 포트를 로컬 호스트에만 노출하므로, compose로 MySQL을 띄운 뒤 같은 호스트에서 위 스크립트를 실행할 수 있습니다. `BACKUP_RETENTION_DAYS`보다 오래된 같은 DB의 백업 파일은 자동 삭제됩니다. 실행 로그는 stdout과 `storage/logs/backup.log`에 함께 남습니다.
-
-crontab 자동화 예시(매일 새벽 3시):
-
-```cron
-0 3 * * * cd /path/to/hanium\ project && DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=hanium_dev DB_USERNAME=hanium DB_PASSWORD=실제비밀번호 BACKUP_DIR=./storage/backups BACKUP_RETENTION_DAYS=14 ./scripts/backup-mysql.sh >> ./storage/logs/backup-cron.log 2>&1
-```
 
 복구 예시:
 
@@ -1024,13 +977,11 @@ docker compose run --rm -e STORAGE_BACKFILL_ENABLED=true backend
 
 Dependabot은 매주 backend(Gradle), frontend(npm), analysis-engine/video-llm-engine(pip), 4개 Dockerfile, GitHub Actions 의존성을 확인해 업데이트 PR을 자동으로 생성합니다. 이는 CI를 즉시 실패시키는 게이트가 아니라 PR 생성 방식이므로, 실제 병합 여부는 변경 내용과 CI 결과를 사람이 검토해 결정해야 합니다.
 
-CI의 `docker-build` job은 서비스/운영 보조 이미지(`backend`, `frontend`, `analysis-engine`, `video-llm-engine`, `backup`, `nginx`)를 빌드한 뒤 Trivy로 컨테이너 OS 패키지 취약점을 스캔합니다. 현재는 `CRITICAL,HIGH` 결과를 로그에 표로 남기는 보고 전용 단계이며, `exit-code: 0`이라 취약점 발견만으로 빌드를 실패시키지 않습니다. 실제 CI에서 나온 CVE 목록을 확인한 뒤, 베이스 이미지 업데이트로 해결 가능한 항목과 예외 처리할 항목을 분류하고 차후 실패 기준을 정해야 합니다.
+CI의 `docker-build` job은 핵심 애플리케이션 이미지(`backend`, `frontend`, `analysis-engine`, `video-llm-engine`)를 빌드한 뒤 Trivy로 컨테이너 OS 패키지 취약점을 스캔합니다. 현재는 `CRITICAL,HIGH` 결과를 로그에 표로 남기는 보고 전용 단계이며, `exit-code: 0`이라 취약점 발견만으로 빌드를 실패시키지 않습니다.
 
-### 15.1 Release 이미지 파이프라인
+### 15.1 비활성 Release 자료
 
-`.github/workflows/release.yml`은 `verify` 워크플로가 `main` push에 대해 성공한 뒤에만 실행되어 6개 이미지를 GHCR(`ghcr.io/ehtkddn123-cloud/hanium-<service>`)에 `sha-<커밋SHA>` 불변 태그로 push하고, 그 이미지를 재빌드 없이 pull해 로그인·업로드→큐→결과 흐름을 다시 검증합니다(`staging-smoke` job). `latest` 태그는 만들지 않습니다 — 어떤 태그가 어떤 바이너리인지 불명확해지는 문제를 막기 위함입니다. `docker-compose.release.yml`은 이 태그를 참조해 production Compose 서비스의 `build:`를 pull 가능한 `image:`로 교체하는 오버레이입니다.
-
-production 승격(`deploy` job)은 아직 없습니다 — production 호스트가 아직 정해지지 않았기 때문입니다. 설계 배경과 다음 단계는 `docs/service-plan/release-pipeline-design-2026-08-03.md`를, 릴리스별 태그·배포 이력은 `docs/ops/release-log.md`를 참고합니다.
+`docs/archive/operations/release.workflow.yml`과 `docker-compose.release.yml`은 이전에 설계한 GHCR build→push→staging smoke 흐름의 학습 이력용 자료입니다. 릴리스 YAML을 `.github/workflows`에서 제거했으므로 GitHub Actions가 실행하지 않습니다. 이 프로젝트는 이미지를 GHCR에 push하거나 production으로 승격하지 않습니다.
 
 ## 16. 현재 구현 범위
 
@@ -1068,7 +1019,7 @@ production 승격(`deploy` job)은 아직 없습니다 — production 호스트�
 - 관리자 대시보드/사용자 관리/감사 로그
 - 관리자 정지·강제 탈퇴·결과 삭제·수동 재큐잉은 대상과 영향을 확인한 뒤 필수 사유와 선택적 인시던트/문의 참조 ID를 입력해야 합니다. 서버가 부여한 `X-Request-Id`와 함께 감사로그에 구조화해 저장하며, 탈퇴 사용자 이메일·토큰·원본 오류 전문은 감사 `detail`에 복사하지 않습니다.
 - MySQL + Flyway 마이그레이션, MinIO 오브젝트 스토리지, Redis 기반 rate limiting
-- Docker Compose 기반 local/dev/prod 배포, Prometheus/Grafana 모니터링, 자동 백업
+- Docker Compose 기반 로컬 전체 실행(운영·모니터링·백업 구성은 학습/선택 자료)
 
 현재 실제 분석으로 반영된 범위:
 
@@ -1391,10 +1342,10 @@ UNKNOWN
 
 AI 코치 대화(`POST /api/results/{jobId}/coach/messages`)는 완료된 분석 작업에서만 사용할 수 있습니다. 또한 OpenAI 호출에 필요한 `compact-analysis.json` 요약 데이터가 있어야 하며, 이 파일이 없거나 비어 있으면 대화 이력 생성, 일일 한도 차감, OpenAI 호출을 수행하지 않고 400 응답으로 중단합니다. 이 경우 결과 상세의 손상 안내를 확인한 뒤 재분석이 필요할 수 있습니다.
 
-### 아직 실제 구현이 필요한 범위:
+### 아직 로컬 테스트·품질 개선이 필요한 범위:
 
-- 운영 환경에서 실제 Video LLM 활성화와 비용/개인정보 정책 확정
-- 실제 OpenAI API 운영 키 활성화와 비용 모니터링
+- 선택적 테스트 키를 사용한 Video LLM/OpenAI 실제 호출과 mock/fallback 결과 구분 검증
+- 실제 학생 영상을 사용할 경우 명시적 동의, 외부 AI 전송 고지, 테스트 후 데이터 삭제 확인
 - 발표 내용 의미 분석 품질 보정
 - 점수 기준 보정은 추후 진행 예정
 

@@ -13,26 +13,25 @@ function renderPricingPage() {
 }
 
 describe("PricingPage", () => {
-    it("renders the beta usage notice", () => {
+    it("renders the local project test guide", () => {
         renderPricingPage();
 
-        expect(screen.getByRole("heading", { name: "베타 이용 안내" }))
+        expect(screen.getByRole("heading", { name: "프로젝트 테스트 안내" }))
             .toBeInTheDocument();
-        expect(screen.getByText("현재는 결제·유료 요금제가 없는 베타 서비스입니다.", { exact: false }))
-            .toBeInTheDocument();
+        expect(screen.getByText(/결제·요금제·공개 회원 모집 없이/)).toBeInTheDocument();
     });
 
-    it("discloses analysis scope and limitations", () => {
+    it("distinguishes local analysis and optional external AI", () => {
         renderPricingPage();
 
-        expect(screen.getByRole("heading", { name: "제공 범위와 한계" }))
-            .toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "분석 모드" })).toBeInTheDocument();
+        expect(screen.getByText(/mock\/fallback 결과와 실제 호출 결과/)).toBeInTheDocument();
     });
 
     it("links to the upload page", () => {
         renderPricingPage();
 
-        expect(screen.getByRole("link", { name: "지금 발표 분석 시작하기" }))
+        expect(screen.getByRole("link", { name: "로컬 테스트 시작하기" }))
             .toHaveAttribute("href", "/upload");
     });
 });

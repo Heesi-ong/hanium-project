@@ -38,7 +38,7 @@ function SignupPage() {
             setSuccess("");
 
             if (!agreedToTerms) {
-                setError("개인정보처리방침 및 이용약관에 동의해야 회원가입할 수 있습니다.");
+                setError("테스트 데이터 처리 안내 및 프로젝트 이용 안내에 동의해야 계정을 만들 수 있습니다.");
                 return;
             }
 
@@ -121,11 +121,11 @@ function SignupPage() {
                             />
                             <span>
                                 <Link to="/privacy" target="_blank" rel="noreferrer">
-                                    개인정보처리방침
+                                    테스트 데이터 처리 안내
                                 </Link>
                                 {" 및 "}
                                 <Link to="/terms" target="_blank" rel="noreferrer">
-                                    이용약관
+                                    프로젝트 이용 안내
                                 </Link>
                                 에 동의합니다.
                             </span>

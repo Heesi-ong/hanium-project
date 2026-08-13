@@ -185,10 +185,14 @@ public class OpenAiClient {
         return parseRealOpenAiFeedbackResponse(request.jobId(), outputText, openAiProperties.getModel());
     }
 
-    // NVIDIA NIM(build.nvidia.com)은 OpenAI Responses API의 strict json_schema를 지원하지
-    // 않는 모델이 많아, 표준 Chat Completions + json_object 모드(문법적으로 유효한 JSON만
-    // 보장)를 대신 쓴다. 필드 이름/형태는 OpenAiPromptBuilder의 시스템 프롬프트 지시로
-    // 유도하고, 파싱은 기존 parseRealOpenAiFeedbackResponse()의 방어적 파싱을 그대로 재사용한다.
+    // NVIDIA NIM(build.nvidia.com)의 vLLM 백엔드는 response_format=json_object를 스키마 없이
+    // 보내면 400으로 거부하지만, 실제 스키마를 실은 response_format=json_schema(strict)는
+    // grammar-constrained decoding으로 지원한다 - 프롬프트 지시만으로는(이전 방식) 실측
+    // 21K 토큰 규모 프롬프트에서 배열 닫는 괄호 직전에 낙오 문자가 섞여 JSON 파싱이 4회 중
+    // 2회 실패했지만, json_schema strict를 걸면 같은 조건에서 7회 연속 성공했다(2026-08-13
+    // 실측, docs/service-plan 미기록 - 필요 시 재현 가능). 파싱은 기존
+    // parseRealOpenAiFeedbackResponse()의 방어적 파싱을 그대로 재사용해, 스키마가 강제하지
+    // 못하는 값(빈 문자열 등)까지 한 번 더 검사한다.
     private OpenAiFeedbackResponse generateRealNvidiaFeedback(OpenAiFeedbackRequest request) {
         String systemPrompt = openAiPromptBuilder.buildSystemPrompt();
         String userPrompt = openAiPromptBuilder.buildUserPrompt(request);
@@ -201,7 +205,8 @@ public class OpenAiClient {
                         ChatCompletionApiRequest.Message.user(userPrompt)
                 ),
                 NVIDIA_TEMPERATURE,
-                NVIDIA_MAX_TOKENS
+                NVIDIA_MAX_TOKENS,
+                createFeedbackResponseFormat()
         );
 
         ChatCompletionApiResponse apiResponse = feedbackLlmRestClient
@@ -233,6 +238,72 @@ public class OpenAiClient {
         logNvidiaUsage(request, model, apiResponse);
 
         return parseRealOpenAiFeedbackResponse(request.jobId(), content, model);
+    }
+
+    // NVIDIA NIM(vLLM)의 response_format=json_schema에 실어 보낼 스키마입니다.
+    // OpenAiPromptBuilder.buildSystemPrompt()가 지시하는 5개 필드 형태와 반드시 일치해야
+    // 합니다 - 스키마와 프롬프트 지시가 어긋나면 모델이 어느 쪽을 따를지 보장할 수 없습니다.
+    private Map<String, Object> createFeedbackResponseFormat() {
+        Map<String, Object> jsonSchema = new LinkedHashMap<>();
+        jsonSchema.put("name", "feedback");
+        jsonSchema.put("schema", createFeedbackJsonSchema());
+        jsonSchema.put("strict", true);
+
+        Map<String, Object> responseFormat = new LinkedHashMap<>();
+        responseFormat.put("type", "json_schema");
+        responseFormat.put("json_schema", jsonSchema);
+        return responseFormat;
+    }
+
+    private Map<String, Object> createFeedbackJsonSchema() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("overall", createStringSchema());
+        properties.put("strengths", createStringArraySchema());
+        properties.put("improvements", createStringArraySchema());
+        properties.put("practicePlan", createObjectArraySchema(
+                List.of("title", "description", "duration")
+        ));
+        properties.put("timelineFeedback", createObjectArraySchema(
+                List.of("category", "title", "summary", "recommendation")
+        ));
+
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", List.of(
+                "overall", "strengths", "improvements", "practicePlan", "timelineFeedback"
+        ));
+        return schema;
+    }
+
+    private Map<String, Object> createStringSchema() {
+        return Map.of("type", "string");
+    }
+
+    private Map<String, Object> createStringArraySchema() {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("items", createStringSchema());
+        schema.put("minItems", 2);
+        return schema;
+    }
+
+    private Map<String, Object> createObjectArraySchema(List<String> fieldNames) {
+        Map<String, Object> itemProperties = new LinkedHashMap<>();
+        for (String fieldName : fieldNames) {
+            itemProperties.put(fieldName, createStringSchema());
+        }
+
+        Map<String, Object> itemSchema = new LinkedHashMap<>();
+        itemSchema.put("type", "object");
+        itemSchema.put("properties", itemProperties);
+        itemSchema.put("required", fieldNames);
+
+        Map<String, Object> arraySchema = new LinkedHashMap<>();
+        arraySchema.put("type", "array");
+        arraySchema.put("items", itemSchema);
+        arraySchema.put("minItems", 2);
+        return arraySchema;
     }
 
     private void logNvidiaUsage(

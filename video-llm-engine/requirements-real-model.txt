@@ -9,7 +9,7 @@
 -r requirements-base.txt
 
 accelerate==1.14.0
-av==17.1.0
+av==18.0.0
 charset-normalizer==3.4.7
 click==8.4.2
 filelock==3.29.4

@@ -1,9 +1,27 @@
 name: release
 
-# verify 워크플로가 main 브랜치 push에 대해 성공했을 때만 실행된다(workflow_run 트리거).
-# PR 단계에서는 절대 push하지 않는다 — 아직 리뷰/머지되지 않은 이미지가 GHCR에 쌓이는
-# 것을 막기 위함이다. workflow_run은 이 파일의 main 브랜치 버전 기준으로 실행되므로
-# 신뢰할 수 없는 PR 코드가 GHCR write 권한을 가진 컨텍스트에서 실행되지 않는다.
+# 상태(2026-08-13, 사용자 결정): 잠정 비활성화. 이 프로젝트는 현재 실제 공개 서비스
+# 출시 계획이 없는 테스트/데모 단계로 운영하기로 확정되어(project-review-and-direction
+# 문서의 P0-02/P1-06/07 "범위 제거" 참고), GHCR에 이미지를 push할 필요가 없다.
+# `gh workflow disable`(GitHub API로 끄는 방식)은 Claude Code auto mode 정책상
+# 차단되어, 대신 트리거를 workflow_run(verify 성공 시 자동)에서 workflow_dispatch로
+# 바꿔 자동 실행되지 않게 했다 — git에 커밋되는 파일 변경이라 되돌리기도 diff 하나로
+# 간단하다. 되돌리려면: 아래 workflow_dispatch를 다시
+#   workflow_run:
+#     workflows: ["verify"]
+#     types: [completed]
+#     branches: [main]
+# 로 바꾸면 된다. 단, 아래 잡들의 `github.event.workflow_run.conclusion`/`head_sha`
+# 참조는 workflow_run 트리거에서만 채워지므로, 지금 상태(workflow_dispatch)로 수동
+# 실행해도 compute-tag의 if 조건이 충족되지 않아 실질적으로 아무 잡도 돌지 않는다
+# (의도된 것 — 완전 비활성화가 목적이며, manual dispatch를 실제로 쓸 수 있게 만드는
+# 작업은 이번 범위 밖이다).
+#
+# 원래 트리거 설명: verify 워크플로가 main 브랜치 push에 대해 성공했을 때만 실행된다
+# (workflow_run 트리거). PR 단계에서는 절대 push하지 않는다 — 아직 리뷰/머지되지 않은
+# 이미지가 GHCR에 쌓이는 것을 막기 위함이다. workflow_run은 이 파일의 main 브랜치
+# 버전 기준으로 실행되므로 신뢰할 수 없는 PR 코드가 GHCR write 권한을 가진 컨텍스트에서
+# 실행되지 않는다.
 #
 # 설계 배경: docs/service-plan/release-pipeline-design-2026-08-03.md 참고.
 # 이 워크플로는 "artifact 파이프라인"(build→push→staging smoke)만 다룬다. 실제
@@ -11,10 +29,7 @@ name: release
 # staging-smoke 뒤에 workflow_dispatch 기반 deploy job을 추가한다.
 
 on:
-  workflow_run:
-    workflows: ["verify"]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   contents: read

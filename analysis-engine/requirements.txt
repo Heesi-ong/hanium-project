@@ -30,7 +30,7 @@ mediapipe==0.10.18; python_version < "3.13"
 mediapipe==0.10.35; python_version >= "3.13"
 msgpack==1.2.1
 narwhals==2.22.1
-numba==0.65.1
+numba==0.66.0
 numpy==1.26.4; python_version < "3.13"
 numpy==2.4.6; python_version >= "3.13"
 opencv-contrib-python==4.10.0.84; python_version < "3.13"

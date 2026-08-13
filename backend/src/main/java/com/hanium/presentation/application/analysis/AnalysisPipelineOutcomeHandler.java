@@ -37,7 +37,7 @@ final class AnalysisPipelineOutcomeHandler {
         meterRegistry.counter("analysis.job.completed").increment();
         stopDurationTimer(sample, "completed");
         analysisProgressService.complete(jobId);
-        log.info("[{}] (100%) 분석 파이프라인이 완료되었습니다.", jobId);
+        log.info("STAGE_TRANSITION jobId={} step=COMPLETED percent=100% 분석 파이프라인이 완료되었습니다.", jobId);
     }
 
     void fail(
@@ -74,6 +74,12 @@ final class AnalysisPipelineOutcomeHandler {
         analysisProgressService.fail(jobId, lastPercent, failReason);
         resultPersistenceStage.saveFailureSafely(jobId, failReason);
         meterRegistry.counter("analysis.job.failed", "reason", metricReason).increment();
+        log.info(
+                "STAGE_TRANSITION jobId={} step=FAILED percent={}% {}",
+                jobId,
+                lastPercent,
+                failReason
+        );
     }
 
     private void stopDurationTimer(Timer.Sample sample, String outcome) {

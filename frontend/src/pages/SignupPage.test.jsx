@@ -70,11 +70,11 @@ describe("SignupPage", () => {
         renderSignupPage();
 
         expect(screen.getByRole("button", { name: "회원가입" })).toBeDisabled();
-        expect(screen.getByRole("link", { name: "개인정보처리방침" })).toHaveAttribute(
+        expect(screen.getByRole("link", { name: "테스트 데이터 처리 안내" })).toHaveAttribute(
             "href",
             "/privacy"
         );
-        expect(screen.getByRole("link", { name: "이용약관" })).toHaveAttribute(
+        expect(screen.getByRole("link", { name: "프로젝트 이용 안내" })).toHaveAttribute(
             "href",
             "/terms"
         );
@@ -104,7 +104,7 @@ describe("SignupPage", () => {
             target: { value: "password123" },
         });
         fireEvent.click(
-            screen.getByLabelText(/개인정보처리방침 및 이용약관에 동의합니다/)
+            screen.getByLabelText(/테스트 데이터 처리 안내 및 프로젝트 이용 안내에 동의합니다/)
         );
         fireEvent.click(screen.getByRole("button", { name: "회원가입" }));
 

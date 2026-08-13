@@ -13,7 +13,6 @@ const API_BASE_URL = process.env.API_BASE_URL || "http://localhost:8080";
 const BROWSER_ORIGIN_HEADERS = {
     Origin: new URL(process.env.BASE_URL || "http://127.0.0.1:5173").origin,
 };
-const POLL_INTERVAL_MS = Number(process.env.E2E_ANALYSIS_POLL_INTERVAL_MS || 2_000);
 const MAX_WAIT_MS = Number(process.env.E2E_ANALYSIS_MAX_WAIT_MS || 10 * 60 * 1_000);
 
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -34,31 +33,6 @@ async function responseBody(response) {
     } catch {
         return { rawText: text };
     }
-}
-
-async function waitForTerminalStatus(api, jobId) {
-    const startedAt = Date.now();
-    let latestStatus = null;
-
-    while (Date.now() - startedAt < MAX_WAIT_MS) {
-        const response = await api.get(
-            `${API_BASE_URL}/api/analysis/${jobId}/status`
-        );
-        const body = await responseBody(response);
-        expect(response.ok(), JSON.stringify(body)).toBeTruthy();
-
-        latestStatus = unwrap(body);
-        if (TERMINAL_STATUSES.has(latestStatus?.status)) {
-            return latestStatus;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    }
-
-    throw new Error(
-        `분석이 제한 시간 안에 종료되지 않았습니다. jobId=${jobId} `
-        + `latestStatus=${JSON.stringify(latestStatus)}`
-    );
 }
 
 test.describe("analysis pipeline (full stack)", () => {
@@ -170,16 +144,24 @@ test.describe("analysis pipeline (full stack)", () => {
                 .toBeVisible();
             await expect.poll(() => pageStatusRequestCount).toBeGreaterThanOrEqual(2);
 
-            terminalStatus = await waitForTerminalStatus(api, jobId);
+            // 별도 API polling을 추가하면 실제 브라우저의 status+progress polling과 합쳐져
+            // 사용자 rate limit 사용량을 왜곡합니다. UI가 스스로 완료를 감지해 이동하는지를
+            // 기다린 뒤 최종 상태는 한 번만 조회합니다.
+            await expect(page).toHaveURL(
+                new RegExp(`/results/${jobId}$`),
+                { timeout: MAX_WAIT_MS }
+            );
+
+            const statusResponse = await api.get(
+                `${API_BASE_URL}/api/analysis/${jobId}/status`
+            );
+            const statusBody = await responseBody(statusResponse);
+            expect(statusResponse.ok(), JSON.stringify(statusBody)).toBeTruthy();
+            terminalStatus = unwrap(statusBody);
             expect(
                 terminalStatus.status,
                 `분석 실패: ${terminalStatus.failReason || terminalStatus.statusDescription}`
             ).toBe("COMPLETED");
-
-            await expect(page).toHaveURL(
-                new RegExp(`/results/${jobId}$`),
-                { timeout: 30_000 }
-            );
 
             const resultResponse = await api.get(`${API_BASE_URL}/api/results/${jobId}`);
             const resultBody = await responseBody(resultResponse);

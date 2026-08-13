@@ -49,9 +49,9 @@ DB에 없는 데이터로 판단해 삭제할 수 있습니다. 검증 종료 �
 확인한 뒤 정리합니다.
 
 기본 완료 대기 시간은 10분입니다. 느린 CI/ARM 환경에서는
-`E2E_ANALYSIS_MAX_WAIT_MS`, 폴링 간격은 `E2E_ANALYSIS_POLL_INTERVAL_MS`, 다른 영상은
-`E2E_VIDEO_PATH`로 조정할 수 있습니다. 테스트 계정과 생성된 분석 데이터는 종료 시
-회원탈퇴 API로 정리합니다.
+`E2E_ANALYSIS_MAX_WAIT_MS`, 다른 영상은 `E2E_VIDEO_PATH`로 조정할 수 있습니다. E2E는
+브라우저 UI의 실제 polling 주기를 그대로 사용하며 별도 API polling을 추가하지 않습니다.
+테스트 계정과 생성된 분석 데이터는 종료 시 회원탈퇴 API로 정리합니다.
 
 ## 스펙
 

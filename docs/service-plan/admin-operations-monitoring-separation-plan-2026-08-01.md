@@ -1,5 +1,7 @@
 # 관리자 대시보드·운영 모니터링 분리 고도화 계획
 
+> **보관 상태(2026-08-13):** 관리자 화면은 로컬 테스트 데이터/복구 도구로 유지하지만, Prometheus/Grafana/Alertmanager 상시 관제는 현재 완료 범위에서 제외했다.
+
 - 작성일: 2026-08-01
 - 범위: `frontend`, `backend`, Prometheus, Grafana, Alertmanager의 현재 구현
 - 상태: 핵심 분리·고도화 구현 완료, 외부 운영 연동 검증 대기

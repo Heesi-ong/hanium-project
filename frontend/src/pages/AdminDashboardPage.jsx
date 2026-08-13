@@ -76,7 +76,7 @@ function AdminDashboardPage() {
             <PageHeader
                 eyebrow="Admin"
                 title="관리자 업무 개요"
-                description="사용자·분석 데이터 관리와 수동 복구가 필요한 항목만 보여줍니다. 기술 지표와 장애 추세는 운영 모니터링에서 확인합니다."
+                description="테스트 사용자·분석 데이터 관리와 수동 복구가 필요한 항목을 보여줍니다. 분석 진행 상태는 로컬 로그 감시 스크립트로 확인합니다."
             />
 
             <AdminNav />

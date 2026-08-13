@@ -51,10 +51,10 @@ describe("HomePage", () => {
         expect(screen.getByText("분석 항목 상세 소개")).toBeInTheDocument();
         expect(screen.getByRole("heading", { name: "3단계면 충분합니다" })).toBeInTheDocument();
         expect(screen.getByRole("heading", { name: "자주 묻는 질문" })).toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "무료로 시작하기" }))
+        expect(screen.getByRole("link", { name: "로컬 테스트 시작" }))
             .toHaveAttribute("href", "/signup")
             .toHaveClass("bg-primary-deep");
-        expect(screen.getByRole("link", { name: "무료 회원가입" }))
+        expect(screen.getByRole("link", { name: "테스트 계정 만들기" }))
             .toHaveAttribute("href", "/signup")
             .toHaveClass("bg-primary-deep");
         expect(screen.queryByRole("link", { name: "영상 업로드 시작" }))
@@ -80,9 +80,9 @@ describe("HomePage", () => {
             .toHaveAttribute("href", "/results");
         expect(screen.getByRole("link", { name: "계정 설정" }))
             .toHaveAttribute("href", "/account");
-        expect(screen.queryByRole("link", { name: "무료로 시작하기" }))
+        expect(screen.queryByRole("link", { name: "로컬 테스트 시작" }))
             .not.toBeInTheDocument();
-        expect(screen.queryByRole("link", { name: "무료 회원가입" }))
+        expect(screen.queryByRole("link", { name: "테스트 계정 만들기" }))
             .not.toBeInTheDocument();
         expect(screen.queryByText("예시 결과 — 실제 분석 시 내 점수로 대체됩니다"))
             .not.toBeInTheDocument();

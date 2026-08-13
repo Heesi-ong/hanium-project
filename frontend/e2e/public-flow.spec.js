@@ -26,6 +26,21 @@ function parseRgb(cssColor) {
 }
 
 test.describe("public pages", () => {
+    test.beforeEach(async ({ page }) => {
+        // 이 스펙은 백엔드 없이 공개 화면만 검증한다. AuthProvider의 세션 복구 요청은
+        // 명시적인 비로그인 응답으로 고정해 네트워크 연결 실패와 UI 오류를 구분한다.
+        await page.route("**/api/auth/me", async (route) => {
+            await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    success: true,
+                    data: null,
+                }),
+            });
+        });
+    });
+
     test("landing renders with a visible, readable hero heading", async ({ page }) => {
         await page.goto("/");
 
@@ -60,10 +75,10 @@ test.describe("public pages", () => {
     test("primary navigation and footer links route correctly", async ({ page }) => {
         await page.goto("/");
 
-        await page.getByRole("link", { name: "베타 이용 안내" }).first().click();
+        await page.getByRole("link", { name: "프로젝트 안내" }).first().click();
         await expect(page).toHaveURL(/\/pricing$/);
 
-        await page.getByRole("link", { name: "개인정보처리방침" }).first().click();
+        await page.getByRole("link", { name: "테스트 데이터 처리 안내" }).first().click();
         await expect(page).toHaveURL(/\/privacy$/);
 
         await page.goto("/terms");

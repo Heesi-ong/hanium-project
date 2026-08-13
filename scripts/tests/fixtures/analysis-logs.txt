@@ -1,0 +1,11 @@
+backend-1 | {"@timestamp":"2026-08-12T05:18:29.389Z","message":"[20260812051828-03f8a97d] 실행을 접수(QUEUED)했습니다."}
+analysis-worker-1 | {"@timestamp":"2026-08-12T05:18:29.781Z","message":"STAGE_TRANSITION jobId=20260812051828-03f8a97d step=BASIC_ANALYSIS percent=10% 기본 분석 요청을 analysis-engine으로 전송합니다.","jobId":"20260812051828-03f8a97d"}
+analysis-engine-1 | 2026-08-12T05:18:31+0000 INFO [AnyIO worker thread] [job_id=20260812051828-03f8a97d] analysis-engine - (20260812051828-03f8a97d) 4/9 음성을 텍스트로 변환(STT)하는 중...
+analysis-worker-1 | {"@timestamp":"2026-08-12T05:19:00.332Z","message":"STAGE_TRANSITION jobId=20260812051828-03f8a97d step=VIDEO_LLM_ANALYSIS percent=40% Video LLM 분석 요청을 전송합니다.","jobId":"20260812051828-03f8a97d"}
+video-llm-engine-1 | 2026-08-12T05:19:01+0000 INFO [job_id=20260812051828-03f8a97d] video-llm-engine - NVIDIA_VIDEO_LLM_USAGE jobId=20260812051828-03f8a97d model=test generationMode=REAL status=200 elapsedMs=812
+analysis-worker-1 | {"@timestamp":"2026-08-12T05:19:02.000Z","message":"STAGE_TRANSITION jobId=20260812051828-03f8a97d step=OPENAI_FEEDBACK percent=75% AI 피드백을 생성하는 중입니다.","jobId":"20260812051828-03f8a97d"}
+analysis-worker-1 | {"@timestamp":"2026-08-12T05:19:03.000Z","message":"STAGE_TRANSITION jobId=20260812051828-03f8a97d step=RESULT_MERGE percent=90% 최종 결과를 병합하는 중입니다.","jobId":"20260812051828-03f8a97d"}
+analysis-worker-1 | {"@timestamp":"2026-08-12T05:19:04.000Z","message":"[20260812051828-03f8a97d] (100%) 분석 파이프라인이 완료되었습니다.","jobId":"20260812051828-03f8a97d"}
+analysis-worker-1 | {"@timestamp":"2026-08-12T05:19:04.100Z","message":"[20260812051828-03f8a97d] STT에 실패하여 영상 길이 기반 추정값을 사용했습니다.","jobId":"20260812051828-03f8a97d"}
+analysis-engine-1 | 2026-08-12T05:20:00+0000 INFO [job_id=20260812052000-deadbeef] analysis-engine - (20260812052000-deadbeef) 2/9 다른 작업의 프레임을 추출하는 중...
+mysql-1 | 2026-08-12T05:20:01Z ready for connections

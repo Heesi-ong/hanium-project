@@ -360,9 +360,9 @@ rate-limit:
     capacity: ${VIDEO_ACCESS_TOKEN_RATE_LIMIT_CAPACITY:30}
     refill-minutes: ${VIDEO_ACCESS_TOKEN_RATE_LIMIT_REFILL_MINUTES:1}
   job-status-poll:
-    # 프론트가 분석 진행 중 1.5초 간격으로 폴링합니다(POLLING_INTERVAL_MS). 정상적인 폴링을
-    # 막지 않도록 넉넉하게 잡되, 스크립트를 이용한 과도한 반복 호출은 차단합니다.
-    capacity: ${JOB_STATUS_POLL_RATE_LIMIT_CAPACITY:90}
+    # 업로드 화면은 상태를 1.5초마다(약 40회/분), 진행률을 1초마다(60회/분) 함께 조회합니다.
+    # 정상 단일 탭의 약 100회/분에 재시도 여유를 더하되 과도한 반복 호출은 차단합니다.
+    capacity: ${JOB_STATUS_POLL_RATE_LIMIT_CAPACITY:120}
     refill-minutes: ${JOB_STATUS_POLL_RATE_LIMIT_REFILL_MINUTES:1}
   coach-daily:
     # AI 코치 대화 1턴(사용자 메시지 1건)당 1회 소비. 사용자당 하루 메시지 수를 제한해

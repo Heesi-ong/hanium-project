@@ -236,19 +236,18 @@ function AccountPage() {
                 </div>
 
                 <div className="option-panel">
-                    <strong>문의 및 데이터 권리</strong>
+                    <strong>테스트 데이터 관리</strong>
                     <p className="card-description">
-                        서비스 이용 중 문의사항이나 개인정보 열람·정정·삭제 요청은 아래 정책
-                        페이지에서 안내하는 절차를 따라주세요. 보유한 업로드 영상과 분석 결과를
-                        모두 삭제하려면 이 페이지 아래의 회원탈퇴를 이용하면 됩니다.
+                        시연이 끝나면 결과 삭제 또는 이 페이지 아래의 회원탈퇴를 이용해
+                        업로드 영상과 분석 결과를 정리하세요. 세부 처리 방식은 아래 안내에서 확인할 수 있습니다.
                     </p>
 
                     <div className="button-row">
                         <Link to="/privacy" className="secondary-button">
-                            개인정보처리방침 보기
+                            테스트 데이터 처리 안내
                         </Link>
                         <Link to="/terms" className="secondary-button">
-                            이용약관 보기
+                            프로젝트 이용 안내
                         </Link>
                     </div>
                 </div>

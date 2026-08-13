@@ -1,5 +1,7 @@
 # Release 기준선 설계 (1단계)
 
+> **보관 상태(2026-08-13):** 공개 릴리스를 현재 범위에서 제외했다. 이 문서는 과거 설계 근거를 보존하며, 실행 워크플로는 `docs/archive/operations/release.workflow.yml`로 이동했다.
+
 - 작성일: 2026-08-03
 - 기준: `docs/service-plan/project-review-and-direction-2026-08-03.md` P1-01의 후속 설계 문서
 - 범위: 이미지 registry·태깅, build→push→(staging 검증)→production 승격, rollback

@@ -123,13 +123,11 @@
 
 **상태(2026-08-12, 범위 제거 — 사용자 결정)**: 현재 프로젝트는 실제 공개 서비스 출시 계획이
 없는 테스트/데모 단계로 운영하기로 확정되어, 이 항목 자체가 프로젝트 범위에서 제거됐다.
-2026-08-06에는 실제 사업자 정보(상호/대표자/사업자등록번호/주소/연락처, 개인정보 보호책임자
-정보)가 없어 "계속 보류"로 남겨뒀으나, 사용자가 이후 "테스트 단계에서 불필요하므로 제거"로
-결정했다. placeholder와 초안 안내문은 화면에 그대로 유지된다(`frontend/src/pages/PrivacyPage.jsx`,
-`TermsPage.jsx`). 값 주입 경로(`VITE_BUSINESS_*`, `VITE_PRIVACY_OFFICER_*` 환경변수,
-`frontend/src/constants/businessInfo.js`)는 코드에 남겨뒀으므로, 나중에 실제 공개 서비스로
-전환하기로 결정하면 코드 변경 없이 해당 값만 채우고 frontend를 재빌드하면 된다. 그 전환
-결정이 내려지기 전까지는 이 프로젝트를 실제 사용자에게 공개 출시해서는 안 된다.
+2026-08-06에는 실제 사업자 정보가 없어 "계속 보류"로 남겨뒀으나, 사용자가 이후
+"테스트 단계에서 불필요하므로 제거"로 결정했다. 2026-08-13에 `PrivacyPage`는
+`테스트 데이터 처리 안내`, `TermsPage`는 `프로젝트 이용 안내`로 바꾸고 사업자/보호책임자
+placeholder와 `VITE_BUSINESS_*`, `VITE_PRIVACY_OFFICER_*` 빌드 경로를 제거했다. 대신
+실제 영상 사용 동의, 외부 AI 전송 고지, 보관·삭제 안내는 테스트 안전 기준으로 유지했다.
 
 ### P0-03. 격리 Compose 검증이 기존 로컬 스토리지를 삭제할 수 있다
 
@@ -398,7 +396,7 @@ lint/build를 통과했고 실제 Chromium 공개 랜딩에서 401/네트워크 
 ### P2-02. 핵심 로직이 대형 파일에 집중돼 있다
 
 - `analysis-engine/app/api/basic_analysis.py`: 218줄(media I/O·STT·scoring·pose/gesture·face/gaze/emotion·audio 6단계 분리 후)
-- `video-llm-engine/app/api/video_llm_analysis.py`: 632줄(media I/O·deadline·NVIDIA provider·response 3단계 분리 후)
+- `video-llm-engine/app/api/video_llm_analysis.py`: 326줄(media I/O·deadline·NVIDIA provider·response·prompt·chunk pipeline·runtime 6단계 분리 후)
 - `backend/.../AnalysisCommandService.java`: 681줄
 - `frontend/src/pages/ResultDetailPage.jsx`: 1,074줄
 - `frontend/src/pages/ResultListPage.jsx`: 766줄
@@ -668,6 +666,34 @@ Video LLM 컨테이너에서 새 response 서비스 파일 존재, fenced JSON �
 기존 호스트 `storage/uploads`·`storage/results`는 전후 동일한 132개 파일과 집계 SHA-256
 `fb4342df16cba1b7bb0313d42774ffdeed2b6a4845f39ed08f2c9f7f5d120d31`을 유지했다.
 
+Video LLM 엔진 4단계에서는 `app/services/nvidia_prompt.py`를 추가해 영상 길이별 timestamp
+지시문과 NVIDIA inline/asset chat payload 생성을 API orchestration에서 분리했다. 30초 미만은
+실제 관찰 시각을 유지하고, 30초 이상은 중복 없이 이어지는 세 구간을 제공하는 계약을 독립
+테스트로 고정했다. inline 입력의 system+text+video 메시지와 asset 입력의 단일 user 메시지,
+JSON response format, sampling hint도 각각 검증한다. 기존 API 모듈의 내부 함수 경로는 호환
+alias로 유지해 테스트와 도구 호출을 깨뜨리지 않았다. `video_llm_analysis.py`는 632줄에서
+515줄로 줄었고 신규 prompt service는 143줄이다. 관련 집중 테스트 13건, Video LLM 전체
+비-live 테스트 196건, Ruff 0.12.0, compileall과 diff 검사가 통과했으며 NVIDIA 실제 API live 테스트 1건은
+키가 없어 제외됐다.
+
+Video LLM 엔진 5단계에서는 `app/services/video_pipeline.py`를 추가해 ffmpeg 구간 분할,
+구간별 NVIDIA 호출, 로컬 timestamp의 전체 영상 offset 병합, 구간 요약 결합과 임시 디렉터리
+정리를 API orchestration에서 분리했다. 예상 세그먼트가 하나라도 누락되면 provider 호출 전에
+실패하고, 구간 호출 중 오류가 나면 부분 결과를 REAL로 반환하지 않는 기존 계약을 유지한다.
+독립 테스트 3건으로 두 구간 offset·요약 병합, 누락 구간의 비용 없는 거부, 원래 인덱스 보존과
+임시 파일 정리를 고정했다. `video_llm_analysis.py`는 515줄에서 366줄로 줄었고 pipeline service는
+209줄이다. 장시간 영상 집중 회귀 11건, Video LLM 전체 비-live 테스트 199건, Ruff 0.12.0,
+compileall과 diff 검사가 통과했으며 NVIDIA 실제 API live 테스트 1건은 키가 없어 제외됐다.
+
+Video LLM 엔진 6단계에서는 `app/services/nvidia_runtime.py`를 추가해 실제 모델 동시 호출
+세마포어, 대기 deadline, 단일 NVIDIA provider 요청과 모델 JSON 파싱을 API에서 분리했다.
+애플리케이션 lifespan도 새 runtime 서비스를 직접 초기화하며, API에는 기존 내부 호출자를 위한
+호환 함수만 남겼다. 기존 세마포어 소진 시 네트워크 미호출, 성공·실패 모두 permit 반납,
+inline/asset 요청과 장시간 pipeline 연결 계약을 그대로 유지했다. `video_llm_analysis.py`는
+366줄에서 326줄로 줄었고 runtime service는 73줄이다. 집중 회귀 5건, Video LLM 전체 비-live
+테스트 199건, Ruff 0.12.0, compileall과 diff 검사가 통과했으며 실제 NVIDIA live 테스트 1건은
+키가 없어 제외됐다.
+
 ### P2-03. 관리자 파괴적 조치의 사유·상관관계가 부족하다
 
 정지, 강제 탈퇴, 결과 삭제, 수동 재큐잉은 감사로그를 남기지만 사용자 입력 사유와 incident/reference ID가 구조화된 필수 필드가 아니다.
@@ -817,10 +843,10 @@ Video LLM 컨테이너에서 새 response 서비스 파일 존재, fenced JSON �
 
 ## 7. 남은 위험과 다음 한 단계
 
-P0-01 관리자 권한 모델은 완료됐다. 현재 공개 출시의 직접 차단 조건은 **P0-02 실제 사업자·개인정보
-보호책임자 정보와 전문 검토**, production 호스트, SMTP/NVIDIA/OpenAI/Alertmanager 실환경 증거다.
-GitHub Repository Variables의 사업자 정보 9개가 비어 있으므로 frontend release는 의도적으로
-실패한다.
+P0-01 관리자 권한 모델은 완료됐다. 2026-08-12~13 사용자 결정에 따라 공개 출시,
+실제 사업자·개인정보 보호책임자 정보, production 호스트, SMTP/Alertmanager 실환경
+증거, GHCR 릴리스는 현재 프로젝트 완료 조건에서 제외했다. 기존 관련 구현과 문서는
+학습 이력용 참고 자료로만 취급한다.
 
 P2-04의 저장 schema version, 과거 fixture, frontend parser 호환성 계약과 P1-03 업로드·장시간
 분석 UX, P1-04 결과 목록 단순화, P1-05 재방문 사용자 홈·계정 경로, P2-01 브라우저 인증
@@ -832,11 +858,20 @@ Whisper STT provider/timeout, 최종 scoring·reliability penalty, pose/posture�
 face/gaze/emotion, speech/pause/filler/volume 분석 계약을 분리했다. API 파일은 218줄의
 orchestration·실패 응답 경계만 남아 analysis-engine P2-02의 현재 분리 목표를 완료했다.
 E2E의 빈 DB와 기존 런타임 스토리지가 결합되던 P0-03도 `STORAGE_HOST_PATH` 격리 계약으로
-차단했다. Video LLM 엔진도 media I/O·deadline, NVIDIA provider, response 3단계 분리를
-완료했다. 외부 값 없이 진행 가능한 다음 로컬 단위는 **632줄인
-`video-llm-engine/app/api/video_llm_analysis.py`의 inline/asset별 prompt payload와 영상 길이별
-시간 지시문을 characterization test로 고정하고 prompt service로 추출할지, 장시간 영상의
-split·구간 호출·offset merge orchestration을 먼저 분리할지 책임 응집도를 기준으로 결정하는 것**이다.
+차단했다. Video LLM 엔진도 media I/O·deadline, NVIDIA provider, response, prompt payload,
+장시간 영상 pipeline, runtime의 6단계 분리를 완료했다. API 파일은 326줄로 줄어 설정 해석,
+실제 모델 단일/장시간 분기, mock/fallback 정책과 HTTP 오류 응답 경계를 유지한다. 현재 남은
+API 책임은 서로 같은 정책 흐름을 구성하므로 추가 분리보다 한눈에 읽히는 구조를 유지한다.
 `AnalysisCommandService`의 남은 단계 실행 순서와 checkpoint orchestration은 더 잘게 나눌 때
 오히려 흐름을 분산시키지 않는지 함께 판단한다.
-production deploy·rollback과 실제 provider 검증은 호스트·키·수신처가 준비된 뒤 수행한다.
+2026-08-13 최종 로컬 검증에서 샘플 영상 업로드 E2E가 1분 24초에 통과했다. 독립 worker의
+작업 선점, 정량 분석 1~9단계, 새로고침 뒤 진행 복구, 일시적 503 재시도, Video LLM
+`DISABLED`, OpenAI `SKIPPED`, 결과·영상 토큰 조회와 회원탈퇴 삭제 outbox `COMPLETED`를
+확인했다. 이 과정에서 UI의 status/progress 동시 polling보다 작았던 status rate limit을
+90회/분에서 120회/분으로 맞추고, E2E 자체의 중복 status polling을 제거했다. 분석 로그
+뷰어의 과거 조회도 네 서비스 로그를 실제 발생 시각 순서로 표시하도록 보강했다.
+
+학생 프로젝트 로컬/테스트 범위의 필수 잔여 작업은 없으며, 완료 기준과 제외 범위는
+`docs/service-plan/local-test-feature-completion-2026-08-13.md`에 정리했다. typed DTO 확대,
+추가 orchestration 분리, 실제 외부 provider acceptance는 현재 기능 완료를 막지 않는 선택적
+후속 개선이다.

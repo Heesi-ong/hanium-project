@@ -4,47 +4,42 @@ function PricingPage() {
     return (
         <section className="page-section">
             <article className="upload-card policy-card">
-                <p className="eyebrow">Beta</p>
-                <h2>베타 이용 안내</h2>
+                <p className="eyebrow">Local Test</p>
+                <h2>프로젝트 테스트 안내</h2>
 
                 <div className="policy-disclaimer">
-                    현재는 결제·유료 요금제가 없는 베타 서비스입니다. 실제 요금, 결제 수단, 등급별
-                    제공 범위는 서비스 정식 출시 시점에 다시 안내해드립니다.
+                    이 프로젝트는 결제·요금제·공개 회원 모집 없이 로컬에서 기능을 검증하는
+                    학생 프로젝트입니다.
                 </div>
 
                 <div className="policy-section">
-                    <h3>현재 이용 안내</h3>
+                    <h3>테스트 범위</h3>
                     <p>
-                        지금은 결제 기능이 연동되어 있지 않으며, 로그인한 사용자는 발표 영상 분석과
-                        AI 코치 대화 등 모든 기능을 별도 요금 없이 이용할 수 있습니다. 다만 어뷰징
-                        방지를 위한 요청 빈도 제한(rate limit)은 적용되어 있습니다.
-                    </p>
-                </div>
-
-                <div className="policy-section">
-                    <h3>제공 범위와 한계</h3>
-                    <p>
-                        자세·시선·제스처·표정·음성 분석은 업로드된 영상 품질과 촬영 각도에 따라
-                        정확도가 달라질 수 있으며, 의학적·심리적 진단이 아닌 발표 연습 참고용
-                        지표입니다. AI 코칭 문장은 OpenAI/Video LLM 등 외부 AI 모델 호출 결과이며,
-                        모델 호출에 실패하면 내부 기본(Mock) 로직으로 대체되어 안내됩니다.
-                    </p>
-                    <p className="policy-links">
-                        <Link to="/results">내 분석 결과 목록에서 예시 확인하기</Link>
+                        계정 생성, 영상 업로드, 비동기 분석 진행률, 결과 조회, AI 코치 대화,
+                        재시도·취소·삭제 흐름을 로컬 환경에서 확인합니다.
                     </p>
                 </div>
 
                 <div className="policy-section">
-                    <h3>앞으로의 계획</h3>
+                    <h3>분석 모드</h3>
                     <p>
-                        서비스 운영 비용(OpenAI, Video LLM 등 외부 AI API 사용료 포함)을 고려해 유료
-                        요금제 도입을 검토하고 있습니다. 요금제 구성과 가격이 확정되면 이 페이지를 통해
-                        미리 안내한 뒤 적용합니다.
+                        정량 분석 엔진은 OpenCV, MediaPipe, faster-whisper를 사용합니다.
+                        OpenAI와 NVIDIA Video LLM은 환경변수와 테스트 키를 명시했을 때만 호출하며,
+                        비활성 상태의 mock/fallback 결과와 실제 호출 결과를 구분해 표시합니다.
                     </p>
+                </div>
+
+                <div className="policy-section">
+                    <h3>시연 전 확인</h3>
+                    <ul>
+                        <li>네 애플리케이션 서비스와 MySQL, Redis, MinIO 상태를 확인합니다.</li>
+                        <li>테스트 영상의 사용 동의와 외부 AI 활성 여부를 확인합니다.</li>
+                        <li>터미널에서 분석 단계 로그를 추적하고 시연 후 테스트 데이터를 삭제합니다.</li>
+                    </ul>
                 </div>
 
                 <p className="policy-links">
-                    <Link to="/upload">지금 발표 분석 시작하기</Link>
+                    <Link to="/upload">로컬 테스트 시작하기</Link>
                 </p>
             </article>
         </section>

@@ -1,11 +1,13 @@
-# 배포용 이미지 오버레이입니다. docker-compose.yml/docker-compose.prod.yml의 build:
+# 보관 자료: 이전 GHCR 배포용 이미지 오버레이입니다.
+# 현재 실행·CI·완료 범위에는 포함하지 않으며 검증되지 않습니다.
+# docker-compose.yml/docker-compose.prod.yml의 build:
 # 기반 서비스를 GHCR에 미리 push된 불변(sha-<커밋SHA>) 이미지로 교체합니다.
 # 로컬 개발 워크플로(docker-compose.yml 단독 사용, 소스에서 직접 빌드)는
 # 이 파일을 쓰지 않으면 그대로 유지됩니다.
 #
 # IMAGE_TAG를 비워두면 바로 기동이 거부됩니다("latest"처럼 무엇이 배포됐는지
-# 불명확한 태그를 실수로 쓰는 상황을 막기 위함입니다). .github/workflows/release.yml이
-# 커밋마다 sha-<7자리 SHA> 태그로 push하며, production은 그 태그만 참조합니다.
+# 불명확한 태그를 실수로 쓰는 상황을 막기 위함입니다). 당시 워크플로는
+# docs/archive/operations/release.workflow.yml에 보관되어 있습니다.
 #
 # 사용 예:
 #   IMAGE_TAG=sha-abc1234 docker compose \

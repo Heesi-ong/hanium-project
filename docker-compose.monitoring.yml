@@ -1,4 +1,5 @@
-# 모니터링용 오버레이입니다. 기본 docker compose up에는 포함되지 않으며,
+# 보관/선택 자료: 이전 상시 모니터링 설계용 오버레이입니다.
+# 현재 프로젝트의 CI·완료 범위에서는 검증하지 않습니다. 기본 docker compose up에는 포함되지 않으며,
 # 필요할 때만 아래 명령으로 Prometheus/Alertmanager를 함께 띄웁니다.
 # 사용 예: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus alertmanager
 #

@@ -1,6 +1,8 @@
 # Release 기록
 
-`.github/workflows/release.yml`의 `build-and-push` + `staging-smoke`를 통과한 커밋과, 그중 실제로
+> **보관 상태(2026-08-13):** GHCR 릴리스와 production 승격을 현재 범위에서 제외했다. 이 문서는 과거 실험 이력이며 새 릴리스를 지시하지 않는다.
+
+`docs/archive/operations/release.workflow.yml`에 보관한 `build-and-push` + `staging-smoke`를 과거에 통과한 커밋과, 그중 실제로
 production에 승격한 커밋을 기록한다. 설계 배경은
 `docs/service-plan/release-pipeline-design-2026-08-03.md`를 참고한다.
 

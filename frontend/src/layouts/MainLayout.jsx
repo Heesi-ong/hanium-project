@@ -49,7 +49,7 @@ function NavLinks({ isAuthenticated, user, logout, variant, onNavigate }) {
             </NavLink>
 
             <NavLink to="/pricing" className={linkClassName} onClick={onNavigate}>
-                베타 이용 안내
+                프로젝트 안내
             </NavLink>
 
             {isAuthenticated ? (
@@ -268,16 +268,16 @@ function MainLayout() {
                     <div>
                         <p className="text-base italic text-text-primary">AI Presentation Coach</p>
                         <p className="mt-1 text-xs text-text-muted">
-                            &copy; {new Date().getFullYear()} AI Presentation Coach. All rights reserved.
+                            학생 프로젝트 · 로컬 테스트 전용
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
                         <Link to="/privacy" className="text-text-secondary hover:text-primary-bright">
-                            개인정보처리방침
+                            테스트 데이터 처리 안내
                         </Link>
                         <Link to="/terms" className="text-text-secondary hover:text-primary-bright">
-                            이용약관
+                            프로젝트 이용 안내
                         </Link>
                     </div>
                 </div>

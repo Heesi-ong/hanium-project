@@ -1,6 +1,8 @@
-name: release
+name: archived-release-reference
 
-# 상태(2026-08-13, 사용자 결정): 잠정 비활성화. 이 프로젝트는 현재 실제 공개 서비스
+# 상태(2026-08-13, 사용자 결정): 실행 워크플로에서 제거한 학습 이력용 참고 자료.
+# 이 파일은 .github/workflows 밖에 있으므로 GitHub Actions가 실행하지 않는다.
+# 이 프로젝트는 현재 실제 공개 서비스
 # 출시 계획이 없는 테스트/데모 단계로 운영하기로 확정되어(project-review-and-direction
 # 문서의 P0-02/P1-06/07 "범위 제거" 참고), GHCR에 이미지를 push할 필요가 없다.
 # `gh workflow disable`(GitHub API로 끄는 방식)은 Claude Code auto mode 정책상

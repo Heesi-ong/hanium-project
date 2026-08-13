@@ -56,8 +56,8 @@ function renderAccountPage() {
             <Routes>
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/login" element={<div>로그인 화면</div>} />
-                <Route path="/privacy" element={<div>개인정보처리방침 화면</div>} />
-                <Route path="/terms" element={<div>이용약관 화면</div>} />
+                <Route path="/privacy" element={<div>테스트 데이터 처리 안내 화면</div>} />
+                <Route path="/terms" element={<div>프로젝트 이용 안내 화면</div>} />
                 <Route path="/onboarding" element={<div>온보딩 설정 화면</div>} />
             </Routes>
         </MemoryRouter>
@@ -244,10 +244,10 @@ describe("AccountPage", () => {
     it("links to the privacy and terms pages for inquiries and data rights", () => {
         renderAccountPage();
 
-        expect(screen.getByText("문의 및 데이터 권리")).toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "개인정보처리방침 보기" }))
+        expect(screen.getByText("테스트 데이터 관리")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "테스트 데이터 처리 안내" }))
             .toHaveAttribute("href", "/privacy");
-        expect(screen.getByRole("link", { name: "이용약관 보기" }))
+        expect(screen.getByRole("link", { name: "프로젝트 이용 안내" }))
             .toHaveAttribute("href", "/terms");
     });
 

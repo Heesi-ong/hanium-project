@@ -34,7 +34,12 @@ final class AnalysisPipelineStageReporter {
     int beginBasicAnalysis(String jobId) {
         // QUEUED 작업 선점이 이미 DB 상태를 BASIC_ANALYZING으로 원자 전이했으므로
         // 여기서는 같은 상태를 다시 저장하지 않고 진행률 캐시만 맞춥니다.
-        log.info("[{}] ({}%) 기본 분석 요청을 analysis-engine으로 전송합니다.", jobId, BASIC_PERCENT);
+        log.info(
+                "STAGE_TRANSITION jobId={} step={} percent={}% 기본 분석 요청을 analysis-engine으로 전송합니다.",
+                jobId,
+                AnalysisStep.BASIC_ANALYSIS,
+                BASIC_PERCENT
+        );
         analysisProgressService.update(
                 jobId,
                 AnalysisStep.BASIC_ANALYSIS,
@@ -99,7 +104,7 @@ final class AnalysisPipelineStageReporter {
     ) {
         // DB 상태가 원본이고 Redis 진행률은 보조 캐시이므로 항상 DB를 먼저 커밋합니다.
         analysisJobStatusService.updateStatus(jobId, status);
-        log.info("[{}] ({}%) {}", jobId, percent, logMessage);
+        log.info("STAGE_TRANSITION jobId={} step={} percent={}% {}", jobId, step, percent, logMessage);
         analysisProgressService.update(jobId, step, status, percent, progressMessage);
         return percent;
     }

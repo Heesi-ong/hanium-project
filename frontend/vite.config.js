@@ -27,12 +27,12 @@ export default defineConfig({
         '**/*.test.{js,jsx,ts,tsx}',
       ],
       // coverage는 측정만 하고 최소 하락 기준이 없었다(2026-08-03 서비스화 점검 P2-06).
-      // 현재 실측치(2026-08-06 기준 statements 75.48%, branches 67.29%, functions
-      // 78.13%, lines 76.17%)보다 여유를 두고 낮게 잡아, 실질적인 회귀만 `npm run
-      // test:coverage`(CI)에서 잡아낸다.
+      // 현재 실측치(2026-08-13 기준 statements 78.33%, branches 71.41%, functions
+      // 80.55%, lines 79.04%)보다 낮은 70%를 공통 바닥선으로 두어 `npm run
+      // test:coverage`(CI)에서 실질적인 회귀를 잡아낸다.
       thresholds: {
         statements: 70,
-        branches: 60,
+        branches: 70,
         functions: 70,
         lines: 70,
       },

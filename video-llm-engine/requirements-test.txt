@@ -7,4 +7,5 @@
 httpcore2==2.7.0
 httpx2==2.7.0
 pytest==9.0.3
+pytest-cov==7.0.0
 truststore==0.10.4

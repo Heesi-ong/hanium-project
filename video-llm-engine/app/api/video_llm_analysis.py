@@ -4,10 +4,9 @@ import time
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel
-
 from app.core.logging_config import bind_job_id, bind_request_id
 from app.core.security import verify_internal_api_key
+from app.api.schemas import VideoLlmAnalysisRequest, VideoLlmAnalysisResponse
 from app.services import (
     media_io,
     nvidia_prompt,
@@ -27,16 +26,6 @@ router = APIRouter(
     tags=["video-llm-analysis"],
     dependencies=[Depends(verify_internal_api_key)],
 )
-
-
-class VideoLlmAnalysisRequest(BaseModel):
-    jobId: str
-    videoPath: str
-    sampleFps: int = 1
-    maxFrames: int = 90
-    durationSec: float | None = None
-    videoDownloadUrl: str | None = None
-    requireReal: bool = False
 
 
 def resolve_video_llm_enabled() -> bool:
@@ -277,7 +266,7 @@ def build_mock_response(
     }
 
 
-@router.post("/analyze")
+@router.post("/analyze", response_model=VideoLlmAnalysisResponse)
 def analyze_video(
     request: VideoLlmAnalysisRequest,
     x_request_id: str | None = Header(default=None, alias="X-Request-Id"),

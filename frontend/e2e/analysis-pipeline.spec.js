@@ -18,6 +18,10 @@ const MAX_WAIT_MS = Number(process.env.E2E_ANALYSIS_MAX_WAIT_MS || 10 * 60 * 1_0
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_VIDEO_PATH = path.resolve(CURRENT_DIR, "../../sample-demo.mp4");
 const VIDEO_PATH = path.resolve(process.env.E2E_VIDEO_PATH || DEFAULT_VIDEO_PATH);
+const GOLDEN_FIXTURE_PATH = path.resolve(
+    CURRENT_DIR,
+    "fixtures/sample-demo-golden-v1.json"
+);
 const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED", "DEAD_LETTER"]);
 
 function unwrap(body) {
@@ -41,6 +45,10 @@ test.describe("analysis pipeline (full stack)", () => {
 
     test("single CTA survives refresh, completes analysis and cleans up", async ({ page }) => {
         expect(fs.existsSync(VIDEO_PATH), `E2E 영상 파일이 없습니다: ${VIDEO_PATH}`).toBeTruthy();
+        // GOLDEN_FIXTURE는 이 테스트가 실제로 실행될 때(=ENABLED)만 읽습니다. 모듈
+        // 최상단에서 읽으면 test.skip 게이트보다 먼저 평가돼, E2E_ANALYSIS_PIPELINE이
+        // 꺼져 있어도 이 파일이 fixture 누락/파손 시 전체 Playwright 수집 자체를 깨뜨립니다.
+        const GOLDEN_FIXTURE = JSON.parse(fs.readFileSync(GOLDEN_FIXTURE_PATH, "utf8"));
 
         const email = `e2e-analysis+${Date.now()}@example.com`;
         const password = "E2eAnalysis!2026aB";
@@ -171,6 +179,20 @@ test.describe("analysis pipeline (full stack)", () => {
             expect(resultData?.jobId).toBe(jobId);
             expect(resultData?.result).toBeTruthy();
             expect(Object.keys(resultData.result).length).toBeGreaterThan(0);
+            const actualTotalScore = Number(resultData.result?.scoreSummary?.totalScore);
+            expect(Number.isFinite(actualTotalScore)).toBe(true);
+            const totalScoreDrift = Math.abs(
+                actualTotalScore - GOLDEN_FIXTURE.expected.totalScore
+            );
+            console.info(
+                `[golden] ${GOLDEN_FIXTURE.videoFile}: expected=${GOLDEN_FIXTURE.expected.totalScore}, ` +
+                `actual=${actualTotalScore}, drift=${totalScoreDrift}, ` +
+                `tolerance=${GOLDEN_FIXTURE.tolerance.totalScore}`
+            );
+            expect(
+                totalScoreDrift,
+                `기준 영상 점수 drift: expected=${GOLDEN_FIXTURE.expected.totalScore}, actual=${actualTotalScore}`
+            ).toBeLessThanOrEqual(GOLDEN_FIXTURE.tolerance.totalScore);
             expect(resultData.result?.feedback?.generationMode).toBe("SKIPPED");
             expect(resultData.result?.feedback?.realApiUsed).toBe(false);
             expect(resultData.result?.pipeline?.openAiGenerationMode).toBe("SKIPPED");

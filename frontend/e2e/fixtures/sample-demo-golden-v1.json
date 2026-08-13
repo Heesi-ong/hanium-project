@@ -1,0 +1,10 @@
+{
+  "fixtureVersion": 1,
+  "videoFile": "sample-demo.mp4",
+  "expected": {
+    "totalScore": 48
+  },
+  "tolerance": {
+    "totalScore": 3
+  }
+}

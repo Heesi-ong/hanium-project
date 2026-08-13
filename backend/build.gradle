@@ -59,11 +59,17 @@ dependencies {
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:mysql'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Docker Engine 29는 API 1.44 미만 요청을 거부합니다. Testcontainers가 사용하는
+    // docker-java 클라이언트에 호환 가능한 기본값을 주되 CI에서는 환경변수로 덮어씁니다.
+    systemProperty 'api.version', System.getenv('DOCKER_API_VERSION') ?: '1.44'
     // 테스트가 끝나면 커버리지 리포트를 자동 생성합니다.
     finalizedBy tasks.named('jacocoTestReport')
 }

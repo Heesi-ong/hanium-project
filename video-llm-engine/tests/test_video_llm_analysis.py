@@ -8,6 +8,7 @@ import threading
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.api import video_llm_analysis
 from app.api.video_llm_analysis import VideoLlmAnalysisRequest
@@ -673,22 +674,24 @@ def test_call_real_video_llm_model_rejects_invalid_base_url_before_network(
 
 
 @pytest.mark.parametrize("duration_sec", [0.0, -5.0, float("inf"), float("nan")])
-def test_call_real_video_llm_model_rejects_non_positive_or_non_finite_duration(
-    monkeypatch, tmp_path, duration_sec
-):
-    install_fake_nvidia_client(monkeypatch, json.dumps(nvidia_model_payload()))
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
-
-    with pytest.raises(RuntimeError, match="durationSec"):
-        video_llm_analysis.call_real_video_llm_model(
-            VideoLlmAnalysisRequest(
-                jobId="invalid-duration-job",
-                videoPath=create_video_file(tmp_path),
-                durationSec=duration_sec,
-            )
+def test_request_rejects_non_positive_or_non_finite_duration(tmp_path, duration_sec):
+    with pytest.raises(ValidationError, match="durationSec"):
+        VideoLlmAnalysisRequest(
+            jobId="invalid-duration-job",
+            videoPath=create_video_file(tmp_path),
+            durationSec=duration_sec,
         )
 
-    assert FakeNvidiaClient.instances == []
+
+# VideoLlmAnalysisRequest의 Pydantic 필드 제약(Field(gt=0, allow_inf_nan=False))이
+# 이미 위 테스트에서 잘못된 값을 막지만, call_real_video_llm_model 내부의
+# validate_duration_sec()는 여전히 방어적으로 한 번 더 검사한다(model_construct()로
+# 검증을 우회해 만들어진 요청 등 정상 생성 경로 밖의 값을 대비). 이 함수 자체의
+# 동작을 직접 검증해, 나중에 이 방어 로직이 약화/삭제돼도 잡아낼 수 있게 한다.
+@pytest.mark.parametrize("duration_sec", [0.0, -5.0, float("inf"), float("nan")])
+def test_validate_duration_sec_rejects_non_positive_or_non_finite(duration_sec):
+    with pytest.raises(RuntimeError, match="durationSec"):
+        video_llm_analysis.validate_duration_sec(duration_sec)
 
 
 def test_call_real_video_llm_model_rejects_duration_exceeding_configured_max(

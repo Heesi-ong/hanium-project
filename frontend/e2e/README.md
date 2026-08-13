@@ -53,23 +53,32 @@ DB에 없는 데이터로 판단해 삭제할 수 있습니다. 검증 종료 �
 브라우저 UI의 실제 polling 주기를 그대로 사용하며 별도 API polling을 추가하지 않습니다.
 테스트 계정과 생성된 분석 데이터는 종료 시 회원탈퇴 API로 정리합니다.
 
+기본 영상은 `fixtures/sample-demo-golden-v1.json`의 버전·기대 총점·허용 편차와 함께 관리합니다.
+현재 기준은 `sample-demo.mp4` 총점 48, 허용 편차 3이며 실행 로그에 expected/actual/drift를
+출력합니다. 분석 공식을 의도적으로 변경했을 때만 실제 결과를 검토한 뒤 fixture 버전을 올리고,
+단순히 실패를 없애기 위해 허용 편차를 넓히거나 기대값을 덮어쓰지 않습니다. `E2E_VIDEO_PATH`로
+다른 영상을 지정한 경우에도 현재 fixture를 적용하므로, 별도 영상 회귀를 추가하려면 영상별
+fixture 선택 로직을 먼저 추가해야 합니다.
+
 ## 스펙
 
 - `public-flow.spec.js` — 랜딩/네비게이션/약관/404. **히어로 제목의 명암비를 실측**해 2026-07-16 P0("제목이 다크-온-다크로 안 보임") 유형 회귀를 잡습니다. 백엔드 없이 실행됩니다.
 - `auth-api.spec.js` — 회원가입→로그인→현재 사용자 조회→로그아웃을 API로 검증. `E2E_FULL_STACK=true`일 때만 실행. UI 셀렉터에 의존하지 않아 견고합니다.
 - `protected-pages.spec.js` — 로그인 후 `/onboarding · /upload · /results · /account · /status`를 순회하며 (1) 로그인으로 튕기지 않는지, (2) 제목 명암비, (3) 콘솔 오류를 감사. `E2E_FULL_STACK=true`이고 **앱과 `/api`가 같은 출처**(운영 nginx 구성)일 때만 실행됩니다(쿠키 인증 때문). 관리자 페이지는 관리자 계정이 필요해 별도 확장 대상입니다.
-- `analysis-pipeline.spec.js` — 실제 영상 업로드→DB 큐→analysis-worker→analysis-engine→완료 상태→결과/영상 토큰 조회를 API로 검증하고 테스트 데이터를 정리합니다. `E2E_ANALYSIS_PIPELINE=true`일 때만 실행됩니다.
+- `analysis-pipeline.spec.js` — 실제 영상 업로드→DB 큐→analysis-worker→analysis-engine→완료 상태→golden 총점 drift→결과/영상 토큰 조회를 검증하고 테스트 데이터를 정리합니다. `E2E_ANALYSIS_PIPELINE=true`일 때만 실행됩니다.
 
 ## CI 연동 (권장)
 
-`verify.yml`의 frontend job에 아래 스텝을 추가하면 됩니다(현재 이 파일은 별도로 편집 중일 수 있어 여기서는 문서로만 남깁니다).
+`verify.yml`의 frontend job은 공개 페이지 E2E를, `analysis-pipeline-e2e` job은 실제 샘플 영상
+golden E2E를 실행합니다. 단위 테스트 coverage와 Python/backend OpenAPI·coverage 산출물도 CI에
+업로드됩니다.
 
 ```yaml
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
 ```
 
-전체 스택 E2E(auth-api)는 backend/analysis-engine/video-llm-engine/DB가 필요하므로, `docker compose up -d --wait` 후 별도 job에서 `E2E_FULL_STACK=true`로 실행하는 것을 권장합니다.
+전체 스택 E2E(auth-api)는 별도 `frontend-e2e-full-stack` job에서 실행됩니다.
 
 ## 커버리지 (단위 테스트)
 
@@ -78,3 +87,4 @@ npm run test:coverage      # @vitest/coverage-v8 필요, 리포트는 frontend/c
 ```
 
 백엔드는 `./gradlew test`가 끝나면 Jacoco 리포트가 `backend/build/reports/jacoco/test/html/index.html`에 생성됩니다.
+두 Python 엔진은 `pytest` 실행만으로 70% 최소 기준을 적용하고 `htmlcov/`, `coverage.xml`을 생성합니다.

@@ -6,6 +6,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpMethod;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfoHandlerMapping;
@@ -67,9 +68,17 @@ class ApiContractTest {
 
     @Test
     void openApiDocsArePubliclyAvailable() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
+        MvcResult result = mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.openapi").exists());
+                .andExpect(jsonPath("$.openapi").exists())
+                .andReturn();
+
+        Path contractDirectory = Path.of("build", "contracts");
+        Files.createDirectories(contractDirectory);
+        Files.writeString(
+                contractDirectory.resolve("backend-openapi.json"),
+                result.getResponse().getContentAsString()
+        );
     }
 
     private List<BackendRoute> collectBackendRoutes() {

@@ -788,6 +788,15 @@ pip install -r requirements-test.txt
 pytest
 ```
 
+두 Python 엔진의 `pytest`는 statement/branch coverage를 함께 측정하며 총 coverage가 70% 미만이면
+실패합니다. HTML/XML 결과는 각 엔진의 `htmlcov/`, `coverage.xml`에 생성됩니다. 프론트엔드는
+`npm run test:coverage`로 statements/branches/functions/lines 70% 하락을 차단합니다.
+
+backend 전체 테스트는 Docker가 있으면 Testcontainers로 MySQL 8.4 Flyway migration과 Redis 7
+인증/TTL도 실제 검증합니다. Docker Engine 29 호환 기본 API는 1.44이며, 다른 환경은
+`DOCKER_API_VERSION`으로 덮어쓸 수 있습니다. 테스트 결과로 Jacoco와 backend OpenAPI가 각각
+`backend/build/reports/jacoco/test/`, `backend/build/contracts/backend-openapi.json`에 생성됩니다.
+
 ### 12.1 모든 서버 실행
 
 터미널 1:
@@ -865,8 +874,9 @@ backend(8080)가 아니라 frontend 자기 자신(5173)으로 보냅니다. 홈 
   analysis-engine/video-llm-engine은 제외) 앞에서 자동 실행됩니다.
 - `analysis-pipeline.spec.js`: 실제 `sample-demo.mp4`를 화면의 단일 CTA로 업로드·접수하고,
   분석 중 브라우저를 새로고침해 상태와 진행률이 복구되는지 확인한 뒤 실제 worker와
-  analysis-engine의 완료 결과·영상 접근 토큰까지 검증합니다. 외부 Video LLM/OpenAI는
-  비활성화하며 테스트 계정은 종료 시 삭제합니다.
+  analysis-engine의 완료 결과·영상 접근 토큰까지 검증합니다. 완료 결과의 총점은
+  `frontend/e2e/fixtures/sample-demo-golden-v1.json` 기준과 허용 편차도 비교합니다. 외부 Video
+  LLM/OpenAI는 비활성화하며 테스트 계정은 종료 시 삭제합니다.
 
 로컬에서 직접 돌리려면:
 

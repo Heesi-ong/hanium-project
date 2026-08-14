@@ -520,6 +520,11 @@ jobs:
       - name: Install Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+      # ubuntu-latest 러너 이미지에 ffmpeg가 포함돼 있다고 가정했으나 실제로는 없어
+      # golden fixture 생성이 실패했다(2026-08-14 실측). 러너 이미지 구성에 의존하지 않도록
+      # 명시적으로 설치한다.
+      - name: Install ffmpeg for golden fixture generation
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Prepare deterministic golden video fixtures
         run: scripts/prepare-golden-video-fixtures.sh
       - name: Run real analysis pipeline E2E

@@ -206,6 +206,29 @@ class ResultMergeServiceTest {
     }
 
     @Test
+    void createFinalResultPreservesScoreExplanationWithoutChangingScoreSummary() {
+        Map<String, Object> explanation = Map.of(
+                "formulaVersion", "weighted-v1",
+                "roundingPolicy", "truncate_toward_zero",
+                "rawScore", 80,
+                "penaltyApplied", 0
+        );
+        AnalysisEngineResponse response = analysisResponse(
+                Map.of(), Map.of(), Map.of(), Map.of(), explanation
+        );
+
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1",
+                response,
+                videoLlmResponse(),
+                openAiFeedbackResponse()
+        );
+
+        assertThat(finalResult.get("scoreExplanation")).isEqualTo(explanation);
+        assertThat(scoreSummary(finalResult)).containsEntry("totalScore", 80);
+    }
+
+    @Test
     void createFailureResultProducesScoreSummaryWithCurrentShapeAndFailedDefaults() {
         Map<String, Object> failureResult = resultMergeService.createFailureResult(
                 "job-1",
@@ -356,6 +379,16 @@ class ResultMergeServiceTest {
             Map<String, Object> emotion,
             Map<String, Object> gesture
     ) {
+        return analysisResponse(pose, face, emotion, gesture, Map.of());
+    }
+
+    private AnalysisEngineResponse analysisResponse(
+            Map<String, Object> pose,
+            Map<String, Object> face,
+            Map<String, Object> emotion,
+            Map<String, Object> gesture,
+            Map<String, Object> explanation
+    ) {
         return new AnalysisEngineResponse(
                 "job-1",
                 "completed",
@@ -373,7 +406,8 @@ class ResultMergeServiceTest {
                         "gazeScore", 80,
                         "speechScore", 80,
                         "gestureScore", 80,
-                        "expressionScore", 80
+                        "expressionScore", 80,
+                        "explanation", explanation
                 ),
                 Map.of()
         );

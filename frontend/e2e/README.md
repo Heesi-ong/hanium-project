@@ -38,6 +38,19 @@ E2E_ANALYSIS_PIPELINE=true \
 BASE_URL=http://localhost:5173 \
 API_BASE_URL=http://localhost:8080 \
 npm run test:e2e -- e2e/analysis-pipeline.spec.js
+
+# 서로 다른 길이·화질의 로컬 파생 영상을 만들고 다중 golden 회귀 실행
+../scripts/prepare-golden-video-fixtures.sh
+E2E_GOLDEN_MATRIX=true \
+BASE_URL=http://localhost:5173 \
+API_BASE_URL=http://localhost:8080 \
+npm run test:e2e -- e2e/analysis-golden-matrix.spec.js
+
+# 분석 엔진 중단→FAILED 사유→재기동→retry→COMPLETED 복구 실행
+E2E_FAILURE_RECOVERY=true COMPOSE_PROJECT_NAME=<현재-compose-project> \
+BASE_URL=http://localhost:5173 \
+API_BASE_URL=http://localhost:8080 \
+npm run test:e2e -- e2e/analysis-failure-recovery.spec.js
 ```
 
 로컬 `.env`에 NVIDIA feedback provider와 키가 있어도 외부 호출이 켜지지 않도록 위 provider와
@@ -60,18 +73,28 @@ DB에 없는 데이터로 판단해 삭제할 수 있습니다. 검증 종료 �
 다른 영상을 지정한 경우에도 현재 fixture를 적용하므로, 별도 영상 회귀를 추가하려면 영상별
 fixture 선택 로직을 먼저 추가해야 합니다.
 
+다중 golden 입력은 저장소 영상을 복제해 커밋하지 않고
+`scripts/prepare-golden-video-fixtures.sh`로 `frontend/e2e/generated/`에 재현합니다.
+`analysis-golden-matrix-v1.json`은 6초 원본 파생 영상과 12초 저조도·무음 영상의 기대 총점 및
+허용 편차를 관리합니다. 장애·복구 스펙은 실행 중인 Compose 프로젝트의 `analysis-engine`을 실제로
+중단하므로 전용 테스트 스택에서만 실행해야 합니다. 재기동에는 `start`를 사용해 최초 기동 시의
+내부 API 키와 환경변수를 보존하며, 엔진 health와 backend Circuit Breaker 복구 대기를 모두 거칩니다.
+
 ## 스펙
 
 - `public-flow.spec.js` — 랜딩/네비게이션/약관/404. **히어로 제목의 명암비를 실측**해 2026-07-16 P0("제목이 다크-온-다크로 안 보임") 유형 회귀를 잡습니다. 백엔드 없이 실행됩니다.
 - `auth-api.spec.js` — 회원가입→로그인→현재 사용자 조회→로그아웃을 API로 검증. `E2E_FULL_STACK=true`일 때만 실행. UI 셀렉터에 의존하지 않아 견고합니다.
 - `protected-pages.spec.js` — 로그인 후 `/onboarding · /upload · /results · /account · /status`를 순회하며 (1) 로그인으로 튕기지 않는지, (2) 제목 명암비, (3) 콘솔 오류를 감사. `E2E_FULL_STACK=true`이고 **앱과 `/api`가 같은 출처**(운영 nginx 구성)일 때만 실행됩니다(쿠키 인증 때문). 관리자 페이지는 관리자 계정이 필요해 별도 확장 대상입니다.
 - `analysis-pipeline.spec.js` — 실제 영상 업로드→DB 큐→analysis-worker→analysis-engine→완료 상태→golden 총점 drift→결과/영상 토큰 조회를 검증하고 테스트 데이터를 정리합니다. `E2E_ANALYSIS_PIPELINE=true`일 때만 실행됩니다.
+- `analysis-golden-matrix.spec.js` — 길이·조명·음성 조건이 다른 두 파생 영상의 완료, 점수 범위, golden drift, `scoreExplanation` 계약을 검증합니다. `E2E_GOLDEN_MATRIX=true`일 때만 실행됩니다.
+- `analysis-failure-recovery.spec.js` — 손상 MP4 거부, 엔진 장애 시 `FAILED`와 `failReason`, Circuit Breaker 복구 후 retry 완료를 실제 Compose 스택에서 검증합니다. `E2E_FAILURE_RECOVERY=true`일 때만 실행됩니다.
 
 ## CI 연동 (권장)
 
-`verify.yml`의 frontend job은 공개 페이지 E2E를, `analysis-pipeline-e2e` job은 실제 샘플 영상
-golden E2E를 실행합니다. 단위 테스트 coverage와 Python/backend OpenAPI·coverage 산출물도 CI에
-업로드됩니다.
+`verify.yml`의 frontend job은 공개 페이지 E2E를, `analysis-pipeline-e2e` job은 단일 golden,
+다중 golden, 장애·복구 E2E를 순차 실행합니다. backend job은 Testcontainers XML에서 MySQL·Redis
+2개 테스트가 실제 실행됐고 skip되지 않았는지도 검사합니다. 단위 테스트 coverage와
+Python/backend OpenAPI·coverage 산출물도 CI에 업로드됩니다.
 
 ```yaml
       - run: npx playwright install --with-deps chromium

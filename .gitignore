@@ -76,6 +76,7 @@ frontend/.vite/
 frontend/playwright-report/
 frontend/test-results/
 frontend/coverage/
+frontend/e2e/generated/
 .playwright-cli/
 backend/build/reports/jacoco/
 

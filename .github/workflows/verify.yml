@@ -26,6 +26,33 @@ jobs:
           cache: gradle
       - run: chmod +x ./gradlew
       - run: ./gradlew test --no-daemon
+      - name: Require real MySQL and Redis Testcontainers execution
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          import xml.etree.ElementTree as ET
+
+          report = Path(
+              "build/test-results/test/"
+              "TEST-com.hanium.presentation.infrastructure.RealInfrastructureContainerTest.xml"
+          )
+          if not report.is_file():
+              sys.exit(f"Testcontainers JUnit report is missing: {report}")
+
+          suite = ET.parse(report).getroot()
+          actual = {
+              key: int(suite.attrib.get(key, "0"))
+              for key in ("tests", "skipped", "failures", "errors")
+          }
+          expected = {"tests": 2, "skipped": 0, "failures": 0, "errors": 0}
+          print(f"Testcontainers execution: {actual}")
+          if actual != expected:
+              sys.exit(
+                  "CI requires both real MySQL/Redis Testcontainers tests to execute: "
+                  f"expected={expected}, actual={actual}"
+              )
+          PY
       # coverage가 현재 수준(약 90%)보다 크게 떨어지면 빌드를 실패시킨다(P2-06).
       # 이후 단계에서 특정 통합 테스트만 --rerun-tasks로 재실행하므로, 그 부분 실행
       # 데이터로 오탐 실패하지 않도록 이 시점의 jacocoTestReport 결과만으로 검증한다.
@@ -438,6 +465,10 @@ jobs:
       ANALYSIS_EXECUTOR_CORE_POOL_SIZE: "1"
       ANALYSIS_EXECUTOR_MAX_POOL_SIZE: "1"
       ANALYSIS_EXECUTOR_QUEUE_CAPACITY: "5"
+      # 이 job은 기준 영상 1건 + golden 2건 + 실패 복구 1건의 격리 계정을 연속 생성합니다.
+      # 실제 기본 보안 한도는 유지하고 CI 스택에서만 반복 실행 여유를 둡니다.
+      SIGNUP_RATE_LIMIT_CAPACITY: "20"
+      LOGIN_IP_RATE_LIMIT_CAPACITY: "40"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -489,6 +520,8 @@ jobs:
       - name: Install Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+      - name: Prepare deterministic golden video fixtures
+        run: scripts/prepare-golden-video-fixtures.sh
       - name: Run real analysis pipeline E2E
         working-directory: frontend
         env:
@@ -497,6 +530,22 @@ jobs:
           API_BASE_URL: http://localhost:8080
           E2E_ANALYSIS_MAX_WAIT_MS: "900000"
         run: npm run test:e2e -- e2e/analysis-pipeline.spec.js
+      - name: Run multi-video golden score matrix
+        working-directory: frontend
+        env:
+          E2E_GOLDEN_MATRIX: "true"
+          BASE_URL: http://localhost:5173
+          API_BASE_URL: http://localhost:8080
+          E2E_ANALYSIS_MAX_WAIT_MS: "900000"
+        run: npm run test:e2e -- e2e/analysis-golden-matrix.spec.js
+      - name: Run analysis failure and retry recovery E2E
+        working-directory: frontend
+        env:
+          E2E_FAILURE_RECOVERY: "true"
+          BASE_URL: http://localhost:5173
+          API_BASE_URL: http://localhost:8080
+          E2E_ANALYSIS_MAX_WAIT_MS: "900000"
+        run: npm run test:e2e -- e2e/analysis-failure-recovery.spec.js
       - name: Dump pipeline service logs on failure
         if: failure()
         run: docker compose logs backend analysis-worker analysis-engine frontend mysql redis minio

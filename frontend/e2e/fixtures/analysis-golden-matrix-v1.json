@@ -1,0 +1,27 @@
+{
+  "fixtureVersion": 1,
+  "cases": [
+    {
+      "id": "short-6s",
+      "videoFile": "sample-short-6s.mp4",
+      "relativePath": "generated/sample-short-6s.mp4",
+      "expected": {
+        "totalScore": 43
+      },
+      "tolerance": {
+        "totalScore": 3
+      }
+    },
+    {
+      "id": "dark-muted-12s",
+      "videoFile": "sample-dark-muted-12s.mp4",
+      "relativePath": "generated/sample-dark-muted-12s.mp4",
+      "expected": {
+        "totalScore": 14
+      },
+      "tolerance": {
+        "totalScore": 3
+      }
+    }
+  ]
+}

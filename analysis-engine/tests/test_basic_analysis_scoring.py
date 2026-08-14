@@ -77,6 +77,40 @@ def test_calculate_score_uses_documented_weights(scores, expected_total):
     assert result["expressionScore"] == scores["expression"]
     assert result["reliability"]["lowConfidence"] is False
     assert result["reliability"]["penaltyReasons"] == []
+    explanation = result["explanation"]
+    assert explanation["formulaVersion"] == scoring.SCORE_FORMULA_VERSION
+    assert explanation["weights"] == scoring.SCORE_WEIGHTS
+    assert explanation["rawScore"] == expected_total
+    assert explanation["penaltyApplied"] == 0
+    assert explanation["penaltyReasons"] == []
+    assert int(sum(explanation["weightedContributions"].values())) == expected_total
+
+
+def test_calculate_score_explanation_is_deterministic_and_preserves_total():
+    inputs = {
+        "pose_result": {"postureScore": 81, "detectionRate": 0.49},
+        "face_result": {"gazeScore": 73, "detectionRate": 0.65},
+        "audio_result": {
+            "speechScore": 92,
+            "analysisMethod": "audio_extracted_duration_based_estimation",
+            "durationSec": 8,
+        },
+        "gesture_result": {"gestureScore": 64},
+        "emotion_result": {"expressionScore": 77},
+    }
+
+    first = scoring.calculate_score(**inputs)
+    second = scoring.calculate_score(**inputs)
+
+    assert first == second
+    explanation = first["explanation"]
+    assert explanation["weightedScoreBeforeRounding"] == 79.65
+    assert explanation["rawScore"] == first["rawScore"] == 79
+    assert explanation["penaltyApplied"] == first["penalty"] == 15
+    assert first["totalScore"] == 64
+    assert explanation["roundingPolicy"] == "truncate_toward_zero"
+    assert explanation["clampRange"] == {"min": 0, "max": 100}
+    assert explanation["penaltyReasons"] == first["reliability"]["penaltyReasons"]
 
 
 def test_calculate_score_applies_total_penalty_on_low_reliability():

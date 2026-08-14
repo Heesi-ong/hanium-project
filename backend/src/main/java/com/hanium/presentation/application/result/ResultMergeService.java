@@ -1,6 +1,7 @@
 package com.hanium.presentation.application.result;
 
 import com.hanium.presentation.common.contract.ResultSchemaVersion;
+import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
@@ -29,6 +30,7 @@ public class ResultMergeService {
         finalResult.put("status", "COMPLETED");
         finalResult.put("createdAt", LocalDateTime.now().toString());
         finalResult.put("scoreSummary", createScoreSummary(analysisEngineResponse));
+        finalResult.put("scoreExplanation", createScoreExplanation(analysisEngineResponse));
         finalResult.put("basicAnalysis", createBasicAnalysis(analysisEngineResponse));
         finalResult.put("visualAnalysis", createVisualAnalysis(videoLlmEngineResponse));
         finalResult.put("feedback", createFeedback(openAiFeedbackResponse));
@@ -54,6 +56,10 @@ public class ResultMergeService {
         failureResult.put("failedStep", failedStep == null ? "UNKNOWN" : failedStep);
         failureResult.put("failReason", failReason == null ? "알 수 없는 오류가 발생했습니다." : failReason);
         failureResult.put("scoreSummary", ScoreSummary.failed());
+        failureResult.put("scoreExplanation", Map.of(
+                "available", false,
+                "reason", "analysis_failed"
+        ));
         failureResult.put("basicAnalysis", createFailedBasicAnalysis());
         failureResult.put("visualAnalysis", createFailedVisualAnalysis());
         failureResult.put("feedback", createFailedFeedback());
@@ -80,6 +86,16 @@ public class ResultMergeService {
                 getNumberValue(score, "expressionScore"),
                 resolveLevel(totalScore)
         );
+    }
+
+    private Map<String, Object> createScoreExplanation(
+            AnalysisEngineResponse analysisEngineResponse
+    ) {
+        Map<String, Object> score = nullSafeMap(analysisEngineResponse.score());
+        Object explanation = score.get("explanation");
+        return explanation instanceof Map<?, ?>
+                ? JsonMapSupport.copyStringKeyedMap(explanation)
+                : Map.of();
     }
 
     private Map<String, Object> createBasicAnalysis(

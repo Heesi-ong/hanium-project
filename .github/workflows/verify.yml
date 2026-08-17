@@ -471,6 +471,21 @@ jobs:
       LOGIN_IP_RATE_LIMIT_CAPACITY: "40"
     steps:
       - uses: actions/checkout@v4
+      # 이 job은 백엔드/analysis-engine/frontend 3개 이미지 빌드 + ML 모델 캐시 + golden
+      # 영상 생성을 같은 러너에서 전부 수행한다. 러너 기본 여유 공간이 이 과정에서 소진되면
+      # 실제 업로드 시점에 운영과 동일한 저장 공간 안전 장치(STORAGE_MIN_FREE_SPACE_MB)가
+      # 507로 정상 동작하며 막아버린다(2026-08-17 재현 확인). 안전 장치 자체를 낮추는 대신,
+      # 이 job에서 쓰지 않는 사전 설치 툴체인을 정리해 여유 공간을 확보한다.
+      - name: Free up runner disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

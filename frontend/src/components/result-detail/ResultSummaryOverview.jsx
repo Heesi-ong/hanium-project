@@ -1,25 +1,10 @@
 import "./resultSummaryOverview.css";
-import { formatEmotionLabel, formatNumber, formatPercent } from "./resultDetailFormatters";
-
-function resolveScoreLabel(score) {
-    if (typeof score !== "number") {
-        return "분석 대기";
-    }
-
-    if (score >= 85) {
-        return "우수";
-    }
-
-    if (score >= 70) {
-        return "양호";
-    }
-
-    if (score >= 50) {
-        return "보통";
-    }
-
-    return "개선 필요";
-}
+import {
+    formatEmotionLabel,
+    formatNumber,
+    formatPercent,
+    formatScoreLevel,
+} from "./resultDetailFormatters";
 
 function ResultSummaryOverview({
                                    scoreSummary,
@@ -32,7 +17,7 @@ function ResultSummaryOverview({
                                    emotionInfo,
                                }) {
     const totalScore = scoreSummary?.totalScore ?? 0;
-    const scoreLabel = resolveScoreLabel(totalScore);
+    const scoreLabel = formatScoreLevel(totalScore);
 
     return (
         <article className="summary-overview">

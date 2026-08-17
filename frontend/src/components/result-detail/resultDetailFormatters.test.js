@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
     formatGenerationModeLabel,
+    formatScoreLevel,
     firstMeaningfulResultValue,
     isMeaningfulResultValue,
 } from "./resultDetailFormatters";
@@ -35,4 +36,24 @@ describe("resultDetailFormatters", () => {
     it("labels an explicitly skipped OpenAI feedback result", () => {
         expect(formatGenerationModeLabel("SKIPPED")).toBe("AI 피드백 사용 안 함");
     });
+
+    it.each([
+        [100, "우수"],
+        [85, "우수"],
+        [84, "양호"],
+        [70, "양호"],
+        [69, "보통"],
+        [50, "보통"],
+        [49, "개선 필요"],
+        [0, "개선 필요"],
+    ])("labels a total score of %i as %s", (score, expected) => {
+        expect(formatScoreLevel(score)).toBe(expected);
+    });
+
+    it.each([undefined, null, NaN, "82"])(
+        "labels a non-numeric total score (%s) as awaiting analysis",
+        (score) => {
+            expect(formatScoreLevel(score)).toBe("분석 대기");
+        }
+    );
 });

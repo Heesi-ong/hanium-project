@@ -51,11 +51,21 @@ describe("ScoreCompareBarChart", () => {
         expect(chartData.datasets[1].data).toEqual([82, 75, 88, 60, 85, 90]);
     });
 
-    it("treats missing score fields as zero instead of throwing", () => {
+    it("keeps missing score fields distinct from a real zero score", () => {
         render(
             <ScoreCompareBarChart
-                resultA={{ scoreSummary: {} }}
-                resultB={{}}
+                resultA={{ scoreSummary: { totalScore: 0 } }}
+                resultB={{
+                    dataIssue: "RESULT_DATA_UNAVAILABLE",
+                    scoreSummary: {
+                        totalScore: 0,
+                        postureScore: 0,
+                        gazeScore: 0,
+                        speechScore: 0,
+                        gestureScore: 0,
+                        expressionScore: 0,
+                    },
+                }}
                 labelA="A"
                 labelB="B"
             />
@@ -65,7 +75,7 @@ describe("ScoreCompareBarChart", () => {
             screen.getByTestId("score-compare-bar").dataset.chartData
         );
 
-        expect(chartData.datasets[0].data).toEqual([0, 0, 0, 0, 0, 0]);
-        expect(chartData.datasets[1].data).toEqual([0, 0, 0, 0, 0, 0]);
+        expect(chartData.datasets[0].data).toEqual([0, null, null, null, null, null]);
+        expect(chartData.datasets[1].data).toEqual([null, null, null, null, null, null]);
     });
 });

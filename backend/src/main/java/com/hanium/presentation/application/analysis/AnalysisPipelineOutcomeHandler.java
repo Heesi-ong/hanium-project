@@ -33,7 +33,11 @@ final class AnalysisPipelineOutcomeHandler {
             VideoLlmGenerationMode videoLlmGenerationMode,
             Timer.Sample sample
     ) {
-        analysisJobStatusService.completeStatus(jobId, videoLlmGenerationMode);
+        if (!analysisJobStatusService.completeStatus(jobId, videoLlmGenerationMode)) {
+            log.info("[{}] 이미 확정된 상태가 있어 완료 후처리를 건너뜁니다.", jobId);
+            stopDurationTimer(sample, "superseded");
+            return;
+        }
         meterRegistry.counter("analysis.job.completed").increment();
         stopDurationTimer(sample, "completed");
         analysisProgressService.complete(jobId);
@@ -47,8 +51,8 @@ final class AnalysisPipelineOutcomeHandler {
             String metricReason,
             Timer.Sample sample
     ) {
-        failWithoutTimer(jobId, lastPercent, failReason, metricReason);
-        stopDurationTimer(sample, "failed");
+        boolean applied = failWithoutTimer(jobId, lastPercent, failReason, metricReason);
+        stopDurationTimer(sample, applied ? "failed" : "superseded");
     }
 
     void failBeforeExecution(
@@ -64,13 +68,16 @@ final class AnalysisPipelineOutcomeHandler {
         stopDurationTimer(sample, "skipped");
     }
 
-    private void failWithoutTimer(
+    private boolean failWithoutTimer(
             String jobId,
             int lastPercent,
             String failReason,
             String metricReason
     ) {
-        analysisJobStatusService.failStatus(jobId, failReason);
+        if (!analysisJobStatusService.failStatus(jobId, failReason)) {
+            log.info("[{}] 이미 확정된 상태가 있어 실패 후처리를 건너뜁니다.", jobId);
+            return false;
+        }
         analysisProgressService.fail(jobId, lastPercent, failReason);
         resultPersistenceStage.saveFailureSafely(jobId, failReason);
         meterRegistry.counter("analysis.job.failed", "reason", metricReason).increment();
@@ -80,6 +87,7 @@ final class AnalysisPipelineOutcomeHandler {
                 lastPercent,
                 failReason
         );
+        return true;
     }
 
     private void stopDurationTimer(Timer.Sample sample, String outcome) {

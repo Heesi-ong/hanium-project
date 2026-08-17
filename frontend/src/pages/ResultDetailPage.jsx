@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useJobStatusPolling } from "../hooks/useJobStatusPolling";
 import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
+import AnalysisQualitySection from "../components/result-detail/AnalysisQualitySection";
 import EmotionDoughnutChart from "../components/chart/EmotionDoughnutChart";
 import ResultScoreChart from "../components/chart/ResultScoreChart";
 import EmptyState from "../components/EmptyState";
@@ -19,6 +20,7 @@ import OpenAiFeedbackStatusSection from "../components/result-detail/OpenAiFeedb
 import PipelineSection from "../components/result-detail/PipelineSection";
 import PoseAnalysisSection from "../components/result-detail/PoseAnalysisSection";
 import PracticePlanSection from "../components/result-detail/PracticePlanSection";
+import PracticeProgressSection from "../components/result-detail/PracticeProgressSection";
 import { formatDateTime, formatScoreLevel } from "../components/result-detail/resultDetailFormatters";
 import ResultSummaryOverview from "../components/result-detail/ResultSummaryOverview";
 import SttSection from "../components/result-detail/SttSection";
@@ -63,6 +65,8 @@ function toComparableResult(resultResponse, fallbackJobId) {
         sourceJobId: resultResponse?.sourceJobId,
         latestReanalysisJobId: resultResponse?.latestReanalysisJobId,
         videoLlmGenerationMode: resultResponse?.videoLlmGenerationMode,
+        baselineJobId: resultResponse?.baselineJobId,
+        practiceGoal: resultResponse?.practiceGoal,
     };
 }
 
@@ -81,6 +85,7 @@ function ResultDetailPage() {
     }, []);
 
     const [resultData, setResultData] = useState(null);
+    const [baselineResult, setBaselineResult] = useState(null);
     const [analysisStatus, setAnalysisStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState(false);
@@ -104,6 +109,8 @@ function ResultDetailPage() {
         : "";
 
     const scoreSummary = result.scoreSummary || EMPTY_OBJECT;
+    const scoreExplanation = result.scoreExplanation || EMPTY_OBJECT;
+    const analysisQuality = result.analysisQuality || EMPTY_OBJECT;
     const basicAnalysis = result.basicAnalysis || EMPTY_OBJECT;
     const visualAnalysis = result.visualAnalysis || EMPTY_OBJECT;
     const feedback = result.feedback || EMPTY_OBJECT;
@@ -114,6 +121,8 @@ function ResultDetailPage() {
     const analysisKind = resultData?.analysisKind || "STANDARD";
     const sourceJobId = resultData?.sourceJobId || null;
     const latestReanalysisJobId = resultData?.latestReanalysisJobId || null;
+    const baselineJobId = resultData?.baselineJobId || null;
+    const practiceGoal = resultData?.practiceGoal || null;
     const lineageCounterpartJobId =
         sourceJobId ||
         (
@@ -126,6 +135,32 @@ function ResultDetailPage() {
     // 반드시 409가 되므로, UI 자격 판정도 최상위 저장값과 동일하게 맞춥니다.
     const storedVideoLlmGenerationMode =
         resultData?.videoLlmGenerationMode || "UNKNOWN";
+
+    useEffect(() => {
+        if (!baselineJobId) {
+            return undefined;
+        }
+
+        let cancelled = false;
+        getResult(baselineJobId)
+            .then((response) => {
+                if (!cancelled) {
+                    setBaselineResult({
+                        jobId: baselineJobId,
+                        result: response.data?.result || null,
+                    });
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setBaselineResult({ jobId: baselineJobId, result: null });
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [baselineJobId]);
 
     const videoInfo = basicAnalysis.videoInfo || EMPTY_OBJECT;
     const frameInfo = basicAnalysis.frame || EMPTY_OBJECT;
@@ -174,6 +209,10 @@ function ResultDetailPage() {
     const isCompleted = currentStatus === "COMPLETED";
     const isQueued = currentStatus === "QUEUED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
+    const scoreAvailable = isCompleted && !dataIssue && Number.isFinite(scoreSummary.totalScore);
+    const scoreLevelLabel = dataIssue
+        ? "결과 확인 필요"
+        : formatScoreLevel(scoreAvailable ? scoreSummary.totalScore : null);
     const isRateLimited = rateLimitedUntil > clockTick;
     const canRequestVideoLlmReanalysis =
         isCompleted &&
@@ -184,30 +223,30 @@ function ResultDetailPage() {
         () => [
             {
                 label: "총점",
-                value: scoreSummary.totalScore,
+                value: scoreAvailable ? scoreSummary.totalScore : null,
             },
             {
                 label: "자세",
-                value: scoreSummary.postureScore,
+                value: scoreAvailable ? scoreSummary.postureScore : null,
             },
             {
                 label: "시선",
-                value: scoreSummary.gazeScore,
+                value: scoreAvailable ? scoreSummary.gazeScore : null,
             },
             {
                 label: "음성",
-                value: scoreSummary.speechScore,
+                value: scoreAvailable ? scoreSummary.speechScore : null,
             },
             {
                 label: "제스처",
-                value: scoreSummary.gestureScore,
+                value: scoreAvailable ? scoreSummary.gestureScore : null,
             },
             {
                 label: "표정",
-                value: scoreSummary.expressionScore,
+                value: scoreAvailable ? scoreSummary.expressionScore : null,
             },
         ],
-        [scoreSummary]
+        [scoreAvailable, scoreSummary]
     );
 
     const stopRateLimitCooldown = useCallback(() => {
@@ -913,7 +952,7 @@ function ResultDetailPage() {
             <AnimatedSection className="score-panel">
                 <div className="score-panel-main">
                     <span className="score-panel-label">종합 등급</span>
-                    <strong>{formatScoreLevel(scoreSummary.totalScore)}</strong>
+                    <strong>{scoreLevelLabel}</strong>
                     <p>
                         상태:{" "}
                         <StatusBadge
@@ -938,6 +977,8 @@ function ResultDetailPage() {
             <AnimatedSection>
                 <ResultSummaryOverview
                     scoreSummary={scoreSummary}
+                    scoreAvailable={scoreAvailable}
+                    dataIssue={dataIssue}
                     videoInfo={videoInfo}
                     audioInfo={audioInfo}
                     fillerInfo={fillerInfo}
@@ -950,6 +991,31 @@ function ResultDetailPage() {
 
             <AnimatedSection>
                 <ResultScoreChart scoreSummary={scoreSummary} />
+            </AnimatedSection>
+
+            <AnimatedSection>
+                <AnalysisQualitySection
+                    analysisQuality={analysisQuality}
+                    scoreExplanation={scoreExplanation}
+                />
+            </AnimatedSection>
+
+            <AnimatedSection>
+                <PracticeProgressSection
+                    currentJobId={jobId}
+                    currentScoreSummary={scoreSummary}
+                    baselineJobId={baselineJobId}
+                    baselineScoreSummary={
+                        baselineResult?.jobId === baselineJobId
+                            ? baselineResult.result?.scoreSummary
+                            : null
+                    }
+                    practiceGoal={practiceGoal}
+                    canStartPractice={isCompleted && !dataIssue}
+                    onStartPractice={(practiceContext) => navigate("/upload", {
+                        state: { practiceContext },
+                    })}
+                />
             </AnimatedSection>
 
             <AnimatedSection className="detail-grid">

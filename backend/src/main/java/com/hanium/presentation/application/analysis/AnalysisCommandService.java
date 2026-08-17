@@ -7,8 +7,10 @@ import com.hanium.presentation.application.video.dto.VideoUploadCommand;
 import com.hanium.presentation.common.util.JobIdGenerator;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository;
+import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.analysis.type.PracticeGoal;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.repository.UploadedVideoRepository;
 import com.hanium.presentation.global.config.UserRateLimiter;
@@ -19,6 +21,7 @@ import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClie
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.OpenAiClient;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
+import com.hanium.presentation.infrastructure.client.openai.dto.CoachingProfile;
 import com.hanium.presentation.infrastructure.client.videollm.VideoLlmEngineClient;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import com.hanium.presentation.infrastructure.video.VideoDurationProbe;
@@ -50,6 +53,7 @@ public class AnalysisCommandService {
     private static final Logger log = LoggerFactory.getLogger(AnalysisCommandService.class);
 
     private final AnalysisJobRepository analysisJobRepository;
+    private final UserRepository userRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
     private final VideoFileCommandService videoFileCommandService;
     private final JobIdGenerator jobIdGenerator;
@@ -92,6 +96,7 @@ public class AnalysisCommandService {
 
     public AnalysisCommandService(
             AnalysisJobRepository analysisJobRepository,
+            UserRepository userRepository,
             UploadedVideoRepository uploadedVideoRepository,
             VideoFileCommandService videoFileCommandService,
             ResultCommandService resultCommandService,
@@ -109,6 +114,7 @@ public class AnalysisCommandService {
             AnalysisJobValidator analysisJobValidator
     ) {
         this.analysisJobRepository = analysisJobRepository;
+        this.userRepository = userRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
         this.videoFileCommandService = videoFileCommandService;
         this.jobIdGenerator = jobIdGenerator;
@@ -160,9 +166,39 @@ public class AnalysisCommandService {
 
     @Transactional
     public AnalysisUploadResponse uploadVideo(MultipartFile file, Long ownerId) {
+        return uploadVideo(file, ownerId, null, null);
+    }
+
+    @Transactional
+    public AnalysisUploadResponse uploadVideo(
+            MultipartFile file,
+            Long ownerId,
+            String baselineJobId,
+            PracticeGoal practiceGoal
+    ) {
         String jobId = jobIdGenerator.generate();
 
         AnalysisJob analysisJob = AnalysisJob.create(jobId, ownerId);
+        if ((baselineJobId == null) != (practiceGoal == null)) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT_VALUE,
+                    "기준 분석과 연습 목표는 함께 지정해야 합니다."
+            );
+        }
+        if (baselineJobId != null) {
+            AnalysisJob baselineJob = analysisJobRepository.findByJobId(baselineJobId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));
+            if (!ownerId.equals(baselineJob.getOwnerId())) {
+                throw new BusinessException(ErrorCode.ANALYSIS_JOB_ACCESS_DENIED);
+            }
+            if (!baselineJob.isCompleted()) {
+                throw new BusinessException(
+                        ErrorCode.INVALID_INPUT_VALUE,
+                        "완료된 분석만 재연습 기준으로 사용할 수 있습니다."
+                );
+            }
+            analysisJob.linkPracticeBaseline(baselineJob, practiceGoal);
+        }
         AnalysisJob savedJob = analysisJobRepository.save(analysisJob);
 
         StoredVideoInfo storedVideoInfo = videoFileCommandService.store(
@@ -602,7 +638,8 @@ public class AnalysisCommandService {
             OpenAiFeedbackResponse openAiFeedbackResponse = openAiFeedbackStage.generateAndSave(
                     jobId,
                     useOpenAi,
-                    compactAnalysis
+                    compactAnalysis,
+                    resolveCoachingProfile(jobId)
             );
 
             if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
@@ -650,6 +687,17 @@ public class AnalysisCommandService {
                     sample
             );
         }
+    }
+
+    private CoachingProfile resolveCoachingProfile(String jobId) {
+        return analysisJobRepository.findByJobId(jobId)
+                .flatMap(job -> userRepository.findById(job.getOwnerId()))
+                .map(user -> CoachingProfile.of(
+                        user.getPurpose(),
+                        user.getExperienceLevel(),
+                        user.getImprovementGoal()
+                ))
+                .orElseGet(CoachingProfile::empty);
     }
 
     private Optional<UploadedVideo> findVideoAsset(String jobId) {

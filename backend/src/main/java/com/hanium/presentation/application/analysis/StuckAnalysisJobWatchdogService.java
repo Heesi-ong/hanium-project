@@ -94,7 +94,10 @@ public class StuckAnalysisJobWatchdogService {
         String jobId = analysisJob.getJobId();
 
         try {
-            analysisJobStatusService.failStatus(jobId, STUCK_JOB_FAIL_REASON);
+            if (!analysisJobStatusService.failStatus(jobId, STUCK_JOB_FAIL_REASON)) {
+                log.info("[{}] 상태가 이미 변경되어 watchdog 실패 후처리를 건너뜁니다.", jobId);
+                return false;
+            }
             analysisProgressService.fail(jobId, 0, STUCK_JOB_FAIL_REASON);
             saveFailureResultSafely(jobId);
             log.warn("[{}] 멈춘 분석 작업을 자동 실패 처리했습니다.", jobId);

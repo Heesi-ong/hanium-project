@@ -95,7 +95,11 @@ final class AnalysisPipelineTerminationHandler {
     ) {
         String failReason = "분석이 제한 시간(" + timeoutMinutes + "분)을 초과해 자동으로 종료되었습니다.";
         log.warn("[{}] {}", jobId, failReason);
-        analysisJobStatusService.failStatus(jobId, failReason);
+        if (!analysisJobStatusService.failStatus(jobId, failReason)) {
+            log.info("[{}] 이미 확정된 상태가 있어 timeout 후처리를 건너뜁니다.", jobId);
+            stopDurationTimer(sample, "superseded");
+            return;
+        }
         analysisProgressService.fail(jobId, lastPercent, failReason);
         saveFailureResultSafely(jobId, AnalysisStatus.FAILED, failReason);
         meterRegistry.counter("analysis.job.failed", "reason", "timeout").increment();
@@ -108,7 +112,11 @@ final class AnalysisPipelineTerminationHandler {
             Timer.Sample sample
     ) {
         log.info("[{}] 취소 요청을 감지해 남은 분석 단계를 중단합니다.", jobId);
-        analysisJobStatusService.cancelStatus(jobId);
+        if (!analysisJobStatusService.cancelStatus(jobId)) {
+            log.info("[{}] 이미 확정된 상태가 있어 취소 후처리를 건너뜁니다.", jobId);
+            stopDurationTimer(sample, "superseded");
+            return;
+        }
         analysisProgressService.cancel(jobId, lastPercent);
         saveFailureResultSafely(jobId, AnalysisStatus.CANCELLED, CANCEL_REASON);
         meterRegistry.counter("analysis.job.cancelled").increment();

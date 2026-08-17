@@ -8,6 +8,8 @@ import {
 
 function ResultSummaryOverview({
                                    scoreSummary,
+                                   scoreAvailable = true,
+                                   dataIssue = "",
                                    videoInfo,
                                    audioInfo,
                                    fillerInfo,
@@ -16,8 +18,10 @@ function ResultSummaryOverview({
                                    gestureInfo,
                                    emotionInfo,
                                }) {
-    const totalScore = scoreSummary?.totalScore ?? 0;
-    const scoreLabel = formatScoreLevel(totalScore);
+    const totalScore = scoreAvailable && Number.isFinite(scoreSummary?.totalScore)
+        ? scoreSummary.totalScore
+        : null;
+    const scoreLabel = dataIssue ? "결과 확인 필요" : formatScoreLevel(totalScore);
 
     return (
         <article className="summary-overview">
@@ -32,7 +36,7 @@ function ResultSummaryOverview({
 
                 <div className="summary-score-box">
                     <span>총점</span>
-                    <strong>{totalScore}</strong>
+                    <strong>{totalScore ?? "-"}</strong>
                     <em>{scoreLabel}</em>
                 </div>
             </div>

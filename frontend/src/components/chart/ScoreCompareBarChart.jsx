@@ -9,8 +9,8 @@ import {
 import { Bar } from "react-chartjs-2";
 import "./chartStyles.css";
 
-// 0점 항목은 막대 높이가 0이라 차트만 보면 "결측치"와 구분이 안 되므로,
-// 모든 막대 위에 실제 점수를 항상 텍스트로 표시해 0점과 결측치를 명확히 구분합니다.
+// 0점 항목은 막대 높이가 0이라 차트만 보면 결측치와 구분하기 어렵습니다.
+// 실제 숫자만 라벨로 표시하고 결측치는 null로 유지해 두 상태를 구분합니다.
 const scoreValueLabelPlugin = {
     id: "scoreCompareValueLabels",
     afterDatasetsDraw(chart) {
@@ -27,7 +27,7 @@ const scoreValueLabelPlugin = {
             const meta = chart.getDatasetMeta(datasetIndex);
             meta.data.forEach((bar, index) => {
                 const value = dataset.data[index];
-                if (typeof value !== "number") {
+                if (!Number.isFinite(value)) {
                     return;
                 }
 
@@ -64,12 +64,12 @@ const SCORE_FIELDS = [
 ];
 
 function toScore(value) {
-    return typeof value === "number" ? value : 0;
+    return Number.isFinite(value) ? value : null;
 }
 
 function ScoreCompareBarChart({ resultA, resultB, labelA, labelB }) {
-    const scoresA = resultA?.scoreSummary || {};
-    const scoresB = resultB?.scoreSummary || {};
+    const scoresA = resultA?.dataIssue ? {} : resultA?.scoreSummary || {};
+    const scoresB = resultB?.dataIssue ? {} : resultB?.scoreSummary || {};
 
     const chartData = {
         labels: SCORE_FIELDS.map((field) => field.label),
@@ -109,7 +109,9 @@ function ScoreCompareBarChart({ resultA, resultB, labelA, labelB }) {
             },
             tooltip: {
                 callbacks: {
-                    label: (context) => `${context.dataset.label}: ${context.raw}점`,
+                    label: (context) => Number.isFinite(context.raw)
+                        ? `${context.dataset.label}: ${context.raw}점`
+                        : `${context.dataset.label}: 데이터 없음`,
                 },
             },
         },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import EmptyState from "../components/EmptyState";
 import CollapsibleDetails from "../components/CollapsibleDetails";
 import PageHeader from "../components/PageHeader";
@@ -98,6 +98,7 @@ function createRecoveredUpload(jobId, statusData = {}) {
 
 function UploadPage() {
     const navigate = useNavigate();
+    const location = useLocation();
     const { showToast } = useToast();
     const confirm = useConfirm();
     const progressTimerRef = useRef(null);
@@ -119,6 +120,7 @@ function UploadPage() {
     const [rateLimitedUntil, setRateLimitedUntil] = useState(0);
     const [capability, setCapability] = useState(null);
     const [uploadPercent, setUploadPercent] = useState(0);
+    const practiceContext = location.state?.practiceContext || null;
 
     // 서비스 상태(/api/status)가 "이용 불가"라고 밝힌 기능을 업로드 화면이 기본 체크된
     // 채로 보여주면, 사용자가 실제로는 수행되지 않을 옵션을 선택했다고 오해할 수 있다.
@@ -489,6 +491,7 @@ function UploadPage() {
             setUploadPercent(0);
 
             const response = await uploadAnalysisVideo(file, {
+                practiceContext,
                 onUploadProgress: (progressEvent) => {
                     if (!progressEvent.total) {
                         return;
@@ -707,6 +710,15 @@ function UploadPage() {
                 title="발표 영상 업로드"
                 description="발표 영상을 업로드하면 기본 분석 엔진, Video LLM 엔진, AI 피드백 파이프라인을 통해 분석 결과를 생성합니다."
             />
+
+            {practiceContext && (
+                <div className="practice-context-banner" role="status">
+                    <strong>{practiceContext.label} 집중 재연습</strong>
+                    <span>
+                        업로드한 결과를 기준 분석 {practiceContext.baselineJobId}와 자동 비교합니다.
+                    </span>
+                </div>
+            )}
 
             <div className="upload-grid">
                 <div className="upload-card">

@@ -69,6 +69,48 @@ class ResultSummaryResponseTest {
     }
 
     @Test
+    void normalizeFinalResultPreservesAnExistingTypedFeedbackSummary() {
+        FeedbackSummary feedback = new FeedbackSummary(
+                "REAL",
+                "gpt-4.1-mini",
+                true,
+                "-",
+                "잘하셨습니다.",
+                List.of("자세가 안정적입니다."),
+                List.of("시선을 더 유지하세요.")
+        );
+        Map<String, Object> finalResult = Map.of(
+                "feedback", feedback,
+                "pipeline", Map.of("openAiGenerationMode", "REAL")
+        );
+
+        Map<String, Object> normalized = ResultSummaryResponse.normalizeFinalResult(finalResult);
+
+        assertThat(normalized.get("feedback")).isSameAs(feedback);
+    }
+
+    @Test
+    void normalizeFinalResultKeepsFeedbackWhenNormalizedTwice() {
+        Map<String, Object> finalResult = Map.of(
+                "feedback", Map.of(
+                        "generationMode", "REAL",
+                        "model", "gpt-4.1-mini",
+                        "realApiUsed", true,
+                        "fallbackReason", "-",
+                        "overall", "잘하셨습니다.",
+                        "strengths", List.of("자세가 안정적입니다."),
+                        "improvements", List.of("시선을 더 유지하세요.")
+                ),
+                "pipeline", Map.of("openAiGenerationMode", "REAL")
+        );
+
+        Map<String, Object> once = ResultSummaryResponse.normalizeFinalResult(finalResult);
+        Map<String, Object> twice = ResultSummaryResponse.normalizeFinalResult(once);
+
+        assertThat(twice.get("feedback")).isEqualTo(once.get("feedback"));
+    }
+
+    @Test
     void resolveDataIssueFlagsPlaceholderLevelAsIncomplete() {
         ScoreSummary scoreSummary = scoreSummaryWithLevel("-");
         FeedbackSummary feedback = feedbackWith("REAL", "잘하셨습니다.");

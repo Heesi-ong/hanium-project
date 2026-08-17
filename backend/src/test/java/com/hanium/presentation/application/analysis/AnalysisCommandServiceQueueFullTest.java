@@ -90,8 +90,10 @@ class AnalysisCommandServiceQueueFullTest {
     }
 
     private AnalysisCommandService buildService(ThreadPoolTaskExecutor executor) {
+        when(analysisJobStatusService.failStatus(eq(JOB_ID), anyString())).thenReturn(true);
         return new AnalysisCommandService(
                 analysisJobRepository,
+                mock(com.hanium.presentation.domain.user.repository.UserRepository.class),
                 mock(UploadedVideoRepository.class),
                 mock(VideoFileCommandService.class),
                 resultCommandService,

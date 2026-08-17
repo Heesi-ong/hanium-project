@@ -64,6 +64,7 @@ public class OpenAiPromptBuilder {
         promptPayload.put("jobId", request.jobId());
         promptPayload.put("requestPurpose", "발표 분석 결과를 바탕으로 최종 피드백을 생성합니다.");
         promptPayload.put("outputLanguage", "ko-KR");
+        promptPayload.put("coachingProfile", request.coachingProfile());
         promptPayload.put("compactAnalysis", request.compactAnalysis());
         promptPayload.put("generationGuidelines", createGenerationGuidelines());
 
@@ -78,7 +79,8 @@ public class OpenAiPromptBuilder {
         guidelines.put("improvements", "점수가 낮거나 개선이 필요한 항목을 2~5개 작성합니다.");
         guidelines.put("practicePlan", "사용자가 바로 따라 할 수 있는 연습 계획을 2~5개 작성합니다.");
         guidelines.put("timelineFeedback", "speech, posture, gaze, gesture, emotion 영역을 중심으로 작성합니다.");
-        guidelines.put("doNotInvent", "데이터에 없는 발표 주제, 사용자 신상, 발표 목적, 청중 반응을 임의로 만들지 않습니다.");
+        guidelines.put("personalization", "coachingProfile은 조언의 난이도와 우선순위에만 사용하고 점수나 관찰 사실을 바꾸지 않습니다.");
+        guidelines.put("doNotInvent", "데이터와 coachingProfile에 없는 발표 주제, 사용자 신상, 청중 반응을 임의로 만들지 않습니다.");
         guidelines.put("avoidMedicalOrPsychologicalClaim", "표정이나 자세를 심리 상태나 건강 상태로 단정하지 않습니다.");
         guidelines.put("tone", "비판적이기보다 코칭형 문체로 작성합니다.");
 

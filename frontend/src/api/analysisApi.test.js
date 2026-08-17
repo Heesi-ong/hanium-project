@@ -62,6 +62,24 @@ describe("analysisApi", () => {
         expect(getRequestConfig().timeout).toBe(UPLOAD_ANALYSIS_TIMEOUT_MS);
     });
 
+    it("adds a bounded practice context to multipart uploads", async () => {
+        const getRequestConfig = captureRequestConfig();
+
+        await uploadAnalysisVideo(
+            new File(["video"], "presentation.mp4", { type: "video/mp4" }),
+            {
+                practiceContext: {
+                    baselineJobId: "20260718120000-aaaabbbb",
+                    practiceGoal: "GAZE",
+                },
+            }
+        );
+
+        const formData = getRequestConfig().data;
+        expect(formData.get("baselineJobId")).toBe("20260718120000-aaaabbbb");
+        expect(formData.get("practiceGoal")).toBe("GAZE");
+    });
+
     it.each([
         ["runAnalysis", () => runAnalysis("20260718120000-aaaabbbb")],
         ["retryAnalysis", () => retryAnalysis("20260718120000-aaaabbbb")],

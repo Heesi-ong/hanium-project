@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class AnalysisPipelineOutcomeHandlerTest {
 
@@ -34,6 +35,10 @@ class AnalysisPipelineOutcomeHandlerTest {
                 resultPersistenceStage,
                 meterRegistry
         );
+        when(analysisJobStatusService.completeStatus(JOB_ID, VideoLlmGenerationMode.SKIPPED))
+                .thenReturn(true);
+        when(analysisJobStatusService.failStatus(JOB_ID, "provider 실패")).thenReturn(true);
+        when(analysisJobStatusService.failStatus(JOB_ID, "워커 대기열 포화")).thenReturn(true);
     }
 
     @Test

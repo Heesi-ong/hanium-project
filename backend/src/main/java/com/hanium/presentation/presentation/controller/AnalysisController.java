@@ -4,6 +4,7 @@ import com.hanium.presentation.application.analysis.AnalysisCommandService;
 import com.hanium.presentation.application.analysis.AnalysisProgressService;
 import com.hanium.presentation.application.analysis.AnalysisQueryService;
 import com.hanium.presentation.application.analysis.VideoLlmReanalysisService;
+import com.hanium.presentation.domain.analysis.type.PracticeGoal;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.request.AnalysisRunRequest;
 import com.hanium.presentation.presentation.dto.request.VideoLlmReanalysisRequest;
@@ -51,11 +52,15 @@ public class AnalysisController {
     @PostMapping("/upload")
     public ApiResponse<AnalysisUploadResponse> uploadVideo(
             @RequestPart("file") MultipartFile file,
+            @RequestParam(required = false) String baselineJobId,
+            @RequestParam(required = false) PracticeGoal practiceGoal,
             Authentication authentication
     ) {
         AnalysisUploadResponse response = analysisCommandService.uploadVideo(
                 file,
-                getCurrentUserId(authentication)
+                getCurrentUserId(authentication),
+                baselineJobId,
+                practiceGoal
         );
 
         return ApiResponse.success(

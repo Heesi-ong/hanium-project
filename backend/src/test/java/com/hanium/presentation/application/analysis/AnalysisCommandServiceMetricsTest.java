@@ -30,6 +30,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -92,9 +93,13 @@ class AnalysisCommandServiceMetricsTest {
         // 메트릭 검증을 위해 항상 선점 성공(true)으로 스텁합니다.
         AnalysisJobStatusService analysisJobStatusService = mock(AnalysisJobStatusService.class);
         when(analysisJobStatusService.claimForExecution(JOB_ID)).thenReturn(true);
+        when(analysisJobStatusService.completeStatus(eq(JOB_ID), any())).thenReturn(true);
+        when(analysisJobStatusService.failStatus(eq(JOB_ID), anyString())).thenReturn(true);
+        when(analysisJobStatusService.cancelStatus(JOB_ID)).thenReturn(true);
 
         analysisCommandService = new AnalysisCommandService(
                 analysisJobRepository,
+                mock(com.hanium.presentation.domain.user.repository.UserRepository.class),
                 uploadedVideoRepository,
                 mock(VideoFileCommandService.class),
                 resultCommandService,
@@ -207,7 +212,7 @@ class AnalysisCommandServiceMetricsTest {
     private AnalysisEngineResponse successEngineResponse() {
         return new AnalysisEngineResponse(
                 JOB_ID,
-                "completed",
+                "success",
                 Map.of(),
                 Map.of(),
                 Map.of(),

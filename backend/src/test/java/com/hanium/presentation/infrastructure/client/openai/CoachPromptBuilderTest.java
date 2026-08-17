@@ -3,6 +3,7 @@ package com.hanium.presentation.infrastructure.client.openai;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.infrastructure.client.openai.dto.ChatCompletionApiRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiCoachChatRequest;
+import com.hanium.presentation.infrastructure.client.openai.dto.CoachingProfile;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -68,5 +69,24 @@ class CoachPromptBuilderTest {
         assertThat(messages.get(2).content()).isEqualTo("이전 답변");
         assertThat(messages.get(3).role()).isEqualTo("user");
         assertThat(messages.get(3).content()).isEqualTo("새 질문");
+    }
+
+    @Test
+    void systemPromptIncludesCoachingProfileWithoutIdentityFields() {
+        List<ChatCompletionApiRequest.Message> messages = builder.buildMessages(
+                Map.of("totalScore", 80),
+                List.of(),
+                List.of(),
+                "무엇을 먼저 연습할까요?",
+                CoachingProfile.of("INTERVIEW", "BEGINNER", "GAZE")
+        );
+
+        String systemPrompt = messages.get(0).content();
+        assertThat(systemPrompt)
+                .contains("코칭 프로필")
+                .contains("INTERVIEW")
+                .contains("BEGINNER")
+                .contains("GAZE")
+                .doesNotContain("email");
     }
 }

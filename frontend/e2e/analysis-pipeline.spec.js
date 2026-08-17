@@ -159,6 +159,19 @@ test.describe("analysis pipeline (full stack)", () => {
                 new RegExp(`/results/${jobId}$`),
                 { timeout: MAX_WAIT_MS }
             );
+            const qualityHeading = page
+                .getByRole("heading", { name: "점수 근거와 분석 품질" })
+                .last();
+            await qualityHeading.scrollIntoViewIfNeeded();
+            await expect(qualityHeading).toBeVisible();
+
+            const practiceHeading = page
+                .getByRole("heading", { name: "목표 재연습" })
+                .last();
+            await practiceHeading.scrollIntoViewIfNeeded();
+            await expect(practiceHeading).toBeVisible();
+            await expect(page.getByRole("button", { name: "자세 다시 연습" }).last())
+                .toBeVisible();
 
             const statusResponse = await api.get(
                 `${API_BASE_URL}/api/analysis/${jobId}/status`
@@ -196,6 +209,9 @@ test.describe("analysis pipeline (full stack)", () => {
             expect(resultData.result?.feedback?.generationMode).toBe("SKIPPED");
             expect(resultData.result?.feedback?.realApiUsed).toBe(false);
             expect(resultData.result?.pipeline?.openAiGenerationMode).toBe("SKIPPED");
+            expect(resultData.result?.analysisQuality?.available).toBe(true);
+            expect(Array.isArray(resultData.result?.analysisQuality?.penaltyReasons))
+                .toBe(true);
 
             const tokenResponse = await api.post(
                 `${API_BASE_URL}/api/results/${jobId}/video-access-token`,

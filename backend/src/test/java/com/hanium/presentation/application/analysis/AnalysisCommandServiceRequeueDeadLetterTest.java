@@ -54,6 +54,7 @@ class AnalysisCommandServiceRequeueDeadLetterTest {
 
         return new AnalysisCommandService(
                 analysisJobRepository,
+                mock(com.hanium.presentation.domain.user.repository.UserRepository.class),
                 mock(UploadedVideoRepository.class),
                 mock(VideoFileCommandService.class),
                 mock(ResultCommandService.class),

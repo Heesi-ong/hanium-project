@@ -8,8 +8,19 @@ public record OpenAiCoachChatRequest(
         Map<String, Object> compactAnalysis,
         List<Map<String, Object>> historySummary,
         List<ChatTurn> history,
-        String newUserMessage
+        String newUserMessage,
+        CoachingProfile coachingProfile
 ) {
+    public OpenAiCoachChatRequest(
+            String jobId,
+            Map<String, Object> compactAnalysis,
+            List<Map<String, Object>> historySummary,
+            List<ChatTurn> history,
+            String newUserMessage
+    ) {
+        this(jobId, compactAnalysis, historySummary, history, newUserMessage, CoachingProfile.empty());
+    }
+
     public record ChatTurn(String role, String content) {
     }
 }

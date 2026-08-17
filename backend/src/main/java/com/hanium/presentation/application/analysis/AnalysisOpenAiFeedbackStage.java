@@ -4,6 +4,7 @@ import com.hanium.presentation.application.result.ResultCommandService;
 import com.hanium.presentation.infrastructure.client.openai.OpenAiClient;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
+import com.hanium.presentation.infrastructure.client.openai.dto.CoachingProfile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,8 +35,17 @@ final class AnalysisOpenAiFeedbackStage {
             boolean useOpenAi,
             Map<String, Object> compactAnalysis
     ) {
+        return generateAndSave(jobId, useOpenAi, compactAnalysis, CoachingProfile.empty());
+    }
+
+    OpenAiFeedbackResponse generateAndSave(
+            String jobId,
+            boolean useOpenAi,
+            Map<String, Object> compactAnalysis,
+            CoachingProfile coachingProfile
+    ) {
         OpenAiFeedbackResponse response = useOpenAi
-                ? generateOrReuse(jobId, compactAnalysis)
+                ? generateOrReuse(jobId, compactAnalysis, coachingProfile)
                 : createSkippedResponse(jobId);
 
         resultCommandService.saveOpenAiFeedbackResult(jobId, response);
@@ -44,7 +54,8 @@ final class AnalysisOpenAiFeedbackStage {
 
     private OpenAiFeedbackResponse generateOrReuse(
             String jobId,
-            Map<String, Object> compactAnalysis
+            Map<String, Object> compactAnalysis,
+            CoachingProfile coachingProfile
     ) {
         OpenAiFeedbackResponse response = resultCommandService.loadExistingRealOpenAiFeedback(jobId)
                 .map(existingFeedback -> {
@@ -55,7 +66,7 @@ final class AnalysisOpenAiFeedbackStage {
                     return existingFeedback;
                 })
                 .orElseGet(() -> openAiClient.generateFeedback(
-                        new OpenAiFeedbackRequest(jobId, compactAnalysis)
+                        new OpenAiFeedbackRequest(jobId, compactAnalysis, coachingProfile)
                 ));
 
         log.info("[{}] AI 피드백 생성이 끝났습니다. (mode={})", jobId, response.generationMode());

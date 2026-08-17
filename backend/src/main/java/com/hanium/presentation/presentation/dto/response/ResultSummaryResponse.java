@@ -5,6 +5,7 @@ import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
+import com.hanium.presentation.domain.analysis.type.PracticeGoal;
 import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 
@@ -29,6 +30,8 @@ public record ResultSummaryResponse(
         AnalysisKind analysisKind,
         String sourceJobId,
         VideoLlmGenerationMode videoLlmGenerationMode,
+        String baselineJobId,
+        PracticeGoal practiceGoal,
         // 정상 항목은 null입니다. UploadedVideo 레코드가 없는 등 데이터 부분 손상이 있을 때만
         // 값이 채워지며, 목록 조회는 이 항목을 실패시키지 않고 손상 사실만 표시한 채 반환합니다.
         String dataIssue,
@@ -76,6 +79,8 @@ public record ResultSummaryResponse(
                 analysisJob.getAnalysisKind(),
                 analysisJob.getSourceJobId(),
                 analysisJob.getVideoLlmGenerationMode(),
+                analysisJob.getBaselineJobId(),
+                analysisJob.getPracticeGoal(),
                 dataIssue,
                 resolveDataIssueDescription(dataIssue)
         );
@@ -106,6 +111,8 @@ public record ResultSummaryResponse(
                 analysisJob.getAnalysisKind(),
                 analysisJob.getSourceJobId(),
                 analysisJob.getVideoLlmGenerationMode(),
+                analysisJob.getBaselineJobId(),
+                analysisJob.getPracticeGoal(),
                 "MISSING_VIDEO",
                 "업로드된 영상 정보를 찾을 수 없습니다. 관리자에게 문의하세요."
         );
@@ -136,6 +143,8 @@ public record ResultSummaryResponse(
                 analysisJob.getAnalysisKind(),
                 analysisJob.getSourceJobId(),
                 analysisJob.getVideoLlmGenerationMode(),
+                analysisJob.getBaselineJobId(),
+                analysisJob.getPracticeGoal(),
                 "RESULT_DATA_UNAVAILABLE",
                 "분석은 완료됐지만 결과 파일을 찾을 수 없습니다. 관리자에게 문의하세요."
         );
@@ -154,11 +163,29 @@ public record ResultSummaryResponse(
                 ResultSchemaVersion.resolve(finalResult)
         );
         normalizedResult.put("scoreSummary", extractScoreSummary(finalResult));
+        normalizedResult.put("analysisQuality", extractAnalysisQuality(finalResult));
         normalizedResult.put("feedback", extractFeedback(finalResult, pipeline));
         normalizedResult.put("visualAnalysis", extractVisualAnalysisDetail(finalResult, pipeline));
         normalizedResult.put("pipeline", pipeline);
 
         return normalizedResult;
+    }
+
+    private static AnalysisQualitySummary extractAnalysisQuality(
+            Map<String, Object> finalResult
+    ) {
+        if (finalResult == null) {
+            return AnalysisQualitySummary.unavailable();
+        }
+
+        Object quality = finalResult.get("analysisQuality");
+        if (quality instanceof AnalysisQualitySummary typedQuality) {
+            return typedQuality;
+        }
+        if (quality instanceof Map<?, ?> rawMap) {
+            return AnalysisQualitySummary.from(rawMap);
+        }
+        return AnalysisQualitySummary.unavailable();
     }
 
     private static ScoreSummary extractScoreSummary(
@@ -191,6 +218,10 @@ public record ResultSummaryResponse(
         }
 
         Object feedback = finalResult.get("feedback");
+
+        if (feedback instanceof FeedbackSummary typedFeedback) {
+            return typedFeedback;
+        }
 
         if (feedback instanceof Map<?, ?> rawMap) {
             return FeedbackSummary.from(rawMap, pipeline);

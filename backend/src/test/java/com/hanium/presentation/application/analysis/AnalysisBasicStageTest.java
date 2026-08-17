@@ -91,10 +91,40 @@ class AnalysisBasicStageTest {
                 .isSameAs(failure);
     }
 
+    @Test
+    void rejectsHttpSuccessResponseWhoseAnalysisStatusIsFailed() {
+        AnalysisEngineResponse failedResponse = new AnalysisEngineResponse(
+                JOB_ID,
+                "failed",
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of("reason", "영상 파일을 읽을 수 없습니다.")
+        );
+        when(analysisEngineClient.analyze(new AnalysisEngineRequest(JOB_ID, STORED_FILE_PATH, null)))
+                .thenReturn(failedResponse);
+
+        assertThatThrownBy(() -> stage.analyze(JOB_ID, VIDEO_ASSET_JOB_ID, STORED_FILE_PATH))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(exception -> {
+                    BusinessException businessException = (BusinessException) exception;
+                    assertThat(businessException.getErrorCode()).isEqualTo(ErrorCode.ANALYSIS_ENGINE_ERROR);
+                    assertThat(businessException.getMessage()).isEqualTo("영상 파일을 읽을 수 없습니다.");
+                });
+    }
+
+    @Test
+    void rejectsNullAnalysisResponse() {
+        when(analysisEngineClient.analyze(new AnalysisEngineRequest(JOB_ID, STORED_FILE_PATH, null)))
+                .thenReturn(null);
+
+        assertThatThrownBy(() -> stage.analyze(JOB_ID, VIDEO_ASSET_JOB_ID, STORED_FILE_PATH))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("기본 분석 엔진이 빈 응답을 반환했습니다.");
+    }
+
     private AnalysisEngineResponse response() {
         return new AnalysisEngineResponse(
                 JOB_ID,
-                "completed",
+                "success",
                 Map.of(),
                 Map.of(),
                 Map.of(),

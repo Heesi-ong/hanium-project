@@ -86,6 +86,16 @@ function createCompletedResult() {
                     gestureScore: 79,
                     expressionScore: 81,
                 },
+                scoreExplanation: {},
+                analysisQuality: {
+                    available: true,
+                    lowConfidence: false,
+                    poseDetectionRate: 0.91,
+                    faceDetectionRate: 0.88,
+                    penaltyApplied: 0,
+                    penaltyReasons: [],
+                    formulaVersion: "weighted-v1",
+                },
                 basicAnalysis: {
                     videoInfo: {},
                     frame: {},
@@ -186,6 +196,8 @@ describe("ResultDetailPage", () => {
         renderResultDetailPage();
 
         expect(await screen.findByRole("alert")).toHaveTextContent("불완전");
+        expect(screen.getAllByText("결과 확인 필요")).toHaveLength(2);
+        expect(screen.queryByText("개선 필요")).not.toBeInTheDocument();
         expect(
             screen.getByText("분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다.")
         ).toBeInTheDocument();

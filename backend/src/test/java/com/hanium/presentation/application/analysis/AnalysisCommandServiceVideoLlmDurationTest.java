@@ -90,6 +90,8 @@ class AnalysisCommandServiceVideoLlmDurationTest {
 
         analysisJobStatusService = mock(AnalysisJobStatusService.class);
         when(analysisJobStatusService.claimForExecution(JOB_ID)).thenReturn(true);
+        when(analysisJobStatusService.completeStatus(eq(JOB_ID), any())).thenReturn(true);
+        when(analysisJobStatusService.failStatus(eq(JOB_ID), anyString())).thenReturn(true);
 
         when(analysisEngineClient.analyze(any(AnalysisEngineRequest.class)))
                 .thenReturn(successEngineResponse());
@@ -105,6 +107,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
 
         analysisCommandService = new AnalysisCommandService(
                 analysisJobRepository,
+                mock(com.hanium.presentation.domain.user.repository.UserRepository.class),
                 uploadedVideoRepository,
                 mock(VideoFileCommandService.class),
                 resultCommandService,
@@ -272,7 +275,7 @@ class AnalysisCommandServiceVideoLlmDurationTest {
     private AnalysisEngineResponse successEngineResponse() {
         return new AnalysisEngineResponse(
                 JOB_ID,
-                "completed",
+                "success",
                 Map.of(),
                 Map.of(),
                 Map.of(),

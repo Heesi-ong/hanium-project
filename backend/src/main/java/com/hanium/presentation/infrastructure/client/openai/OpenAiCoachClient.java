@@ -119,7 +119,8 @@ public class OpenAiCoachClient {
                 request.compactAnalysis(),
                 request.historySummary(),
                 request.history(),
-                request.newUserMessage()
+                request.newUserMessage(),
+                request.coachingProfile()
         );
 
         String model = resolveModel();

@@ -229,6 +229,58 @@ class ResultMergeServiceTest {
     }
 
     @Test
+    void createFinalResultAddsTypedAnalysisQualityWithoutChangingScores() {
+        Map<String, Object> explanation = Map.of(
+                "formulaVersion", "weighted-v1",
+                "penaltyApplied", 8,
+                "penaltyReasons", List.of("얼굴 검출률이 50% 미만입니다.")
+        );
+        AnalysisEngineResponse base = analysisResponse(
+                Map.of(), Map.of(), Map.of(), Map.of(), explanation
+        );
+        Map<String, Object> score = new java.util.LinkedHashMap<>(base.score());
+        score.put("reliability", Map.of(
+                "lowConfidence", true,
+                "poseDetectionRate", 0.72,
+                "faceDetectionRate", 0.41,
+                "penaltyReasons", List.of("얼굴 검출률이 50% 미만입니다.")
+        ));
+        AnalysisEngineResponse response = new AnalysisEngineResponse(
+                base.jobId(),
+                base.status(),
+                base.videoInfo(),
+                base.frame(),
+                Map.of("analysisMethod", "signal_estimation"),
+                base.filler(),
+                base.pose(),
+                base.gesture(),
+                base.face(),
+                base.emotion(),
+                score,
+                base.error()
+        );
+
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1", response, videoLlmResponse(), openAiFeedbackResponse()
+        );
+
+        Map<String, Object> quality = objectMapper.convertValue(
+                finalResult.get("analysisQuality"),
+                Map.class
+        );
+        assertThat(quality)
+                .containsEntry("available", true)
+                .containsEntry("lowConfidence", true)
+                .containsEntry("poseDetectionRate", 0.72)
+                .containsEntry("faceDetectionRate", 0.41)
+                .containsEntry("audioAnalysisMethod", "signal_estimation")
+                .containsEntry("sttFallbackUsed", true)
+                .containsEntry("penaltyApplied", 8)
+                .containsEntry("formulaVersion", "weighted-v1");
+        assertThat(scoreSummary(finalResult)).containsEntry("totalScore", 80);
+    }
+
+    @Test
     void createFailureResultProducesScoreSummaryWithCurrentShapeAndFailedDefaults() {
         Map<String, Object> failureResult = resultMergeService.createFailureResult(
                 "job-1",

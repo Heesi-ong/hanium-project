@@ -15,9 +15,16 @@ export async function getServiceStatus() {
     return unwrapApiResponse(response);
 }
 
-export async function uploadAnalysisVideo(file, { onUploadProgress } = {}) {
+export async function uploadAnalysisVideo(
+    file,
+    { onUploadProgress, practiceContext } = {}
+) {
     const formData = new FormData();
     formData.append("file", file);
+    if (practiceContext?.baselineJobId && practiceContext?.practiceGoal) {
+        formData.append("baselineJobId", practiceContext.baselineJobId);
+        formData.append("practiceGoal", practiceContext.practiceGoal);
+    }
 
     const response = await apiClient.post("/api/analysis/upload", formData, {
         headers: {

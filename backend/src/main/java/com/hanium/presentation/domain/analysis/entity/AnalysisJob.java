@@ -3,6 +3,7 @@ package com.hanium.presentation.domain.analysis.entity;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
+import com.hanium.presentation.domain.analysis.type.PracticeGoal;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
@@ -40,6 +41,13 @@ public class AnalysisJob {
 
     @Column(name = "source_job_id", length = 50)
     private String sourceJobId;
+
+    @Column(name = "baseline_job_id", length = 50)
+    private String baselineJobId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "practice_goal", length = 30)
+    private PracticeGoal practiceGoal;
 
     // 클라이언트가 접수 응답을 받지 못해 같은 요청을 다시 보내더라도 동일 child job을
     // 돌려주기 위한 SHA-256 해시입니다. 원문 Idempotency-Key는 로그/DB에 저장하지 않습니다.
@@ -176,6 +184,31 @@ public class AnalysisJob {
 
     public String getSourceJobId() {
         return sourceJobId;
+    }
+
+    public String getBaselineJobId() {
+        return baselineJobId;
+    }
+
+    public PracticeGoal getPracticeGoal() {
+        return practiceGoal;
+    }
+
+    public void linkPracticeBaseline(AnalysisJob baselineJob, PracticeGoal goal) {
+        if (baselineJob == null || goal == null) {
+            throw new IllegalArgumentException("기준 분석과 연습 목표는 함께 지정해야 합니다.");
+        }
+        if (!baselineJob.isCompleted()) {
+            throw new IllegalStateException("완료된 분석만 재연습 기준으로 사용할 수 있습니다.");
+        }
+        if (ownerId == null || !ownerId.equals(baselineJob.ownerId)) {
+            throw new IllegalStateException("같은 사용자의 분석만 재연습 기준으로 사용할 수 있습니다.");
+        }
+        if (jobId.equals(baselineJob.jobId)) {
+            throw new IllegalStateException("현재 작업 자체를 재연습 기준으로 사용할 수 없습니다.");
+        }
+        this.baselineJobId = baselineJob.jobId;
+        this.practiceGoal = goal;
     }
 
     public String getReanalysisIdempotencyKeyHash() {

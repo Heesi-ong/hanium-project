@@ -36,10 +36,14 @@ function formatDateTime(value) {
 }
 
 function toScore(value) {
-    return typeof value === "number" ? value : 0;
+    return Number.isFinite(value) ? value : null;
 }
 
 function getDeltaClassName(delta) {
+    if (!Number.isFinite(delta)) {
+        return "compare-delta neutral";
+    }
+
     if (delta > 0) {
         return "compare-delta positive";
     }
@@ -52,6 +56,10 @@ function getDeltaClassName(delta) {
 }
 
 function formatDelta(delta) {
+    if (!Number.isFinite(delta)) {
+        return "비교 불가";
+    }
+
     if (delta > 0) {
         return `▲ +${delta}`;
     }
@@ -61,6 +69,10 @@ function formatDelta(delta) {
     }
 
     return "변화 없음";
+}
+
+function formatScore(score) {
+    return Number.isFinite(score) ? `${score}점` : "-";
 }
 
 function ResultComparePage() {
@@ -91,8 +103,8 @@ function ResultComparePage() {
         );
     }
 
-    const scoresA = resultA.scoreSummary || {};
-    const scoresB = resultB.scoreSummary || {};
+    const scoresA = resultA.dataIssue ? {} : resultA.scoreSummary || {};
+    const scoresB = resultB.dataIssue ? {} : resultB.scoreSummary || {};
 
     return (
         <section className="page-section">
@@ -151,13 +163,15 @@ function ResultComparePage() {
                         {SCORE_FIELDS.map((field) => {
                             const scoreA = toScore(scoresA[field.key]);
                             const scoreB = toScore(scoresB[field.key]);
-                            const delta = scoreB - scoreA;
+                            const delta = Number.isFinite(scoreA) && Number.isFinite(scoreB)
+                                ? scoreB - scoreA
+                                : null;
 
                             return (
                                 <div className="compare-score-row" key={field.key}>
                                     <span>{field.label}</span>
-                                    <span>{scoreA}점</span>
-                                    <span>{scoreB}점</span>
+                                    <span>{formatScore(scoreA)}</span>
+                                    <span>{formatScore(scoreB)}</span>
                                     <span className={getDeltaClassName(delta)}>
                                         {formatDelta(delta)}
                                     </span>

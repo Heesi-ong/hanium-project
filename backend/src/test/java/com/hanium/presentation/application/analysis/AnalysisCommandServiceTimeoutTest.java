@@ -26,6 +26,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -79,9 +81,11 @@ class AnalysisCommandServiceTimeoutTest {
 
         AnalysisJobStatusService analysisJobStatusService = mock(AnalysisJobStatusService.class);
         when(analysisJobStatusService.claimForExecution(JOB_ID)).thenReturn(true);
+        when(analysisJobStatusService.failStatus(eq(JOB_ID), anyString())).thenReturn(true);
 
         analysisCommandService = new AnalysisCommandService(
                 analysisJobRepository,
+                mock(com.hanium.presentation.domain.user.repository.UserRepository.class),
                 uploadedVideoRepository,
                 mock(VideoFileCommandService.class),
                 mock(ResultCommandService.class),

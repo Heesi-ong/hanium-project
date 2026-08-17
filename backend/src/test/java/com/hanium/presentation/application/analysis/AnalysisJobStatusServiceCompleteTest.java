@@ -20,14 +20,17 @@ class AnalysisJobStatusServiceCompleteTest {
     void completeStatusPersistsVideoLlmGenerationModeWithCompletedState() {
         AnalysisJobRepository repository = mock(AnalysisJobRepository.class);
         AnalysisJob job = AnalysisJob.create("job-complete-mode", 1L);
+        job.enqueue(true, true);
+        job.startBasicAnalysis();
         when(repository.findByJobId(job.getJobId())).thenReturn(Optional.of(job));
         AnalysisJobStatusService service = new AnalysisJobStatusService(
                 repository,
                 new AnalysisRetryProperties(3)
         );
 
-        service.completeStatus(job.getJobId(), VideoLlmGenerationMode.REAL);
+        boolean completed = service.completeStatus(job.getJobId(), VideoLlmGenerationMode.REAL);
 
+        assertThat(completed).isTrue();
         assertThat(job.getStatus()).isEqualTo(AnalysisStatus.COMPLETED);
         assertThat(job.getVideoLlmGenerationMode()).isEqualTo(VideoLlmGenerationMode.REAL);
         verify(repository).save(job);

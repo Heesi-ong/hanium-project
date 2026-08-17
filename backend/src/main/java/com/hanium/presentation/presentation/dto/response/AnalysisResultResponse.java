@@ -3,6 +3,7 @@ package com.hanium.presentation.presentation.dto.response;
 import com.hanium.presentation.common.contract.ResultSchemaVersion;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
+import com.hanium.presentation.domain.analysis.type.PracticeGoal;
 import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
 
 import java.util.LinkedHashMap;
@@ -16,6 +17,8 @@ public record AnalysisResultResponse(
         String sourceJobId,
         String latestReanalysisJobId,
         VideoLlmGenerationMode videoLlmGenerationMode,
+        String baselineJobId,
+        PracticeGoal practiceGoal,
         String dataIssue,
         String dataIssueDescription
 ) {
@@ -50,6 +53,8 @@ public record AnalysisResultResponse(
                 analysisJob.getSourceJobId(),
                 latestReanalysisJobId,
                 analysisJob.getVideoLlmGenerationMode(),
+                analysisJob.getBaselineJobId(),
+                analysisJob.getPracticeGoal(),
                 dataIssue,
                 ResultSummaryResponse.resolveDataIssueDescription(dataIssue)
         );
@@ -73,6 +78,8 @@ public record AnalysisResultResponse(
                 analysisJob.getSourceJobId(),
                 latestReanalysisJobId,
                 analysisJob.getVideoLlmGenerationMode(),
+                analysisJob.getBaselineJobId(),
+                analysisJob.getPracticeGoal(),
                 null,
                 null
         );
@@ -96,6 +103,8 @@ public record AnalysisResultResponse(
                 analysisJob.getSourceJobId(),
                 latestReanalysisJobId,
                 analysisJob.getVideoLlmGenerationMode(),
+                analysisJob.getBaselineJobId(),
+                analysisJob.getPracticeGoal(),
                 "RESULT_DATA_UNAVAILABLE",
                 ResultSummaryResponse.resolveDataIssueDescription("RESULT_DATA_UNAVAILABLE")
         );

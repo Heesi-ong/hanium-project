@@ -9,12 +9,14 @@ import com.hanium.presentation.domain.coach.entity.CoachConversation;
 import com.hanium.presentation.domain.coach.entity.CoachMessage;
 import com.hanium.presentation.domain.coach.repository.CoachConversationRepository;
 import com.hanium.presentation.domain.coach.repository.CoachMessageRepository;
+import com.hanium.presentation.domain.user.repository.UserRepository;
 import com.hanium.presentation.global.config.UserRateLimiter;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.infrastructure.client.openai.OpenAiCoachClient;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiCoachChatRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiCoachReplyResponse;
+import com.hanium.presentation.infrastructure.client.openai.dto.CoachingProfile;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.CoachConversationResponse;
@@ -36,6 +38,7 @@ import java.util.Map;
 public class CoachChatService {
 
     private final AnalysisJobRepository analysisJobRepository;
+    private final UserRepository userRepository;
     private final CoachConversationRepository coachConversationRepository;
     private final CoachMessageRepository coachMessageRepository;
     private final FilePathGenerator filePathGenerator;
@@ -47,6 +50,7 @@ public class CoachChatService {
 
     public CoachChatService(
             AnalysisJobRepository analysisJobRepository,
+            UserRepository userRepository,
             CoachConversationRepository coachConversationRepository,
             CoachMessageRepository coachMessageRepository,
             FilePathGenerator filePathGenerator,
@@ -57,6 +61,7 @@ public class CoachChatService {
             @Value("${coach.history-summary-size:5}") int historySummarySize
     ) {
         this.analysisJobRepository = analysisJobRepository;
+        this.userRepository = userRepository;
         this.coachConversationRepository = coachConversationRepository;
         this.coachMessageRepository = coachMessageRepository;
         this.filePathGenerator = filePathGenerator;
@@ -117,7 +122,8 @@ public class CoachChatService {
                         prepared.compactAnalysis(),
                         prepared.historySummary(),
                         prepared.history(),
-                        content
+                        content,
+                        prepared.coachingProfile()
                 )
         );
 
@@ -156,7 +162,21 @@ public class CoachChatService {
 
         coachMessageRepository.save(CoachMessage.userMessage(conversation.getId(), content));
 
-        return new PreparedCoachMessage(conversation.getId(), compactAnalysis, historySummary, history);
+        CoachingProfile coachingProfile = userRepository.findById(ownerId)
+                .map(user -> CoachingProfile.of(
+                        user.getPurpose(),
+                        user.getExperienceLevel(),
+                        user.getImprovementGoal()
+                ))
+                .orElseGet(CoachingProfile::empty);
+
+        return new PreparedCoachMessage(
+                conversation.getId(),
+                compactAnalysis,
+                historySummary,
+                history,
+                coachingProfile
+        );
     }
 
     private CoachConversationResponse saveReplyAndBuildResponse(
@@ -181,7 +201,8 @@ public class CoachChatService {
             Long conversationId,
             Map<String, Object> compactAnalysis,
             List<Map<String, Object>> historySummary,
-            List<OpenAiCoachChatRequest.ChatTurn> history
+            List<OpenAiCoachChatRequest.ChatTurn> history,
+            CoachingProfile coachingProfile
     ) {
     }
 

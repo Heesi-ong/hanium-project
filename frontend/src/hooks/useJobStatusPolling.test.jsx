@@ -89,4 +89,40 @@ describe("useJobStatusPolling", () => {
             result.current.stopPolling();
         });
     });
+
+    it("does not start another request while the previous poll is still pending", async () => {
+        vi.useFakeTimers();
+        let resolveFirstRequest;
+        const firstRequest = new Promise((resolve) => {
+            resolveFirstRequest = resolve;
+        });
+        const fetchStatus = vi.fn()
+            .mockReturnValueOnce(firstRequest)
+            .mockResolvedValue({ jobId: "job-1", status: "BASIC_ANALYZING" });
+        const { result } = renderHook(() => useJobStatusPolling({
+            intervalMs: 100,
+            timeoutMs: 2000,
+            fetchStatus,
+        }));
+
+        act(() => {
+            result.current.startPolling("job-1");
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+
+        expect(fetchStatus).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            resolveFirstRequest({ jobId: "job-1", status: "BASIC_ANALYZING" });
+            await firstRequest;
+        });
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(100);
+        });
+
+        expect(fetchStatus).toHaveBeenCalledTimes(2);
+        act(() => result.current.stopPolling());
+    });
 });

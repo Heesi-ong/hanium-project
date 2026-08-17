@@ -6,6 +6,7 @@ import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngine
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
 import com.hanium.presentation.presentation.dto.response.FeedbackSummary;
+import com.hanium.presentation.presentation.dto.response.AnalysisQualitySummary;
 import com.hanium.presentation.presentation.dto.response.ScoreSummary;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +33,10 @@ public class ResultMergeService {
         finalResult.put("createdAt", LocalDateTime.now().toString());
         finalResult.put("scoreSummary", createScoreSummary(analysisEngineResponse));
         finalResult.put("scoreExplanation", createScoreExplanation(analysisEngineResponse));
+        finalResult.put("analysisQuality", AnalysisQualitySummary.fromEngine(
+                nullSafeMap(analysisEngineResponse.score()),
+                nullSafeMap(analysisEngineResponse.audio())
+        ));
         finalResult.put("basicAnalysis", createBasicAnalysis(analysisEngineResponse));
         finalResult.put("visualAnalysis", createVisualAnalysis(videoLlmEngineResponse));
         finalResult.put("feedback", createFeedback(openAiFeedbackResponse));
@@ -61,6 +66,7 @@ public class ResultMergeService {
                 "available", false,
                 "reason", "analysis_failed"
         ));
+        failureResult.put("analysisQuality", AnalysisQualitySummary.unavailable());
         failureResult.put("basicAnalysis", createFailedBasicAnalysis());
         failureResult.put("visualAnalysis", createFailedVisualAnalysis());
         failureResult.put("feedback", createFailedFeedback());

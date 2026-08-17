@@ -32,8 +32,9 @@ class AnalysisJobStatusServiceFailStatusTest {
         analysisJob.startBasicAnalysis();
         when(analysisJobRepository.findByJobId("job-1")).thenReturn(Optional.of(analysisJob));
 
-        analysisJobStatusService.failStatus("job-1", "엔진 오류");
+        boolean failed = analysisJobStatusService.failStatus("job-1", "엔진 오류");
 
+        assertThat(failed).isTrue();
         assertThat(analysisJob.getStatus()).isEqualTo(AnalysisStatus.FAILED);
         verify(analysisJobRepository).save(analysisJob);
     }
@@ -51,8 +52,9 @@ class AnalysisJobStatusServiceFailStatusTest {
         assertThat(analysisJob.getRetryCount()).isEqualTo(3);
         when(analysisJobRepository.findByJobId("job-2")).thenReturn(Optional.of(analysisJob));
 
-        analysisJobStatusService.failStatus("job-2", "반복 실패");
+        boolean failed = analysisJobStatusService.failStatus("job-2", "반복 실패");
 
+        assertThat(failed).isTrue();
         assertThat(analysisJob.getStatus()).isEqualTo(AnalysisStatus.DEAD_LETTER);
         assertThat(analysisJob.getFailReason()).isEqualTo("반복 실패");
         verify(analysisJobRepository).save(analysisJob);
@@ -62,8 +64,9 @@ class AnalysisJobStatusServiceFailStatusTest {
     void doesNothingWhenJobNotFound() {
         when(analysisJobRepository.findByJobId("missing")).thenReturn(Optional.empty());
 
-        analysisJobStatusService.failStatus("missing", "사유");
+        boolean failed = analysisJobStatusService.failStatus("missing", "사유");
 
+        assertThat(failed).isFalse();
         verify(analysisJobRepository, org.mockito.Mockito.never()).save(any());
     }
 }

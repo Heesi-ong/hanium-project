@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -51,6 +52,7 @@ class AnalysisCommandServiceDispatchClaimedJobTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         analysisJobStatusService = mock(AnalysisJobStatusService.class);
+        when(analysisJobStatusService.completeStatus(eq(JOB_ID), any())).thenReturn(true);
         analysisEngineClient = mock(AnalysisEngineClient.class);
 
         UploadedVideoRepository uploadedVideoRepository = mock(UploadedVideoRepository.class);
@@ -70,6 +72,7 @@ class AnalysisCommandServiceDispatchClaimedJobTest {
 
         analysisCommandService = new AnalysisCommandService(
                 mock(com.hanium.presentation.domain.analysis.repository.AnalysisJobRepository.class),
+                mock(com.hanium.presentation.domain.user.repository.UserRepository.class),
                 uploadedVideoRepository,
                 mock(VideoFileCommandService.class),
                 mock(ResultCommandService.class),
@@ -100,7 +103,7 @@ class AnalysisCommandServiceDispatchClaimedJobTest {
     private AnalysisEngineResponse successEngineResponse() {
         return new AnalysisEngineResponse(
                 JOB_ID,
-                "completed",
+                "success",
                 Map.of(),
                 Map.of(),
                 Map.of(),

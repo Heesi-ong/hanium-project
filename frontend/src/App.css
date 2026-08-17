@@ -976,6 +976,130 @@ pre {
   color: #776E66;
 }
 
+.analysis-quality-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.analysis-quality-metrics > div {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.analysis-quality-metrics span,
+.analysis-quality-metrics strong {
+  display: block;
+}
+
+.analysis-quality-metrics span {
+  color: #B7ADA4;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.analysis-quality-metrics strong {
+  margin-top: 8px;
+  color: #F5EFE8;
+  font-size: 20px;
+}
+
+.analysis-quality-guidance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.analysis-quality-guidance > div {
+  padding: 18px;
+  border-radius: 14px;
+  background: rgba(255, 147, 77, 0.08);
+}
+
+.analysis-quality-guidance h3 {
+  margin: 0 0 10px;
+}
+
+.analysis-quality-guidance ul {
+  margin: 0;
+  padding-left: 20px;
+  color: #B7ADA4;
+  line-height: 1.7;
+}
+
+@media (max-width: 760px) {
+  .analysis-quality-metrics,
+  .analysis-quality-guidance {
+    grid-template-columns: 1fr;
+  }
+}
+
+.practice-context-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 16px 20px;
+  border: 1px solid rgba(114, 165, 255, 0.35);
+  border-radius: 14px;
+  background: rgba(114, 165, 255, 0.1);
+}
+
+.practice-context-banner span {
+  color: #B7ADA4;
+}
+
+.practice-comparison {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.practice-comparison > div {
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.practice-comparison span,
+.practice-comparison strong {
+  display: block;
+}
+
+.practice-comparison span {
+  color: #B7ADA4;
+  font-size: 13px;
+}
+
+.practice-comparison strong {
+  margin-top: 7px;
+  font-size: 20px;
+}
+
+.practice-delta-positive {
+  color: #4FC78A;
+}
+
+.practice-delta-negative {
+  color: #E7685A;
+}
+
+.practice-goal-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .practice-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

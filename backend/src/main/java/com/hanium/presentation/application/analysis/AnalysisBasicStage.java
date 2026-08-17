@@ -1,6 +1,9 @@
 package com.hanium.presentation.application.analysis;
 
 import com.hanium.presentation.application.video.VideoFileCommandService;
+import com.hanium.presentation.common.util.JsonMapSupport;
+import com.hanium.presentation.global.exception.BusinessException;
+import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.infrastructure.client.analysis.AnalysisEngineClient;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineRequest;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
@@ -52,7 +55,26 @@ final class AnalysisBasicStage {
                 )
         );
 
+        if (response == null || !"success".equalsIgnoreCase(response.status())) {
+            String reason = resolveFailureReason(response);
+            log.warn("[{}] 기본 분석 엔진이 실패 응답을 반환했습니다. reason={}", jobId, reason);
+            throw new BusinessException(ErrorCode.ANALYSIS_ENGINE_ERROR, reason);
+        }
+
         log.info("[{}] 기본 분석 응답을 받았습니다.", jobId);
         return new Result(response, videoDownloadUrl);
+    }
+
+    private String resolveFailureReason(AnalysisEngineResponse response) {
+        if (response == null) {
+            return "기본 분석 엔진이 빈 응답을 반환했습니다.";
+        }
+
+        Object reason = JsonMapSupport.copyStringKeyedMap(response.error()).get("reason");
+        if (reason instanceof String message && !message.isBlank()) {
+            return message;
+        }
+
+        return "기본 분석 엔진이 분석 실패 상태를 반환했습니다.";
     }
 }

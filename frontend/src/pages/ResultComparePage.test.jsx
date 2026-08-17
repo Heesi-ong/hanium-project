@@ -105,4 +105,29 @@ describe("ResultComparePage", () => {
         // 자세(70->75)/음성(55->60)/제스처(80->85) 모두 +5로 동일 - 3건 존재를 확인
         expect(screen.getAllByText("▲ +5")).toHaveLength(3);
     });
+
+    it("shows missing scores separately from a real zero score", () => {
+        renderWithResults([
+            {
+                ...resultA,
+                scoreSummary: { totalScore: 0 },
+            },
+            {
+                ...resultB,
+                dataIssue: "RESULT_DATA_UNAVAILABLE",
+                scoreSummary: {
+                    totalScore: 0,
+                    postureScore: 0,
+                    gazeScore: 0,
+                    speechScore: 0,
+                    gestureScore: 0,
+                    expressionScore: 0,
+                },
+            },
+        ]);
+
+        expect(screen.getByText("0점")).toBeInTheDocument();
+        expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+        expect(screen.getAllByText("비교 불가")).toHaveLength(6);
+    });
 });

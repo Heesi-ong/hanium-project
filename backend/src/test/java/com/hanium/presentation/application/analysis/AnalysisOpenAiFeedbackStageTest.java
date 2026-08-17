@@ -4,6 +4,7 @@ import com.hanium.presentation.application.result.ResultCommandService;
 import com.hanium.presentation.infrastructure.client.openai.OpenAiClient;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
+import com.hanium.presentation.infrastructure.client.openai.dto.CoachingProfile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -80,6 +81,22 @@ class AnalysisOpenAiFeedbackStageTest {
         assertThat(requestCaptor.getValue().compactAnalysis()).isSameAs(compactAnalysis);
         assertThat(response).isSameAs(generated);
         verify(resultCommandService).saveOpenAiFeedbackResult(JOB_ID, generated);
+    }
+
+    @Test
+    void providerRequestIncludesOnlyNonIdentifyingCoachingProfile() {
+        CoachingProfile profile = CoachingProfile.of("INTERVIEW", "BEGINNER", "GAZE");
+        when(resultCommandService.loadExistingRealOpenAiFeedback(JOB_ID))
+                .thenReturn(Optional.empty());
+        when(openAiClient.generateFeedback(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(realFeedback("개인화 피드백"));
+
+        stage.generateAndSave(JOB_ID, true, Map.of("score", 80), profile);
+
+        ArgumentCaptor<OpenAiFeedbackRequest> requestCaptor =
+                ArgumentCaptor.forClass(OpenAiFeedbackRequest.class);
+        verify(openAiClient).generateFeedback(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().coachingProfile()).isEqualTo(profile);
     }
 
     private OpenAiFeedbackResponse realFeedback(String overallFeedback) {

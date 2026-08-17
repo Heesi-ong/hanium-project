@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.infrastructure.client.openai.dto.ChatCompletionApiRequest;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiCoachChatRequest;
+import com.hanium.presentation.infrastructure.client.openai.dto.CoachingProfile;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -25,9 +26,25 @@ public class CoachPromptBuilder {
             List<OpenAiCoachChatRequest.ChatTurn> history,
             String newUserMessage
     ) {
+        return buildMessages(
+                compactAnalysis,
+                historySummary,
+                history,
+                newUserMessage,
+                CoachingProfile.empty()
+        );
+    }
+
+    public List<ChatCompletionApiRequest.Message> buildMessages(
+            Map<String, Object> compactAnalysis,
+            List<Map<String, Object>> historySummary,
+            List<OpenAiCoachChatRequest.ChatTurn> history,
+            String newUserMessage,
+            CoachingProfile coachingProfile
+    ) {
         List<ChatCompletionApiRequest.Message> messages = new ArrayList<>();
         messages.add(ChatCompletionApiRequest.Message.system(
-                buildSystemPrompt(compactAnalysis, historySummary)
+                buildSystemPrompt(compactAnalysis, historySummary, coachingProfile)
         ));
 
         for (OpenAiCoachChatRequest.ChatTurn turn : history) {
@@ -44,7 +61,8 @@ public class CoachPromptBuilder {
 
     private String buildSystemPrompt(
             Map<String, Object> compactAnalysis,
-            List<Map<String, Object>> historySummary
+            List<Map<String, Object>> historySummary,
+            CoachingProfile coachingProfile
     ) {
         boolean hasHistory = historySummary != null && !historySummary.isEmpty();
 
@@ -59,6 +77,7 @@ public class CoachPromptBuilder {
                 - 표정이나 자세를 심리 상태나 건강 상태로 단정하지 않습니다.
                 - 비판적이기보다 코칭형 문체로, 사용자가 바로 연습할 수 있는 조언을 제공합니다.
                 - 분석 데이터와 무관한 질문에는 정중히 발표 코칭 주제로 안내합니다.
+                - 코칭 프로필은 조언의 난이도와 개선 우선순위에만 사용하고, 점수나 관찰 사실을 바꾸지 않습니다.
                 """
                 + (hasHistory
                         ? """
@@ -72,6 +91,9 @@ public class CoachPromptBuilder {
                 - 한국어 평문으로 답변합니다.
                 - JSON, 마크다운, 코드블록을 사용하지 않습니다.
                 - 2~5문장 내외로 간결하게 답변합니다.
+
+                코칭 프로필(JSON, 비식별 온보딩 답변):
+                """ + toJson(coachingProfile) + """
 
                 분석 데이터(JSON):
                 """ + toJson(compactAnalysis);

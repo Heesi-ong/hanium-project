@@ -48,6 +48,11 @@ class AnalysisPipelineTerminationHandlerTest {
                 meterRegistry,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
+        when(analysisJobStatusService.failStatus(
+                JOB_ID,
+                "분석이 제한 시간(20분)을 초과해 자동으로 종료되었습니다."
+        )).thenReturn(true);
+        when(analysisJobStatusService.cancelStatus(JOB_ID)).thenReturn(true);
     }
 
     @Test

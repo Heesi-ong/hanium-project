@@ -127,9 +127,13 @@ public class AnalysisJobStatusService {
     // 감싸는 큰 트랜잭션이 없습니다. 그래서 완료/실패도 updateStatus와 동일하게
     // 그 자리에서 바로 커밋하는 메서드가 필요합니다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void completeStatus(String jobId, VideoLlmGenerationMode videoLlmGenerationMode) {
-        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+    public boolean completeStatus(String jobId, VideoLlmGenerationMode videoLlmGenerationMode) {
+        return analysisJobRepository.findByJobId(jobId).map(
                 analysisJob -> {
+                    if (!analysisJob.isRunning()) {
+                        log.info("[{}] 완료 전이를 건너뜁니다. currentStatus={}", jobId, analysisJob.getStatus());
+                        return false;
+                    }
                     analysisJob.recordVideoLlmGenerationMode(videoLlmGenerationMode);
                     analysisJob.complete();
                     analysisJobRepository.save(analysisJob);
@@ -138,9 +142,12 @@ public class AnalysisJobStatusService {
                             jobId,
                             videoLlmGenerationMode
                     );
-                },
-                () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
-        );
+                    return true;
+                }
+        ).orElseGet(() -> {
+                    log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId);
+                    return false;
+                });
     }
 
     // 재시도 가능 횟수를 이미 소진한 상태(retryCount >= maxCount)에서 다시 실패하면 FAILED
@@ -148,9 +155,13 @@ public class AnalysisJobStatusService {
     // 막히는 시점과 정확히 일치하므로, "더 이상 사용자가 스스로 재시도할 수 없는 실패"를
     // 관리자가 한곳에서 모아 보고 검토 후 재처리할 수 있게 합니다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void failStatus(String jobId, String failReason) {
-        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+    public boolean failStatus(String jobId, String failReason) {
+        return analysisJobRepository.findByJobId(jobId).map(
                 analysisJob -> {
+                    if (!analysisJob.isQueued() && !analysisJob.isRunning()) {
+                        log.info("[{}] 실패 전이를 건너뜁니다. currentStatus={}", jobId, analysisJob.getStatus());
+                        return false;
+                    }
                     if (analysisJob.getRetryCount() >= analysisRetryProperties.maxCount()) {
                         analysisJob.deadLetter(failReason);
                         analysisJobRepository.save(analysisJob);
@@ -158,15 +169,18 @@ public class AnalysisJobStatusService {
                                 "[{}] 상태 즉시 반영: DEAD_LETTER (재시도 {}회 소진, {})",
                                 jobId, analysisJob.getRetryCount(), failReason
                         );
-                        return;
+                        return true;
                     }
 
                     analysisJob.fail(failReason);
                     analysisJobRepository.save(analysisJob);
                     log.info("[{}] 상태 즉시 반영: FAILED ({})", jobId, failReason);
-                },
-                () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
-        );
+                    return true;
+                }
+        ).orElseGet(() -> {
+                    log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId);
+                    return false;
+                });
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -190,15 +204,22 @@ public class AnalysisJobStatusService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void cancelStatus(String jobId) {
-        analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
+    public boolean cancelStatus(String jobId) {
+        return analysisJobRepository.findByJobId(jobId).map(
                 analysisJob -> {
+                    if (!analysisJob.isRunning()) {
+                        log.info("[{}] 취소 전이를 건너뜁니다. currentStatus={}", jobId, analysisJob.getStatus());
+                        return false;
+                    }
                     analysisJob.markCancelled();
                     analysisJobRepository.save(analysisJob);
                     log.info("[{}] 상태 즉시 반영: CANCELLED", jobId);
-                },
-                () -> log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId)
-        );
+                    return true;
+                }
+        ).orElseGet(() -> {
+                    log.warn("[{}] 상태를 즉시 반영하려 했지만 AnalysisJob을 찾지 못했습니다.", jobId);
+                    return false;
+                });
     }
 
     private void applyStatus(AnalysisJob analysisJob, AnalysisStatus status) {

@@ -9,12 +9,49 @@ import {
 import { Bar } from "react-chartjs-2";
 import "./chartStyles.css";
 
+// 0점 항목은 막대 높이가 0이라 차트만 보면 "결측치"와 구분이 안 되므로,
+// 모든 막대 위에 실제 점수를 항상 텍스트로 표시해 0점과 결측치를 명확히 구분합니다.
+const scoreValueLabelPlugin = {
+    id: "scoreCompareValueLabels",
+    afterDatasetsDraw(chart) {
+        const { ctx, chartArea } = chart;
+        if (!chartArea) {
+            return;
+        }
+
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            if (!chart.isDatasetVisible(datasetIndex)) {
+                return;
+            }
+
+            const meta = chart.getDatasetMeta(datasetIndex);
+            meta.data.forEach((bar, index) => {
+                const value = dataset.data[index];
+                if (typeof value !== "number") {
+                    return;
+                }
+
+                const labelY = Math.max(bar.y - 6, chartArea.top + 12);
+
+                ctx.save();
+                ctx.fillStyle = "#2B2420";
+                ctx.font = "600 11px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                ctx.fillText(`${value}`, bar.x, labelY);
+                ctx.restore();
+            });
+        });
+    },
+};
+
 ChartJS.register(
     CategoryScale,
     LinearScale,
     BarElement,
     Tooltip,
-    Legend
+    Legend,
+    scoreValueLabelPlugin
 );
 
 const SCORE_FIELDS = [

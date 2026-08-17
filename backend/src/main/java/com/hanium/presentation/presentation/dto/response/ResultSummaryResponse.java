@@ -10,7 +10,6 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 public record ResultSummaryResponse(
@@ -24,7 +23,7 @@ public record ResultSummaryResponse(
         LocalDateTime createdAt,
         LocalDateTime completedAt,
         ScoreSummary scoreSummary,
-        Map<String, Object> feedback,
+        FeedbackSummary feedback,
         Map<String, Object> visualAnalysis,
         Map<String, Object> pipeline,
         AnalysisKind analysisKind,
@@ -54,7 +53,7 @@ public record ResultSummaryResponse(
     ) {
         ScoreSummary scoreSummary = extractScoreSummary(finalResult);
         Map<String, Object> pipeline = extractPipeline(finalResult);
-        Map<String, Object> feedback = extractFeedback(finalResult, pipeline);
+        FeedbackSummary feedback = extractFeedback(finalResult, pipeline);
         Map<String, Object> visualAnalysis = extractVisualAnalysisSummary(finalResult, pipeline);
         String dataIssue = analysisJob.getStatus() == AnalysisStatus.COMPLETED
                 ? resolveDataIssue(scoreSummary, feedback)
@@ -178,7 +177,12 @@ public record ResultSummaryResponse(
         return ScoreSummary.empty();
     }
 
-    private static Map<String, Object> extractFeedback(
+    // 정규화 규칙(저장된 값이 비어있거나 UNKNOWN이면 pipeline의 OpenAI 메타데이터로 보완)은
+    // 이제 FeedbackSummary.from()/fromPipeline()에 있다(P2-05, ScoreSummary에 이은 두
+    // 번째 typed DTO 전환). strengths/improvements를 항상 포함하는 것도 그대로 유지된다
+    // (2026-07-23 발견 buggy 이력: 이전에는 여기서 빠져 있어 실제로 생성됐어도 결과 화면에는
+    // 항상 "표시할 강점/개선점이 없습니다"로만 보였다).
+    private static FeedbackSummary extractFeedback(
             Map<String, Object> finalResult,
             Map<String, Object> pipeline
     ) {
@@ -188,42 +192,8 @@ public record ResultSummaryResponse(
 
         Object feedback = finalResult.get("feedback");
 
-        if (feedback instanceof Map<?, ?>) {
-            Map<String, Object> source = JsonMapSupport.copyStringKeyedMap(feedback);
-
-            Map<String, Object> normalizedFeedback = new LinkedHashMap<>();
-            Object sourceGenerationMode = getOrDefault(source, "generationMode", "UNKNOWN");
-            boolean sourceGenerationModeMeaningful = isMeaningfulValue(sourceGenerationMode);
-
-            normalizedFeedback.put("generationMode", getFirstMeaningful(
-                    sourceGenerationMode,
-                    pipeline.get("openAiGenerationMode"),
-                    "UNKNOWN"
-            ));
-            normalizedFeedback.put("model", getFirstMeaningful(
-                    getOrDefault(source, "model", "-"),
-                    pipeline.get("openAiModel"),
-                    "-"
-            ));
-            normalizedFeedback.put(
-                    "realApiUsed",
-                    sourceGenerationModeMeaningful
-                            ? getOrDefault(source, "realApiUsed", false)
-                            : pipeline.getOrDefault("openAiRealApiUsed", false)
-            );
-            normalizedFeedback.put("fallbackReason", getFirstMeaningful(
-                    getOrDefault(source, "fallbackReason", "-"),
-                    pipeline.get("openAiFallbackReason"),
-                    "-"
-            ));
-            normalizedFeedback.put("overall", getOrDefault(source, "overall", ""));
-            // ResultMergeService.createFeedback()이 이미 채워 저장하는 필드지만, 이전에는
-            // 여기서 빠져 있어 강점/개선점이 실제로 생성됐어도 결과 화면에는 항상 "표시할
-            // 강점/개선점이 없습니다"로만 보였습니다(2026-07-23 발견).
-            normalizedFeedback.put("strengths", getOrDefault(source, "strengths", List.of()));
-            normalizedFeedback.put("improvements", getOrDefault(source, "improvements", List.of()));
-
-            return normalizedFeedback;
+        if (feedback instanceof Map<?, ?> rawMap) {
+            return FeedbackSummary.from(rawMap, pipeline);
         }
 
         return createFeedbackFromPipeline(pipeline);
@@ -341,44 +311,14 @@ public record ResultSummaryResponse(
         return createUnknownPipeline();
     }
 
-    private static Map<String, Object> createUnknownFeedback() {
-        Map<String, Object> feedback = new LinkedHashMap<>();
-
-        feedback.put("generationMode", "UNKNOWN");
-        feedback.put("model", "-");
-        feedback.put("realApiUsed", false);
-        feedback.put("fallbackReason", "-");
-        feedback.put("overall", "");
-
-        return feedback;
+    private static FeedbackSummary createUnknownFeedback() {
+        return FeedbackSummary.unknown();
     }
 
-    private static Map<String, Object> createFeedbackFromPipeline(
+    private static FeedbackSummary createFeedbackFromPipeline(
             Map<String, Object> pipeline
     ) {
-        Map<String, Object> feedback = new LinkedHashMap<>();
-
-        feedback.put("generationMode", getFirstMeaningful(
-                pipeline.get("openAiGenerationMode"),
-                "UNKNOWN",
-                "UNKNOWN"
-        ));
-        feedback.put("model", getFirstMeaningful(
-                pipeline.get("openAiModel"),
-                "-",
-                "-"
-        ));
-        feedback.put("realApiUsed", pipeline.getOrDefault("openAiRealApiUsed", false));
-        feedback.put("fallbackReason", getFirstMeaningful(
-                pipeline.get("openAiFallbackReason"),
-                "-",
-                "-"
-        ));
-        feedback.put("overall", "");
-        feedback.put("strengths", List.of());
-        feedback.put("improvements", List.of());
-
-        return feedback;
+        return FeedbackSummary.fromPipeline(pipeline);
     }
 
     private static Map<String, Object> createUnknownVisualAnalysis() {
@@ -435,11 +375,11 @@ public record ResultSummaryResponse(
     // 나오지는 않았지만, 낭비였습니다).
     static String resolveDataIssue(
             ScoreSummary scoreSummary,
-            Map<String, Object> feedback
+            FeedbackSummary feedback
     ) {
         String level = scoreSummary.level();
-        Object generationMode = feedback.get("generationMode");
-        Object overall = feedback.get("overall");
+        String generationMode = feedback.generationMode();
+        String overall = feedback.overall();
 
         if ("-".equals(level) || isBlank(overall) || "UNKNOWN".equals(generationMode)) {
             return "RESULT_DATA_INCOMPLETE";

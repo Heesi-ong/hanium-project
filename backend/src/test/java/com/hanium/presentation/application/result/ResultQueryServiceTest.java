@@ -11,6 +11,7 @@ import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.infrastructure.storage.FilePathGenerator;
 import com.hanium.presentation.infrastructure.storage.JsonFileStorage;
 import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
+import com.hanium.presentation.presentation.dto.response.FeedbackSummary;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -386,12 +387,11 @@ class ResultQueryServiceTest {
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
 
         ResultSummaryResponse summary = response.getContent().get(0);
-        assertThat(summary.feedback())
-                .containsEntry("generationMode", "REAL")
-                .containsEntry("model", "gpt-4.1-mini")
-                .containsEntry("realApiUsed", true)
-                .containsEntry("fallbackReason", "-")
-                .containsEntry("overall", "피드백");
+        assertThat(summary.feedback().generationMode()).isEqualTo("REAL");
+        assertThat(summary.feedback().model()).isEqualTo("gpt-4.1-mini");
+        assertThat(summary.feedback().realApiUsed()).isTrue();
+        assertThat(summary.feedback().fallbackReason()).isEqualTo("-");
+        assertThat(summary.feedback().overall()).isEqualTo("피드백");
         assertThat(summary.dataIssue()).isNull();
     }
 
@@ -428,9 +428,8 @@ class ResultQueryServiceTest {
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
 
         ResultSummaryResponse summary = response.getContent().get(0);
-        assertThat(summary.feedback())
-                .containsEntry("generationMode", "REAL")
-                .containsEntry("model", "gpt-4.1-mini");
+        assertThat(summary.feedback().generationMode()).isEqualTo("REAL");
+        assertThat(summary.feedback().model()).isEqualTo("gpt-4.1-mini");
         assertThat(summary.dataIssue()).isEqualTo("RESULT_DATA_INCOMPLETE");
         assertThat(dataIssueCount("list", "RESULT_DATA_INCOMPLETE")).isEqualTo(1.0);
     }
@@ -468,9 +467,8 @@ class ResultQueryServiceTest {
         Page<ResultSummaryResponse> response = resultQueryService.getResultSummaries(ownerId, pageRequest);
 
         ResultSummaryResponse summary = response.getContent().get(0);
-        assertThat(summary.feedback())
-                .containsEntry("strengths", List.of("자세가 안정적입니다."))
-                .containsEntry("improvements", List.of("시선 처리를 개선하세요."));
+        assertThat(summary.feedback().strengths()).containsExactly("자세가 안정적입니다.");
+        assertThat(summary.feedback().improvements()).containsExactly("시선 처리를 개선하세요.");
     }
 
     @Test
@@ -645,9 +643,9 @@ class ResultQueryServiceTest {
 
         AnalysisResultResponse response = resultQueryService.getFinalResult(completedJob.getJobId(), ownerId);
 
-        Map<String, Object> feedback = JsonMapSupport.copyStringKeyedMap(
-                response.result().get("feedback")
-        );
+        FeedbackSummary feedback = response.result().get("feedback") instanceof FeedbackSummary typed
+                ? typed
+                : FeedbackSummary.unknown();
         Map<String, Object> visualAnalysis = JsonMapSupport.copyStringKeyedMap(
                 response.result().get("visualAnalysis")
         );
@@ -655,11 +653,10 @@ class ResultQueryServiceTest {
                 visualAnalysis.get("model")
         );
 
-        assertThat(feedback)
-                .containsEntry("generationMode", "REAL")
-                .containsEntry("model", "gpt-4.1-mini")
-                .containsEntry("realApiUsed", true)
-                .containsEntry("overall", "피드백");
+        assertThat(feedback.generationMode()).isEqualTo("REAL");
+        assertThat(feedback.model()).isEqualTo("gpt-4.1-mini");
+        assertThat(feedback.realApiUsed()).isTrue();
+        assertThat(feedback.overall()).isEqualTo("피드백");
         assertThat(visualModel)
                 .containsEntry("name", "video-llm-engine fallback mock")
                 .containsEntry("generationMode", "FALLBACK");

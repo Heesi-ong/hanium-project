@@ -5,6 +5,7 @@ import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.infrastructure.client.analysis.dto.AnalysisEngineResponse;
 import com.hanium.presentation.infrastructure.client.openai.dto.OpenAiFeedbackResponse;
 import com.hanium.presentation.infrastructure.client.videollm.dto.VideoLlmEngineResponse;
+import com.hanium.presentation.presentation.dto.response.FeedbackSummary;
 import com.hanium.presentation.presentation.dto.response.ScoreSummary;
 import org.springframework.stereotype.Service;
 
@@ -128,20 +129,18 @@ public class ResultMergeService {
         return visualAnalysis;
     }
 
-    private Map<String, Object> createFeedback(
+    private FeedbackSummary createFeedback(
             OpenAiFeedbackResponse openAiFeedbackResponse
     ) {
-        Map<String, Object> feedback = new LinkedHashMap<>();
-
-        feedback.put("generationMode", nullSafeString(openAiFeedbackResponse.generationMode(), "UNKNOWN"));
-        feedback.put("model", nullSafeString(openAiFeedbackResponse.model(), "-"));
-        feedback.put("realApiUsed", openAiFeedbackResponse.realApiUsed());
-        feedback.put("fallbackReason", nullSafeString(openAiFeedbackResponse.fallbackReason(), "-"));
-        feedback.put("overall", nullSafeString(openAiFeedbackResponse.overallFeedback(), "표시할 종합 피드백이 없습니다."));
-        feedback.put("strengths", nullSafeStringList(openAiFeedbackResponse.strengths()));
-        feedback.put("improvements", nullSafeStringList(openAiFeedbackResponse.improvements()));
-
-        return feedback;
+        return new FeedbackSummary(
+                nullSafeString(openAiFeedbackResponse.generationMode(), "UNKNOWN"),
+                nullSafeString(openAiFeedbackResponse.model(), "-"),
+                openAiFeedbackResponse.realApiUsed(),
+                nullSafeString(openAiFeedbackResponse.fallbackReason(), "-"),
+                nullSafeString(openAiFeedbackResponse.overallFeedback(), "표시할 종합 피드백이 없습니다."),
+                nullSafeStringList(openAiFeedbackResponse.strengths()),
+                nullSafeStringList(openAiFeedbackResponse.improvements())
+        );
     }
 
     private List<Map<String, Object>> createNotableMoments(
@@ -408,18 +407,16 @@ public class ResultMergeService {
         return visualAnalysis;
     }
 
-    private Map<String, Object> createFailedFeedback() {
-        Map<String, Object> feedback = new LinkedHashMap<>();
-
-        feedback.put("generationMode", "FAILED");
-        feedback.put("model", "-");
-        feedback.put("realApiUsed", false);
-        feedback.put("fallbackReason", "analysis failed");
-        feedback.put("overall", "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.");
-        feedback.put("strengths", List.of());
-        feedback.put("improvements", List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요."));
-
-        return feedback;
+    private FeedbackSummary createFailedFeedback() {
+        return new FeedbackSummary(
+                "FAILED",
+                "-",
+                false,
+                "analysis failed",
+                "분석 실행 중 오류가 발생하여 최종 피드백을 생성하지 못했습니다.",
+                List.of(),
+                List.of("분석 엔진 상태와 업로드된 영상 파일 경로를 확인하세요.")
+        );
     }
 
     private String resolvePipelineStatus(String failedStep, String stepName) {

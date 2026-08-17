@@ -1,7 +1,6 @@
 package com.hanium.presentation.presentation.dto.response;
 
 import com.hanium.presentation.common.contract.ResultSchemaVersion;
-import com.hanium.presentation.common.util.JsonMapSupport;
 import com.hanium.presentation.domain.analysis.entity.AnalysisJob;
 import com.hanium.presentation.domain.analysis.type.AnalysisKind;
 import com.hanium.presentation.domain.analysis.type.VideoLlmGenerationMode;
@@ -37,10 +36,11 @@ public record AnalysisResultResponse(
         ScoreSummary scoreSummary = scoreSummaryValue instanceof ScoreSummary typed
                 ? typed
                 : ScoreSummary.empty();
-        String dataIssue = ResultSummaryResponse.resolveDataIssue(
-                scoreSummary,
-                JsonMapSupport.copyStringKeyedMap(normalizedResult.get("feedback"))
-        );
+        Object feedbackValue = normalizedResult.get("feedback");
+        FeedbackSummary feedback = feedbackValue instanceof FeedbackSummary typed
+                ? typed
+                : FeedbackSummary.unknown();
+        String dataIssue = ResultSummaryResponse.resolveDataIssue(scoreSummary, feedback);
 
         return new AnalysisResultResponse(
                 analysisJob.getJobId(),

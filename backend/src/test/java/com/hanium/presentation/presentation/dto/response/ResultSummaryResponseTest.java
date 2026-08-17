@@ -3,6 +3,7 @@ package com.hanium.presentation.presentation.dto.response;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,10 +71,7 @@ class ResultSummaryResponseTest {
     @Test
     void resolveDataIssueFlagsPlaceholderLevelAsIncomplete() {
         ScoreSummary scoreSummary = scoreSummaryWithLevel("-");
-        Map<String, Object> feedback = Map.of(
-                "generationMode", "REAL",
-                "overall", "잘하셨습니다."
-        );
+        FeedbackSummary feedback = feedbackWith("REAL", "잘하셨습니다.");
 
         assertThat(ResultSummaryResponse.resolveDataIssue(scoreSummary, feedback))
                 .isEqualTo("RESULT_DATA_INCOMPLETE");
@@ -82,10 +80,7 @@ class ResultSummaryResponseTest {
     @Test
     void resolveDataIssueFlagsUnknownGenerationModeAsIncomplete() {
         ScoreSummary scoreSummary = scoreSummaryWithLevel("GOOD");
-        Map<String, Object> feedback = Map.of(
-                "generationMode", "UNKNOWN",
-                "overall", "잘하셨습니다."
-        );
+        FeedbackSummary feedback = feedbackWith("UNKNOWN", "잘하셨습니다.");
 
         assertThat(ResultSummaryResponse.resolveDataIssue(scoreSummary, feedback))
                 .isEqualTo("RESULT_DATA_INCOMPLETE");
@@ -94,10 +89,7 @@ class ResultSummaryResponseTest {
     @Test
     void resolveDataIssueFlagsBlankOverallAsIncomplete() {
         ScoreSummary scoreSummary = scoreSummaryWithLevel("GOOD");
-        Map<String, Object> feedback = Map.of(
-                "generationMode", "REAL",
-                "overall", ""
-        );
+        FeedbackSummary feedback = feedbackWith("REAL", "");
 
         assertThat(ResultSummaryResponse.resolveDataIssue(scoreSummary, feedback))
                 .isEqualTo("RESULT_DATA_INCOMPLETE");
@@ -106,10 +98,7 @@ class ResultSummaryResponseTest {
     @Test
     void resolveDataIssueReturnsNullWhenResultLooksComplete() {
         ScoreSummary scoreSummary = scoreSummaryWithLevel("GOOD");
-        Map<String, Object> feedback = Map.of(
-                "generationMode", "REAL",
-                "overall", "잘하셨습니다."
-        );
+        FeedbackSummary feedback = feedbackWith("REAL", "잘하셨습니다.");
 
         assertThat(ResultSummaryResponse.resolveDataIssue(scoreSummary, feedback)).isNull();
     }
@@ -132,6 +121,10 @@ class ResultSummaryResponseTest {
 
     private ScoreSummary scoreSummaryWithLevel(String level) {
         return new ScoreSummary(0, 0, 0, 0, 0, 0, level);
+    }
+
+    private FeedbackSummary feedbackWith(String generationMode, String overall) {
+        return new FeedbackSummary(generationMode, "-", false, "-", overall, List.of(), List.of());
     }
 
     @SuppressWarnings("unchecked")

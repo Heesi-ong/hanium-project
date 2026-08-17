@@ -170,6 +170,30 @@ export function formatSttSuccess(success) {
     return "-";
 }
 
+// scoreSummary.level(백엔드가 내려주는 원시 값, 예: NORMAL)은 화면에 그대로 노출하지 않고
+// 항상 이 함수로 총점에서 다시 계산한 한국어 등급을 보여줍니다 - 결과 상세 화면 안에서
+// 등급 표시가 두 곳(상단 배지, 핵심 요약 카드)에 있는데 서로 다른 기준으로 계산되면
+// 같은 점수에 다른 등급이 뜨는 모순이 생길 수 있어 기준을 하나로 통일합니다.
+export function formatScoreLevel(totalScore) {
+    if (typeof totalScore !== "number" || Number.isNaN(totalScore)) {
+        return "분석 대기";
+    }
+
+    if (totalScore >= 85) {
+        return "우수";
+    }
+
+    if (totalScore >= 70) {
+        return "양호";
+    }
+
+    if (totalScore >= 50) {
+        return "보통";
+    }
+
+    return "개선 필요";
+}
+
 export function formatGenerationModeLabel(mode) {
     if (mode === "REAL") {
         return "실제 AI 응답";

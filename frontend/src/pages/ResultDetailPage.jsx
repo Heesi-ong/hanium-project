@@ -19,7 +19,7 @@ import OpenAiFeedbackStatusSection from "../components/result-detail/OpenAiFeedb
 import PipelineSection from "../components/result-detail/PipelineSection";
 import PoseAnalysisSection from "../components/result-detail/PoseAnalysisSection";
 import PracticePlanSection from "../components/result-detail/PracticePlanSection";
-import { formatDateTime } from "../components/result-detail/resultDetailFormatters";
+import { formatDateTime, formatScoreLevel } from "../components/result-detail/resultDetailFormatters";
 import ResultSummaryOverview from "../components/result-detail/ResultSummaryOverview";
 import SttSection from "../components/result-detail/SttSection";
 import TimelineFeedbackSection from "../components/result-detail/TimelineFeedbackSection";
@@ -913,7 +913,7 @@ function ResultDetailPage() {
             <AnimatedSection className="score-panel">
                 <div className="score-panel-main">
                     <span className="score-panel-label">종합 등급</span>
-                    <strong>{scoreSummary.level || "-"}</strong>
+                    <strong>{formatScoreLevel(scoreSummary.totalScore)}</strong>
                     <p>
                         상태:{" "}
                         <StatusBadge

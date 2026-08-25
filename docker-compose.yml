@@ -599,17 +599,16 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     restart: unless-stopped
     deploy:
       resources:
         limits:
           cpus: "0.5"
           memory: 256m
-    # 이 스택에서는 프론트가 VITE_API_BASE_URL(위)로 backend를 직접 호출하므로 평소엔
-    # 쓰이지 않습니다. frontend 컨테이너만 따로 떼어 실행하거나(예: 다른 오케스트레이션,
-    # 수동 docker run) 구성 조합이 바뀌어 /api가 frontend 컨테이너로 직접 오는 경우에도
-    # API 호출이 조용히 깨지지 않도록 하는 안전망입니다(frontend/nginx.conf.template 참고).
+    # VITE_API_BASE_URL(위)을 비워뒀으므로 프론트는 상대경로(/api)로 호출하고,
+    # 이 nginx가 실제로 backend:8080에 프록시합니다(frontend/nginx.conf.template 참고).
+    # 같은 내부망의 다른 기기에서 어떤 주소(IP/호스트명)로 접속하든 재빌드 없이 동작합니다.
     environment:
       BACKEND_API_UPSTREAM: backend:8080
     depends_on:

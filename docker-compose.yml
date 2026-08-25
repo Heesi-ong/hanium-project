@@ -118,7 +118,12 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?.env에 MINIO_ROOT_PASSWORD를 설정하세요 (.env.example 참고). 8자 이상이어야 합니다.}
     command: server /data --console-address ":9001"
     ports:
-      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      # 영상 재생이 MinIO presigned URL로 리다이렉트될 때 같은 내부망의 다른 기기도
+      # 접속할 수 있도록 0.0.0.0으로 연다(MINIO_PUBLIC_ENDPOINT와 짝을 맞춰야 함).
+      # presigned URL은 만료 시간과 오브젝트 키로 제한되지만, S3 API 자체가 내부망에
+      # 노출된다는 점은 인지하고 켠 것이다. 관리 콘솔(9001)은 이 용도가 아니라서
+      # 그대로 127.0.0.1에만 바인딩해 외부 노출을 막는다.
+      - "${MINIO_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data

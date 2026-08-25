@@ -18,18 +18,17 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # VITE_API_BASE_URL을 비워 프론트가 상대경로(/api)로 호출하는 기본 구성(2026-08-25~)에서는
+    # 이 프록시가 모든 API 요청이 실제로 지나가는 정상 경로다. 영상 업로드도 여기를 지나가므로
+    # backend의 VIDEO_MAX_REQUEST_SIZE(기본 501MB)와 어긋나지 않게 맞춰둔다 - 이 값이 없으면
+    # nginx 기본 1MB 제한에 막혀 모든 업로드가 413으로 실패한다(2026-08-25 실사용 중 발견).
+    client_max_body_size 501m;
+
     set $backend_api_upstream "${BACKEND_API_UPSTREAM}";
 
-    # 선택적 API 프록시입니다. docker-compose.yml/docker-compose.prod.yml처럼 backend와
-    # 같은 네트워크에 있고 BACKEND_API_UPSTREAM(예: backend:8080)이 설정된 경우에만
-    # 실제로 프록시합니다. 설정하지 않으면(기본값) 이 위치로 오는 요청은 502로 실패합니다.
-    # index.html을 대신 돌려주는 대신 명확히 실패시켜, "API가 HTML을 반환하는" 것처럼
-    # 보이는 혼란스러운 상황을 막습니다.
-    #
-    # 운영 제약: frontend 컨테이너가 단독으로 이 프록시를 통해 API를 서빙하는 것은
-    # docker-compose.yml(백엔드에 직접 http://localhost:8080으로 접속) /
-    # docker-compose.prod.yml(외부 nginx가 /api를 먼저 가로챔)의 정상 경로가 아니라
-    # "구성이 깨졌거나 frontend를 단독 실행한" 상황에 대한 안전망입니다.
+    # BACKEND_API_UPSTREAM이 비어 있으면(기본값) resolver+변수 조합 덕분에 nginx 자체는
+    # 문제없이 기동되지만, 이 위치로 오는 요청은 502로 실패한다. index.html을 대신 돌려주는
+    # 대신 명확히 실패시켜, "API가 HTML을 반환하는" 것처럼 보이는 혼란스러운 상황을 막는다.
     location /api/ {
         proxy_pass http://$backend_api_upstream;
         proxy_http_version 1.1;

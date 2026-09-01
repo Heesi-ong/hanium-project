@@ -206,7 +206,7 @@ test.describe("analysis failure and recovery (full stack)", () => {
             const result = unwrap(resultBody)?.result;
             expect(result?.status).toBe("COMPLETED");
             expect(Number(result?.scoreSummary?.totalScore)).toBeGreaterThanOrEqual(0);
-            expect(result?.scoreExplanation?.formulaVersion).toBe("weighted-v1");
+            expect(result?.scoreExplanation?.formulaVersion).toBe("weighted-v2");
         } finally {
             if (engineStopped) {
                 try {

@@ -130,7 +130,7 @@ test.describe("analysis golden matrix (full stack)", () => {
                 );
                 expect(drift).toBeLessThanOrEqual(fixture.tolerance.totalScore);
 
-                expect(result?.scoreExplanation?.formulaVersion).toBe("weighted-v1");
+                expect(result?.scoreExplanation?.formulaVersion).toBe("weighted-v2");
                 expect(result?.scoreExplanation?.roundingPolicy).toBe("truncate_toward_zero");
                 expect(Number(result?.scoreExplanation?.rawScore)).toBeGreaterThanOrEqual(0);
                 expect(Number(result?.scoreExplanation?.penaltyApplied)).toBeGreaterThanOrEqual(0);

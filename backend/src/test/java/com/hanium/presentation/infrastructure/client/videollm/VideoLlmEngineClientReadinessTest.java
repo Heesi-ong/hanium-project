@@ -1,5 +1,6 @@
 package com.hanium.presentation.infrastructure.client.videollm;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.global.properties.VideoLlmEngineProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -109,7 +110,7 @@ class VideoLlmEngineClientReadinessTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, registry);
+        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, registry, new ObjectMapper());
 
         return new Fixture(client, server, registry);
     }

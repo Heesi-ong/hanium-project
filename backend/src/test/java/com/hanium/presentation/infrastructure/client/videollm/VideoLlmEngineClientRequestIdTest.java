@@ -1,5 +1,6 @@
 package com.hanium.presentation.infrastructure.client.videollm;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanium.presentation.global.exception.BusinessException;
 import com.hanium.presentation.global.exception.ErrorCode;
 import com.hanium.presentation.global.logging.RequestIdFilter;
@@ -95,7 +96,7 @@ class VideoLlmEngineClientRequestIdTest {
 
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, new SimpleMeterRegistry());
+        VideoLlmEngineClient client = new VideoLlmEngineClient(builder, properties, new SimpleMeterRegistry(), new ObjectMapper());
 
         return new Fixture(client, server);
     }

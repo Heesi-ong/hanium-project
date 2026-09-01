@@ -37,7 +37,7 @@ function VideoInfoSection({ videoInfo, frameInfo }) {
                 <article className="metric-card">
                     <span>추출 프레임</span>
                     <strong>{frameInfo?.savedCount ?? 0}개</strong>
-                    <p>자세·제스처·얼굴·표정 분석에 사용된 샘플 프레임 수입니다.</p>
+                    <p>자세·제스처 분석에 사용된 샘플 프레임 수입니다.</p>
                 </article>
             </div>
         </article>

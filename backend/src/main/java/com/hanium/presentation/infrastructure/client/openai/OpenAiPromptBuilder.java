@@ -50,10 +50,9 @@ public class OpenAiPromptBuilder {
                 피드백 작성 기준:
                 - totalScore는 전체 수준 판단에 사용합니다.
                 - postureScore는 자세 안정성 판단에 사용합니다.
-                - gazeScore는 시선 처리 판단에 사용합니다.
                 - speechScore는 말하기 속도, 침묵, 음성 흐름 판단에 사용합니다.
                 - gestureScore는 제스처 사용 판단에 사용합니다.
-                - expressionScore는 표정 변화와 발표 몰입감 판단에 사용합니다. (감정 상태 분류는 참고용 보조 지표이며 점수에는 포함되지 않습니다)
+                - 시선 및 표정 검출 결과는 점수와 피드백 근거로 사용하지 않습니다.
                 - STT transcript는 발표 내용 참고용으로만 사용하고, 별도 내용 분석이 없는 경우 논리 구조를 단정하지 않습니다.
                 """;
     }
@@ -78,10 +77,10 @@ public class OpenAiPromptBuilder {
         guidelines.put("strengths", "점수가 높거나 안정적으로 분석된 항목을 2~5개 작성합니다.");
         guidelines.put("improvements", "점수가 낮거나 개선이 필요한 항목을 2~5개 작성합니다.");
         guidelines.put("practicePlan", "사용자가 바로 따라 할 수 있는 연습 계획을 2~5개 작성합니다.");
-        guidelines.put("timelineFeedback", "speech, posture, gaze, gesture, emotion 영역을 중심으로 작성합니다.");
+        guidelines.put("timelineFeedback", "speech, posture, gesture 영역을 중심으로 작성합니다.");
         guidelines.put("personalization", "coachingProfile은 조언의 난이도와 우선순위에만 사용하고 점수나 관찰 사실을 바꾸지 않습니다.");
         guidelines.put("doNotInvent", "데이터와 coachingProfile에 없는 발표 주제, 사용자 신상, 청중 반응을 임의로 만들지 않습니다.");
-        guidelines.put("avoidMedicalOrPsychologicalClaim", "표정이나 자세를 심리 상태나 건강 상태로 단정하지 않습니다.");
+        guidelines.put("avoidMedicalOrPsychologicalClaim", "자세를 심리 상태나 건강 상태로 단정하지 않습니다.");
         guidelines.put("tone", "비판적이기보다 코칭형 문체로 작성합니다.");
 
         return guidelines;

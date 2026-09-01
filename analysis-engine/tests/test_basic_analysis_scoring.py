@@ -39,7 +39,7 @@ def write_pcm16_wav(
                 "speech": 100,
                 "gesture": 60,
             },
-            83,
+            85,
         ),
         (
             {
@@ -49,7 +49,7 @@ def write_pcm16_wav(
                 "speech": 80,
                 "gesture": 20,
             },
-            65,
+            78,
         ),
     ],
 )
@@ -86,6 +86,32 @@ def test_calculate_score_uses_documented_weights(scores, expected_total):
     assert int(sum(explanation["weightedContributions"].values())) == expected_total
 
 
+def test_calculate_score_excludes_gaze_and_expression_from_total():
+    common = {
+        "pose_result": {"postureScore": 80, "detectionRate": 1.0},
+        "audio_result": {
+            "speechScore": 80,
+            "analysisMethod": "stt_based_analysis",
+            "durationSec": 60,
+        },
+        "gesture_result": {"gestureScore": 80},
+    }
+
+    low_visual = scoring.calculate_score(
+        **common,
+        face_result={"gazeScore": 0, "detectionRate": 0.0},
+        emotion_result={"expressionScore": 0},
+    )
+    high_visual = scoring.calculate_score(
+        **common,
+        face_result={"gazeScore": 100, "detectionRate": 1.0},
+        emotion_result={"expressionScore": 100},
+    )
+
+    assert low_visual["totalScore"] == high_visual["totalScore"] == 80
+    assert low_visual["penalty"] == high_visual["penalty"] == 0
+
+
 def test_calculate_score_explanation_is_deterministic_and_preserves_total():
     inputs = {
         "pose_result": {"postureScore": 81, "detectionRate": 0.49},
@@ -104,10 +130,10 @@ def test_calculate_score_explanation_is_deterministic_and_preserves_total():
 
     assert first == second
     explanation = first["explanation"]
-    assert explanation["weightedScoreBeforeRounding"] == 79.65
-    assert explanation["rawScore"] == first["rawScore"] == 79
-    assert explanation["penaltyApplied"] == first["penalty"] == 15
-    assert first["totalScore"] == 64
+    assert explanation["weightedScoreBeforeRounding"] == 82.75
+    assert explanation["rawScore"] == first["rawScore"] == 82
+    assert explanation["penaltyApplied"] == first["penalty"] == 13
+    assert first["totalScore"] == 69
     assert explanation["roundingPolicy"] == "truncate_toward_zero"
     assert explanation["clampRange"] == {"min": 0, "max": 100}
     assert explanation["penaltyReasons"] == first["reliability"]["penaltyReasons"]
@@ -126,29 +152,27 @@ def test_calculate_score_applies_total_penalty_on_low_reliability():
         emotion_result={"expressionScore": 80},
     )
 
-    # 가중합 80점, 감점 = 검출률(5+5) + STT 실패(3) + 짧은 영상(5) = 18 → 상한 15점.
+    # 가중합 80점, 감점 = 자세 검출률(5) + STT 실패(3) + 짧은 영상(5) = 13점.
     assert result["rawScore"] == 80
-    assert result["penalty"] == scoring.MAX_TOTAL_PENALTY
-    assert result["totalScore"] == 80 - scoring.MAX_TOTAL_PENALTY
+    assert result["penalty"] == 13
+    assert result["totalScore"] == 67
     assert result["reliability"]["lowConfidence"] is True
-    assert len(result["reliability"]["penaltyReasons"]) == 4
+    assert len(result["reliability"]["penaltyReasons"]) == 3
 
 
 def test_calculate_total_penalty_weak_detection_is_mild():
     penalty = scoring.calculate_total_penalty(
         pose_result={"detectionRate": 0.6},
-        face_result={"detectionRate": 0.6},
         audio_result={"analysisMethod": "stt_based_analysis", "durationSec": 60},
     )
 
-    assert penalty["penalty"] == 4
+    assert penalty["penalty"] == 2
     assert penalty["lowConfidence"] is False
 
 
 @pytest.mark.parametrize(
     (
         "pose_rate",
-        "face_rate",
         "analysis_method",
         "duration_sec",
         "expected_penalty",
@@ -158,7 +182,6 @@ def test_calculate_total_penalty_weak_detection_is_mild():
     [
         (
             0.49,
-            1.0,
             "stt_based_analysis",
             60,
             5,
@@ -167,7 +190,6 @@ def test_calculate_total_penalty_weak_detection_is_mild():
         ),
         (
             0.50,
-            1.0,
             "stt_based_analysis",
             60,
             2,
@@ -176,25 +198,14 @@ def test_calculate_total_penalty_weak_detection_is_mild():
         ),
         (
             0.6999,
-            1.0,
             "stt_based_analysis",
             60,
             2,
             False,
             ["자세 검출률이 70% 미만입니다."],
         ),
-        (0.70, 1.0, "stt_based_analysis", 60, 0, False, []),
+        (0.70, "stt_based_analysis", 60, 0, False, []),
         (
-            1.0,
-            0.49,
-            "stt_based_analysis",
-            60,
-            5,
-            True,
-            ["얼굴 검출률이 50% 미만입니다."],
-        ),
-        (
-            1.0,
             1.0,
             "audio_extracted_duration_based_estimation",
             60,
@@ -202,19 +213,17 @@ def test_calculate_total_penalty_weak_detection_is_mild():
             False,
             ["STT에 실패해 음성 추정값을 사용했습니다."],
         ),
-        (1.0, 1.0, "", 5, 5, False, ["영상이 너무 짧아 분석 신뢰도가 낮습니다."]),
-        (1.0, 1.0, "stt_based_analysis", 0, 0, False, []),
-        (1.0, 1.0, "stt_based_analysis", 10, 0, False, []),
+        (1.0, "", 5, 5, False, ["영상이 너무 짧아 분석 신뢰도가 낮습니다."]),
+        (1.0, "stt_based_analysis", 0, 0, False, []),
+        (1.0, "stt_based_analysis", 10, 0, False, []),
         (
-            0.49,
             0.49,
             "audio_extracted_duration_based_estimation",
             5,
-            15,
+            13,
             True,
             [
                 "자세 검출률이 50% 미만입니다.",
-                "얼굴 검출률이 50% 미만입니다.",
                 "STT에 실패해 음성 추정값을 사용했습니다.",
                 "영상이 너무 짧아 분석 신뢰도가 낮습니다.",
             ],
@@ -223,7 +232,6 @@ def test_calculate_total_penalty_weak_detection_is_mild():
 )
 def test_calculate_total_penalty_preserves_threshold_boundaries(
     pose_rate,
-    face_rate,
     analysis_method,
     duration_sec,
     expected_penalty,
@@ -232,7 +240,6 @@ def test_calculate_total_penalty_preserves_threshold_boundaries(
 ):
     result = scoring.calculate_total_penalty(
         pose_result={"detectionRate": pose_rate},
-        face_result={"detectionRate": face_rate},
         audio_result={
             "analysisMethod": analysis_method,
             "durationSec": duration_sec,

@@ -10,12 +10,11 @@ describe("AnalysisQualitySection", () => {
                 analysisQuality={{
                     available: true,
                     lowConfidence: true,
-                    poseDetectionRate: 0.72,
-                    faceDetectionRate: 0.41,
+                    poseDetectionRate: 0.42,
                     penaltyApplied: 8,
-                    formulaVersion: "weighted-v1",
+                    formulaVersion: "weighted-v2",
                     penaltyReasons: [
-                        "얼굴 검출률이 50% 미만입니다.",
+                        "자세 검출률이 50% 미만입니다.",
                         "STT에 실패해 음성 추정값을 사용했습니다.",
                     ],
                 }}
@@ -24,9 +23,9 @@ describe("AnalysisQualitySection", () => {
         );
 
         expect(screen.getByText("낮은 신뢰도")).toBeInTheDocument();
-        expect(screen.getByText("41%")).toBeInTheDocument();
+        expect(screen.getByText("42%")).toBeInTheDocument();
         expect(screen.getByText("8점")).toBeInTheDocument();
-        expect(screen.getByText(/얼굴을 화면 중앙/)).toBeInTheDocument();
+        expect(screen.getByText(/상반신과 양쪽 어깨/)).toBeInTheDocument();
         expect(screen.getByText(/주변 소음을 줄이고/)).toBeInTheDocument();
     });
 

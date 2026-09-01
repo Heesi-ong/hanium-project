@@ -320,7 +320,7 @@ def analyze_emotion_from_face_result(face_result: Dict[str, Any]) -> Dict[str, A
         "emotionState": {
             "dominantEmotion": dominant_emotion,
             "emotionCounts": emotion_counts,
-            "note": "감정 상태 분류는 표정 점수의 보조 지표이며 총점에는 반영하지 않습니다.",
+            "note": "표정·감정 분석 값은 내부 진단용이며 사용자 총점에는 반영하지 않습니다.",
         },
         "detectionRate": detection_rate,
         "detectedFrameCount": detected_frame_count,
@@ -512,7 +512,7 @@ def create_empty_emotion_result() -> Dict[str, Any]:
                 "low_energy": 0,
                 "unknown": 0,
             },
-            "note": "감정 상태 분류는 표정 점수의 보조 지표이며 총점에는 반영하지 않습니다.",
+            "note": "표정·감정 분석 값은 내부 진단용이며 사용자 총점에는 반영하지 않습니다.",
         },
         "detectionRate": 0,
         "detectedFrameCount": 0,

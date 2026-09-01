@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useJobStatusPolling } from "../hooks/useJobStatusPolling";
 import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
 import AnalysisQualitySection from "../components/result-detail/AnalysisQualitySection";
-import EmotionDoughnutChart from "../components/chart/EmotionDoughnutChart";
 import ResultScoreChart from "../components/chart/ResultScoreChart";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
@@ -11,8 +10,6 @@ import AnimatedSection from "../components/motion/AnimatedSection";
 import CollapsibleDetails from "../components/CollapsibleDetails";
 import AudioAnalysisSection from "../components/result-detail/AudioAnalysisSection";
 import CoachChatSection from "../components/result-detail/CoachChatSection";
-import EmotionAnalysisSection from "../components/result-detail/EmotionAnalysisSection";
-import FaceAnalysisSection from "../components/result-detail/FaceAnalysisSection";
 import FeedbackSection from "../components/result-detail/FeedbackSection";
 import FillerAnalysisSection from "../components/result-detail/FillerAnalysisSection";
 import GestureAnalysisSection from "../components/result-detail/GestureAnalysisSection";
@@ -168,8 +165,6 @@ function ResultDetailPage() {
     const gestureInfo = basicAnalysis.gesture || EMPTY_OBJECT;
     const audioInfo = basicAnalysis.audio || EMPTY_OBJECT;
     const fillerInfo = basicAnalysis.filler || EMPTY_OBJECT;
-    const faceInfo = basicAnalysis.face || EMPTY_OBJECT;
-    const emotionInfo = basicAnalysis.emotion || EMPTY_OBJECT;
 
     const sttInfo = audioInfo.stt || EMPTY_OBJECT;
     const audioExtractionInfo = audioInfo.audioExtraction || EMPTY_OBJECT;
@@ -190,16 +185,6 @@ function ResultDetailPage() {
         ? gestureInfo.frameResults
         : EMPTY_ARRAY;
 
-    const faceFrameResults = Array.isArray(faceInfo.frameResults)
-        ? faceInfo.frameResults
-        : EMPTY_ARRAY;
-
-    const emotionFrameResults = Array.isArray(emotionInfo.frameResults)
-        ? emotionInfo.frameResults
-        : EMPTY_ARRAY;
-
-    const emotionCounts = emotionInfo.emotionState?.emotionCounts || EMPTY_OBJECT;
-
     const currentStatus = analysisStatus?.status || result.status || null;
     const currentStatusDescription =
         analysisStatus?.statusDescription || currentStatus || "-";
@@ -219,35 +204,24 @@ function ResultDetailPage() {
         analysisKind === "STANDARD" &&
         storedVideoLlmGenerationMode === "FALLBACK";
 
-    const scoreItems = useMemo(
-        () => [
-            {
-                label: "총점",
-                value: scoreAvailable ? scoreSummary.totalScore : null,
-            },
-            {
-                label: "자세",
-                value: scoreAvailable ? scoreSummary.postureScore : null,
-            },
-            {
-                label: "시선",
-                value: scoreAvailable ? scoreSummary.gazeScore : null,
-            },
-            {
-                label: "음성",
-                value: scoreAvailable ? scoreSummary.speechScore : null,
-            },
-            {
-                label: "제스처",
-                value: scoreAvailable ? scoreSummary.gestureScore : null,
-            },
-            {
-                label: "표정",
-                value: scoreAvailable ? scoreSummary.expressionScore : null,
-            },
-        ],
-        [scoreAvailable, scoreSummary]
-    );
+    const scoreItems = [
+        {
+            label: "총점",
+            value: scoreAvailable ? scoreSummary.totalScore : null,
+        },
+        {
+            label: "자세",
+            value: scoreAvailable ? scoreSummary.postureScore : null,
+        },
+        {
+            label: "음성",
+            value: scoreAvailable ? scoreSummary.speechScore : null,
+        },
+        {
+            label: "제스처",
+            value: scoreAvailable ? scoreSummary.gestureScore : null,
+        },
+    ];
 
     const stopRateLimitCooldown = useCallback(() => {
         if (cooldownTimerRef.current) {
@@ -983,9 +957,7 @@ function ResultDetailPage() {
                     audioInfo={audioInfo}
                     fillerInfo={fillerInfo}
                     poseInfo={poseInfo}
-                    faceInfo={faceInfo}
                     gestureInfo={gestureInfo}
-                    emotionInfo={emotionInfo}
                 />
             </AnimatedSection>
 
@@ -1021,12 +993,8 @@ function ResultDetailPage() {
             <AnimatedSection className="detail-grid">
                 <AnalysisMetricBarChart
                     poseInfo={poseInfo}
-                    faceInfo={faceInfo}
                     gestureInfo={gestureInfo}
-                    emotionInfo={emotionInfo}
                 />
-
-                <EmotionDoughnutChart emotionCounts={emotionCounts} />
             </AnimatedSection>
 
             <AnimatedSection className="no-print">
@@ -1112,23 +1080,6 @@ function ResultDetailPage() {
                 <GestureAnalysisSection
                     gestureInfo={gestureInfo}
                     gestureFrameResults={gestureFrameResults}
-                    renderMetricCard={renderMetricCard}
-                />
-            </AnimatedSection>
-
-            <AnimatedSection>
-                <FaceAnalysisSection
-                    faceInfo={faceInfo}
-                    faceFrameResults={faceFrameResults}
-                    renderMetricCard={renderMetricCard}
-                />
-            </AnimatedSection>
-
-            <AnimatedSection>
-                <EmotionAnalysisSection
-                    emotionInfo={emotionInfo}
-                    emotionCounts={emotionCounts}
-                    emotionFrameResults={emotionFrameResults}
                     renderMetricCard={renderMetricCard}
                 />
             </AnimatedSection>

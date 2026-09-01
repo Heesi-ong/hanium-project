@@ -18,7 +18,7 @@ const COMPONENTS = [
     {
         key: "analysisEngine",
         title: "기본 분석",
-        description: "음성, 자세, 시선, 필러 표현 분석 기능의 이용 가능 여부입니다.",
+        description: "음성, 자세, 제스처, 필러 표현 분석 기능의 이용 가능 여부입니다.",
     },
     {
         key: "videoLlmEngine",

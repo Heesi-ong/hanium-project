@@ -9,9 +9,6 @@ function buildRetakeSuggestions(reasons) {
     if (normalized.some((reason) => reason.includes("자세 검출률"))) {
         suggestions.push("카메라에 상반신과 양쪽 어깨가 모두 들어오도록 구도를 조정하세요.");
     }
-    if (normalized.some((reason) => reason.includes("얼굴 검출률"))) {
-        suggestions.push("얼굴을 화면 중앙에 두고 정면 조명을 밝게 조정하세요.");
-    }
     if (normalized.some((reason) => reason.includes("STT"))) {
         suggestions.push("주변 소음을 줄이고 마이크와 가까운 거리에서 또렷하게 말하세요.");
     }
@@ -45,7 +42,7 @@ function AnalysisQualitySection({ analysisQuality, scoreExplanation }) {
                 <div>
                     <h2>점수 근거와 분석 품질</h2>
                     <p className="muted-text">
-                        점수 산식은 그대로 유지하며, 촬영 조건 때문에 신뢰도가 낮아진 부분을 구분해 표시합니다.
+                        자세·음성·제스처 점수의 산식과 촬영 조건에 따른 신뢰도를 표시합니다.
                     </p>
                 </div>
                 <span className={`mini-badge ${available && !quality.lowConfidence ? "success" : "muted"}`}>
@@ -65,7 +62,6 @@ function AnalysisQualitySection({ analysisQuality, scoreExplanation }) {
                 <>
                     <div className="analysis-quality-metrics">
                         <div><span>자세 검출률</span><strong>{formatRate(quality.poseDetectionRate)}</strong></div>
-                        <div><span>얼굴 검출률</span><strong>{formatRate(quality.faceDetectionRate)}</strong></div>
                         <div><span>신뢰도 감점</span><strong>{penalty}점</strong></div>
                         <div><span>점수 산식</span><strong>{formulaVersion || "-"}</strong></div>
                     </div>

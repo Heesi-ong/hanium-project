@@ -12,7 +12,7 @@ public final class ResultSchemaVersion {
 
     public static final String FIELD = "schemaVersion";
     public static final int LEGACY = 0;
-    public static final int CURRENT = 1;
+    public static final int CURRENT = 2;
 
     private ResultSchemaVersion() {
     }

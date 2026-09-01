@@ -174,15 +174,15 @@ describe("analysisApi", () => {
             success: true,
             data: {
                 jobId: "20260718120000-aaaabbbb",
-                resultSchemaVersion: 2,
-                result: { status: "COMPLETED", schemaVersion: 2 },
+                resultSchemaVersion: 3,
+                result: { status: "COMPLETED", schemaVersion: 3 },
             },
         });
 
         await expect(getResult("20260718120000-aaaabbbb"))
             .rejects.toMatchObject({
                 error: "UNSUPPORTED_RESULT_SCHEMA",
-                resultSchemaVersion: 2,
+                resultSchemaVersion: 3,
             });
     });
 });

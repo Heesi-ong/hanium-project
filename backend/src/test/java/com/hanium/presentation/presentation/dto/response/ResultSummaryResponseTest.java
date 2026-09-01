@@ -27,19 +27,15 @@ class ResultSummaryResponseTest {
         assertThat(scoreSummaryJson.keySet()).containsExactlyInAnyOrder(
                 "totalScore",
                 "postureScore",
-                "gazeScore",
                 "speechScore",
                 "gestureScore",
-                "expressionScore",
                 "level"
         );
         assertThat(scoreSummaryJson)
                 .containsEntry("totalScore", 0)
                 .containsEntry("postureScore", 0)
-                .containsEntry("gazeScore", 0)
                 .containsEntry("speechScore", 0)
                 .containsEntry("gestureScore", 0)
-                .containsEntry("expressionScore", 0)
                 .containsEntry("level", "-");
     }
 
@@ -60,7 +56,7 @@ class ResultSummaryResponseTest {
         Map<String, Object> normalized = ResultSummaryResponse.normalizeFinalResult(finalResult);
 
         assertThat(normalized.get("scoreSummary"))
-                .isEqualTo(new ScoreSummary(91, 88, 90, 95, 89, 93, "EXCELLENT"));
+                .isEqualTo(new ScoreSummary(91, 88, 95, 89, "EXCELLENT"));
 
         Map<String, Object> scoreSummaryJson = scoreSummaryAsJsonMap(normalized);
         assertThat(scoreSummaryJson)
@@ -162,7 +158,7 @@ class ResultSummaryResponseTest {
     }
 
     private ScoreSummary scoreSummaryWithLevel(String level) {
-        return new ScoreSummary(0, 0, 0, 0, 0, 0, level);
+        return new ScoreSummary(0, 0, 0, 0, level);
     }
 
     private FeedbackSummary feedbackWith(String generationMode, String overall) {

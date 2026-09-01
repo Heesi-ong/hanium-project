@@ -473,7 +473,7 @@ function ResultListPage() {
                 <AnimatedSection>
                     <EmptyState
                         title="아직 분석 결과가 없습니다."
-                        description="발표 영상을 업로드하면 자세, 시선, 제스처, 음성 분석 결과를 여기에서 확인할 수 있습니다."
+                        description="발표 영상을 업로드하면 자세, 제스처, 음성 분석 결과를 여기에서 확인할 수 있습니다."
                     />
 
                     <div className="button-row">

@@ -67,82 +67,80 @@ function LoginPage() {
     }
 
     return (
-        <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <PageFadeIn className="page-section">
-                <article className="upload-card">
-                    <p className="eyebrow">Sign in</p>
-                    <h2>로그인</h2>
-                    <p className="card-description">
-                        가입한 이메일과 비밀번호로 발표 분석 서비스를 이용합니다.
+        <PageFadeIn className="flex min-h-[calc(100svh-200px)] items-center justify-center py-6">
+            <article className="upload-card w-full max-w-[520px]">
+                <p className="eyebrow">Sign in</p>
+                <h2>로그인</h2>
+                <p className="card-description">
+                    가입한 이메일과 비밀번호로 발표 분석 서비스를 이용합니다.
+                </p>
+
+                <form className="option-panel" onSubmit={handleSubmit}>
+                    <label>
+                        <span>
+                            <strong>이메일</strong>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(event) => setEmail(event.target.value)}
+                                autoComplete="email"
+                                className="text-input"
+                                required
+                            />
+                        </span>
+                    </label>
+
+                    <label>
+                        <span>
+                            <strong>비밀번호</strong>
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                value={password}
+                                onChange={(event) => setPassword(event.target.value)}
+                                autoComplete="current-password"
+                                minLength={8}
+                                className="text-input"
+                                required
+                            />
+                        </span>
+                    </label>
+
+                    <PasswordToggleButton
+                        visible={showPassword}
+                        onToggle={() => setShowPassword((prev) => !prev)}
+                    />
+
+                    <p className="auth-policy-links" style={{ textAlign: "right" }}>
+                        <Link to="/forgot-password">비밀번호를 잊으셨나요?</Link>
                     </p>
 
-                    <form className="option-panel" onSubmit={handleSubmit}>
-                        <label>
-                            <span>
-                                <strong>이메일</strong>
-                                <input
-                                    type="email"
-                                    value={email}
-                                    onChange={(event) => setEmail(event.target.value)}
-                                    autoComplete="email"
-                                    className="text-input"
-                                    required
-                                />
-                            </span>
-                        </label>
+                    <StateMessage type="info">
+                        {sessionExpired ? "세션이 만료되어 다시 로그인해주세요." : ""}
+                    </StateMessage>
+                    <StateMessage type="error">{error}</StateMessage>
 
-                        <label>
-                            <span>
-                                <strong>비밀번호</strong>
-                                <input
-                                    type={showPassword ? "text" : "password"}
-                                    value={password}
-                                    onChange={(event) => setPassword(event.target.value)}
-                                    autoComplete="current-password"
-                                    minLength={8}
-                                    className="text-input"
-                                    required
-                                />
-                            </span>
-                        </label>
+                    <div className="button-row">
+                        <button
+                            type="submit"
+                            className="primary-button"
+                            disabled={loading}
+                        >
+                            {loading ? "로그인 중..." : "로그인"}
+                        </button>
 
-                        <PasswordToggleButton
-                            visible={showPassword}
-                            onToggle={() => setShowPassword((prev) => !prev)}
-                        />
+                        <Link to="/signup" className="secondary-button">
+                            회원가입
+                        </Link>
+                    </div>
+                </form>
 
-                        <p className="auth-policy-links" style={{ textAlign: "right" }}>
-                            <Link to="/forgot-password">비밀번호를 잊으셨나요?</Link>
-                        </p>
-
-                        <StateMessage type="info">
-                            {sessionExpired ? "세션이 만료되어 다시 로그인해주세요." : ""}
-                        </StateMessage>
-                        <StateMessage type="error">{error}</StateMessage>
-
-                        <div className="button-row">
-                            <button
-                                type="submit"
-                                className="primary-button"
-                                disabled={loading}
-                            >
-                                {loading ? "로그인 중..." : "로그인"}
-                            </button>
-
-                            <Link to="/signup" className="secondary-button">
-                                회원가입
-                            </Link>
-                        </div>
-                    </form>
-
-                    <p className="auth-policy-links">
-                        <Link to="/privacy">테스트 데이터 처리 안내</Link>
-                        <span aria-hidden="true"> · </span>
-                        <Link to="/terms">프로젝트 이용 안내</Link>
-                    </p>
-                </article>
-            </PageFadeIn>
-        </main>
+                <p className="auth-policy-links">
+                    <Link to="/privacy">테스트 데이터 처리 안내</Link>
+                    <span aria-hidden="true"> · </span>
+                    <Link to="/terms">프로젝트 이용 안내</Link>
+                </p>
+            </article>
+        </PageFadeIn>
     );
 }
 

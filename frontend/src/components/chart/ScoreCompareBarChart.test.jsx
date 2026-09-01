@@ -44,11 +44,11 @@ describe("ScoreCompareBarChart", () => {
             screen.getByTestId("score-compare-bar").dataset.chartData
         );
 
-        expect(chartData.labels).toEqual(["총점", "자세", "시선", "음성", "제스처", "표정"]);
+        expect(chartData.labels).toEqual(["총점", "자세", "음성", "제스처"]);
         expect(chartData.datasets[0].label).toBe("1차 연습");
-        expect(chartData.datasets[0].data).toEqual([65, 70, 60, 55, 80, 50]);
+        expect(chartData.datasets[0].data).toEqual([65, 70, 55, 80]);
         expect(chartData.datasets[1].label).toBe("2차 연습");
-        expect(chartData.datasets[1].data).toEqual([82, 75, 88, 60, 85, 90]);
+        expect(chartData.datasets[1].data).toEqual([82, 75, 60, 85]);
     });
 
     it("keeps missing score fields distinct from a real zero score", () => {
@@ -75,7 +75,7 @@ describe("ScoreCompareBarChart", () => {
             screen.getByTestId("score-compare-bar").dataset.chartData
         );
 
-        expect(chartData.datasets[0].data).toEqual([0, null, null, null, null, null]);
-        expect(chartData.datasets[1].data).toEqual([null, null, null, null, null, null]);
+        expect(chartData.datasets[0].data).toEqual([0, null, null, null]);
+        expect(chartData.datasets[1].data).toEqual([null, null, null, null]);
     });
 });

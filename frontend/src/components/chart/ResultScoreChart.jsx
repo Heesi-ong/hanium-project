@@ -25,22 +25,18 @@ function toScore(value) {
 
 function ResultScoreChart({ scoreSummary }) {
     const postureScore = toScore(scoreSummary?.postureScore);
-    const gazeScore = toScore(scoreSummary?.gazeScore);
     const speechScore = toScore(scoreSummary?.speechScore);
     const gestureScore = toScore(scoreSummary?.gestureScore);
-    const expressionScore = toScore(scoreSummary?.expressionScore);
 
     const chartData = {
-        labels: ["자세", "시선", "음성", "제스처", "표정"],
+        labels: ["자세", "음성", "제스처"],
         datasets: [
             {
                 label: "영역별 점수",
                 data: [
                     postureScore,
-                    gazeScore,
                     speechScore,
                     gestureScore,
-                    expressionScore,
                 ],
                 fill: true,
                 tension: 0.25,
@@ -85,7 +81,7 @@ function ResultScoreChart({ scoreSummary }) {
         <article className="chart-card">
             <h2>영역별 점수 차트</h2>
             <p className="chart-card-description">
-                자세, 시선, 음성, 제스처, 표정 점수를 한눈에 비교합니다.
+                자세, 음성, 제스처 점수를 한눈에 비교합니다.
             </p>
 
             <div className="chart-container radar">
@@ -98,20 +94,12 @@ function ResultScoreChart({ scoreSummary }) {
                     <strong>{postureScore}</strong>
                 </div>
                 <div className="chart-summary-item">
-                    <span>시선</span>
-                    <strong>{gazeScore}</strong>
-                </div>
-                <div className="chart-summary-item">
                     <span>음성</span>
                     <strong>{speechScore}</strong>
                 </div>
                 <div className="chart-summary-item">
                     <span>제스처</span>
                     <strong>{gestureScore}</strong>
-                </div>
-                <div className="chart-summary-item">
-                    <span>표정</span>
-                    <strong>{expressionScore}</strong>
                 </div>
             </div>
         </article>

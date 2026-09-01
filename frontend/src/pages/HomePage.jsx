@@ -27,9 +27,9 @@ const DASHBOARD_ACTIVE_STATUSES = new Set([
 
 const FEATURE_ITEMS = [
     {
-        title: "자세·시선·제스처 분석",
+        title: "자세·제스처 분석",
         description:
-            "자세, 시선, 제스처, 표정을 정량 지표로 분석해 어디를 개선해야 하는지 짚어줍니다.",
+            "자세와 제스처를 정량 지표로 분석해 어디를 개선해야 하는지 짚어줍니다.",
         color: "#F27424",
         icon: (
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#FAF6F1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -41,7 +41,7 @@ const FEATURE_ITEMS = [
     {
         title: "영상 재생 + 주요 순간 이동",
         description:
-            "업로드한 영상을 결과 화면에서 바로 재생하고, 자세나 시선이 가장 흔들린 순간으로 클릭 한 번에 이동합니다.",
+            "업로드한 영상을 결과 화면에서 바로 재생하고, 자세가 가장 흔들린 순간으로 클릭 한 번에 이동합니다.",
         color: "#4FC78A",
         icon: (
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#FAF6F1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -82,16 +82,6 @@ const ANALYSIS_DETAIL_ITEMS = [
             "자세 점수, 어깨 균형, 자세 검출률과 함께 제스처 비율, 손 검출률, 손목 움직임을 확인합니다.",
     },
     {
-        title: "시선·얼굴",
-        description:
-            "얼굴 검출률, 카메라 응시 비율, 아이컨택 수준과 프레임별 시선 분석 결과를 제공합니다.",
-    },
-    {
-        title: "표정·감정",
-        description:
-            "표정 점수, 표현력 기본 점수, 표정 다양성 점수와 주요 표정 상태 집계를 함께 보여줍니다.",
-    },
-    {
         title: "음성·발화",
         description:
             "WPM(분당 단어 수), 단어 수, 발화·침묵 시간, 침묵 비율, 필러 표현과 음성을 텍스트로 옮긴 결과(STT)를 확인합니다.",
@@ -117,7 +107,7 @@ const HOW_IT_WORKS_STEPS = [
 
 const HERO_METRICS = [
     { label: "총점", target: 82, suffix: "", accent: "#F27424" },
-    { label: "응시율", target: 71, suffix: "%", accent: "#4FC78A" },
+    { label: "자세", target: 84, suffix: "", accent: "#4FC78A" },
     { label: "WPM", target: 128, suffix: "", accent: "#72A5FF" },
 ];
 
@@ -609,7 +599,7 @@ function HomePage() {
                             데이터로 완성됩니다
                         </h1>
                         <p className="hero-description-copy">
-                            업로드한 발표 영상을 기반으로 자세, 시선, 제스처, 음성 속도,
+                            업로드한 발표 영상을 기반으로 자세, 제스처, 음성 속도,
                             필러 표현, 침묵 구간을 분석하고 맞춤형 피드백을 제공합니다.
                         </p>
                         <p className="hero-metric-caption">예시 결과 — 실제 분석 시 내 점수로 대체됩니다</p>
@@ -653,7 +643,7 @@ function HomePage() {
                             transition={{ duration: 0.7, delay: 0.42, ease: EASE_OUT }}
                         >
                             <span>실시간 분석</span>
-                            <strong>표정 안정성 +12%</strong>
+                            <strong>제스처 활용 +12%</strong>
                         </motion.div>
                     </motion.div>
                 </div>

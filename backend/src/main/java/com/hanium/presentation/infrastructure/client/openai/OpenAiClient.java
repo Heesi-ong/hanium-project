@@ -551,20 +551,12 @@ public class OpenAiClient {
             strengths.add("자세가 비교적 안정적으로 유지되어 발표자의 신뢰감이 잘 전달됩니다.");
         }
 
-        if (gazeScore >= 75) {
-            strengths.add("시선 처리가 안정적이어서 청중 또는 카메라와의 연결감이 좋습니다.");
-        }
-
         if (speechScore >= 75) {
             strengths.add("말하기 속도, 침묵 흐름, 음량 안정성이 비교적 안정적이어서 내용 전달이 자연스럽습니다.");
         }
 
         if (gestureScore >= 75) {
             strengths.add("제스처 사용이 발표 흐름에 적절히 반영되어 전달력을 높여줍니다.");
-        }
-
-        if (expressionScore >= 75) {
-            strengths.add("표정과 발표 몰입도가 비교적 잘 드러나 발표가 생동감 있게 보입니다.");
         }
 
         if (strengths.isEmpty()) {
@@ -591,14 +583,6 @@ public class OpenAiClient {
                     "자세 안정성이 다소 부족합니다. 발표 중 몸이 화면 중앙에서 벗어나지 않도록 정면 위치를 유지하고, 좌우 어깨 높이가 크게 흔들리지 않도록 연습하는 것이 좋습니다."
                             + createOptionalMetricText(" 자세 검출률", getDouble(visualSummary, "poseDetectionRate"), true)
                             + createOptionalMetricText(" 평균 어깨 차이", getDouble(visualSummary, "averageShoulderDiff"), false)
-            );
-        }
-
-        if (gazeScore < 70) {
-            improvements.add(
-                    "시선 처리가 불안정하게 분석되었습니다. 핵심 문장을 말할 때 카메라 또는 청중 방향을 2~3초 이상 유지하는 연습이 필요합니다."
-                            + createOptionalMetricText(" 얼굴 검출률", getDouble(visualSummary, "faceDetectionRate"), true)
-                            + createOptionalText(" 아이컨택 수준", visualSummary.get("eyeContactLevel"))
             );
         }
 
@@ -634,14 +618,6 @@ public class OpenAiClient {
                     "제스처 사용이 부족하거나 불안정하게 감지되었습니다. 중요한 키워드를 말할 때 손동작을 한 번씩 사용하는 방식으로 자연스러운 제스처 루틴을 만드는 것이 좋습니다."
                             + createOptionalMetricText(" 제스처 비율", getDouble(visualSummary, "gestureRate"), true)
                             + createOptionalMetricText(" 손 검출률", getDouble(visualSummary, "handVisibilityRate"), true)
-            );
-        }
-
-        if (expressionScore < 70) {
-            improvements.add(
-                    "표정 변화와 발표 몰입감이 다소 약하게 분석되었습니다. 문장 끝에서 미세한 미소, 고개 끄덕임, 눈 뜸 변화를 더하면 발표가 덜 단조롭게 보입니다."
-                            + createOptionalText(" 주요 표정", visualSummary.get("dominantEmotion"))
-                            + createOptionalMetricText(" 표정 점수", getDouble(visualSummary, "expressionScore"), false)
             );
         }
 
@@ -734,27 +710,11 @@ public class OpenAiClient {
             ));
         }
 
-        if (gazeScore < 75) {
-            practicePlan.add(createPracticeItem(
-                    "시선 유지 연습",
-                    "핵심 문장을 말할 때 카메라를 2~3초간 바라보는 연습을 합니다. 원고를 보는 시간과 카메라를 보는 시간을 분리하는 것이 좋습니다.",
-                    "7분"
-            ));
-        }
-
         if (gestureScore < 75) {
             practicePlan.add(createPracticeItem(
                     "제스처 루틴 만들기",
                     "중요한 키워드, 숫자, 전환 문장을 말할 때 손동작을 한 번씩 넣는 방식으로 제스처 위치를 미리 정해 연습합니다.",
                     "8분"
-            ));
-        }
-
-        if (expressionScore < 75) {
-            practicePlan.add(createPracticeItem(
-                    "표정 변화 연습",
-                    "도입부, 강조 문장, 마무리 문장에서 미세한 미소와 고개 끄덕임을 넣어 발표의 생동감을 높입니다.",
-                    "6분"
             ));
         }
 
@@ -805,30 +765,12 @@ public class OpenAiClient {
         ));
 
         timelineFeedback.add(createTimelineItem(
-                "gaze",
-                "시선 처리",
-                "시선 점수는 " + gazeScore + "점입니다. 얼굴 검출률은 "
-                        + formatPercent(getDouble(visualSummary, "faceDetectionRate"))
-                        + "입니다.",
-                "핵심 문장을 말할 때는 원고보다 카메라 또는 청중 방향을 우선해 시선을 유지하세요."
-        ));
-
-        timelineFeedback.add(createTimelineItem(
                 "gesture",
                 "제스처 사용",
                 "제스처 점수는 " + gestureScore + "점입니다. 제스처 비율은 "
                         + formatPercent(getDouble(visualSummary, "gestureRate"))
                         + "입니다.",
                 "중요한 내용 전환 지점마다 손동작을 넣으면 발표의 구조가 더 명확하게 보입니다."
-        ));
-
-        timelineFeedback.add(createTimelineItem(
-                "expression",
-                "표정과 몰입감",
-                "표정 점수는 " + expressionScore + "점입니다. 주요 표정 상태는 "
-                        + visualSummary.getOrDefault("dominantEmotion", "unknown")
-                        + "입니다.",
-                "강조 문장과 결론 부분에서 표정 변화를 주면 발표의 설득력이 더 높아집니다."
         ));
 
         return timelineFeedback;
@@ -886,11 +828,6 @@ public class OpenAiClient {
         int maxScore = postureScore;
         String area = "posture";
 
-        if (gazeScore > maxScore) {
-            maxScore = gazeScore;
-            area = "gaze";
-        }
-
         if (speechScore > maxScore) {
             maxScore = speechScore;
             area = "speech";
@@ -899,10 +836,6 @@ public class OpenAiClient {
         if (gestureScore > maxScore) {
             maxScore = gestureScore;
             area = "gesture";
-        }
-
-        if (expressionScore > maxScore) {
-            area = "expression";
         }
 
         return area;
@@ -918,11 +851,6 @@ public class OpenAiClient {
         int minScore = postureScore;
         String area = "posture";
 
-        if (gazeScore < minScore) {
-            minScore = gazeScore;
-            area = "gaze";
-        }
-
         if (speechScore < minScore) {
             minScore = speechScore;
             area = "speech";
@@ -933,20 +861,14 @@ public class OpenAiClient {
             area = "gesture";
         }
 
-        if (expressionScore < minScore) {
-            area = "expression";
-        }
-
         return area;
     }
 
     private String translateArea(String area) {
         return switch (area) {
             case "posture" -> "자세";
-            case "gaze" -> "시선";
             case "speech" -> "음성";
             case "gesture" -> "제스처";
-            case "expression" -> "표정";
             case "content_structure" -> "내용 구성";
             default -> area;
         };

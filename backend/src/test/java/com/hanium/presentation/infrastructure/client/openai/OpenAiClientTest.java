@@ -160,6 +160,21 @@ class OpenAiClientTest {
                         .contains("구조 표지: 0"));
     }
 
+    @Test
+    void generateMockFeedbackDoesNotExposeGazeOrExpressionScores() {
+        OpenAiClient client = createDisabledClient();
+
+        OpenAiFeedbackResponse response = client.generateFeedback(
+                new OpenAiFeedbackRequest(
+                        "visual-score-exclusion-job",
+                        compactAnalysisWithUnstructuredTranscript()
+                )
+        );
+
+        assertThat(response.toString())
+                .doesNotContain("시선", "표정", "gaze", "expression");
+    }
+
     // feedback.llm.provider=nvidia일 때: Chat Completions(build.nvidia.com)로 요청이 나가고,
     // NVIDIA 전용 모델이 쓰이며, 기존 json_schema 파싱 로직(getString/getStringList 등)이
     // json_object 응답도 그대로 파싱할 수 있어야 한다.

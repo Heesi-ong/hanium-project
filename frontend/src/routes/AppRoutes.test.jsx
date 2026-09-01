@@ -34,6 +34,19 @@ function renderAppRoutes(path) {
 }
 
 describe("AppRoutes public policy pages", () => {
+    it("renders the shared navigation and logo on the login page", async () => {
+        renderAppRoutes("/login");
+
+        await waitFor(() => {
+            expect(screen.getByRole("heading", { name: "로그인" })).toBeInTheDocument();
+        });
+        expect(screen.getByRole("banner")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /Presentation Coach/ }))
+            .toHaveAttribute("href", "/");
+        expect(screen.getByRole("link", { name: "로그인" }))
+            .toHaveAttribute("href", "/login");
+    });
+
     it("renders privacy page without authentication", async () => {
         renderAppRoutes("/privacy");
 

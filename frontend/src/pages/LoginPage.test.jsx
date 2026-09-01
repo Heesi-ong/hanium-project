@@ -77,6 +77,20 @@ describe("LoginPage", () => {
             .toHaveAttribute("href", "/forgot-password");
     });
 
+    it("centers the login card and keeps its width bounded", () => {
+        renderLoginPage();
+
+        const card = screen.getByRole("heading", { name: "로그인" }).closest("article");
+
+        expect(card).toHaveClass("w-full", "max-w-[520px]");
+        expect(card?.parentElement).toHaveClass(
+            "flex",
+            "items-center",
+            "justify-center",
+            "min-h-[calc(100svh-200px)]"
+        );
+    });
+
     it("redirects to onboarding when the logged-in user has not completed it", async () => {
         authMock.login.mockResolvedValue({
             user: { email: "user@example.com", onboardingCompleted: false, onboardingSkipped: false },

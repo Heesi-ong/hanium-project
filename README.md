@@ -1130,7 +1130,7 @@ MediaPipe Tasks PoseLandmarker 기반 제스처 분석
 - 제스처 점수 계산
 - 프레임별 제스처 분석 결과 저장
 
-MediaPipe Tasks FaceLandmarker 기반 얼굴/시선 분석
+MediaPipe Tasks FaceLandmarker 기반 얼굴/시선 분석 (내부 원본 진단용, 사용자 점수 제외)
 
 - Legacy mp.solutions.face_mesh 미사용
 - MediaPipe Tasks API 사용
@@ -1148,7 +1148,7 @@ MediaPipe Tasks FaceLandmarker 기반 얼굴/시선 분석
 - 눈 뜸 정도 계산
 - 프레임별 얼굴/시선 분석 결과 저장
 
-MediaPipe Tasks FaceLandmarker 기반 표정/감정 분석
+MediaPipe Tasks FaceLandmarker 기반 표정/감정 분석 (내부 원본 진단용, 사용자 점수 제외)
 
 - Legacy Face Mesh 미사용
 - FaceLandmarker landmark 기반 표정 특징 계산
@@ -1196,29 +1196,19 @@ Spring Boot 결과 병합 반영
 - 프레임별 자세 분석 테이블
 - 제스처 분석 카드
 - 프레임별 제스처 분석 테이블
-- 얼굴/시선 분석 카드
-- 프레임별 얼굴/시선 분석 테이블
-- 표정/감정 분석 카드
-- 표정 상태 집계 테이블
-- 프레임별 표정/감정 분석 테이블
 
 ```
 
-현재 점수 계산에 반영된 항목 (`발표_코칭_점수화_알고리즘_선정_자료_정리본` 기준으로 변경됨):
+현재 점수 계산에 반영된 항목 (`weighted-v2`):
 
 ```text
 
-totalScore = postureScore * 0.25
-           + expressionScore * 0.20
-           + gazeScore * 0.20
-           + speechScore * 0.25
-           + gestureScore * 0.10
+totalScore = postureScore * (5 / 12)
+           + speechScore * (5 / 12)
+           + gestureScore * (1 / 6)
 
 postureScore
 - MediaPipe Tasks PoseLandmarker 기반 자세 점수 (Pose Landmark Angle Analysis)
-
-gazeScore
-- MediaPipe Tasks FaceLandmarker의 눈동자(Iris) 랜드마크 기반 카메라 응시 비율 점수 (Gaze Tracking)
 
 speechScore
 - faster-whisper STT 기반 음성 점수 (Speech Rate Analysis)
@@ -1226,9 +1216,8 @@ speechScore
 gestureScore
 - MediaPipe Tasks PoseLandmarker 기반 제스처 점수 (Motion Tracking)
 
-expressionScore
-- MediaPipe Tasks FaceLandmarker 기반 표정 점수 (Facial Landmark Distance Analysis)
-- 감정 상태 분류(happy/neutral/anxious 등)는 emotionState 필드에 참고용으로만 표시하며 총점에는 반영하지 않음
+시선·표정 분석 원본 데이터는 기존 결과 호환과 내부 진단을 위해 유지하지만,
+총점·사용자 점수 계약·AI 피드백 입력·사용자 화면에는 반영하지 않습니다.
 
 ```
 

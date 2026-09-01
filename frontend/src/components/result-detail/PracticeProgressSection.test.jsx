@@ -8,17 +8,17 @@ describe("PracticeProgressSection", () => {
         render(
             <PracticeProgressSection
                 currentJobId="current"
-                currentScoreSummary={{ gazeScore: 78 }}
+                currentScoreSummary={{ postureScore: 78 }}
                 baselineJobId="baseline"
-                baselineScoreSummary={{ gazeScore: 70 }}
-                practiceGoal="GAZE"
+                baselineScoreSummary={{ postureScore: 70 }}
+                practiceGoal="POSTURE"
                 canStartPractice
                 onStartPractice={() => {}}
             />
         );
 
         expect(screen.getByText("+8점")).toBeInTheDocument();
-        expect(screen.getByText("시선")).toBeInTheDocument();
+        expect(screen.getByText("자세")).toBeInTheDocument();
     });
 
     it("passes a bounded practice context when a goal is selected", () => {

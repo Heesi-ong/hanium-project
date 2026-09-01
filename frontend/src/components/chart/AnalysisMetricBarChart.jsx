@@ -27,33 +27,25 @@ function toPercent(value) {
 
 function AnalysisMetricBarChart({
                                     poseInfo,
-                                    faceInfo,
                                     gestureInfo,
-                                    emotionInfo,
                                 }) {
     const poseDetectionRate = toPercent(poseInfo?.detectionRate);
-    const faceDetectionRate = toPercent(faceInfo?.detectionRate);
     const gestureRate = toPercent(gestureInfo?.gestureRate);
     const handVisibilityRate = toPercent(gestureInfo?.handVisibilityRate);
-    const emotionDetectionRate = toPercent(emotionInfo?.detectionRate);
 
     const chartData = {
         labels: [
             "자세 검출률",
-            "얼굴 검출률",
             "제스처 비율",
             "손 검출률",
-            "표정 검출률",
         ],
         datasets: [
             {
                 label: "비율",
                 data: [
                     poseDetectionRate,
-                    faceDetectionRate,
                     gestureRate,
                     handVisibilityRate,
-                    emotionDetectionRate,
                 ],
                 borderRadius: 10,
                 maxBarThickness: 46,
@@ -109,20 +101,12 @@ function AnalysisMetricBarChart({
                     <strong>{poseDetectionRate}%</strong>
                 </div>
                 <div className="chart-summary-item">
-                    <span>얼굴 검출률</span>
-                    <strong>{faceDetectionRate}%</strong>
-                </div>
-                <div className="chart-summary-item">
                     <span>제스처 비율</span>
                     <strong>{gestureRate}%</strong>
                 </div>
                 <div className="chart-summary-item">
                     <span>손 검출률</span>
                     <strong>{handVisibilityRate}%</strong>
-                </div>
-                <div className="chart-summary-item">
-                    <span>표정 검출률</span>
-                    <strong>{emotionDetectionRate}%</strong>
                 </div>
             </div>
         </article>

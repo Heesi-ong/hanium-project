@@ -33,7 +33,7 @@ describe("result schema contract", () => {
 
     it("accepts the current version when top-level and stored versions match", () => {
         const normalized = validateResultSchemaResponse(
-            responseWithVersions(1, 1)
+            responseWithVersions(2, 2)
         );
 
         expect(normalized.data.resultSchemaVersion)
@@ -41,15 +41,15 @@ describe("result schema contract", () => {
     });
 
     it("rejects a future version before rendering the result", () => {
-        expect(() => validateResultSchemaResponse(responseWithVersions(2, 2)))
+        expect(() => validateResultSchemaResponse(responseWithVersions(3, 3)))
             .toThrow(expect.objectContaining({
                 error: RESULT_SCHEMA_ERROR_CODES.UNSUPPORTED,
-                resultSchemaVersion: 2,
+                resultSchemaVersion: 3,
             }));
     });
 
     it("rejects mismatched top-level and stored versions", () => {
-        expect(() => validateResultSchemaResponse(responseWithVersions(1, 0)))
+        expect(() => validateResultSchemaResponse(responseWithVersions(2, 0)))
             .toThrow(expect.objectContaining({
                 error: RESULT_SCHEMA_ERROR_CODES.INVALID,
             }));

@@ -51,8 +51,6 @@ function hasText(value) {
 
 // Video LLM 관찰 카테고리를 사용자에게 보여줄 순서와 한국어 라벨로 매핑합니다.
 const OBSERVATION_CATEGORIES = [
-    ["eyeContact", "시선"],
-    ["facialExpression", "표정"],
     ["gesture", "제스처"],
     ["posture", "자세"],
 ];
@@ -100,58 +98,50 @@ function getObservationGroups(observations) {
 }
 
 function VisualAnalysisBox({ visualAnalysis, pipeline, onSeekToTime }) {
-    const globalSummary = visualAnalysis?.globalSummary || {};
+    if (!visualAnalysis) {
+        return (
+            <article className="detail-card">
+                <h2>시각 분석 (Video LLM)</h2>
+                <p className="muted-text">영상 분석 데이터가 아직 없습니다.</p>
+            </article>
+        );
+    }
+
     const generationMode = firstMeaningfulResultValue(
         visualAnalysis?.model?.generationMode,
         pipeline?.videoLlmGenerationMode,
         "UNKNOWN"
     );
     const sampleWarning = getSampleWarning(generationMode);
-    const summaryItems = [
-        ["전체 인상", globalSummary.visualDelivery],
-        ["강점", globalSummary.mainStrength],
-        ["개선점", globalSummary.mainWeakness],
-    ].filter(([, value]) => hasText(value));
     const observationGroups = getObservationGroups(visualAnalysis?.observations);
 
     return (
         <article className="detail-card">
             <h2>시각 분석 (Video LLM)</h2>
 
-            {summaryItems.length === 0 ? (
-                <p className="muted-text">영상 분석 데이터가 아직 없습니다.</p>
-            ) : (
-                <>
-                    <div className="key-value-list">
-                        <div className="key-value-item">
-                            <span>생성 방식</span>
-                            <strong>
-                                <span className={getVisualGenerationModeClassName(generationMode)}>
-                                    {getVisualGenerationModeLabel(generationMode)}
-                                </span>
-                            </strong>
-                        </div>
+            <div className="key-value-list">
+                <div className="key-value-item">
+                    <span>생성 방식</span>
+                    <strong>
+                        <span className={getVisualGenerationModeClassName(generationMode)}>
+                            {getVisualGenerationModeLabel(generationMode)}
+                        </span>
+                    </strong>
+                </div>
 
-                        {sampleWarning && (
-                            <p className="muted-text" role="note">
-                                {sampleWarning}
-                            </p>
-                        )}
+                {sampleWarning && (
+                    <p className="muted-text" role="note">
+                        {sampleWarning}
+                    </p>
+                )}
+            </div>
 
-                        {summaryItems.map(([label, value]) => (
-                            <div className="key-value-item" key={label}>
-                                <span>{label}</span>
-                                <strong>{value.trim()}</strong>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="observation-groups">
-                        <h3>세부 관찰</h3>
-                        {observationGroups.length === 0 ? (
-                            <p className="muted-text">표시할 세부 관찰 데이터가 없습니다.</p>
-                        ) : (
-                            observationGroups.map(([categoryLabel, items]) => (
+            <div className="observation-groups">
+                <h3>세부 관찰</h3>
+                {observationGroups.length === 0 ? (
+                    <p className="muted-text">표시할 세부 관찰 데이터가 없습니다.</p>
+                ) : (
+                    observationGroups.map(([categoryLabel, items]) => (
                                 <div className="observation-group" key={categoryLabel}>
                                     <h4>{categoryLabel}</h4>
                                     <ul className="observation-list">
@@ -203,11 +193,9 @@ function VisualAnalysisBox({ visualAnalysis, pipeline, onSeekToTime }) {
                                         })}
                                     </ul>
                                 </div>
-                            ))
-                        )}
-                    </div>
-                </>
-            )}
+                    ))
+                )}
+            </div>
         </article>
     );
 }

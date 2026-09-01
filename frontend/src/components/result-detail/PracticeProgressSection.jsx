@@ -1,9 +1,7 @@
 const GOALS = [
     ["POSTURE", "자세", "postureScore"],
-    ["GAZE", "시선", "gazeScore"],
     ["SPEECH", "음성", "speechScore"],
     ["GESTURE", "제스처", "gestureScore"],
-    ["EXPRESSION", "표정", "expressionScore"],
 ];
 
 function PracticeProgressSection({

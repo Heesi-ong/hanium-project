@@ -57,10 +57,8 @@ ChartJS.register(
 const SCORE_FIELDS = [
     { key: "totalScore", label: "총점" },
     { key: "postureScore", label: "자세" },
-    { key: "gazeScore", label: "시선" },
     { key: "speechScore", label: "음성" },
     { key: "gestureScore", label: "제스처" },
-    { key: "expressionScore", label: "표정" },
 ];
 
 function toScore(value) {

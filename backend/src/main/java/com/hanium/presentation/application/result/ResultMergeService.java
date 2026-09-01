@@ -87,10 +87,8 @@ public class ResultMergeService {
         return new ScoreSummary(
                 totalScore,
                 getNumberValue(score, "postureScore"),
-                getNumberValue(score, "gazeScore"),
                 getNumberValue(score, "speechScore"),
                 getNumberValue(score, "gestureScore"),
-                getNumberValue(score, "expressionScore"),
                 resolveLevel(totalScore)
         );
     }
@@ -163,28 +161,6 @@ public class ResultMergeService {
         );
         if (postureMoment != null) {
             notableMoments.add(postureMoment);
-        }
-
-        Map<String, Object> gazeMoment = createLowestScoreMoment(
-                nullSafeMap(analysisEngineResponse.face()),
-                "gaze",
-                "카메라 응시가 가장 흔들린 순간",
-                "faceDetected",
-                "gazeScore"
-        );
-        if (gazeMoment != null) {
-            notableMoments.add(gazeMoment);
-        }
-
-        Map<String, Object> expressionMoment = createLowestScoreMoment(
-                nullSafeMap(analysisEngineResponse.emotion()),
-                "expression",
-                "표정 표현이 가장 약했던 순간",
-                "faceDetected",
-                "expressionScore"
-        );
-        if (expressionMoment != null) {
-            notableMoments.add(expressionMoment);
         }
 
         Map<String, Object> gestureMoment = createHighestGestureMovementMoment(

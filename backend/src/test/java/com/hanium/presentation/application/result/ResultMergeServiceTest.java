@@ -107,19 +107,11 @@ class ResultMergeServiceTest {
 
         assertThat(finalResult)
                 .containsEntry(ResultSchemaVersion.FIELD, ResultSchemaVersion.CURRENT);
-        assertThat(notableMoments).hasSize(4);
+        assertThat(notableMoments).hasSize(2);
         assertThat(findMoment(notableMoments, "posture"))
                 .containsEntry("label", "자세 균형이 가장 흔들린 순간")
                 .containsEntry("timestampSec", 2.5)
                 .containsEntry("value", 37.0);
-        assertThat(findMoment(notableMoments, "gaze"))
-                .containsEntry("label", "카메라 응시가 가장 흔들린 순간")
-                .containsEntry("timestampSec", 4.0)
-                .containsEntry("value", 24.0);
-        assertThat(findMoment(notableMoments, "expression"))
-                .containsEntry("label", "표정 표현이 가장 약했던 순간")
-                .containsEntry("timestampSec", 6.5)
-                .containsEntry("value", 18.0);
         assertThat(findMoment(notableMoments, "gesture"))
                 .containsEntry("label", "제스처가 가장 활발했던 순간")
                 .containsEntry("timestampSec", 9.5)
@@ -189,19 +181,15 @@ class ResultMergeServiceTest {
         assertThat(scoreSummary.keySet()).containsExactlyInAnyOrder(
                 "totalScore",
                 "postureScore",
-                "gazeScore",
                 "speechScore",
                 "gestureScore",
-                "expressionScore",
                 "level"
         );
         assertThat(scoreSummary)
                 .containsEntry("totalScore", 80)
                 .containsEntry("postureScore", 80)
-                .containsEntry("gazeScore", 80)
                 .containsEntry("speechScore", 80)
                 .containsEntry("gestureScore", 80)
-                .containsEntry("expressionScore", 80)
                 .containsEntry("level", "GOOD");
     }
 
@@ -272,7 +260,6 @@ class ResultMergeServiceTest {
                 .containsEntry("available", true)
                 .containsEntry("lowConfidence", true)
                 .containsEntry("poseDetectionRate", 0.72)
-                .containsEntry("faceDetectionRate", 0.41)
                 .containsEntry("audioAnalysisMethod", "signal_estimation")
                 .containsEntry("sttFallbackUsed", true)
                 .containsEntry("penaltyApplied", 8)
@@ -295,19 +282,15 @@ class ResultMergeServiceTest {
         assertThat(scoreSummary.keySet()).containsExactlyInAnyOrder(
                 "totalScore",
                 "postureScore",
-                "gazeScore",
                 "speechScore",
                 "gestureScore",
-                "expressionScore",
                 "level"
         );
         assertThat(scoreSummary)
                 .containsEntry("totalScore", 0)
                 .containsEntry("postureScore", 0)
-                .containsEntry("gazeScore", 0)
                 .containsEntry("speechScore", 0)
                 .containsEntry("gestureScore", 0)
-                .containsEntry("expressionScore", 0)
                 .containsEntry("level", "FAILED");
     }
 

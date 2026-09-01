@@ -2,17 +2,13 @@ from typing import Any, Dict, List
 
 POSE_LOW_DETECTION_THRESHOLD = 0.5
 POSE_WEAK_DETECTION_THRESHOLD = 0.7
-FACE_LOW_DETECTION_THRESHOLD = 0.5
-FACE_WEAK_DETECTION_THRESHOLD = 0.7
 SHORT_VIDEO_THRESHOLD_SEC = 10
-MAX_TOTAL_PENALTY = 15
-SCORE_FORMULA_VERSION = "weighted-v1"
+MAX_TOTAL_PENALTY = 13
+SCORE_FORMULA_VERSION = "weighted-v2"
 SCORE_WEIGHTS = {
-    "postureScore": 0.25,
-    "expressionScore": 0.20,
-    "gazeScore": 0.20,
-    "speechScore": 0.25,
-    "gestureScore": 0.10,
+    "postureScore": 5 / 12,
+    "speechScore": 5 / 12,
+    "gestureScore": 1 / 6,
 }
 
 
@@ -23,8 +19,9 @@ def calculate_score(
     gesture_result: Dict[str, Any],
     emotion_result: Dict[str, Any],
 ) -> Dict[str, Any]:
-    # '발표_코칭_점수화_알고리즘_선정_자료'의 "9. 최종 점수화" 기준입니다.
-    # 자세 25% + 표정 20% + 시선 20% + 음성 25% + 제스처 10%
+    # 시선 및 표정 검출은 사용자 점수에서 제외합니다. 기존 산식에서 남은
+    # 자세(25), 음성(25), 제스처(10)의 상대 비중을 100%로 정규화했습니다.
+    # 자세 5/12 + 음성 5/12 + 제스처 1/6
     posture_score = int(pose_result.get("postureScore", 0))
     gaze_score = int(face_result.get("gazeScore", 0))
     speech_score = int(audio_result.get("speechScore", 0))
@@ -38,18 +35,12 @@ def calculate_score(
         "speechScore": speech_score,
         "gestureScore": gesture_score,
     }
-    # weighted_score_before_rounding은 반드시 기존 코드와 완전히 동일한 하나의 float 표현식으로
-    # 계산해야 합니다. 항목별로 round(x, 4) 한 뒤 합산하면 0.20/0.10처럼 이진수로 정확히 표현되지
-    # 않는 가중치의 반올림 오차가 누적되어, 원래 한 번에 합산하던 값과 정수부가 달라지는 경우가
-    # 실측으로 확인됐습니다(2백만 건 무작위 대입 중 1611건, 약 0.08%). weightedContributions는
-    # 설명용 항목별 분해값이라 개별 반올림해도 괜찮지만, 실제 total/rawScore에 쓰이는
-    # weighted_score는 이 분해값의 합이 아니라 기존과 같은 단일 표현식이어야 합니다.
+    # 실제 점수는 설명용 개별 기여도를 반올림해 합산하지 않고, 하나의 표현식으로 계산한 뒤
+    # 기존 계약대로 0 방향 절삭합니다.
     weighted_score_before_rounding = (
-        posture_score * 0.25
-        + expression_score * 0.20
-        + gaze_score * 0.20
-        + speech_score * 0.25
-        + gesture_score * 0.10
+        posture_score * SCORE_WEIGHTS["postureScore"]
+        + speech_score * SCORE_WEIGHTS["speechScore"]
+        + gesture_score * SCORE_WEIGHTS["gestureScore"]
     )
     # 기존 점수 계약을 유지합니다. Python int(float)는 0 방향으로 버립니다.
     weighted_score = int(weighted_score_before_rounding)
@@ -61,7 +52,6 @@ def calculate_score(
 
     penalty_result = calculate_total_penalty(
         pose_result=pose_result,
-        face_result=face_result,
         audio_result=audio_result,
     )
     penalty = penalty_result["penalty"]
@@ -78,7 +68,6 @@ def calculate_score(
         "expressionScore": expression_score,
         "reliability": {
             "poseDetectionRate": penalty_result["poseDetectionRate"],
-            "faceDetectionRate": penalty_result["faceDetectionRate"],
             "lowConfidence": penalty_result["lowConfidence"],
             "penaltyReasons": penalty_result["reasons"],
         },
@@ -99,7 +88,6 @@ def calculate_score(
 
 def calculate_total_penalty(
     pose_result: Dict[str, Any],
-    face_result: Dict[str, Any],
     audio_result: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Calculate the bounded reliability penalty without changing component scores."""
@@ -107,7 +95,6 @@ def calculate_total_penalty(
     penalty = 0
 
     pose_detection_rate = float(pose_result.get("detectionRate", 0))
-    face_detection_rate = float(face_result.get("detectionRate", 0))
     duration_sec = float(audio_result.get("durationSec", 0))
     audio_method = str(audio_result.get("analysisMethod", ""))
 
@@ -117,13 +104,6 @@ def calculate_total_penalty(
     elif pose_detection_rate < POSE_WEAK_DETECTION_THRESHOLD:
         penalty += 2
         reasons.append("자세 검출률이 70% 미만입니다.")
-
-    if face_detection_rate < FACE_LOW_DETECTION_THRESHOLD:
-        penalty += 5
-        reasons.append("얼굴 검출률이 50% 미만입니다.")
-    elif face_detection_rate < FACE_WEAK_DETECTION_THRESHOLD:
-        penalty += 2
-        reasons.append("얼굴 검출률이 70% 미만입니다.")
 
     if audio_method and audio_method != "stt_based_analysis":
         penalty += 3
@@ -136,7 +116,6 @@ def calculate_total_penalty(
     penalty = min(penalty, MAX_TOTAL_PENALTY)
     low_confidence = (
         pose_detection_rate < POSE_LOW_DETECTION_THRESHOLD
-        or face_detection_rate < FACE_LOW_DETECTION_THRESHOLD
         or penalty >= 8
     )
 
@@ -145,7 +124,6 @@ def calculate_total_penalty(
         "reasons": reasons,
         "lowConfidence": low_confidence,
         "poseDetectionRate": round(pose_detection_rate, 4),
-        "faceDetectionRate": round(face_detection_rate, 4),
     }
 
 

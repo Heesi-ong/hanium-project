@@ -100,6 +100,45 @@ class AnalysisCompactorTest {
                 .doesNotContain("아직 수행하지 않습니다");
     }
 
+    @Test
+    void compactExcludesGazeAndExpressionFromScoringAndFeedbackInputs() {
+        Map<String, Object> compactResult = analysisCompactor.compact(
+                "job-1",
+                analysisResponse(),
+                videoLlmResponse("REAL")
+        );
+
+        Map<String, Object> scoringPolicy = JsonMapSupport.copyStringKeyedMap(
+                compactResult.get("scoringPolicy")
+        );
+        Map<String, Object> rawMetrics = JsonMapSupport.copyStringKeyedMap(
+                compactResult.get("rawMetrics")
+        );
+        Map<String, Object> modelInputs = JsonMapSupport.copyStringKeyedMap(
+                compactResult.get("modelInputs")
+        );
+        Map<String, Object> rawScore = JsonMapSupport.copyStringKeyedMap(
+                rawMetrics.get("score")
+        );
+        Map<String, Object> scoreSummary = JsonMapSupport.copyStringKeyedMap(
+                modelInputs.get("scoreSummary")
+        );
+        Map<String, Object> visualSummary = JsonMapSupport.copyStringKeyedMap(
+                modelInputs.get("visualSummary")
+        );
+
+        assertThat(scoringPolicy).containsEntry("formulaVersion", "weighted-v2");
+        assertThat(JsonMapSupport.copyStringKeyedMap(scoringPolicy.get("weights")))
+                .containsOnlyKeys("postureScore", "speechScore", "gestureScore");
+        assertThat(rawMetrics).doesNotContainKeys("face", "emotion");
+        assertThat(rawScore).doesNotContainKeys("gazeScore", "expressionScore");
+        assertThat(scoreSummary).doesNotContainKeys("gazeScore", "expressionScore");
+        assertThat(visualSummary).doesNotContainKeys(
+                "gazeScore", "faceDetectionRate", "expressionScore", "dominantEmotion",
+                "videoLlmGlobalSummary"
+        );
+    }
+
     private Map<String, Object> dataPolicy(Map<String, Object> compactResult) {
         return JsonMapSupport.copyStringKeyedMap(compactResult.get("dataPolicy"));
     }

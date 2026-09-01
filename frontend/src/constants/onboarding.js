@@ -16,7 +16,6 @@ export const EXPERIENCE_LEVEL_OPTIONS = [
 export const IMPROVEMENT_GOAL_OPTIONS = [
     { value: "VOICE_TONE", label: "목소리 톤" },
     { value: "PACE", label: "말하기 속도" },
-    { value: "EYE_CONTACT", label: "시선 처리" },
     { value: "POSTURE", label: "자세" },
     { value: "CONTENT_STRUCTURE", label: "내용 구성" },
     { value: "OTHER", label: "기타" },
@@ -39,5 +38,9 @@ export function getExperienceLevelLabel(value) {
 }
 
 export function getImprovementGoalLabel(value) {
+    if (value === "EYE_CONTACT") {
+        return "설정 변경 필요";
+    }
+
     return IMPROVEMENT_GOAL_LABELS[value] || value;
 }

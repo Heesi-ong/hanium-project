@@ -1,6 +1,5 @@
 import "./resultSummaryOverview.css";
 import {
-    formatEmotionLabel,
     formatNumber,
     formatPercent,
     formatScoreLevel,
@@ -14,9 +13,7 @@ function ResultSummaryOverview({
                                    audioInfo,
                                    fillerInfo,
                                    poseInfo,
-                                   faceInfo,
                                    gestureInfo,
-                                   emotionInfo,
                                }) {
     const totalScore = scoreAvailable && Number.isFinite(scoreSummary?.totalScore)
         ? scoreSummary.totalScore
@@ -30,7 +27,7 @@ function ResultSummaryOverview({
                     <span className="summary-eyebrow">Analysis Summary</span>
                     <h2>발표 분석 핵심 요약</h2>
                     <p>
-                        발표 영상의 음성, 자세, 시선, 제스처, 표정 분석 결과를 요약했습니다.
+                        발표 영상의 음성, 자세, 제스처 분석 결과를 요약했습니다.
                     </p>
                 </div>
 
@@ -68,19 +65,10 @@ function ResultSummaryOverview({
                 </div>
 
                 <div className="summary-overview-item">
-                    <span>얼굴 검출률</span>
-                    <strong>{formatPercent(faceInfo?.detectionRate)}</strong>
-                </div>
-
-                <div className="summary-overview-item">
                     <span>제스처 비율</span>
                     <strong>{formatPercent(gestureInfo?.gestureRate)}</strong>
                 </div>
 
-                <div className="summary-overview-item">
-                    <span>주요 표정 (참고용)</span>
-                    <strong>{formatEmotionLabel(emotionInfo?.emotionState?.dominantEmotion)}</strong>
-                </div>
             </div>
         </article>
     );

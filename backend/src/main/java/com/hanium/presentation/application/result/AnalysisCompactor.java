@@ -55,17 +55,16 @@ public class AnalysisCompactor {
         Map<String, Object> scoringPolicy = new LinkedHashMap<>();
 
         Map<String, Object> weights = new LinkedHashMap<>();
-        weights.put("postureScore", 0.25);
-        weights.put("expressionScore", 0.20);
-        weights.put("gazeScore", 0.20);
-        weights.put("speechScore", 0.25);
-        weights.put("gestureScore", 0.10);
+        weights.put("postureScore", 5.0 / 12.0);
+        weights.put("speechScore", 5.0 / 12.0);
+        weights.put("gestureScore", 1.0 / 6.0);
 
-        scoringPolicy.put("totalScoreFormula", "postureScore * 0.25 + expressionScore * 0.20 + gazeScore * 0.20 + speechScore * 0.25 + gestureScore * 0.10");
+        scoringPolicy.put("formulaVersion", "weighted-v2");
+        scoringPolicy.put("totalScoreFormula", "postureScore * 5/12 + speechScore * 5/12 + gestureScore * 1/6");
         scoringPolicy.put("weights", weights);
         scoringPolicy.put("scoreRange", "0-100");
-        scoringPolicy.put("source", "발표_코칭_점수화_알고리즘_선정_자료_정리본 기준 (자세 25% / 표정 20% / 시선 20% / 음성 25% / 제스처 10%)");
-        scoringPolicy.put("note", "감정 상태 분류(emotionState)는 표정 점수의 보조 지표로만 사용하며 총점 가중합에는 포함하지 않습니다.");
+        scoringPolicy.put("source", "시선·표정 제외 후 기존 자세/음성/제스처 상대 비중 정규화");
+        scoringPolicy.put("note", "시선 및 표정 검출 결과는 사용자 점수와 피드백 생성에 사용하지 않습니다.");
 
         return scoringPolicy;
     }
@@ -81,9 +80,17 @@ public class AnalysisCompactor {
         rawMetrics.put("filler", nullSafeMap(analysisEngineResponse.filler()));
         rawMetrics.put("pose", nullSafeMap(analysisEngineResponse.pose()));
         rawMetrics.put("gesture", nullSafeMap(analysisEngineResponse.gesture()));
-        rawMetrics.put("face", nullSafeMap(analysisEngineResponse.face()));
-        rawMetrics.put("emotion", nullSafeMap(analysisEngineResponse.emotion()));
-        rawMetrics.put("score", nullSafeMap(analysisEngineResponse.score()));
+        Map<String, Object> score = nullSafeMap(analysisEngineResponse.score());
+        Map<String, Object> supportedScore = new LinkedHashMap<>();
+        supportedScore.put("totalScore", getOrDefault(score, "totalScore", 0));
+        supportedScore.put("rawScore", getOrDefault(score, "rawScore", 0));
+        supportedScore.put("penalty", getOrDefault(score, "penalty", 0));
+        supportedScore.put("postureScore", getOrDefault(score, "postureScore", 0));
+        supportedScore.put("speechScore", getOrDefault(score, "speechScore", 0));
+        supportedScore.put("gestureScore", getOrDefault(score, "gestureScore", 0));
+        supportedScore.put("reliability", getOrDefault(score, "reliability", Map.of()));
+        supportedScore.put("explanation", getOrDefault(score, "explanation", Map.of()));
+        rawMetrics.put("score", supportedScore);
 
         return rawMetrics;
     }
@@ -115,10 +122,8 @@ public class AnalysisCompactor {
 
         scoreSummary.put("totalScore", getOrDefault(score, "totalScore", 0));
         scoreSummary.put("postureScore", getOrDefault(score, "postureScore", 0));
-        scoreSummary.put("gazeScore", getOrDefault(score, "gazeScore", 0));
         scoreSummary.put("speechScore", getOrDefault(score, "speechScore", 0));
         scoreSummary.put("gestureScore", getOrDefault(score, "gestureScore", 0));
-        scoreSummary.put("expressionScore", getOrDefault(score, "expressionScore", 0));
         scoreSummary.put("level", resolveLevel(getNumberValue(score, "totalScore")));
 
         return scoreSummary;
@@ -161,8 +166,6 @@ public class AnalysisCompactor {
     ) {
         Map<String, Object> pose = nullSafeMap(analysisEngineResponse.pose());
         Map<String, Object> gesture = nullSafeMap(analysisEngineResponse.gesture());
-        Map<String, Object> face = nullSafeMap(analysisEngineResponse.face());
-        Map<String, Object> emotion = nullSafeMap(analysisEngineResponse.emotion());
 
         Map<String, Object> visualSummary = new LinkedHashMap<>();
 
@@ -171,28 +174,19 @@ public class AnalysisCompactor {
         visualSummary.put("shoulderBalanceScore", getOrDefault(pose, "shoulderBalanceScore", 0));
         visualSummary.put("averageShoulderDiff", getOrDefault(pose, "averageShoulderDiff", 0));
 
-        visualSummary.put("gazeScore", getOrDefault(face, "gazeScore", 0));
-        visualSummary.put("faceDetectionRate", getOrDefault(face, "detectionRate", 0));
-        visualSummary.put("eyeContactLevel", getOrDefault(face, "eyeContactLevel", "unknown"));
-        visualSummary.put("cameraGazeRatio", getOrDefault(face, "cameraGazeRatio", 0));
-
         visualSummary.put("gestureScore", getOrDefault(gesture, "gestureScore", 0));
         visualSummary.put("gestureRate", getOrDefault(gesture, "gestureRate", 0));
         visualSummary.put("handVisibilityRate", getOrDefault(gesture, "handVisibilityRate", 0));
         visualSummary.put("averageWristMovement", getOrDefault(gesture, "averageWristMovement", 0));
 
-        Map<String, Object> emotionState = nullSafeMap(emotion.get("emotionState"));
-
-        visualSummary.put("expressionScore", getOrDefault(emotion, "expressionScore", 0));
-        visualSummary.put("expressionRawScore", getOrDefault(emotion, "expressionRawScore", 0));
-        visualSummary.put("expressionVarietyScore", getOrDefault(emotion, "expressionVarietyScore", 0));
-        visualSummary.put("dominantEmotion", getOrDefault(emotionState, "dominantEmotion", "unknown"));
-        visualSummary.put("emotionCounts", getOrDefault(emotionState, "emotionCounts", Map.of()));
-
         visualSummary.put("videoLlmModel", nullSafeMap(videoLlmEngineResponse.model()));
-        visualSummary.put("videoLlmObservations", nullSafeObject(videoLlmEngineResponse.observations()));
-        visualSummary.put("videoLlmGlobalSummary", nullSafeMap(videoLlmEngineResponse.globalSummary()));
-
+        Map<String, Object> supportedObservations = new LinkedHashMap<>();
+        Map<String, java.util.List<Map<String, Object>>> observations = videoLlmEngineResponse.observations();
+        if (observations != null) {
+            supportedObservations.put("gesture", observations.getOrDefault("gesture", java.util.List.of()));
+            supportedObservations.put("posture", observations.getOrDefault("posture", java.util.List.of()));
+        }
+        visualSummary.put("videoLlmObservations", supportedObservations);
         return visualSummary;
     }
 
@@ -324,33 +318,25 @@ public class AnalysisCompactor {
         Map<String, Object> score = nullSafeMap(analysisEngineResponse.score());
 
         int postureScore = getNumberValue(score, "postureScore");
-        int gazeScore = getNumberValue(score, "gazeScore");
         int speechScore = getNumberValue(score, "speechScore");
         int gestureScore = getNumberValue(score, "gestureScore");
-        int expressionScore = getNumberValue(score, "expressionScore");
 
         Map<String, Object> feedbackFocus = new LinkedHashMap<>();
 
         feedbackFocus.put("strongestArea", resolveStrongestArea(
                 postureScore,
-                gazeScore,
                 speechScore,
-                gestureScore,
-                expressionScore
+                gestureScore
         ));
         feedbackFocus.put("weakestArea", resolveWeakestArea(
                 postureScore,
-                gazeScore,
                 speechScore,
-                gestureScore,
-                expressionScore
+                gestureScore
         ));
         feedbackFocus.put("priority", createPriority(
                 postureScore,
-                gazeScore,
                 speechScore,
-                gestureScore,
-                expressionScore
+                gestureScore
         ));
 
         return feedbackFocus;
@@ -424,10 +410,8 @@ public class AnalysisCompactor {
 
     private java.util.List<String> createPriority(
             int postureScore,
-            int gazeScore,
             int speechScore,
-            int gestureScore,
-            int expressionScore
+            int gestureScore
     ) {
         java.util.List<String> priority = new java.util.ArrayList<>();
 
@@ -439,16 +423,8 @@ public class AnalysisCompactor {
             priority.add("posture");
         }
 
-        if (gazeScore < 70) {
-            priority.add("gaze");
-        }
-
         if (gestureScore < 70) {
             priority.add("gesture");
-        }
-
-        if (expressionScore < 70) {
-            priority.add("expression");
         }
 
         if (priority.isEmpty()) {
@@ -476,18 +452,11 @@ public class AnalysisCompactor {
 
     private String resolveStrongestArea(
             int postureScore,
-            int gazeScore,
             int speechScore,
-            int gestureScore,
-            int expressionScore
+            int gestureScore
     ) {
         int maxScore = postureScore;
         String area = "posture";
-
-        if (gazeScore > maxScore) {
-            maxScore = gazeScore;
-            area = "gaze";
-        }
 
         if (speechScore > maxScore) {
             maxScore = speechScore;
@@ -499,27 +468,16 @@ public class AnalysisCompactor {
             area = "gesture";
         }
 
-        if (expressionScore > maxScore) {
-            area = "expression";
-        }
-
         return area;
     }
 
     private String resolveWeakestArea(
             int postureScore,
-            int gazeScore,
             int speechScore,
-            int gestureScore,
-            int expressionScore
+            int gestureScore
     ) {
         int minScore = postureScore;
         String area = "posture";
-
-        if (gazeScore < minScore) {
-            minScore = gazeScore;
-            area = "gaze";
-        }
 
         if (speechScore < minScore) {
             minScore = speechScore;
@@ -529,10 +487,6 @@ public class AnalysisCompactor {
         if (gestureScore < minScore) {
             minScore = gestureScore;
             area = "gesture";
-        }
-
-        if (expressionScore < minScore) {
-            area = "expression";
         }
 
         return area;

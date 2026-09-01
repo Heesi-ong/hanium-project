@@ -26,7 +26,7 @@ function getVisualAnalysisCard() {
 }
 
 describe("FeedbackSection", () => {
-    it("renders visual global summary fields with readable labels", () => {
+    it("hides untrusted global summary and renders only supported observation categories", () => {
         renderFeedbackSection({
             model: {
                 generationMode: "REAL",
@@ -37,11 +37,11 @@ describe("FeedbackSection", () => {
                 mainWeakness: "손동작 변화가 적습니다.",
             },
             observations: {
-                eyeContact: [
+                gesture: [
                     {
                         startSec: 0,
                         endSec: 10,
-                        label: "direct",
+                        label: "balanced",
                     },
                 ],
             },
@@ -49,21 +49,10 @@ describe("FeedbackSection", () => {
 
         const visualAnalysisCard = getVisualAnalysisCard();
 
-        expect(within(visualAnalysisCard).getByText("전체 인상")).toBeInTheDocument();
-        expect(
-            within(visualAnalysisCard).getByText("시선과 자세가 안정적입니다.")
-        ).toBeInTheDocument();
-        expect(within(visualAnalysisCard).getByText("강점")).toBeInTheDocument();
-        expect(
-            within(visualAnalysisCard).getByText("카메라를 꾸준히 응시합니다.")
-        ).toBeInTheDocument();
-        expect(within(visualAnalysisCard).getByText("개선점")).toBeInTheDocument();
-        expect(
-            within(visualAnalysisCard).getByText("손동작 변화가 적습니다.")
-        ).toBeInTheDocument();
-        // 관찰 데이터는 원본 카테고리 키(eyeContact)가 아니라 한국어 라벨(시선)로 렌더됩니다.
-        expect(within(visualAnalysisCard).getByText("시선")).toBeInTheDocument();
-        expect(within(visualAnalysisCard).getByText("direct")).toBeInTheDocument();
+        expect(within(visualAnalysisCard).queryByText("전체 인상")).not.toBeInTheDocument();
+        expect(within(visualAnalysisCard).queryByText("시선과 자세가 안정적입니다.")).not.toBeInTheDocument();
+        expect(within(visualAnalysisCard).getByText("제스처")).toBeInTheDocument();
+        expect(within(visualAnalysisCard).getByText("balanced")).toBeInTheDocument();
         expect(within(visualAnalysisCard).getByText("0:00–0:10")).toBeInTheDocument();
         expect(within(visualAnalysisCard).queryByText("eyeContact")).not.toBeInTheDocument();
     });
@@ -77,12 +66,12 @@ describe("FeedbackSection", () => {
                 mainWeakness: "개선점",
             },
             observations: {
-                eyeContact: [
+                gesture: [
                     {
                         startSec: 12,
                         endSec: 18,
-                        label: "looking_down",
-                        description: "중간 구간에서 시선이 아래로 이동했습니다.",
+                        label: "balanced",
+                        description: "중간 구간에서 제스처가 확인되었습니다.",
                         confidence: 0.74,
                     },
                 ],
@@ -99,11 +88,11 @@ describe("FeedbackSection", () => {
         });
 
         const card = getVisualAnalysisCard();
-        expect(within(card).getByText("시선")).toBeInTheDocument();
+        expect(within(card).getByText("제스처")).toBeInTheDocument();
         expect(within(card).getByText("자세")).toBeInTheDocument();
         expect(within(card).getByText("0:12–0:18")).toBeInTheDocument();
         expect(
-            within(card).getByText("중간 구간에서 시선이 아래로 이동했습니다.")
+            within(card).getByText("중간 구간에서 제스처가 확인되었습니다.")
         ).toBeInTheDocument();
         expect(within(card).getByText("신뢰도 74%")).toBeInTheDocument();
         expect(within(card).getByText("신뢰도 81%")).toBeInTheDocument();
@@ -123,12 +112,12 @@ describe("FeedbackSection", () => {
                         mainWeakness: "개선점",
                     },
                     observations: {
-                        eyeContact: [
+                        gesture: [
                             {
                                 startSec: 12,
                                 endSec: 18,
-                                label: "looking_down",
-                                description: "시선이 아래로 이동했습니다.",
+                                label: "balanced",
+                                description: "제스처가 확인되었습니다.",
                                 confidence: 0.7,
                             },
                         ],
@@ -154,7 +143,7 @@ describe("FeedbackSection", () => {
                 mainWeakness: "개선점",
             },
             observations: {
-                eyeContact: [
+                gesture: [
                     { startSec: 12, endSec: 18, label: "x", description: "d", confidence: 0.7 },
                 ],
             },

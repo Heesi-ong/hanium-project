@@ -789,7 +789,7 @@ function UploadPage() {
                             />
                             <span>
                 <strong>Video LLM 분석 사용</strong>
-                <small>시선, 표정, 제스처, 자세를 영상 흐름 기반으로 판독합니다.</small>
+                <small>제스처와 자세를 영상 흐름 기반으로 판독합니다.</small>
                 {videoLlmUnavailable && (
                     <small className="option-unavailable">
                         {capability?.videoLlmEngine?.message || "현재 이용할 수 없습니다."}

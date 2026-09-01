@@ -254,7 +254,7 @@ describe("AccountPage", () => {
     it("shows the current onboarding settings and opens the edit flow", () => {
         renderAccountPage();
 
-        expect(screen.getByText("목적: 면접 준비 · 경험 수준: 입문 · 개선 목표: 시선 처리"))
+        expect(screen.getByText("목적: 면접 준비 · 경험 수준: 입문 · 개선 목표: 설정 변경 필요"))
             .toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "온보딩 설정 수정" }));
 

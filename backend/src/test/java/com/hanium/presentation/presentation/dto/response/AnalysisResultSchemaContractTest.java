@@ -33,20 +33,20 @@ class AnalysisResultSchemaContractTest {
                 .containsEntry(ResultSchemaVersion.FIELD, ResultSchemaVersion.LEGACY)
                 .containsEntry("jobId", "legacy-job");
         assertThat(normalized.get("scoreSummary"))
-                .isEqualTo(new ScoreSummary(77, 70, 71, 72, 73, 74, "GOOD"));
+                .isEqualTo(new ScoreSummary(77, 70, 72, 73, "GOOD"));
     }
 
     @Test
-    void preservesCurrentVersionAndTypedScoreContract() throws IOException {
+    void preservesVersionOneAndNormalizesToCurrentTypedScoreContract() throws IOException {
         Map<String, Object> normalized = ResultSummaryResponse.normalizeFinalResult(
                 readFixture("current-v1.json")
         );
 
         assertThat(normalized)
-                .containsEntry(ResultSchemaVersion.FIELD, ResultSchemaVersion.CURRENT)
+                .containsEntry(ResultSchemaVersion.FIELD, 1)
                 .containsEntry("jobId", "current-job");
         assertThat(normalized.get("scoreSummary"))
-                .isEqualTo(new ScoreSummary(88, 80, 81, 82, 83, 84, "EXCELLENT"));
+                .isEqualTo(new ScoreSummary(88, 80, 82, 83, "EXCELLENT"));
     }
 
     @Test

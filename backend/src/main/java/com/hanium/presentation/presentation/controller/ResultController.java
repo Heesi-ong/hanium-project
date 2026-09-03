@@ -40,7 +40,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.net.URI;
-import java.time.Duration;
 import java.util.List;
 
 @Validated
@@ -116,10 +115,12 @@ public class ResultController {
         resultQueryService.assertResultOwnership(jobId, getCurrentUserId(authentication));
         byte[] image = analysisFrameOverlayStorage.readFrame(jobId, fileName);
 
-        // 결과와 함께 삭제되는 소유자 전용 리소스라, 브라우저 캐시만 짧게 허용합니다.
+        // 소유자 전용이면서 재분석 시 같은 파일명으로 덮어써지는 가변 리소스입니다.
+        // 브라우저 private 캐시는 인증 쿠키로 분리되지 않으므로, 캐시된 이전 실행 프레임이
+        // 계정 전환 후에도 보이거나 소유권/삭제 재검사를 우회하지 않도록 저장하지 않습니다.
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
-                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
+                .cacheControl(CacheControl.noStore())
                 .body(image);
     }
 

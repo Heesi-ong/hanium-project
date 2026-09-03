@@ -938,6 +938,9 @@ function UploadPage() {
                                         </div>
                                         <span className="progress-bar-label">
                                             {getDisplayPercent(progress)}% · {progress?.message || "진행률을 확인하는 중입니다."}
+                                            {progress?.basicAnalysisStep?.stepNo != null &&
+                                                progress?.basicAnalysisStep?.totalSteps != null &&
+                                                ` (${progress.basicAnalysisStep.stepNo}/${progress.basicAnalysisStep.totalSteps} 단계)`}
                                         </span>
                                     </div>
                                 )}

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useJobStatusPolling } from "../hooks/useJobStatusPolling";
 import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
 import AnalysisQualitySection from "../components/result-detail/AnalysisQualitySection";
+import AnalysisTraceSection from "../components/result-detail/AnalysisTraceSection";
 import ResultScoreChart from "../components/chart/ResultScoreChart";
 import ScoreCompositionChart from "../components/chart/ScoreCompositionChart";
 import EmptyState from "../components/EmptyState";
@@ -13,6 +14,7 @@ import AudioAnalysisSection from "../components/result-detail/AudioAnalysisSecti
 import CoachChatSection from "../components/result-detail/CoachChatSection";
 import FeedbackSection from "../components/result-detail/FeedbackSection";
 import FillerAnalysisSection from "../components/result-detail/FillerAnalysisSection";
+import FrameGallerySection from "../components/result-detail/FrameGallerySection";
 import GestureAnalysisSection from "../components/result-detail/GestureAnalysisSection";
 import OpenAiFeedbackStatusSection from "../components/result-detail/OpenAiFeedbackStatusSection";
 import PipelineSection from "../components/result-detail/PipelineSection";
@@ -176,6 +178,14 @@ function ResultDetailPage() {
 
     const fillerWords = Array.isArray(fillerInfo.fillerWords)
         ? fillerInfo.fillerWords
+        : EMPTY_ARRAY;
+
+    const analysisTrace = Array.isArray(basicAnalysis.analysisTrace)
+        ? basicAnalysis.analysisTrace
+        : EMPTY_ARRAY;
+
+    const frameGallery = Array.isArray(basicAnalysis.frameGallery)
+        ? basicAnalysis.frameGallery
         : EMPTY_ARRAY;
 
     const poseFrameResults = Array.isArray(poseInfo.frameResults)
@@ -1022,6 +1032,31 @@ function ResultDetailPage() {
             <AnimatedSection>
                 <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
             </AnimatedSection>
+
+            {analysisTrace.length > 0 && (
+                <AnimatedSection>
+                    <CollapsibleDetails
+                        className="analysis-info-details"
+                        summary="분석 처리 과정 — OpenCV·MediaPipe 단계별 소요 시간과 처리량"
+                    >
+                        <AnalysisTraceSection analysisTrace={analysisTrace} />
+                    </CollapsibleDetails>
+                </AnimatedSection>
+            )}
+
+            {frameGallery.length > 0 && (
+                <AnimatedSection className="no-print">
+                    <CollapsibleDetails
+                        className="analysis-info-details"
+                        summary={`분석 프레임 미리보기 — MediaPipe 스켈레톤 오버레이 (${frameGallery.length}장)`}
+                    >
+                        <FrameGallerySection
+                            jobId={jobId}
+                            frameGallery={frameGallery}
+                        />
+                    </CollapsibleDetails>
+                </AnimatedSection>
+            )}
 
             <AnimatedSection>
                 <CollapsibleDetails

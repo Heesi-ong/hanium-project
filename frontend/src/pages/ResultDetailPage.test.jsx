@@ -106,6 +106,8 @@ function createCompletedResult() {
                     filler: {},
                     face: {},
                     emotion: {},
+                    analysisTrace: [],
+                    frameGallery: [],
                 },
                 visualAnalysis: {},
                 feedback: {},
@@ -162,6 +164,50 @@ describe("ResultDetailPage", () => {
         await waitFor(() => {
             expect(analysisApiMock.getResult).toHaveBeenCalledWith("job-print-test");
         });
+    });
+
+    it("shows the analysis trace and frame gallery sections when the result includes them", async () => {
+        const result = createCompletedResult();
+        result.data.result.basicAnalysis.analysisTrace = [
+            {
+                stepNo: 5,
+                totalSteps: 9,
+                key: "pose_gesture",
+                label: "자세와 제스처를 분석하는 중...",
+                durationMs: 1234,
+                detail: "포즈 검출 17/20 프레임",
+            },
+        ];
+        result.data.result.basicAnalysis.frameGallery = [
+            {
+                sequence: 1,
+                timestampSec: 1,
+                poseDetected: true,
+                gestureDetected: false,
+                fileName: "frame_001.jpg",
+            },
+        ];
+        analysisApiMock.getResult.mockResolvedValue(result);
+
+        renderResultDetailPage();
+
+        expect(
+            await screen.findByText(/분석 처리 과정 — OpenCV·MediaPipe/)
+        ).toBeInTheDocument();
+        expect(
+            screen.getByText(/분석 프레임 미리보기 — MediaPipe 스켈레톤 오버레이 \(1장\)/)
+        ).toBeInTheDocument();
+    });
+
+    it("omits the analysis trace and frame gallery sections when they are absent", async () => {
+        renderResultDetailPage();
+
+        await waitFor(() => {
+            expect(analysisApiMock.getResult).toHaveBeenCalledWith("job-print-test");
+        });
+
+        expect(screen.queryByText(/분석 처리 과정 —/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/분석 프레임 미리보기 —/)).not.toBeInTheDocument();
     });
 
     it("shows the Korean status label instead of the raw status enum", async () => {

@@ -593,6 +593,17 @@ public class AnalysisCommandService {
             AnalysisEngineResponse analysisEngineResponse = basicResult.response();
             String videoDownloadUrl = basicResult.videoDownloadUrl();
 
+            // 스켈레톤 오버레이 프레임 저장은 사용자에게 "이렇게 분석했다"를 보여주기 위한
+            // 부가 기능이므로, 저장에 실패하더라도 분석 파이프라인은 계속 진행합니다.
+            try {
+                analysisEngineResponse = resultPersistenceStage.persistFrameOverlays(
+                        jobId,
+                        analysisEngineResponse
+                );
+            } catch (Exception e) {
+                log.warn("[{}] 오버레이 프레임 저장에 실패해 갤러리 없이 계속 진행합니다: {}", jobId, e.getMessage());
+            }
+
             AnalysisVideoLlmStage.Plan videoLlmPlan = videoLlmStage.prepare(
                     jobId,
                     useVideoLlm,

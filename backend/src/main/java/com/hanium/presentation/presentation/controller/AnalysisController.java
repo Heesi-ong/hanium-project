@@ -3,7 +3,9 @@ package com.hanium.presentation.presentation.controller;
 import com.hanium.presentation.application.analysis.AnalysisCommandService;
 import com.hanium.presentation.application.analysis.AnalysisProgressService;
 import com.hanium.presentation.application.analysis.AnalysisQueryService;
+import com.hanium.presentation.application.analysis.BasicAnalysisStepReader;
 import com.hanium.presentation.application.analysis.VideoLlmReanalysisService;
+import com.hanium.presentation.domain.analysis.type.AnalysisStatus;
 import com.hanium.presentation.domain.analysis.type.PracticeGoal;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.request.AnalysisRunRequest;
@@ -35,17 +37,20 @@ public class AnalysisController {
     private final AnalysisCommandService analysisCommandService;
     private final AnalysisQueryService analysisQueryService;
     private final AnalysisProgressService analysisProgressService;
+    private final BasicAnalysisStepReader basicAnalysisStepReader;
     private final VideoLlmReanalysisService videoLlmReanalysisService;
 
     public AnalysisController(
             AnalysisCommandService analysisCommandService,
             AnalysisQueryService analysisQueryService,
             AnalysisProgressService analysisProgressService,
+            BasicAnalysisStepReader basicAnalysisStepReader,
             VideoLlmReanalysisService videoLlmReanalysisService
     ) {
         this.analysisCommandService = analysisCommandService;
         this.analysisQueryService = analysisQueryService;
         this.analysisProgressService = analysisProgressService;
+        this.basicAnalysisStepReader = basicAnalysisStepReader;
         this.videoLlmReanalysisService = videoLlmReanalysisService;
     }
 
@@ -115,10 +120,50 @@ public class AnalysisController {
             progress = createFallbackProgress(statusResponse);
         }
 
+        enrichWithBasicAnalysisStep(jobId, statusResponse, progress);
+
         return ApiResponse.success(
                 "분석 진행률 조회가 완료되었습니다.",
                 progress
         );
+    }
+
+    // 기본 분석(BASIC_ANALYZING)은 백엔드가 분석 엔진을 한 번의 동기 호출로 기다리는 구간이라,
+    // 파이프라인 단계 기준으로는 10%에 멈춰 보입니다. 분석 엔진이 공유 볼륨에 남긴 세부 단계
+    // (progress.json)가 있으면, 그 단계 정보를 덧붙이고 진행률을 10~38% 구간으로 세분화합니다.
+    private void enrichWithBasicAnalysisStep(
+            String jobId,
+            AnalysisStatusResponse statusResponse,
+            Map<String, Object> progress
+    ) {
+        if (statusResponse.status() != AnalysisStatus.BASIC_ANALYZING) {
+            return;
+        }
+
+        basicAnalysisStepReader.read(jobId).ifPresent(step -> {
+            progress.put("basicAnalysisStep", step);
+
+            Integer stepNo = toInt(step.get("stepNo"));
+            Integer totalSteps = toInt(step.get("totalSteps"));
+            Object label = step.get("label");
+
+            if (label instanceof String labelText && !labelText.isBlank()) {
+                progress.put("message", labelText);
+            }
+
+            if (stepNo != null && totalSteps != null && totalSteps > 0) {
+                int completed = Math.max(0, Math.min(stepNo, totalSteps) - 1);
+                int percent = 10 + (int) Math.round(completed / (double) totalSteps * 28);
+                progress.put("percent", Math.max(10, Math.min(percent, 38)));
+            }
+        });
+    }
+
+    private Integer toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return null;
     }
 
     private Map<String, Object> createFallbackProgress(AnalysisStatusResponse statusResponse) {

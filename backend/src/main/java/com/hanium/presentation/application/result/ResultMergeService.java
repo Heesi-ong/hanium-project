@@ -116,6 +116,9 @@ public class ResultMergeService {
         basicAnalysis.put("gesture", nullSafeMap(analysisEngineResponse.gesture()));
         basicAnalysis.put("face", nullSafeMap(analysisEngineResponse.face()));
         basicAnalysis.put("emotion", nullSafeMap(analysisEngineResponse.emotion()));
+        // 사용자에게 분석 처리 과정을 보여주기 위한 단계별 로그와 저장된 오버레이 프레임 목록입니다.
+        basicAnalysis.put("analysisTrace", nullSafeList(analysisEngineResponse.analysisTrace()));
+        basicAnalysis.put("frameGallery", nullSafeList(analysisEngineResponse.frameGallery()));
 
         return basicAnalysis;
     }
@@ -375,6 +378,8 @@ public class ResultMergeService {
         basicAnalysis.put("gesture", Map.of());
         basicAnalysis.put("face", Map.of());
         basicAnalysis.put("emotion", Map.of());
+        basicAnalysis.put("analysisTrace", List.of());
+        basicAnalysis.put("frameGallery", List.of());
 
         return basicAnalysis;
     }

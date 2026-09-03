@@ -152,11 +152,19 @@ public class AnalysisController {
             }
 
             if (stepNo != null && totalSteps != null && totalSteps > 0) {
-                int completed = Math.max(0, Math.min(stepNo, totalSteps) - 1);
-                int percent = 10 + (int) Math.round(completed / (double) totalSteps * 28);
-                progress.put("percent", Math.max(10, Math.min(percent, 38)));
+                progress.put("percent", basicAnalysisPercent(stepNo, totalSteps));
             }
         });
+    }
+
+    // 기본 분석 세부 단계를 파이프라인 BASIC(10%)와 다음 단계(40%) 사이의 10~38% 구간에
+    // 매핑합니다. 마지막 단계가 38%에 도달하도록 (totalSteps - 1)로 나눕니다
+    // (totalSteps <= 1이면 0으로 나누지 않도록 분모를 1로 보정).
+    static int basicAnalysisPercent(int stepNo, int totalSteps) {
+        int denominator = Math.max(1, totalSteps - 1);
+        int completed = Math.max(0, Math.min(stepNo, totalSteps) - 1);
+        int percent = 10 + (int) Math.round(completed / (double) denominator * 28);
+        return Math.max(10, Math.min(percent, 38));
     }
 
     private Integer toInt(Object value) {

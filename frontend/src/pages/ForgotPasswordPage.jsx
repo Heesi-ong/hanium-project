@@ -28,56 +28,54 @@ function ForgotPasswordPage() {
     }
 
     return (
-        <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <PageFadeIn className="page-section">
-                <article className="upload-card">
-                    <p className="eyebrow">Password reset</p>
-                    <h2>비밀번호 재설정</h2>
-                    <p className="card-description">
-                        가입한 이메일을 입력하면 재설정 안내를 보냅니다.
-                    </p>
+        <PageFadeIn className="flex min-h-[calc(100svh-200px)] items-center justify-center py-6">
+            <article className="upload-card w-full max-w-[520px]">
+                <p className="eyebrow">Password reset</p>
+                <h2>비밀번호 재설정</h2>
+                <p className="card-description">
+                    가입한 이메일을 입력하면 재설정 안내를 보냅니다.
+                </p>
 
-                    <form className="option-panel" onSubmit={handleSubmit}>
-                        <label>
-                            <span>
-                                <strong>이메일</strong>
-                                <input
-                                    type="email"
-                                    value={email}
-                                    onChange={(event) => setEmail(event.target.value)}
-                                    autoComplete="email"
-                                    className="text-input"
-                                    required
-                                />
-                            </span>
-                        </label>
+                <form className="option-panel" onSubmit={handleSubmit}>
+                    <label>
+                        <span>
+                            <strong>이메일</strong>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(event) => setEmail(event.target.value)}
+                                autoComplete="email"
+                                className="text-input"
+                                required
+                            />
+                        </span>
+                    </label>
 
-                        <StateMessage type="error">{error}</StateMessage>
-                        <StateMessage type="success">{success}</StateMessage>
+                    <StateMessage type="error">{error}</StateMessage>
+                    <StateMessage type="success">{success}</StateMessage>
 
-                        <div className="button-row">
-                            <button
-                                type="submit"
-                                className="primary-button"
-                                disabled={loading}
-                            >
-                                {loading ? "요청 중..." : "재설정 안내 받기"}
-                            </button>
+                    <div className="button-row">
+                        <button
+                            type="submit"
+                            className="primary-button"
+                            disabled={loading}
+                        >
+                            {loading ? "요청 중..." : "재설정 안내 받기"}
+                        </button>
 
-                            <Link to="/login" className="secondary-button">
-                                로그인으로 이동
-                            </Link>
-                        </div>
-                    </form>
+                        <Link to="/login" className="secondary-button">
+                            로그인으로 이동
+                        </Link>
+                    </div>
+                </form>
 
-                    <p className="auth-policy-links">
-                        <Link to="/privacy">테스트 데이터 처리 안내</Link>
-                        <span aria-hidden="true"> · </span>
-                        <Link to="/terms">프로젝트 이용 안내</Link>
-                    </p>
-                </article>
-            </PageFadeIn>
-        </main>
+                <p className="auth-policy-links">
+                    <Link to="/privacy">테스트 데이터 처리 안내</Link>
+                    <span aria-hidden="true"> · </span>
+                    <Link to="/terms">프로젝트 이용 안내</Link>
+                </p>
+            </article>
+        </PageFadeIn>
     );
 }
 

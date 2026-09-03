@@ -49,60 +49,58 @@ function ResetPasswordPage() {
     }
 
     return (
-        <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
-            <PageFadeIn className="page-section">
-                <article className="upload-card">
-                    <p className="eyebrow">New password</p>
-                    <h2>새 비밀번호 설정</h2>
-                    <p className="card-description">
-                        새 비밀번호는 영문자와 숫자를 포함해 8자 이상이어야 합니다.
-                    </p>
+        <PageFadeIn className="flex min-h-[calc(100svh-200px)] items-center justify-center py-6">
+            <article className="upload-card w-full max-w-[520px]">
+                <p className="eyebrow">New password</p>
+                <h2>새 비밀번호 설정</h2>
+                <p className="card-description">
+                    새 비밀번호는 영문자와 숫자를 포함해 8자 이상이어야 합니다.
+                </p>
 
-                    <form className="option-panel" onSubmit={handleSubmit}>
-                        <label>
-                            <span>
-                                <strong>새 비밀번호</strong>
-                                <input
-                                    type={showPassword ? "text" : "password"}
-                                    value={newPassword}
-                                    onChange={(event) => setNewPassword(event.target.value)}
-                                    autoComplete="new-password"
-                                    minLength={8}
-                                    className="text-input"
-                                    required
-                                    disabled={!token}
-                                />
-                                <small style={hintStyle}>
-                                    영문자와 숫자를 각각 1자 이상 포함해 8자 이상 입력해주세요.
-                                </small>
-                            </span>
-                        </label>
+                <form className="option-panel" onSubmit={handleSubmit}>
+                    <label>
+                        <span>
+                            <strong>새 비밀번호</strong>
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                value={newPassword}
+                                onChange={(event) => setNewPassword(event.target.value)}
+                                autoComplete="new-password"
+                                minLength={8}
+                                className="text-input"
+                                required
+                                disabled={!token}
+                            />
+                            <small style={hintStyle}>
+                                영문자와 숫자를 각각 1자 이상 포함해 8자 이상 입력해주세요.
+                            </small>
+                        </span>
+                    </label>
 
-                        <PasswordToggleButton
-                            visible={showPassword}
-                            onToggle={() => setShowPassword((prev) => !prev)}
-                        />
+                    <PasswordToggleButton
+                        visible={showPassword}
+                        onToggle={() => setShowPassword((prev) => !prev)}
+                    />
 
-                        <StateMessage type="error">{error}</StateMessage>
-                        <StateMessage type="success">{success}</StateMessage>
+                    <StateMessage type="error">{error}</StateMessage>
+                    <StateMessage type="success">{success}</StateMessage>
 
-                        <div className="button-row">
-                            <button
-                                type="submit"
-                                className="primary-button"
-                                disabled={loading || !token}
-                            >
-                                {loading ? "변경 중..." : "비밀번호 변경"}
-                            </button>
+                    <div className="button-row">
+                        <button
+                            type="submit"
+                            className="primary-button"
+                            disabled={loading || !token}
+                        >
+                            {loading ? "변경 중..." : "비밀번호 변경"}
+                        </button>
 
-                            <Link to="/login" className="secondary-button">
-                                로그인으로 이동
-                            </Link>
-                        </div>
-                    </form>
-                </article>
-            </PageFadeIn>
-        </main>
+                        <Link to="/login" className="secondary-button">
+                            로그인으로 이동
+                        </Link>
+                    </div>
+                </form>
+            </article>
+        </PageFadeIn>
     );
 }
 

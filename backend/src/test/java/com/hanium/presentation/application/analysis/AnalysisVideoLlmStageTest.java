@@ -120,22 +120,38 @@ class AnalysisVideoLlmStageTest {
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenReturn(response("MOCK"));
 
-        AnalysisVideoLlmStage.Plan plan = prepare(true);
-        VideoLlmEngineResponse response = stage.analyze(
-                JOB_ID,
-                VIDEO_PATH,
-                "http://backend/video",
-                plan
-        );
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        ch.qos.logback.classic.Logger stageLogger = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(AnalysisVideoLlmStage.class);
+        stageLogger.addAppender(appender);
 
-        verify(userRateLimiter).reserveVideoLlmBudget(OWNER_ID, "2026-08", 3);
-        ArgumentCaptor<VideoLlmEngineRequest> requestCaptor =
-                ArgumentCaptor.forClass(VideoLlmEngineRequest.class);
-        verify(videoLlmEngineClient).analyze(requestCaptor.capture());
-        assertThat(requestCaptor.getValue().durationSec()).isEqualTo(250.0);
-        assertThat(requestCaptor.getValue().videoDownloadUrl()).isEqualTo("http://backend/video");
-        assertThat(requestCaptor.getValue().requireReal()).isFalse();
-        assertThat(response.model()).containsEntry("generationMode", "MOCK");
+        try {
+            AnalysisVideoLlmStage.Plan plan = prepare(true);
+            VideoLlmEngineResponse response = stage.analyze(
+                    JOB_ID,
+                    VIDEO_PATH,
+                    "http://backend/video",
+                    plan
+            );
+
+            verify(userRateLimiter).reserveVideoLlmBudget(OWNER_ID, "2026-08", 3);
+            ArgumentCaptor<VideoLlmEngineRequest> requestCaptor =
+                    ArgumentCaptor.forClass(VideoLlmEngineRequest.class);
+            verify(videoLlmEngineClient).analyze(requestCaptor.capture());
+            assertThat(requestCaptor.getValue().durationSec()).isEqualTo(250.0);
+            assertThat(requestCaptor.getValue().videoDownloadUrl()).isEqualTo("http://backend/video");
+            assertThat(requestCaptor.getValue().requireReal()).isFalse();
+            assertThat(response.model()).containsEntry("generationMode", "MOCK");
+            assertThat(appender.list)
+                    .extracting(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .anySatisfy(message -> assertThat(message)
+                            .contains("Video LLM 분석 응답을 받았습니다")
+                            .contains("generationMode=MOCK"));
+        } finally {
+            stageLogger.detachAppender(appender);
+        }
     }
 
     @Test

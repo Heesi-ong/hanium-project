@@ -161,6 +161,27 @@ class OpenAiClientTest {
     }
 
     @Test
+    void generateMockFeedbackLogsFeedbackLlmMode() {
+        OpenAiClient client = createDisabledClient();
+        ListAppender<ILoggingEvent> appender = attachListAppender();
+
+        try {
+            client.generateFeedback(new OpenAiFeedbackRequest("mock-mode-log-job", Map.of()));
+
+            assertThat(appender.list)
+                    .extracting(ILoggingEvent::getFormattedMessage)
+                    .anySatisfy(message -> assertThat(message)
+                            .contains("FEEDBACK_LLM_MODE")
+                            .contains("jobId=mock-mode-log-job")
+                            .contains("mode=MOCK")
+                            .contains("provider=openai")
+                            .contains("reason=openai.enabled=false"));
+        } finally {
+            detachListAppender(appender);
+        }
+    }
+
+    @Test
     void generateMockFeedbackDoesNotExposeGazeOrExpressionScores() {
         OpenAiClient client = createDisabledClient();
 

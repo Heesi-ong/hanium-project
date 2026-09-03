@@ -418,6 +418,17 @@ public class OpenAiClient {
             String generationMode,
             String fallbackReason
     ) {
+        // FALLBACK 경로는 위에서 FEEDBACK_LLM_FALLBACK_TO_MOCK(전이)도 남기지만, plain mock
+        // (OPENAI_ENABLED=false, 월간 예산 초과 등)은 지금까지 아무 로그가 없었습니다.
+        // 모든 비-real 피드백이 한 키워드로 잡히도록 최종 serving 모드를 남깁니다.
+        log.info(
+                "FEEDBACK_LLM_MODE jobId={} mode={} provider={} reason={}",
+                request.jobId(),
+                generationMode,
+                feedbackLlmProperties.isNvidiaProvider() ? "nvidia" : "openai",
+                fallbackReason
+        );
+
         Map<String, Object> compactAnalysis = nullSafeMap(request.compactAnalysis());
 
         Map<String, Object> modelInputs = nullSafeMap(compactAnalysis.get("modelInputs"));

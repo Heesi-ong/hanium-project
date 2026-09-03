@@ -195,6 +195,15 @@ public class OpenAiCoachClient {
             OpenAiCoachChatRequest request,
             String reason
     ) {
+        // fallback 경로는 위에서 COACH_LLM_FALLBACK_TO_MOCK(전이)도 남기지만, plain mock
+        // (OPENAI_ENABLED=false 등)은 지금까지 아무 로그가 없었습니다. 모든 mock 응답이
+        // 한 키워드로 잡히도록 여기서 최종 serving 모드를 남깁니다.
+        log.info(
+                "COACH_LLM_MODE jobId={} mode=MOCK provider={} reason={}",
+                request.jobId(),
+                coachLlmProperties.isNvidiaProvider() ? "nvidia" : "openai",
+                reason
+        );
         return OpenAiCoachReplyResponse.mock(
                 request.jobId(),
                 resolveModel(),

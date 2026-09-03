@@ -174,7 +174,9 @@ final class AnalysisVideoLlmStage {
             );
         }
 
-        log.info("[{}] Video LLM 분석 응답을 받았습니다.", jobId);
+        // 엔진이 REAL/MOCK/FALLBACK 중 무엇으로 응답했는지 여기서 남깁니다. 완료 전 실패하면
+        // completeStatus의 videoLlmGenerationMode 로그가 안 남으므로, 응답 시점에도 기록합니다.
+        log.info("[{}] Video LLM 분석 응답을 받았습니다. generationMode={}", jobId, responseMode);
         return response;
     }
 

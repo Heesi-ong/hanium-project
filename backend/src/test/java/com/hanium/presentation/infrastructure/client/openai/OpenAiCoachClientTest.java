@@ -145,6 +145,38 @@ class OpenAiCoachClientTest {
         assertThat(response.fallbackReason()).isEqualTo("openai.enabled=false");
     }
 
+    @Test
+    void plainMockReplyLogsCoachLlmMode() {
+        OpenAiProperties properties = new OpenAiProperties();
+        properties.setEnabled(false);
+        properties.setModel("gpt-test");
+
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(OpenAiCoachClient.class);
+        logger.addAppender(appender);
+
+        try {
+            buildClient(properties, openaiProvider(), mock(UserRateLimiter.class))
+                    .generateReply(new OpenAiCoachChatRequest(
+                            "job-mock-log", Map.of(), List.of(), List.of(), "질문입니다."
+                    ));
+
+            assertThat(appender.list)
+                    .extracting(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .anySatisfy(message -> assertThat(message)
+                            .contains("COACH_LLM_MODE")
+                            .contains("jobId=job-mock-log")
+                            .contains("mode=MOCK")
+                            .contains("provider=openai")
+                            .contains("reason=openai.enabled=false"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
     // coach.llm.provider=nvidia일 때: build.nvidia.com(Chat Completions 호환)로 요청이
     // 나가고, NVIDIA 전용 모델이 쓰이며, OpenAI 전용 월간 예산은 건드리지 않아야 한다.
     @Test

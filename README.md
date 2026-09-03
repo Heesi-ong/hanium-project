@@ -429,6 +429,28 @@ UTC라면 표시 시각도 UTC이며, 원본 전체 로그와 장기 보관 정�
 `storage/logs/backend.log` 및 서비스별 로그 설정을 그대로 따릅니다. 스크립트는 로그를
 읽기만 하며 분석 상태, DB, Redis 진행률을 변경하지 않습니다.
 
+### 6.3 구조적 로그 키워드
+
+backend는 grep으로 상태를 빠르게 확인할 수 있도록 주요 이벤트를 대문자 키워드로 남깁니다.
+`grep KEYWORD storage/logs/backend.log`(dev/prod) 또는 콘솔에서 바로 검색하세요.
+
+| 키워드 | 시점 | 확인할 수 있는 것 |
+|---|---|---|
+| `EXTERNAL_AI_MODE` | 기동 시 1회 | 이 인스턴스가 피드백/코치 LLM을 실제 호출하는가 mock인가 (`feedback=real\|mock(provider=openai\|nvidia)`) |
+| `FEEDBACK_LLM_MODE` / `COACH_LLM_MODE` | 피드백/코치 응답 생성 시 | `mode=MOCK` 또는 `mode=FALLBACK`과 사유. 실제 호출 성공은 아래 `*_USAGE`로 확인 |
+| `FEEDBACK_LLM_USAGE` / `COACH_LLM_USAGE` / `OPENAI_USAGE` | 실제 LLM 호출 성공 시 | provider, model, 토큰 수. 이 로그가 있으면 그 job은 실제 호출을 했다는 뜻 (`OPENAI_USAGE`는 명명 비대칭 — feedback openai provider 경로) |
+| `FEEDBACK_LLM_FALLBACK_TO_MOCK` / `COACH_LLM_FALLBACK_TO_MOCK` | 실제 호출 시도 실패 → mock 전환 | 실패 사유(HTTP 오류, 타임아웃, 필드 누락 등) |
+| `FEEDBACK_LLM_RETRY_AFTER_NETWORK_ERROR` | 첫 외부 호출이 콜드 DNS/TLS로 실패 | 1회 재시도 발생 |
+| `OPENAI_REUSE` | 재시도 시 이전 실제 응답 재사용 | 실제 호출 없이 기존 성공 결과 재사용 |
+| `STAGE_TRANSITION jobId= step= percent=` | 파이프라인 단계 전이마다 | 현재 어느 단계인지(BASIC_ANALYSIS → VIDEO_LLM_ANALYSIS → COMPACT_ANALYSIS → OPENAI_FEEDBACK → RESULT_MERGE → COMPLETED/FAILED) |
+| `STARTUP_RECOVERY` | 기동 시, 유실된 실행 중 작업이 있을 때 | 이전 프로세스가 죽으며 남긴 RUNNING 작업을 몇 건 실패 처리했는지 |
+| `OBJECT_STORAGE_*` / `MINIO_*` | MinIO 미러링/프리사인 URL/백필 실패 | 로컬 파일은 정상인데 오브젝트 스토리지 반영이 실패한 경우 |
+| `ADMIN_ROLE_SYNC_*` | 기동 시 `ADMIN_EMAILS` 목록과 DB 권한 동기화 | 승격/강등된 계정 |
+
+Video LLM 결과가 실제 모델/폴백/mock 중 무엇이었는지는 job 완료 로그
+`상태 즉시 반영: COMPLETED (videoLlmGenerationMode=...)`와 집계 메트릭
+`video_llm.generation{mode}`(§6.1)로 확인합니다.
+
 ## 7. frontend 실행
 
 ```bash

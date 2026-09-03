@@ -46,6 +46,10 @@ vi.mock("../components/chart/ResultScoreChart", () => ({
     default: () => <div data-testid="result-score-chart" />,
 }));
 
+vi.mock("../components/chart/ScoreCompositionChart", () => ({
+    default: () => <div data-testid="score-composition-chart" />,
+}));
+
 vi.mock("../components/result-detail/VideoPlayerSection", () => ({
     default: () => <div data-testid="video-player-section" />,
 }));

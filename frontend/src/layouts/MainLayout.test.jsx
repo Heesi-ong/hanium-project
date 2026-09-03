@@ -95,6 +95,7 @@ describe("MainLayout", () => {
 
         const toggleButton = screen.getByRole("button", { name: "메뉴 열기" });
         expect(toggleButton).toHaveAttribute("aria-expanded", "false");
+        expect(toggleButton).toHaveClass("appearance-none", "h-11", "w-11", "bg-surface-primary");
         expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
 
         fireEvent.click(toggleButton);
@@ -106,6 +107,24 @@ describe("MainLayout", () => {
         fireEvent.click(screen.getByRole("button", { name: "메뉴 닫기" }));
 
         expect(screen.queryByRole("navigation", { name: "모바일 메뉴" })).not.toBeInTheDocument();
+    });
+
+    it("uses a full-bleed canvas only for the home route", () => {
+        authMock.isAuthenticated = false;
+        authMock.user = null;
+
+        const { unmount } = renderMainLayout("/");
+
+        expect(screen.getByRole("main"))
+            .toHaveAttribute("data-layout", "full-bleed");
+        expect(screen.getByRole("main")).toHaveClass("app-shell-main--full");
+
+        unmount();
+        renderMainLayout("/upload");
+
+        expect(screen.getByRole("main"))
+            .toHaveAttribute("data-layout", "contained");
+        expect(screen.getByRole("main")).toHaveClass("app-shell-main--contained");
     });
 
     it("closes the mobile menu when a link inside it is clicked", () => {

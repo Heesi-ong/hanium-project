@@ -7,6 +7,8 @@ vi.mock("react-chartjs-2", () => ({
         <div
             data-testid="score-trend-line"
             data-chart-data={JSON.stringify(props.data)}
+            role={props.role}
+            aria-label={props["aria-label"]}
         />
     ),
 }));
@@ -63,6 +65,9 @@ describe("ScoreTrendChart", () => {
             "제스처",
         ]);
         expect(chartData.datasets[1].data).toEqual([60, 84]);
+        expect(
+            screen.getByRole("img", { name: "완료된 발표 분석의 회차별 점수 변화 차트" })
+        ).toBeInTheDocument();
         expect(screen.getByLabelText("첫 회차 대비 최근 변화")).toHaveTextContent("+17점");
     });
 

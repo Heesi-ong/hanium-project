@@ -40,13 +40,16 @@ describe("StatusPage", () => {
     it("renders user-facing availability without internal diagnostics", async () => {
         render(<StatusPage />);
 
-        expect(screen.getByRole("heading", { name: "서비스 상태" })).toBeInTheDocument();
+        expect(screen.getByRole("heading", { level: 1, name: "서비스 상태" }))
+            .toBeInTheDocument();
         expect(await screen.findByText("기본 분석")).toBeInTheDocument();
         expect(screen.getByText("Video LLM 분석")).toBeInTheDocument();
         expect(screen.getByText("비밀번호 재설정")).toBeInTheDocument();
 
         const passwordResetCard = screen.getByText("비밀번호 재설정").closest("article");
         expect(within(passwordResetCard).getByText("이용 불가")).toBeInTheDocument();
+        expect(passwordResetCard).toHaveAttribute("data-status", "UNAVAILABLE");
+        expect(within(passwordResetCard).getByText("×")).toHaveAttribute("aria-hidden", "true");
         expect(within(passwordResetCard).getByText(
             "현재 비밀번호 재설정 이메일을 보낼 수 없습니다."
         )).toBeInTheDocument();
@@ -56,6 +59,19 @@ describe("StatusPage", () => {
         expect(screen.queryByText(/NVIDIA_API_KEY/)).not.toBeInTheDocument();
         expect(screen.queryByText(/policy/i)).not.toBeInTheDocument();
         expect(getServiceStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it("announces the initial loading state while keeping every component visible", () => {
+        getServiceStatus.mockReturnValueOnce(new Promise(() => {}));
+
+        render(<StatusPage />);
+
+        const overview = screen.getByRole("status");
+        expect(overview).toHaveAttribute("aria-live", "polite");
+        expect(overview).toHaveTextContent("확인 중");
+        expect(screen.getAllByText("현재 이용 가능 여부를 확인하고 있습니다."))
+            .toHaveLength(5);
+        expect(screen.getByRole("button", { name: "확인 중..." })).toBeDisabled();
     });
 
     it("refreshes all component statuses on demand", async () => {
@@ -91,8 +107,9 @@ describe("StatusPage", () => {
 
         render(<StatusPage />);
 
-        expect(await screen.findByText("상태 조회 실패")).toBeInTheDocument();
+        expect(await screen.findByRole("alert")).toHaveTextContent("상태 조회 실패");
         expect(screen.getByText("기본 분석")).toBeInTheDocument();
         expect(screen.getAllByText("확인 불가")).toHaveLength(5);
+        expect(screen.getByRole("status")).toHaveTextContent("새로고침하여 현재 상태를 확인하세요.");
     });
 });

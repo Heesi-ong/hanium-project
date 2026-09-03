@@ -1,13 +1,9 @@
 .landing-page {
-    width: 100vw;
+    width: 100%;
     position: relative;
-    left: 50%;
-    right: 50%;
-    margin-left: -50vw;
-    margin-right: -50vw;
-    overflow-x: hidden;
+    overflow: clip;
 
-    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--sans);
     background:
         linear-gradient(180deg, #090807 0%, #120d09 34%, #090807 100%);
     isolation: isolate;

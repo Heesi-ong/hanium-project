@@ -51,6 +51,12 @@ describe("OnboardingPage", () => {
 
         renderOnboardingPage();
 
+        expect(screen.getByRole("heading", { level: 1, name: "첫 분석 전에 코칭 방향을 맞춰볼게요." })).toBeInTheDocument();
+        expect(screen.getByRole("form", { name: "발표 코칭 설정" })).toBeInTheDocument();
+        expect(screen.getByRole("combobox", { name: "주로 어떤 목적으로 사용하시나요?" })).toHaveValue("INTERVIEW");
+        expect(screen.getByRole("combobox", { name: "발표 경험 수준은 어느 정도인가요?" })).toHaveValue("BEGINNER");
+        expect(screen.getByRole("combobox", { name: "가장 개선하고 싶은 부분은 무엇인가요?" })).toHaveValue("VOICE_TONE");
+
         fireEvent.click(screen.getByRole("button", { name: "저장하고 시작하기" }));
 
         await waitFor(() => {
@@ -101,6 +107,11 @@ describe("OnboardingPage", () => {
             state: { from: "/account" },
         });
 
+        expect(screen.getByRole("heading", { level: 1, name: "코칭 기준을 다시 맞춰볼까요?" })).toBeInTheDocument();
+        expect(screen.getByRole("combobox", { name: "주로 어떤 목적으로 사용하시나요?" })).toHaveValue("LECTURE");
+        expect(screen.getByRole("combobox", { name: "발표 경험 수준은 어느 정도인가요?" })).toHaveValue("ADVANCED");
+        expect(screen.getByRole("combobox", { name: "가장 개선하고 싶은 부분은 무엇인가요?" })).toHaveValue("POSTURE");
+
         fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
         await waitFor(() => {
@@ -108,5 +119,37 @@ describe("OnboardingPage", () => {
         });
         expect(onboardingApiMock.skipOnboarding).not.toHaveBeenCalled();
         expect(authMock.updateUser).not.toHaveBeenCalled();
+    });
+
+    it("disables every action and field while saving", async () => {
+        let resolveRequest;
+        onboardingApiMock.completeOnboarding.mockImplementation(() => new Promise((resolve) => {
+            resolveRequest = resolve;
+        }));
+
+        renderOnboardingPage();
+        fireEvent.click(screen.getByRole("button", { name: "저장하고 시작하기" }));
+
+        await waitFor(() => {
+            expect(screen.getByRole("button", { name: "저장 중..." })).toBeDisabled();
+            expect(screen.getByRole("button", { name: "나중에 하기" })).toBeDisabled();
+            expect(screen.getByRole("combobox", { name: "주로 어떤 목적으로 사용하시나요?" })).toBeDisabled();
+        });
+
+        resolveRequest({ success: true });
+
+        await waitFor(() => {
+            expect(screen.getByText("홈")).toBeInTheDocument();
+        });
+    });
+
+    it("announces save errors without leaving the page", async () => {
+        onboardingApiMock.completeOnboarding.mockRejectedValue(new Error("설정을 저장할 수 없습니다."));
+
+        renderOnboardingPage();
+        fireEvent.click(screen.getByRole("button", { name: "저장하고 시작하기" }));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("설정을 저장할 수 없습니다.");
+        expect(screen.getByRole("form", { name: "발표 코칭 설정" })).toBeInTheDocument();
     });
 });

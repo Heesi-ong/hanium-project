@@ -148,6 +148,9 @@ describe("ResultListPage", () => {
         renderResultListPage();
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { level: 1, name: "분석 결과 목록" })).toBeInTheDocument();
+        expect(screen.getByRole("searchbox", { name: "파일명 또는 메모" })).toBeInTheDocument();
+        expect(screen.getByRole("combobox", { name: "정렬 기준" })).toBeInTheDocument();
         expect(screen.getAllByText("분석 완료").length).toBeGreaterThanOrEqual(1);
         // 오전/오후 vs AM/PM 표기는 실행 환경의 ICU 데이터에 따라 달라질 수 있어(로컬 macOS와
         // GitHub Actions 러너에서 다르게 관찰됨, 2026-08-12) 날짜/시간 값만 고정 검증합니다.
@@ -193,6 +196,22 @@ describe("ResultListPage", () => {
             expect(screen.getByText("demo.mp4")).toBeInTheDocument();
             expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
         });
+    });
+
+    it("exposes the active status filter without relying on color alone", async () => {
+        renderResultListPage();
+
+        await screen.findByText("presentation.mp4");
+
+        const allButton = screen.getByRole("button", { name: "전체" });
+        const completedButton = screen.getByRole("button", { name: "완료" });
+        expect(allButton).toHaveAttribute("aria-pressed", "true");
+        expect(completedButton).toHaveAttribute("aria-pressed", "false");
+
+        fireEvent.click(completedButton);
+
+        expect(allButton).toHaveAttribute("aria-pressed", "false");
+        expect(completedButton).toHaveAttribute("aria-pressed", "true");
     });
 
     it("searches by jobId only through the advanced search", async () => {
@@ -336,6 +355,7 @@ describe("ResultListPage", () => {
         renderResultListPage();
 
         expect(await screen.findByText("아직 분석 결과가 없습니다.")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { level: 1, name: "분석 결과 목록" })).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "첫 영상 업로드하기" })).toHaveAttribute(
             "href",
             "/upload"
@@ -392,10 +412,23 @@ describe("ResultListPage", () => {
         expect(
             await screen.findByText("결과 목록을 불러오지 못했습니다.")
         ).toBeInTheDocument();
+        expect(screen.getByRole("alert")).toHaveTextContent(
+            "결과 서버에 일시적으로 연결할 수 없습니다."
+        );
         expect(screen.getByText("결과 서버에 일시적으로 연결할 수 없습니다.")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
         expect(screen.queryByText("아직 분석 결과가 없습니다.")).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "첫 영상 업로드하기" })).not.toBeInTheDocument();
+    });
+
+    it("announces the initial loading state", () => {
+        analysisApiMock.getResults.mockImplementation(() => new Promise(() => {}));
+
+        renderResultListPage();
+
+        expect(screen.getByText("결과 보관함을 불러오는 중")).toBeInTheDocument();
+        expect(screen.getByText("결과 보관함을 불러오는 중").closest("[role='status']"))
+            .toHaveAttribute("aria-live", "polite");
     });
 
     it("uses the server totalElements instead of the currently loaded page length", async () => {

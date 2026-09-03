@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import EmptyState from "../components/EmptyState";
 import CollapsibleDetails from "../components/CollapsibleDetails";
 import PageHeader from "../components/PageHeader";
 import StateMessage from "../components/StateMessage";
@@ -175,6 +174,17 @@ function UploadPage() {
     const isFailed = ["FAILED", "DEAD_LETTER"].includes(currentStatus);
     const isCancelled = currentStatus === "CANCELLED";
     const isRateLimited = rateLimitedUntil > Date.now();
+    const statusVisual = isCompleted
+        ? { tone: "completed", symbol: "✓" }
+        : isFailed
+            ? { tone: "failed", symbol: "!" }
+            : isCancelled
+                ? { tone: "cancelled", symbol: "×" }
+                : isRunningStatus
+                    ? { tone: "running", symbol: "→" }
+                    : uploadedResult?.recovered
+                        ? { tone: "recovered", symbol: "↻" }
+                        : { tone: "uploaded", symbol: "↑" };
 
     // 일시적인 네트워크 장애(모바일 회선 순단 등)가 분석 실패처럼 보이지 않도록,
     // ResultDetailPage와 동일하게 연속 5회까지는 실패를 허용하고 다음 주기에
@@ -220,6 +230,19 @@ function UploadPage() {
     });
 
     const isFileSelectionDisabled = loading || running || polling || cancelling;
+    const fileDropZoneClassName = [
+        "file-drop-zone",
+        isDragActive && "drag-active",
+        file && "has-file",
+        isFileSelectionDisabled && "is-disabled",
+    ].filter(Boolean).join(" ");
+    const fileDropStatusLabel = isFileSelectionDisabled
+        ? loading
+            ? "영상을 업로드하는 중"
+            : "분석을 진행하는 중"
+        : file
+            ? "업로드 준비 완료"
+            : "발표 영상 파일";
 
     useEffect(() => {
         const storedJobId = readActiveAnalysisJobId();
@@ -666,8 +689,22 @@ function UploadPage() {
     }
 
     function getStepClassName(stepStatus) {
+        if (stepStatus === "FAILED") {
+            return isFailed
+                ? "pipeline-step failed"
+                : "pipeline-step terminal-step";
+        }
+
+        if (stepStatus === "CANCELLED") {
+            return isCancelled
+                ? "pipeline-step cancelled"
+                : "pipeline-step terminal-step";
+        }
+
         if (currentStatus === stepStatus) {
-            return "pipeline-step active";
+            return isCompleted
+                ? "pipeline-step done current"
+                : "pipeline-step active";
         }
 
         if (isCompleted) {
@@ -681,11 +718,27 @@ function UploadPage() {
             return "pipeline-step done";
         }
 
-        if ((isFailed || isCancelled) && currentIndex >= stepIndex) {
-            return "pipeline-step failed";
+        return "pipeline-step";
+    }
+
+    function getStepMarker(stepClassName, index) {
+        if (stepClassName.includes("done")) {
+            return "✓";
         }
 
-        return "pipeline-step";
+        if (stepClassName.includes("failed")) {
+            return "!";
+        }
+
+        if (stepClassName.includes("cancelled")) {
+            return "×";
+        }
+
+        if (stepClassName.includes("active")) {
+            return "→";
+        }
+
+        return index + 1;
     }
 
     function getStepIndex(status) {
@@ -723,16 +776,13 @@ function UploadPage() {
             <div className="upload-grid">
                 <div className="upload-card">
                     <h2>영상 파일 선택</h2>
-                    <p className="card-description">
+                    <p className="card-description" id="upload-file-guidance">
                         지원 형식: mp4, mov, avi, mkv · 최대 {MAX_FILE_SIZE_MB}MB
                     </p>
 
                     <label
-                        className={
-                            isDragActive
-                                ? "file-drop-zone drag-active"
-                                : "file-drop-zone"
-                        }
+                        className={fileDropZoneClassName}
+                        aria-disabled={isFileSelectionDisabled}
                         onDragEnter={handleDragEnter}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
@@ -741,20 +791,42 @@ function UploadPage() {
                         <input
                             ref={fileInputRef}
                             type="file"
+                            aria-label="발표 영상 파일 선택"
+                            aria-describedby="upload-file-guidance"
                             accept=".mp4,.mov,.avi,.mkv,video/mp4,video/quicktime"
                             onChange={handleFileChange}
                             disabled={isFileSelectionDisabled}
                         />
 
+                        <span className="file-drop-icon" aria-hidden="true">
+                            {file ? (
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="m5 12.5 4.2 4.2L19 7" />
+                                </svg>
+                            ) : (
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                    <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
+                                    <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+                                </svg>
+                            )}
+                        </span>
+
+                        <span className="file-drop-kicker">{fileDropStatusLabel}</span>
+
                         <span className="file-drop-title">
-              {file ? file.name : "클릭해서 발표 영상을 선택하세요"}
-            </span>
+                            {file ? file.name : "클릭해서 발표 영상을 선택하세요"}
+                        </span>
 
                         <span className="file-drop-subtitle">
-              {file
-                  ? `${selectedFileSizeMb}MB`
-                  : "파일을 선택하거나 이 영역에 끌어다 놓으면 업로드 준비 상태가 됩니다."}
-            </span>
+                            {file
+                                ? `${selectedFileSizeMb}MB · 다른 영상을 선택하려면 다시 클릭하세요.`
+                                : "파일을 선택하거나 이 영역에 끌어다 놓으면 업로드 준비 상태가 됩니다."}
+                        </span>
+
+                        <span className="file-drop-meta" aria-hidden="true">
+                            <span>MP4 · MOV · AVI · MKV</span>
+                            <span>최대 {MAX_FILE_SIZE_MB}MB</span>
+                        </span>
                     </label>
 
                     {previewUrl && (
@@ -827,7 +899,8 @@ function UploadPage() {
                     <StateMessage type="error">{error}</StateMessage>
 
                     {loading && (
-                        <div className="progress-bar-wrap">
+                        <div className="progress-bar-wrap upload-progress-wrap">
+                            <span className="progress-context-label">파일 전송</span>
                             <div
                                 className="progress-bar-track"
                                 role="progressbar"
@@ -837,7 +910,7 @@ function UploadPage() {
                                 aria-label="업로드 진행률"
                             >
                                 <div
-                                    className="progress-bar-fill"
+                                    className="progress-bar-fill upload-progress-fill"
                                     style={{ width: `${uploadPercent}%` }}
                                 />
                             </div>
@@ -874,27 +947,57 @@ function UploadPage() {
                     </div>
                 </div>
 
-                <div className="upload-card">
+                <div className="upload-card upload-status-card">
                     <h2>업로드 및 분석 상태</h2>
 
                     {!uploadedResult ? (
-                        <EmptyState
-                            title="아직 업로드된 영상이 없습니다."
-                            description="영상을 업로드하면 접수 시각과 진행 상태가 이곳에 표시됩니다."
-                        />
+                        <div className="upload-status-empty">
+                            <div className="upload-status-empty-icon" aria-hidden="true">◎</div>
+                            <p className="empty-state-title">아직 업로드된 영상이 없습니다.</p>
+                            <p className="empty-state-description">
+                                영상을 업로드하면 접수 시각과 진행 상태가 이곳에 표시됩니다.
+                            </p>
+                            <ol className="upload-flow-preview" aria-label="분석 진행 안내">
+                                <li>
+                                    <span aria-hidden="true">1</span>
+                                    <strong>영상 업로드</strong>
+                                </li>
+                                <li>
+                                    <span aria-hidden="true">2</span>
+                                    <strong>발표 분석</strong>
+                                </li>
+                                <li>
+                                    <span aria-hidden="true">3</span>
+                                    <strong>맞춤 결과</strong>
+                                </li>
+                            </ol>
+                        </div>
                     ) : (
                         <>
-                            <div className="upload-result-box">
-                                <div className="result-row">
-                                    <span>현재 상태</span>
-                                    <strong>
-                                        <StatusBadge
-                                            status={currentStatus}
-                                            label={currentStatusDescription}
-                                        />
-                                    </strong>
+                            {uploadedResult.recovered && (
+                                <div className="recovered-analysis-banner" role="status">
+                                    <span className="recovered-analysis-icon" aria-hidden="true">↻</span>
+                                    <span>
+                                        <strong>이전 분석을 복구했습니다</strong>
+                                        <small>저장된 작업을 기준으로 현재 상태를 다시 확인하고 있습니다.</small>
+                                    </span>
                                 </div>
+                            )}
 
+                            <div className={`analysis-status-hero ${statusVisual.tone}`}>
+                                <span className="analysis-status-symbol" aria-hidden="true">
+                                    {statusVisual.symbol}
+                                </span>
+                                <span className="analysis-status-copy">
+                                    <small>현재 분석 상태</small>
+                                    <StatusBadge
+                                        status={currentStatus}
+                                        label={currentStatusDescription}
+                                    />
+                                </span>
+                            </div>
+
+                            <div className="upload-result-box">
                                 <div className="result-row">
                                     <span>파일명</span>
                                     <strong>{uploadedResult.originalFileName}</strong>
@@ -922,7 +1025,8 @@ function UploadPage() {
                                 <h3>분석 진행 단계</h3>
 
                                 {(running || polling) && (
-                                    <div className="progress-bar-wrap">
+                                    <div className="progress-bar-wrap analysis-progress-wrap">
+                                        <span className="progress-context-label">분석 파이프라인</span>
                                         <div
                                             className="progress-bar-track"
                                             role="progressbar"
@@ -932,7 +1036,7 @@ function UploadPage() {
                                             aria-label="분석 진행률"
                                         >
                                             <div
-                                                className="progress-bar-fill"
+                                                className="progress-bar-fill analysis-progress-fill"
                                                 style={{ width: `${getDisplayPercent(progress)}%` }}
                                             />
                                         </div>
@@ -946,15 +1050,18 @@ function UploadPage() {
                                 )}
 
                                 <div className="pipeline-steps">
-                                    {Object.entries(STATUS_STEP_LABELS).map(([status, label]) => (
-                                        <div
-                                            className={getStepClassName(status)}
-                                            key={status}
-                                        >
-                                            <span />
-                                            <strong>{label}</strong>
-                                        </div>
-                                    ))}
+                                    {Object.entries(STATUS_STEP_LABELS).map(([status, label], index) => {
+                                        const stepClassName = getStepClassName(status);
+
+                                        return (
+                                            <div className={stepClassName} key={status}>
+                                                <span className="pipeline-step-marker" aria-hidden="true">
+                                                    {getStepMarker(stepClassName, index)}
+                                                </span>
+                                                <strong>{label}</strong>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
                                 <StateMessage type="polling">

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useState } from "react";
 import { requestPasswordReset } from "../api/authApi";
 import StateMessage from "../components/StateMessage";
-import PageFadeIn from "../components/motion/PageFadeIn";
+import AuthPageShell from "../components/auth/AuthPageShell";
 
 function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
@@ -28,15 +28,30 @@ function ForgotPasswordPage() {
     }
 
     return (
-        <PageFadeIn className="flex min-h-[calc(100svh-200px)] items-center justify-center py-6">
-            <article className="upload-card w-full max-w-[520px]">
-                <p className="eyebrow">Password reset</p>
-                <h2>비밀번호 재설정</h2>
-                <p className="card-description">
-                    가입한 이메일을 입력하면 재설정 안내를 보냅니다.
+        <AuthPageShell
+            eyebrow="Password reset"
+            title="비밀번호 재설정"
+            description="가입한 이메일을 입력하면 재설정 안내를 보냅니다."
+            contextEyebrow="Recovery flow"
+            contextTitle="안내를 받은 뒤 안전하게 비밀번호를 바꾸세요"
+            contextDescription="이메일로 재설정 안내를 요청하고, 전달된 링크에서 새 비밀번호를 설정합니다."
+            contextPoints={[
+                "가입한 이메일로 재설정 안내 요청",
+                "전달된 링크의 토큰으로 새 비밀번호 설정",
+            ]}
+            footer={(
+                <p className="flex flex-wrap gap-x-2 gap-y-1 text-sm text-text-secondary">
+                    <Link className="rounded-md hover:text-primary-bright" to="/privacy">
+                        테스트 데이터 처리 안내
+                    </Link>
+                    <span aria-hidden="true">·</span>
+                    <Link className="rounded-md hover:text-primary-bright" to="/terms">
+                        프로젝트 이용 안내
+                    </Link>
                 </p>
-
-                <form className="option-panel" onSubmit={handleSubmit}>
+            )}
+        >
+                <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
                     <label>
                         <span>
                             <strong>이메일</strong>
@@ -54,28 +69,21 @@ function ForgotPasswordPage() {
                     <StateMessage type="error">{error}</StateMessage>
                     <StateMessage type="success">{success}</StateMessage>
 
-                    <div className="button-row">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <button
                             type="submit"
-                            className="primary-button"
+                            className="primary-button w-full"
                             disabled={loading}
                         >
                             {loading ? "요청 중..." : "재설정 안내 받기"}
                         </button>
 
-                        <Link to="/login" className="secondary-button">
+                        <Link to="/login" className="secondary-button w-full">
                             로그인으로 이동
                         </Link>
                     </div>
                 </form>
-
-                <p className="auth-policy-links">
-                    <Link to="/privacy">테스트 데이터 처리 안내</Link>
-                    <span aria-hidden="true"> · </span>
-                    <Link to="/terms">프로젝트 이용 안내</Link>
-                </p>
-            </article>
-        </PageFadeIn>
+        </AuthPageShell>
     );
 }
 

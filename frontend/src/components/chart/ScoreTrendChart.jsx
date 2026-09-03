@@ -134,7 +134,7 @@ function ScoreTrendChart({ results }) {
 
     if (completedResults.length < 2) {
         return (
-            <article className="chart-card">
+            <article className="chart-card result-trend-card">
                 <h2>회차별 성장 추이</h2>
                 <p className="chart-card-description">
                     완료된 분석 결과의 총점과 항목별 변화를 시간순으로 확인합니다.
@@ -175,11 +175,29 @@ function ScoreTrendChart({ results }) {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
+            x: {
+                ticks: {
+                    color: "#B7ADA4",
+                },
+                grid: {
+                    color: "rgba(255,255,255,0.06)",
+                },
+                border: {
+                    color: "rgba(255,255,255,0.12)",
+                },
+            },
             y: {
                 min: 0,
                 max: 100,
                 ticks: {
                     callback: (value) => `${value}점`,
+                    color: "#B7ADA4",
+                },
+                grid: {
+                    color: "rgba(255,255,255,0.07)",
+                },
+                border: {
+                    color: "rgba(255,255,255,0.12)",
                 },
             },
         },
@@ -218,7 +236,7 @@ function ScoreTrendChart({ results }) {
     }
 
     return (
-        <article className="chart-card">
+        <article className="chart-card result-trend-card">
             <h2>회차별 성장 추이</h2>
             <p className="chart-card-description">
                 완료된 분석 결과의 총점과 자세·음성·제스처 변화를 시간순으로 확인합니다.
@@ -244,7 +262,12 @@ function ScoreTrendChart({ results }) {
             </div>
 
             <div className="chart-container line">
-                <Line data={chartData} options={chartOptions} />
+                <Line
+                    data={chartData}
+                    options={chartOptions}
+                    role="img"
+                    aria-label="완료된 발표 분석의 회차별 점수 변화 차트"
+                />
             </div>
 
             <div className="trend-delta-grid" aria-label="첫 회차 대비 최근 변화">

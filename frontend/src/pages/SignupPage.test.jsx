@@ -46,15 +46,15 @@ describe("SignupPage", () => {
     it("centers the signup card and keeps its width bounded like the login page", () => {
         renderSignupPage();
 
-        const card = screen.getByRole("heading", { name: "회원가입" }).closest("article");
+        const heading = screen.getByRole("heading", { name: "회원가입", level: 1 });
+        const card = heading.closest("article");
+        const shell = card?.parentElement;
 
-        expect(card).toHaveClass("w-full", "max-w-[520px]");
-        expect(card?.parentElement).toHaveClass(
-            "flex",
-            "items-center",
-            "justify-center",
-            "min-h-[calc(100svh-200px)]"
-        );
+        expect(card).toHaveClass("bg-surface-primary", "lg:order-2");
+        expect(shell).toHaveClass("grid", "w-full", "max-w-[1080px]");
+        expect(shell?.parentElement).toHaveClass("min-h-[calc(100svh-200px)]");
+        expect(screen.getByText("첫 분석 전에 데이터 처리 기준부터 확인하세요"))
+            .toBeInTheDocument();
     });
 
     it("shows the password complexity hint next to the password field", () => {
@@ -67,6 +67,7 @@ describe("SignupPage", () => {
         );
 
         expect(passwordInput.parentElement).toContainElement(hint);
+        expect(passwordInput).toHaveAttribute("aria-describedby", "signup-password-hint");
     });
 
     it("does not show the password complexity hint next to the email field", () => {

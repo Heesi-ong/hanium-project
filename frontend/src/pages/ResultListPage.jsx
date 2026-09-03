@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { deleteResult, getResults, updateResultMemo } from "../api/analysisApi";
 import { ERROR_CODES, getErrorCode, getErrorMessage } from "../api/errorUtils";
 import AnimatedSection from "../components/motion/AnimatedSection";
+import PageFadeIn from "../components/motion/PageFadeIn";
 import CollapsibleDetails from "../components/CollapsibleDetails";
 import EmptyState from "../components/EmptyState";
 import ScoreTrendChart from "../components/chart/ScoreTrendChart";
@@ -73,6 +74,73 @@ function compareScores(a, b, direction) {
     }
 
     return direction === "ASC" ? aScore - bScore : bScore - aScore;
+}
+
+function ResultSignalVisual() {
+    return (
+        <svg viewBox="0 0 420 164" className="h-auto w-full" fill="none" aria-hidden="true">
+            <rect x="1" y="1" width="418" height="162" rx="24" fill="#100E0C" stroke="rgba(255,255,255,0.09)" />
+            <path d="M36 124H384" stroke="rgba(255,255,255,0.08)" />
+            <path d="M44 113 105 84l58 13 66-58 62 34 85-47" stroke="#F27424" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M44 113 105 84l58 13 66-58 62 34 85-47" stroke="#FF934D" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" opacity="0.08" />
+            {[
+                [44, 113],
+                [105, 84],
+                [163, 97],
+                [229, 39],
+                [291, 73],
+                [376, 26],
+            ].map(([cx, cy], index) => (
+                <g key={`${cx}-${cy}`}>
+                    <circle cx={cx} cy={cy} r="9" fill="#17130F" stroke="#F27424" strokeWidth="3" />
+                    <circle cx={cx} cy={cy} r="3" fill={index === 5 ? "#FF934D" : "#F27424"} />
+                </g>
+            ))}
+            <path d="M44 139H135M153 139H246M264 139H376" stroke="#3B3028" strokeWidth="5" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+function ResultListShell({ description, countLabel, children }) {
+    return (
+        <PageFadeIn className="result-list-page">
+            <header className="result-list-hero">
+                <div className="result-list-hero-copy">
+                    <PageHeader
+                        eyebrow="Practice Archive"
+                        title="분석 결과 목록"
+                        description={description}
+                    />
+                    <div className="result-list-hero-metric" aria-label={`저장된 분석 결과 ${countLabel}`}>
+                        <span>Result archive</span>
+                        <strong>{countLabel}</strong>
+                    </div>
+                </div>
+                <div className="result-list-hero-visual">
+                    <ResultSignalVisual />
+                </div>
+            </header>
+            {children}
+        </PageFadeIn>
+    );
+}
+
+function ResultStateIcon({ type }) {
+    if (type === "error") {
+        return (
+            <svg viewBox="0 0 48 48" aria-hidden="true">
+                <path d="M24 5 44 41H4L24 5Z" fill="currentColor" opacity="0.16" />
+                <path d="M24 17v11M24 34v1" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+        );
+    }
+
+    return (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+            <rect x="7" y="10" width="34" height="28" rx="8" fill="currentColor" opacity="0.14" />
+            <path d="M14 30h5l4-11 5 15 4-9h3" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
 }
 
 function ResultListPage() {
@@ -416,37 +484,40 @@ function ResultListPage() {
 
     if (loading) {
         return (
-            <section className="page-section">
-                <PageHeader
-                    eyebrow="Result List"
-                    title="분석 결과 목록"
-                    description="저장된 발표 분석 결과를 불러오는 중입니다."
-                />
-
-                <EmptyState
-                    loading
-                    title="로딩 중"
-                    description="잠시만 기다려 주세요."
-                />
-            </section>
+            <ResultListShell
+                description="저장된 발표 분석 결과와 연습 흐름을 불러오고 있습니다."
+                countLabel="불러오는 중"
+            >
+                <div
+                    className="result-list-state-card"
+                    data-state="loading"
+                    role="status"
+                    aria-live="polite"
+                >
+                    <EmptyState
+                        loading
+                        title="결과 보관함을 불러오는 중"
+                        description="저장된 분석과 성장 추이를 확인하고 있습니다. 잠시만 기다려 주세요."
+                    />
+                </div>
+            </ResultListShell>
         );
     }
 
     if (error && totalCount === 0) {
         return (
-            <section className="page-section">
-                <PageHeader
-                    eyebrow="Result List"
-                    title="분석 결과 목록"
-                    description="저장된 발표 분석 결과를 다시 불러올 수 있습니다."
-                />
-
-                <EmptyState
-                    title="결과 목록을 불러오지 못했습니다."
-                    description={error}
-                />
-
-                <div className="button-row">
+            <ResultListShell
+                description="연결 상태를 확인한 뒤 저장된 발표 분석 결과를 다시 불러올 수 있습니다."
+                countLabel="확인 필요"
+            >
+                <div className="result-list-state-card" data-state="error" role="alert">
+                    <span className="result-list-state-icon">
+                        <ResultStateIcon type="error" />
+                    </span>
+                    <EmptyState
+                        title="결과 목록을 불러오지 못했습니다."
+                        description={error}
+                    />
                     <button
                         type="button"
                         className="primary-button"
@@ -455,22 +526,22 @@ function ResultListPage() {
                         다시 시도
                     </button>
                 </div>
-            </section>
+            </ResultListShell>
         );
     }
 
     if (totalCount === 0) {
         return (
-            <section className="page-section">
-                <PageHeader
-                    eyebrow="Result List"
-                    title="분석 결과 목록"
-                    description="업로드된 발표 영상의 분석 결과를 확인하고 상세 피드백으로 이동할 수 있습니다."
-                />
-
+            <ResultListShell
+                description="업로드한 발표 영상의 분석 결과와 다음 연습 방향이 이곳에 쌓입니다."
+                countLabel="0개"
+            >
                 <StateMessage type="error">{error}</StateMessage>
 
-                <AnimatedSection>
+                <AnimatedSection className="result-list-state-card" id="empty-results">
+                    <span className="result-list-state-icon">
+                        <ResultStateIcon type="empty" />
+                    </span>
                     <EmptyState
                         title="아직 분석 결과가 없습니다."
                         description="발표 영상을 업로드하면 자세, 제스처, 음성 분석 결과를 여기에서 확인할 수 있습니다."
@@ -486,23 +557,26 @@ function ResultListPage() {
                         </Link>
                     </div>
                 </AnimatedSection>
-            </section>
+            </ResultListShell>
         );
     }
 
     return (
-        <section className="page-section">
-            <PageHeader
-                eyebrow="Result List"
-                title="분석 결과 목록"
-                description="업로드된 발표 영상의 분석 결과를 확인하고 상세 피드백으로 이동할 수 있습니다."
-            />
+        <ResultListShell
+            description="회차별 변화부터 상세 피드백까지 확인하고, 다음 발표 연습으로 이어가세요."
+            countLabel={`${totalResultCount}개`}
+        >
 
             <StateMessage type="error">{error}</StateMessage>
 
             <div className="result-list-header">
-                <h2>내 분석 결과</h2>
-                <span>총 {totalResultCount}개</span>
+                <div>
+                    <p className="result-list-kicker">Practice history</p>
+                    <h2>내 분석 결과</h2>
+                </div>
+                <span aria-live="polite">
+                    현재 {filteredResults.length}개 · <strong>총 {totalResultCount}개</strong>
+                </span>
             </div>
 
             {showProgressiveFeatures ? (
@@ -511,66 +585,81 @@ function ResultListPage() {
                         <ScoreTrendChart results={results} />
                     </AnimatedSection>
 
-                    <div className="result-control-grid">
-                        <div className="filter-button-group">
-                            {FILTER_OPTIONS.map((option) => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    className={
-                                        filterStatus === option.value
-                                            ? "filter-button active"
-                                            : "filter-button"
-                                    }
-                                    onClick={() => setFilterStatus(option.value)}
-                                >
-                                    {option.label}
-                                </button>
-                            ))}
+                    <div className="result-control-grid" aria-label="결과 목록 도구">
+                        <fieldset className="result-filter-fieldset">
+                            <legend>분석 상태</legend>
+                            <div className="filter-button-group">
+                                {FILTER_OPTIONS.map((option) => (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        className={
+                                            filterStatus === option.value
+                                                ? "filter-button active"
+                                                : "filter-button"
+                                        }
+                                        aria-pressed={filterStatus === option.value}
+                                        onClick={() => setFilterStatus(option.value)}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </fieldset>
+
+                        <label className="result-control-field">
+                            <span>파일명 또는 메모</span>
+                            <input
+                                type="search"
+                                className="search-input"
+                                placeholder="파일명 또는 메모 검색"
+                                value={keyword}
+                                onChange={(event) => setKeyword(event.target.value)}
+                            />
+                        </label>
+
+                        <label className="result-control-field">
+                            <span>정렬 기준</span>
+                            <select
+                                className="sort-select"
+                                value={sortType}
+                                onChange={(event) => setSortType(event.target.value)}
+                            >
+                                {SORT_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                        {option.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+
+                        <div className="result-control-actions">
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={loadResults}
+                            >
+                                새로고침
+                            </button>
+
+                            <button
+                                type="button"
+                                className={compareMode ? "filter-button active" : "secondary-button"}
+                                aria-pressed={compareMode}
+                                onClick={toggleCompareMode}
+                            >
+                                {compareMode ? "비교 모드 종료" : "결과 비교"}
+                            </button>
                         </div>
-
-                        <input
-                            type="search"
-                            className="search-input"
-                            placeholder="파일명 또는 메모 검색"
-                            value={keyword}
-                            onChange={(event) => setKeyword(event.target.value)}
-                        />
-
-                        <select
-                            className="sort-select"
-                            value={sortType}
-                            onChange={(event) => setSortType(event.target.value)}
-                        >
-                            {SORT_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={loadResults}
-                        >
-                            새로고침
-                        </button>
-
-                        <button
-                            type="button"
-                            className={compareMode ? "filter-button active" : "secondary-button"}
-                            onClick={toggleCompareMode}
-                        >
-                            {compareMode ? "비교 모드 종료" : "결과 비교"}
-                        </button>
                     </div>
 
                     <CollapsibleDetails
                         className="inquiry-id-details"
                         summary="고급 검색 — 문의용 ID"
                     >
+                        <label htmlFor="result-job-id-search">결과 ID</label>
                         <input
+                            id="result-job-id-search"
                             type="search"
                             className="search-input"
                             placeholder="문의 시 안내받은 결과 ID(jobId)로 검색"
@@ -616,7 +705,7 @@ function ResultListPage() {
                 />
             ) : (
                 <div className="result-list">
-                    {filteredResults.map((result) => {
+                    {filteredResults.map((result, index) => {
                         const totalScore = getTotalScore(result);
                         const isDeleting = deletingJobId === result.jobId;
                         const isSelectedForCompare = selectedForCompare.includes(result.jobId);
@@ -631,10 +720,11 @@ function ResultListPage() {
                                         ? "result-card compare-selected"
                                         : "result-card"
                                 }
+                                data-status={result.status || "UNKNOWN"}
                                 key={result.jobId}
                             >
                                 <div className="result-card-header">
-                                    <div>
+                                    <div className="result-card-title-block">
                                         {compareMode && isCompareEligible && (
                                             <label className="compare-select-checkbox">
                                                 <input
@@ -646,6 +736,9 @@ function ResultListPage() {
                                                 비교 대상으로 선택
                                             </label>
                                         )}
+                                        <span className="result-card-sequence" aria-hidden="true">
+                                            Result {String(index + 1).padStart(2, "0")}
+                                        </span>
                                         {editingMemoJobId === result.jobId ? (
                                             <div className="memo-edit-row">
                                                 <input
@@ -759,7 +852,7 @@ function ResultListPage() {
                     </button>
                 </div>
             )}
-        </section>
+        </ResultListShell>
     );
 }
 

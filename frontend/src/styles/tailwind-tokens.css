@@ -24,4 +24,15 @@
   --color-warning: #F4B04A;
   --color-error: #E7685A;
   --color-information: #72A5FF;
+
+  /* 공통 셸과 카드가 같은 깊이와 상호작용 언어를 사용하도록 의미 기반 토큰을 둡니다. */
+  --color-border-subtle: rgba(255, 255, 255, 0.1);
+  --color-border-emphasis: rgba(242, 116, 36, 0.42);
+  --color-focus-ring: #FF934D;
+
+  --radius-control: 0.75rem;
+  --radius-card: 1.5rem;
+
+  --shadow-card: 0 20px 54px rgba(0, 0, 0, 0.28);
+  --shadow-stage: 0 34px 90px rgba(0, 0, 0, 0.42);
 }

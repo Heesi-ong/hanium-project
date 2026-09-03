@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -77,6 +77,19 @@ describe("AccountPage", () => {
     afterEach(() => {
         cleanup();
         vi.restoreAllMocks();
+    });
+
+    it("presents account settings with a clear page title and named regions", () => {
+        renderAccountPage();
+
+        expect(screen.getByRole("heading", { level: 1, name: "계정 설정" }))
+            .toBeInTheDocument();
+        expect(screen.getByLabelText("현재 계정 요약")).toHaveTextContent("user@example.com");
+        expect(screen.getByRole("region", { name: "로그인 정보" })).toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "비밀번호" })).toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "온보딩 설정" })).toBeInTheDocument();
+        expect(screen.getByRole("form", { name: "회원탈퇴와 데이터 삭제" }))
+            .toBeInTheDocument();
     });
 
     it("does not call withdrawAccount when confirmation is cancelled", async () => {
@@ -254,10 +267,23 @@ describe("AccountPage", () => {
     it("shows the current onboarding settings and opens the edit flow", () => {
         renderAccountPage();
 
-        expect(screen.getByText("목적: 면접 준비 · 경험 수준: 입문 · 개선 목표: 설정 변경 필요"))
-            .toBeInTheDocument();
+        const onboardingRegion = screen.getByRole("region", { name: "온보딩 설정" });
+        expect(within(onboardingRegion).getByText("면접 준비")).toBeInTheDocument();
+        expect(within(onboardingRegion).getByText("입문")).toBeInTheDocument();
+        expect(within(onboardingRegion).getByText("설정 변경 필요")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "온보딩 설정 수정" }));
 
         expect(screen.getByText("온보딩 설정 화면")).toBeInTheDocument();
+    });
+
+    it("connects the new password field to its format guidance", () => {
+        renderAccountPage();
+
+        fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }));
+
+        const newPasswordInput = screen.getByLabelText(/^새 비밀번호(?!\s*확인)/);
+        const hint = screen.getByText("영문자와 숫자를 각각 1자 이상 포함해 8자 이상 입력해주세요.");
+
+        expect(newPasswordInput).toHaveAttribute("aria-describedby", hint.id);
     });
 });

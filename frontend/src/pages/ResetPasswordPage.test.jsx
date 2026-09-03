@@ -30,17 +30,18 @@ describe("ResetPasswordPage", () => {
     it("centers the card and keeps its width bounded like the login page", () => {
         renderResetPasswordPage();
 
-        const card = screen
-            .getByRole("heading", { name: "새 비밀번호 설정" })
-            .closest("article");
+        const heading = screen.getByRole("heading", {
+            name: "새 비밀번호 설정",
+            level: 1,
+        });
+        const card = heading.closest("article");
+        const shell = card?.parentElement;
 
-        expect(card).toHaveClass("w-full", "max-w-[520px]");
-        expect(card?.parentElement).toHaveClass(
-            "flex",
-            "items-center",
-            "justify-center",
-            "min-h-[calc(100svh-200px)]"
-        );
+        expect(card).toHaveClass("bg-surface-primary", "lg:order-2");
+        expect(shell).toHaveClass("grid", "w-full", "max-w-[1080px]");
+        expect(screen.getByText("토큰 포함됨")).toBeInTheDocument();
+        expect(screen.getByLabelText(/새 비밀번호/))
+            .toHaveAttribute("aria-describedby", "reset-password-hint");
     });
 
     it("confirms password reset with the token from the URL", async () => {
@@ -66,6 +67,9 @@ describe("ResetPasswordPage", () => {
         renderResetPasswordPage("/reset-password");
 
         expect(screen.getByText("재설정 토큰이 없습니다.")).toBeInTheDocument();
+        expect(screen.getByText("토큰 없음")).toBeInTheDocument();
+        expect(screen.getByLabelText(/새 비밀번호/)).toBeDisabled();
+        expect(screen.getByRole("button", { name: "비밀번호 표시" })).toBeDisabled();
         expect(screen.getByRole("button", { name: "비밀번호 변경" })).toBeDisabled();
     });
 });

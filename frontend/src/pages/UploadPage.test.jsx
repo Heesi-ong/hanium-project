@@ -65,7 +65,7 @@ function renderUploadPage({ strict = false } = {}) {
 
 function getDropZone() {
     return screen
-        .getByText(/클릭해서 발표 영상을 선택하세요/)
+        .getByLabelText("발표 영상 파일 선택")
         .closest("label");
 }
 
@@ -107,6 +107,26 @@ describe("UploadPage", () => {
         createObjectURLMock.mockImplementation((file) => `blob:${file.name}`);
     });
 
+    it("exposes a keyboard-focusable file input with visible guidance", () => {
+        renderUploadPage();
+
+        const fileInput = screen.getByLabelText("발표 영상 파일 선택");
+        const dropZone = getDropZone();
+
+        expect(fileInput).toHaveAttribute("type", "file");
+        expect(fileInput).toHaveAttribute("aria-describedby", "upload-file-guidance");
+        expect(fileInput).toBeEnabled();
+        expect(dropZone).toHaveAttribute("aria-disabled", "false");
+        expect(screen.getByText("발표 영상 파일")).toBeInTheDocument();
+        expect(screen.getByText("MP4 · MOV · AVI · MKV")).toBeInTheDocument();
+        expect(screen.getByText("최대 500MB")).toBeInTheDocument();
+        expect(screen.getByRole("list", { name: "분석 진행 안내" }))
+            .toBeInTheDocument();
+        expect(screen.getByText("영상 업로드")).toBeInTheDocument();
+        expect(screen.getByText("발표 분석")).toBeInTheDocument();
+        expect(screen.getByText("맞춤 결과")).toBeInTheDocument();
+    });
+
     it("accepts a dropped mp4 file and renders a local video preview", async () => {
         const file = createVideoFile();
         const { container } = renderUploadPage();
@@ -114,7 +134,9 @@ describe("UploadPage", () => {
         dropFile(getDropZone(), file);
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
-        expect(screen.getByText("0.00MB")).toBeInTheDocument();
+        expect(screen.getByText(/0\.00MB/)).toBeInTheDocument();
+        expect(screen.getByText("업로드 준비 완료")).toBeInTheDocument();
+        expect(getDropZone()).toHaveClass("has-file");
 
         const previewVideo = container.querySelector("video");
 
@@ -130,7 +152,7 @@ describe("UploadPage", () => {
         dropFile(getDropZone(), file);
 
         expect(await screen.findByText("boundary.mp4")).toBeInTheDocument();
-        expect(screen.getByText("500.00MB")).toBeInTheDocument();
+        expect(screen.getByText(/500\.00MB/)).toBeInTheDocument();
         expect(screen.queryByText(/파일 크기는 최대 500MB/)).not.toBeInTheDocument();
     });
 
@@ -387,12 +409,40 @@ describe("UploadPage", () => {
         const secondRender = renderUploadPage({ strict: true });
 
         expect(await screen.findByText("이전에 업로드한 영상")).toBeInTheDocument();
+        expect(screen.getByText("이전 분석을 복구했습니다")).toBeInTheDocument();
         expect(screen.getByText("새로고침 전 업로드")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "분석 진행 중..." })).toBeDisabled();
         expect(analysisApiMock.getAnalysisStatus).toHaveBeenCalledWith(jobId);
         expect(localStorage.getItem("presentationCoachActiveAnalysis")).toContain(jobId);
 
         secondRender.unmount();
+    });
+
+    it("marks a recovered failed job with a non-color failure indicator", async () => {
+        const jobId = "20260809123456-a1b2c3d4";
+        localStorage.setItem(
+            "presentationCoachActiveAnalysis",
+            JSON.stringify({ jobId })
+        );
+        analysisApiMock.getAnalysisStatus.mockResolvedValue({
+            data: {
+                jobId,
+                status: "FAILED",
+                statusDescription: "기본 분석 실패",
+                failReason: "영상을 해석하지 못했습니다.",
+            },
+        });
+
+        renderUploadPage();
+
+        expect(await screen.findByText("이전 분석을 복구했습니다")).toBeInTheDocument();
+        expect(screen.getByRole("status", { name: "기본 분석 실패" }))
+            .toBeInTheDocument();
+
+        const failedStep = screen.getByText("분석 실패").closest(".pipeline-step");
+        expect(failedStep).toHaveClass("failed");
+        expect(failedStep.querySelector(".pipeline-step-marker"))
+            .toHaveTextContent("!");
     });
 
     it("clears a persisted job that the current user cannot access", async () => {

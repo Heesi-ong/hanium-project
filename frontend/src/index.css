@@ -9,6 +9,9 @@
   --text-h: #2B2420; /* code/.counter 칩의 어두운 글자색. 칩 배경(--code-bg)이 밝으므로 유지 */
   --bg: #090807;     /* = --color-background-primary (다크 배경) */
   --code-bg: #f4f3ec;
+  --focus-ring: #FF934D;
+  --focus-ring-shadow: #090807;
+  --app-content-width: 70rem;
 
   --sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --heading: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -37,8 +40,37 @@
 }
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-width: 320px;
+    background: var(--bg);
+  }
+
   body {
+    min-width: 320px;
+    min-height: 100svh;
     margin: 0;
+    background:
+      radial-gradient(circle at 12% -8%, rgba(242, 116, 36, 0.12), transparent 30rem),
+      var(--bg);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  :where(a, button, input, select, textarea, summary):focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 1px var(--focus-ring-shadow);
   }
 
   h1,
@@ -86,5 +118,71 @@
     line-height: 135%;
     padding: 4px 8px;
     background: var(--code-bg);
+  }
+}
+
+@layer components {
+  .app-shell {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    min-height: 100svh;
+    overflow-x: clip;
+    flex-direction: column;
+    background:
+      radial-gradient(circle at 82% 10%, rgba(79, 199, 138, 0.055), transparent 24rem),
+      linear-gradient(180deg, #090807 0%, #0c0907 48%, #090807 100%);
+  }
+
+  .app-shell-ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.34;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 72px 72px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.78), transparent 72%);
+  }
+
+  .app-shell-header,
+  .app-shell-main,
+  .app-shell-footer {
+    position: relative;
+    z-index: 1;
+  }
+
+  .app-shell-main {
+    width: 100%;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .app-shell-main--contained {
+    max-width: var(--app-content-width);
+    margin-inline: auto;
+    padding: clamp(2.5rem, 5vw, 3.5rem) clamp(1.25rem, 4vw, 1.5rem) 5rem;
+  }
+
+  .app-shell-main--full {
+    max-width: none;
+    padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

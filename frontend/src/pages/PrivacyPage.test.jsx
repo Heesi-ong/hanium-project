@@ -16,11 +16,13 @@ describe("PrivacyPage", () => {
     it("identifies the project as a local controlled test", () => {
         renderPrivacyPage();
 
-        expect(screen.getByRole("heading", { name: "테스트 데이터 처리 안내" }))
+        expect(screen.getByRole("heading", { name: "테스트 데이터 처리 안내", level: 1 }))
             .toBeInTheDocument();
         expect(screen.getByText(/공개 온라인 서비스가 아닌 로컬\/통제된 테스트/))
             .toBeInTheDocument();
         expect(screen.queryByText(/실제 사업자/)).not.toBeInTheDocument();
+        expect(screen.getByRole("navigation", { name: "테스트 데이터 처리 안내 목차" }))
+            .toBeInTheDocument();
     });
 
     it("requires consent and discloses optional external AI transfer", () => {

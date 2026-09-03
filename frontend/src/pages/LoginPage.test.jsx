@@ -80,15 +80,29 @@ describe("LoginPage", () => {
     it("centers the login card and keeps its width bounded", () => {
         renderLoginPage();
 
-        const card = screen.getByRole("heading", { name: "로그인" }).closest("article");
+        const heading = screen.getByRole("heading", { name: "로그인", level: 1 });
+        const card = heading.closest("article");
+        const shell = card?.parentElement;
 
-        expect(card).toHaveClass("w-full", "max-w-[520px]");
-        expect(card?.parentElement).toHaveClass(
-            "flex",
-            "items-center",
-            "justify-center",
-            "min-h-[calc(100svh-200px)]"
-        );
+        expect(card).toHaveClass("bg-surface-primary", "lg:order-2");
+        expect(shell).toHaveClass("grid", "w-full", "max-w-[1080px]");
+        expect(shell?.parentElement).toHaveClass("min-h-[calc(100svh-200px)]");
+        expect(screen.getByText("연습하던 흐름으로 자연스럽게 돌아가세요"))
+            .toBeInTheDocument();
+    });
+
+    it("exposes the password visibility state and keeps the toggle touch target", () => {
+        renderLoginPage();
+
+        const toggle = screen.getByRole("button", { name: "비밀번호 표시" });
+
+        expect(toggle).toHaveAttribute("aria-pressed", "false");
+        expect(toggle).toHaveClass("min-h-11");
+
+        fireEvent.click(toggle);
+
+        expect(screen.getByRole("button", { name: "비밀번호 숨기기" }))
+            .toHaveAttribute("aria-pressed", "true");
     });
 
     it("redirects to onboarding when the logged-in user has not completed it", async () => {

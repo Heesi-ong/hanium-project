@@ -2,7 +2,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import StateMessage from "../components/StateMessage";
 import PasswordToggleButton from "../components/PasswordToggleButton";
-import PageFadeIn from "../components/motion/PageFadeIn";
+import AuthPageShell from "../components/auth/AuthPageShell";
 import { useAuth } from "../context/AuthContext";
 
 function LoginPage() {
@@ -67,15 +67,30 @@ function LoginPage() {
     }
 
     return (
-        <PageFadeIn className="flex min-h-[calc(100svh-200px)] items-center justify-center py-6">
-            <article className="upload-card w-full max-w-[520px]">
-                <p className="eyebrow">Sign in</p>
-                <h2>로그인</h2>
-                <p className="card-description">
-                    가입한 이메일과 비밀번호로 발표 분석 서비스를 이용합니다.
+        <AuthPageShell
+            eyebrow="Sign in"
+            title="로그인"
+            description="가입한 이메일과 비밀번호로 발표 분석 서비스를 이용합니다."
+            contextEyebrow="Resume your practice"
+            contextTitle="연습하던 흐름으로 자연스럽게 돌아가세요"
+            contextDescription="로그인 후 진행 중인 분석이나 이전에 열어보던 결과로 연결됩니다."
+            contextPoints={[
+                "로그인 전 요청한 화면으로 복귀",
+                "온보딩 완료 여부에 맞는 다음 단계 안내",
+            ]}
+            footer={(
+                <p className="flex flex-wrap gap-x-2 gap-y-1 text-sm text-text-secondary">
+                    <Link className="rounded-md hover:text-primary-bright" to="/privacy">
+                        테스트 데이터 처리 안내
+                    </Link>
+                    <span aria-hidden="true">·</span>
+                    <Link className="rounded-md hover:text-primary-bright" to="/terms">
+                        프로젝트 이용 안내
+                    </Link>
                 </p>
-
-                <form className="option-panel" onSubmit={handleSubmit}>
+            )}
+        >
+                <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
                     <label>
                         <span>
                             <strong>이메일</strong>
@@ -110,8 +125,13 @@ function LoginPage() {
                         onToggle={() => setShowPassword((prev) => !prev)}
                     />
 
-                    <p className="auth-policy-links" style={{ textAlign: "right" }}>
-                        <Link to="/forgot-password">비밀번호를 잊으셨나요?</Link>
+                    <p className="text-right">
+                        <Link
+                            className="inline-flex min-h-11 items-center rounded-lg px-1 text-sm text-text-secondary hover:text-primary-bright"
+                            to="/forgot-password"
+                        >
+                            비밀번호를 잊으셨나요?
+                        </Link>
                     </p>
 
                     <StateMessage type="info">
@@ -119,28 +139,21 @@ function LoginPage() {
                     </StateMessage>
                     <StateMessage type="error">{error}</StateMessage>
 
-                    <div className="button-row">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <button
                             type="submit"
-                            className="primary-button"
+                            className="primary-button w-full"
                             disabled={loading}
                         >
                             {loading ? "로그인 중..." : "로그인"}
                         </button>
 
-                        <Link to="/signup" className="secondary-button">
+                        <Link to="/signup" className="secondary-button w-full">
                             회원가입
                         </Link>
                     </div>
                 </form>
-
-                <p className="auth-policy-links">
-                    <Link to="/privacy">테스트 데이터 처리 안내</Link>
-                    <span aria-hidden="true"> · </span>
-                    <Link to="/terms">프로젝트 이용 안내</Link>
-                </p>
-            </article>
-        </PageFadeIn>
+        </AuthPageShell>
     );
 }
 

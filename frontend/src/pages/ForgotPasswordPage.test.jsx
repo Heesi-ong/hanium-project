@@ -30,17 +30,17 @@ describe("ForgotPasswordPage", () => {
     it("centers the card and keeps its width bounded like the login page", () => {
         renderForgotPasswordPage();
 
-        const card = screen
-            .getByRole("heading", { name: "비밀번호 재설정" })
-            .closest("article");
+        const heading = screen.getByRole("heading", {
+            name: "비밀번호 재설정",
+            level: 1,
+        });
+        const card = heading.closest("article");
+        const shell = card?.parentElement;
 
-        expect(card).toHaveClass("w-full", "max-w-[520px]");
-        expect(card?.parentElement).toHaveClass(
-            "flex",
-            "items-center",
-            "justify-center",
-            "min-h-[calc(100svh-200px)]"
-        );
+        expect(card).toHaveClass("bg-surface-primary", "lg:order-2");
+        expect(shell).toHaveClass("grid", "w-full", "max-w-[1080px]");
+        expect(screen.getByText("안내를 받은 뒤 안전하게 비밀번호를 바꾸세요"))
+            .toBeInTheDocument();
     });
 
     it("requests a password reset email", async () => {

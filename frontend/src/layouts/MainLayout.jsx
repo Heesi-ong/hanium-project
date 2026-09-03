@@ -148,6 +148,7 @@ function MainLayout() {
     const location = useLocation();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [previousPathname, setPreviousPathname] = useState(location.pathname);
+    const isHomePage = location.pathname === "/";
 
     // 라우트가 바뀌면(링크 클릭 등으로) 모바일 메뉴를 항상 닫아, 다음 페이지에 이전
     // 페이지에서 열어둔 메뉴가 그대로 남지 않게 합니다. 이펙트 대신 렌더링 중에 바로
@@ -175,15 +176,16 @@ function MainLayout() {
     }, [isMenuOpen]);
 
     return (
-        <div className="min-h-screen bg-background-primary text-text-primary">
+        <div className="app-shell bg-background-primary text-text-primary">
+            <div className="app-shell-ambient" aria-hidden="true" />
             <motion.header
-                className="sticky top-0 z-20 border-b border-white/10 bg-background-primary/90 backdrop-blur-md"
+                className="app-shell-header sticky top-0 z-40 border-b border-border-subtle bg-background-primary/90 backdrop-blur-md"
                 initial={prefersReducedMotion ? false : { opacity: 0, y: -18 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.42, ease: EASE_OUT }}
             >
                 <div className="mx-auto flex h-[72px] max-w-[1120px] items-center justify-between px-6">
-                    <NavLink to="/" className="inline-flex items-center gap-2.5 font-extrabold text-text-primary transition-transform duration-200 hover:-translate-y-0.5">
+                    <NavLink to="/" className="inline-flex min-h-11 items-center gap-2.5 rounded-xl font-extrabold text-text-primary transition-transform duration-200 hover:-translate-y-0.5">
                         <motion.span
                             className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-xl bg-primary-deep text-sm text-warm-white"
                             animate={prefersReducedMotion ? undefined : { boxShadow: [
@@ -201,7 +203,7 @@ function MainLayout() {
                     {/* 로그인 상태에서는 링크 수가 많아 좁은 화면(lg 미만)에서 가로 폭을
                         넘치거나 라벨이 세로로 쪼개져 표시되므로, lg 이상에서만 가로 nav를
                         보여주고 그 아래 화면 폭에서는 햄버거 메뉴로 접습니다. */}
-                    <nav className="hidden items-center gap-2 lg:flex">
+                    <nav className="hidden items-center gap-2 lg:flex" aria-label="주요 메뉴">
                         <NavLinks
                             isAuthenticated={isAuthenticated}
                             user={user}
@@ -213,7 +215,7 @@ function MainLayout() {
 
                     <button
                         type="button"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-text-secondary transition-colors duration-150 hover:bg-primary-orange/15 hover:text-text-primary lg:hidden"
+                        className="inline-flex h-11 w-11 appearance-none items-center justify-center rounded-control border border-border-subtle bg-surface-primary text-text-secondary shadow-sm transition-colors duration-150 hover:border-border-emphasis hover:bg-surface-secondary hover:text-text-primary lg:hidden"
                         aria-expanded={isMenuOpen}
                         aria-controls="mobile-nav-menu"
                         aria-label={isMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
@@ -247,9 +249,13 @@ function MainLayout() {
                 )}
             </motion.header>
 
-            <main className="mx-auto max-w-[1120px] px-6 pb-20 pt-12">
+            <main
+                className={`app-shell-main ${isHomePage ? "app-shell-main--full" : "app-shell-main--contained"}`}
+                data-layout={isHomePage ? "full-bleed" : "contained"}
+            >
                 <AnimatePresence>
                     <motion.div
+                        className="min-w-0"
                         key={location.pathname}
                         initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -263,7 +269,7 @@ function MainLayout() {
 
             {/* 이전에는 홈 페이지가 자체 footer를 하나 더 렌더링해 이 전역 footer와
                 연속으로 두 번 표시됐습니다(P1-05). 이제 footer는 이 한 곳에만 있습니다. */}
-            <footer className="border-t border-white/10 bg-background-primary px-6 py-10 text-text-primary sm:px-10 lg:px-16">
+            <footer className="app-shell-footer border-t border-border-subtle bg-background-primary/90 px-6 py-10 text-text-primary backdrop-blur-sm sm:px-10 lg:px-16">
                 <div className="mx-auto flex max-w-[1120px] flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <p className="text-base italic text-text-primary">AI Presentation Coach</p>

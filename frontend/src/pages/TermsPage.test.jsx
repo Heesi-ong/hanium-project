@@ -16,9 +16,11 @@ describe("TermsPage", () => {
     it("renders the student project usage guide", () => {
         renderTermsPage();
 
-        expect(screen.getByRole("heading", { name: "프로젝트 이용 안내" }))
+        expect(screen.getByRole("heading", { name: "프로젝트 이용 안내", level: 1 }))
             .toBeInTheDocument();
         expect(screen.getByText(/공개 상용 서비스의 이용약관이 아닙니다/))
+            .toBeInTheDocument();
+        expect(screen.getByRole("navigation", { name: "프로젝트 이용 안내 목차" }))
             .toBeInTheDocument();
     });
 

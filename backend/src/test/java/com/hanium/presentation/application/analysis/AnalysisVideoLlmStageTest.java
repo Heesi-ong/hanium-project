@@ -26,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -68,8 +67,8 @@ class AnalysisVideoLlmStageTest {
     }
 
     @Test
-    void disabledStandardJobCreatesSkippedPlanWithoutDurationBudgetOrProviderCall() {
-        AnalysisVideoLlmStage.Plan plan = prepare(false);
+    void prepareDoesNotTouchDurationBudgetOrProviderForDisabledStandardJob() {
+        AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, false, VIDEO_PATH);
 
         assertThat(plan.skipped()).isTrue();
         assertThat(plan.durationSec()).isNull();
@@ -84,35 +83,41 @@ class AnalysisVideoLlmStageTest {
     }
 
     @Test
-    void dailyBudgetDenialComesFromSingleAtomicReservation() {
+    void prepareDoesNotReserveBudget() {
+        stage.prepare(JOB_ID, true, VIDEO_PATH);
+
+        verifyNoInteractions(userRateLimiter, videoLlmEngineClient);
+    }
+
+    @Test
+    void reserveBudgetOrSkipReturnsSkipResponseWhenDailyLimitExceeded() {
         when(userRateLimiter.reserveVideoLlmBudget(OWNER_ID, "2026-08", 18))
                 .thenReturn(UserRateLimiter.VideoLlmBudgetReservation.DAILY_LIMIT_EXCEEDED);
+        AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, true, VIDEO_PATH);
 
-        AnalysisVideoLlmStage.Plan plan = prepare(true);
+        Optional<VideoLlmEngineResponse> skip = reserveBudgetOrSkip(plan);
 
-        assertThat(plan.skipped()).isTrue();
-        assertThat(plan.skippedResponse().globalSummary().get("mainStrength").toString())
-                .contains("일일 한도");
+        assertThat(skip).isPresent();
+        assertThat(skip.get().globalSummary().get("mainStrength").toString()).contains("일일 한도");
         verify(userRateLimiter).reserveVideoLlmBudget(OWNER_ID, "2026-08", 18);
         verifyNoInteractions(videoLlmEngineClient);
     }
 
     @Test
-    void monthlyBudgetDenialComesFromSingleAtomicReservation() {
+    void reserveBudgetOrSkipReturnsSkipResponseWhenMonthlyLimitExceeded() {
         when(userRateLimiter.reserveVideoLlmBudget(OWNER_ID, "2026-08", 18))
                 .thenReturn(UserRateLimiter.VideoLlmBudgetReservation.MONTHLY_LIMIT_EXCEEDED);
+        AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, true, VIDEO_PATH);
 
-        AnalysisVideoLlmStage.Plan plan = prepare(true);
+        Optional<VideoLlmEngineResponse> skip = reserveBudgetOrSkip(plan);
 
-        assertThat(plan.skipped()).isTrue();
-        assertThat(plan.skippedResponse().globalSummary().get("mainStrength").toString())
-                .contains("월간 한도");
-        verify(userRateLimiter).reserveVideoLlmBudget(OWNER_ID, "2026-08", 18);
+        assertThat(skip).isPresent();
+        assertThat(skip.get().globalSummary().get("mainStrength").toString()).contains("월간 한도");
         verifyNoInteractions(videoLlmEngineClient);
     }
 
     @Test
-    void durationDeterminesMonthlyPermitsAndProviderRequest() {
+    void reserveBudgetOrSkipIsEmptyAndDurationDrivesPermitsAndProviderRequest() {
         when(videoDurationProbe.probe(Path.of(VIDEO_PATH)))
                 .thenReturn(Optional.of(Duration.ofSeconds(250)));
         when(userRateLimiter.reserveVideoLlmBudget(OWNER_ID, "2026-08", 3))
@@ -128,13 +133,11 @@ class AnalysisVideoLlmStageTest {
         stageLogger.addAppender(appender);
 
         try {
-            AnalysisVideoLlmStage.Plan plan = prepare(true);
+            AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, true, VIDEO_PATH);
+            assertThat(reserveBudgetOrSkip(plan)).isEmpty();
+
             VideoLlmEngineResponse response = stage.analyze(
-                    JOB_ID,
-                    VIDEO_PATH,
-                    "http://backend/video",
-                    plan
-            );
+                    JOB_ID, VIDEO_PATH, "http://backend/video", plan);
 
             verify(userRateLimiter).reserveVideoLlmBudget(OWNER_ID, "2026-08", 3);
             ArgumentCaptor<VideoLlmEngineRequest> requestCaptor =
@@ -161,7 +164,8 @@ class AnalysisVideoLlmStageTest {
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenReturn(response("MOCK"));
 
-        AnalysisVideoLlmStage.Plan plan = prepare(true);
+        AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, true, VIDEO_PATH);
+        assertThat(reserveBudgetOrSkip(plan)).isEmpty();
         stage.analyze(JOB_ID, VIDEO_PATH, "http://backend/video", plan);
 
         verify(userRateLimiter).reserveVideoLlmBudget(OWNER_ID, "2026-08", 18);
@@ -172,13 +176,12 @@ class AnalysisVideoLlmStageTest {
     }
 
     @Test
-    void disabledReanalysisFailsWithRealRequiredWithoutProviderCall() {
+    void disabledReanalysisFailsWithRealRequiredWithoutProbeOrBudget() {
         when(analysisJob.getAnalysisKind()).thenReturn(AnalysisKind.VIDEO_LLM_REANALYSIS);
 
-        assertThatThrownBy(() -> prepare(false))
+        assertThatThrownBy(() -> stage.prepare(JOB_ID, false, VIDEO_PATH))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VIDEO_LLM_REAL_REQUIRED)
-                );
+                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VIDEO_LLM_REAL_REQUIRED));
 
         verifyNoInteractions(videoDurationProbe, userRateLimiter, videoLlmEngineClient);
     }
@@ -188,12 +191,12 @@ class AnalysisVideoLlmStageTest {
         when(analysisJob.getAnalysisKind()).thenReturn(AnalysisKind.VIDEO_LLM_REANALYSIS);
         when(userRateLimiter.reserveVideoLlmBudget(OWNER_ID, "2026-08", 18))
                 .thenReturn(UserRateLimiter.VideoLlmBudgetReservation.DAILY_LIMIT_EXCEEDED);
+        AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, true, VIDEO_PATH);
 
-        assertThatThrownBy(() -> prepare(true))
+        assertThatThrownBy(() -> reserveBudgetOrSkip(plan))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.getErrorCode())
-                                .isEqualTo(ErrorCode.VIDEO_LLM_USAGE_LIMIT_EXCEEDED)
-                );
+                                .isEqualTo(ErrorCode.VIDEO_LLM_USAGE_LIMIT_EXCEEDED));
 
         verifyNoInteractions(videoLlmEngineClient);
     }
@@ -203,17 +206,13 @@ class AnalysisVideoLlmStageTest {
         when(analysisJob.getAnalysisKind()).thenReturn(AnalysisKind.VIDEO_LLM_REANALYSIS);
         when(videoLlmEngineClient.analyze(any(VideoLlmEngineRequest.class)))
                 .thenReturn(response("FALLBACK"));
-        AnalysisVideoLlmStage.Plan plan = prepare(true);
-
+        AnalysisVideoLlmStage.Plan plan = stage.prepare(JOB_ID, true, VIDEO_PATH);
         assertThat(plan.requireReal()).isTrue();
-        assertThatThrownBy(() -> stage.analyze(
-                JOB_ID,
-                VIDEO_PATH,
-                "http://backend/video",
-                plan
-        )).isInstanceOfSatisfying(BusinessException.class, exception ->
-                assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VIDEO_LLM_REAL_REQUIRED)
-        );
+        assertThat(reserveBudgetOrSkip(plan)).isEmpty();
+
+        assertThatThrownBy(() -> stage.analyze(JOB_ID, VIDEO_PATH, "http://backend/video", plan))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VIDEO_LLM_REAL_REQUIRED));
 
         ArgumentCaptor<VideoLlmEngineRequest> requestCaptor =
                 ArgumentCaptor.forClass(VideoLlmEngineRequest.class);
@@ -221,8 +220,8 @@ class AnalysisVideoLlmStageTest {
         assertThat(requestCaptor.getValue().requireReal()).isTrue();
     }
 
-    private AnalysisVideoLlmStage.Plan prepare(boolean useVideoLlm) {
-        return stage.prepare(JOB_ID, useVideoLlm, VIDEO_PATH, 100.0, 30);
+    private Optional<VideoLlmEngineResponse> reserveBudgetOrSkip(AnalysisVideoLlmStage.Plan plan) {
+        return stage.reserveBudgetOrSkip(JOB_ID, plan, 100.0, 30);
     }
 
     private VideoLlmEngineResponse response(String generationMode) {

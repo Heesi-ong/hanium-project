@@ -604,9 +604,8 @@ public class AnalysisCommandService {
                 log.warn("[{}] 오버레이 프레임 저장에 실패해 갤러리 없이 계속 진행합니다: {}", jobId, e.getMessage());
             }
 
-            // Video LLM 실행 계획 수립(prepare)은 월간/일일 호출 예산을 미리 차감합니다.
-            // basic 분석 도중 들어온 취소/마감 초과를 여기서 먼저 확인해, 곧 중단될 작업이
-            // 예산만 소모하는 것을 막습니다. (예약을 되돌리는 경로는 아직 없습니다.)
+            // basic 분석(최대 10분) 도중 들어온 취소/마감 초과를 여기서 확인해, 곧 중단될
+            // 작업이 durationSec 계산(ffprobe)이나 이후 단계를 헛되이 진행하지 않게 합니다.
             if (stopIfCancelledOrTimedOut(jobId, lastPercent, sample, deadline)) {
                 return;
             }
@@ -614,9 +613,7 @@ public class AnalysisCommandService {
             AnalysisVideoLlmStage.Plan videoLlmPlan = videoLlmStage.prepare(
                     jobId,
                     useVideoLlm,
-                    uploadedVideo.getStoredFilePath(),
-                    videoLlmChunkDurationSeconds,
-                    videoMaxDurationMinutes
+                    uploadedVideo.getStoredFilePath()
             );
             VideoLlmEngineResponse videoLlmEngineResponse;
 
@@ -627,14 +624,28 @@ public class AnalysisCommandService {
                     return;
                 }
 
-                lastPercent = pipelineStageReporter.beginVideoLlmAnalysis(jobId);
-
-                videoLlmEngineResponse = videoLlmStage.analyze(
+                // 월간/일일 NVIDIA 호출 예산 예약을 취소/타임아웃 체크포인트 뒤, 실제 호출
+                // 직전으로 둡니다. 여기까지 못 온 작업(취소·타임아웃·앞 단계 실패)은 예산을
+                // 소비하지 않습니다. (예약을 되돌리는 경로는 아직 없습니다.)
+                Optional<VideoLlmEngineResponse> budgetSkip = videoLlmStage.reserveBudgetOrSkip(
                         jobId,
-                        uploadedVideo.getStoredFilePath(),
-                        videoDownloadUrl,
-                        videoLlmPlan
+                        videoLlmPlan,
+                        videoLlmChunkDurationSeconds,
+                        videoMaxDurationMinutes
                 );
+
+                if (budgetSkip.isPresent()) {
+                    videoLlmEngineResponse = budgetSkip.get();
+                } else {
+                    lastPercent = pipelineStageReporter.beginVideoLlmAnalysis(jobId);
+
+                    videoLlmEngineResponse = videoLlmStage.analyze(
+                            jobId,
+                            uploadedVideo.getStoredFilePath(),
+                            videoDownloadUrl,
+                            videoLlmPlan
+                    );
+                }
             }
 
             // Video LLM 호출은 read-timeout(기본 10분)까지 매달릴 수 있어, 그 사이 들어온

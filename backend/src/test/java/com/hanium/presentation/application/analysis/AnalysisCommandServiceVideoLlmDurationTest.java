@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -224,9 +225,9 @@ class AnalysisCommandServiceVideoLlmDurationTest {
 
     @Test
     void doesNotReserveVideoLlmBudgetWhenCancelledDuringBasicAnalysis() {
-        // basic 분석이 끝난 직후 취소가 감지되면, Video LLM 예산을 차감하는 prepare()에
-        // 도달하기 전 체크포인트에서 파이프라인이 멈춰야 합니다. (예약을 되돌리는 경로가
-        // 없으므로, 애초에 예약하지 않는 것이 유일한 방어선입니다.)
+        // basic 분석 중 취소가 감지되면, Video LLM 예산 예약(reserveBudgetOrSkip)에 도달하기
+        // 전 체크포인트에서 파이프라인이 멈춰야 합니다. (예약을 되돌리는 경로가 없으므로,
+        // 애초에 예약하지 않는 것이 유일한 방어선입니다.)
         when(analysisJob.isCancelRequested()).thenReturn(false);
         when(analysisJobStatusService.cancelStatus(JOB_ID)).thenReturn(true);
         when(analysisEngineClient.analyze(any(AnalysisEngineRequest.class))).thenAnswer(invocation -> {
@@ -239,6 +240,18 @@ class AnalysisCommandServiceVideoLlmDurationTest {
         verify(userRateLimiter, never()).reserveVideoLlmBudget(any(Long.class), anyString(), anyInt());
         verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
         verify(resultCommandService, never()).saveEngineResultsAndCompact(anyString(), any(), any());
+    }
+
+    @Test
+    void doesNotReserveVideoLlmBudgetWhenDeadlineAlreadyExceeded() {
+        // 마감을 이미 넘긴 작업은 첫 체크포인트에서 종료되어 Video LLM 예산을 예약하지 않습니다.
+        ReflectionTestUtils.setField(analysisCommandService, "jobTimeoutMinutes", -1L);
+        when(analysisJobStatusService.failStatus(eq(JOB_ID), anyString())).thenReturn(true);
+
+        analysisCommandService.runAnalysis(JOB_ID, 1L, true, false);
+
+        verify(userRateLimiter, never()).reserveVideoLlmBudget(any(Long.class), anyString(), anyInt());
+        verify(videoLlmEngineClient, never()).analyze(any(VideoLlmEngineRequest.class));
     }
 
     @Test

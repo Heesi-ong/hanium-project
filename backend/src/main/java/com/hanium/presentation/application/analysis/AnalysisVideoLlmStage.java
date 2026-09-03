@@ -104,45 +104,69 @@ final class AnalysisVideoLlmStage {
         this.clock = clock;
     }
 
+    // durationSec 계산과 재분석 여부 판정만 한다. 예산 예약(월간/일일 NVIDIA units)은
+    // 부수효과이므로 prepare()가 아니라 reserveBudgetOrSkip()에서 실제 호출 직전에 한다.
     Plan prepare(
             String jobId,
             boolean useVideoLlm,
-            String storedFilePath,
-            double chunkDurationSeconds,
-            long maxDurationMinutes
+            String storedFilePath
     ) {
         boolean requireReal = analysisJobRepository.findByJobId(jobId)
                 .map(AnalysisJob::getAnalysisKind)
                 .filter(AnalysisKind.VIDEO_LLM_REANALYSIS::equals)
                 .isPresent();
-        Double durationSec = useVideoLlm
-                ? resolveDurationSec(jobId, storedFilePath)
-                : null;
-        SkipReason skipReason = useVideoLlm
-                ? reserveBudgetOrSkipReason(
-                        jobId,
-                        durationSec,
-                        chunkDurationSeconds,
-                        maxDurationMinutes
-                )
-                : SkipReason.DISABLED;
 
-        if (skipReason == null) {
-            return new Plan(durationSec, requireReal, null);
+        if (!useVideoLlm) {
+            if (requireReal) {
+                throw new BusinessException(
+                        ErrorCode.VIDEO_LLM_REAL_REQUIRED,
+                        "실제 Video LLM 재분석을 실행할 수 없습니다. reason=" + SkipReason.DISABLED
+                );
+            }
+            log.info("[{}] Video LLM 분석을 건너뜁니다. ({})", jobId, SkipReason.DISABLED);
+            return new Plan(null, requireReal, createSkippedResponse(jobId, SkipReason.DISABLED));
         }
 
-        if (requireReal) {
-            ErrorCode errorCode = skipReason == SkipReason.DISABLED
-                    ? ErrorCode.VIDEO_LLM_REAL_REQUIRED
-                    : ErrorCode.VIDEO_LLM_USAGE_LIMIT_EXCEEDED;
+        return new Plan(resolveDurationSec(jobId, storedFilePath), requireReal, null);
+    }
+
+    /**
+     * 월간/일일 NVIDIA 호출 예산을 실제 엔진 호출 직전에 예약한다.
+     *
+     * <p>예전에는 {@code prepare()}가 예약했는데, basic 분석 도중 취소/타임아웃된 작업이
+     * 예산만 소모하고 중단됐다. 9323bc71이 그 앞에 체크포인트를 뒀지만 prepare()~다음
+     * 체크포인트 사이 창은 남았다. 이 단계를 취소/타임아웃 체크포인트 뒤로 옮겨 그 창까지
+     * 없앤다. 예약을 되돌리는 경로가 없으므로 예약은 호출이 실제로 일어나는 시점에
+     * 최대한 붙여 둔다.</p>
+     *
+     * @return 비어 있으면 진행, 값이 있으면 그 skipped 응답으로 대체. requireReal이면 예외.
+     */
+    Optional<VideoLlmEngineResponse> reserveBudgetOrSkip(
+            String jobId,
+            Plan plan,
+            double chunkDurationSeconds,
+            long maxDurationMinutes
+    ) {
+        SkipReason skipReason = reserveBudgetOrSkipReason(
+                jobId,
+                plan.durationSec(),
+                chunkDurationSeconds,
+                maxDurationMinutes
+        );
+
+        if (skipReason == null) {
+            return Optional.empty();
+        }
+
+        if (plan.requireReal()) {
             throw new BusinessException(
-                    errorCode,
+                    ErrorCode.VIDEO_LLM_USAGE_LIMIT_EXCEEDED,
                     "실제 Video LLM 재분석을 실행할 수 없습니다. reason=" + skipReason
             );
         }
 
         log.info("[{}] Video LLM 분석을 건너뜁니다. ({})", jobId, skipReason);
-        return new Plan(durationSec, false, createSkippedResponse(jobId, skipReason));
+        return Optional.of(createSkippedResponse(jobId, skipReason));
     }
 
     VideoLlmEngineResponse analyze(

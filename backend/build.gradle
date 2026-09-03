@@ -87,11 +87,13 @@ tasks.named('jacocoTestReport') {
 }
 
 // coverage는 그동안 측정만 하고 최소 하락 기준이 없었다(2026-08-03 서비스화 점검 P2-06).
-// 현재 instruction coverage가 약 90%라 85%를 바닥선으로 둔다 — 실질적인 회귀만 잡아내고
-// 사소한 변동으로 매번 실패하지 않도록 현재 수준보다 약간 낮게 잡았다. CI(backend job)는
-// MinIO/Redis 통합 테스트까지 포함한 단일 test 실행 직후 이 task를 명시적으로 돌린다.
-// test에 finalizedBy로 자동 연결하지 않는 것은, 개발자가 로컬에서 특정 테스트만
-// --tests로 돌릴 때 부분 커버리지로 오탐 실패하지 않게 하기 위함이다.
+// 현재 instruction/line coverage가 약 90%라 85%를, branch coverage가 약 74%라 65%를
+// 바닥선으로 둔다 — 실질적인 회귀만 잡아내고 사소한 변동으로 매번 실패하지 않도록 현재
+// 수준보다 약 9%p 낮게 잡았다. branch 기준을 추가한 이유는 line은 높은데(90%+) 조건
+// 분기가 낮은(예: 컨트롤러 DTO 매핑, 엔진 클라이언트 오류 분기) 사각지대가 있어서다.
+// CI(backend job)는 MinIO/Redis 통합 테스트까지 포함한 단일 test 실행 직후 이 task를
+// 명시적으로 돌린다. test에 finalizedBy로 자동 연결하지 않는 것은, 개발자가 로컬에서
+// 특정 테스트만 --tests로 돌릴 때 부분 커버리지로 오탐 실패하지 않게 하기 위함이다.
 tasks.named('jacocoTestCoverageVerification') {
     dependsOn tasks.named('jacocoTestReport')
     violationRules {
@@ -103,6 +105,10 @@ tasks.named('jacocoTestCoverageVerification') {
             limit {
                 counter = 'LINE'
                 minimum = 0.85
+            }
+            limit {
+                counter = 'BRANCH'
+                minimum = 0.65
             }
         }
     }

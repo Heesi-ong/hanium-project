@@ -36,6 +36,7 @@ public class ResultCommandService {
     private final FilePathGenerator filePathGenerator;
     private final JsonFileStorage jsonFileStorage;
     private final LocalFileStorage localFileStorage;
+    private final AnalysisFrameOverlayStorage analysisFrameOverlayStorage;
     private final StorageDeletionTaskService storageDeletionTaskService;
     private final AnalysisJobRepository analysisJobRepository;
     private final UploadedVideoRepository uploadedVideoRepository;
@@ -46,6 +47,7 @@ public class ResultCommandService {
             FilePathGenerator filePathGenerator,
             JsonFileStorage jsonFileStorage,
             LocalFileStorage localFileStorage,
+            AnalysisFrameOverlayStorage analysisFrameOverlayStorage,
             StorageDeletionTaskService storageDeletionTaskService,
             AnalysisJobRepository analysisJobRepository,
             UploadedVideoRepository uploadedVideoRepository
@@ -55,9 +57,28 @@ public class ResultCommandService {
         this.filePathGenerator = filePathGenerator;
         this.jsonFileStorage = jsonFileStorage;
         this.localFileStorage = localFileStorage;
+        this.analysisFrameOverlayStorage = analysisFrameOverlayStorage;
         this.storageDeletionTaskService = storageDeletionTaskService;
         this.analysisJobRepository = analysisJobRepository;
         this.uploadedVideoRepository = uploadedVideoRepository;
+    }
+
+    /**
+     * 분석 엔진 응답의 오버레이 프레임을 결과 스토리지에 저장하고, base64를 비운 대신
+     * 갤러리 메타데이터를 채운 응답 사본을 반환합니다. 오버레이가 없으면 원본을 그대로
+     * 돌려줍니다.
+     */
+    public AnalysisEngineResponse persistFrameOverlays(
+            String jobId,
+            AnalysisEngineResponse analysisEngineResponse
+    ) {
+        if (analysisEngineResponse == null) {
+            return null;
+        }
+
+        return analysisEngineResponse.withPersistedFrameGallery(
+                analysisFrameOverlayStorage.persist(jobId, analysisEngineResponse)
+        );
     }
 
     public void saveAnalysisEngineResult(

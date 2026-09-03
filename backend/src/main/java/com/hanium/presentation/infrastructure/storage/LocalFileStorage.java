@@ -24,6 +24,18 @@ public class LocalFileStorage {
         }
     }
 
+    public void writeBytes(Path targetPath, byte[] content) {
+        try {
+            createDirectory(targetPath.getParent());
+            Files.write(targetPath, content);
+        } catch (IOException e) {
+            throw new BusinessException(
+                    ErrorCode.FILE_UPLOAD_FAILED,
+                    "파일 저장에 실패했습니다. path=" + targetPath
+            );
+        }
+    }
+
     public void saveFile(MultipartFile file, Path targetPath) {
         try {
             createDirectory(targetPath.getParent());

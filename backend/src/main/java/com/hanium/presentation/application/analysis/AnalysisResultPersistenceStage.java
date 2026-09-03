@@ -22,6 +22,17 @@ final class AnalysisResultPersistenceStage {
         this.resultCommandService = resultCommandService;
     }
 
+    /**
+     * 기본 분석 응답의 스켈레톤 오버레이 프레임을 결과 스토리지에 저장하고, 큰 base64를
+     * 비운 응답 사본을 돌려줍니다. 이후 단계는 가벼워진 응답만 들고 다닙니다.
+     */
+    AnalysisEngineResponse persistFrameOverlays(
+            String jobId,
+            AnalysisEngineResponse analysisEngineResponse
+    ) {
+        return resultCommandService.persistFrameOverlays(jobId, analysisEngineResponse);
+    }
+
     Map<String, Object> compact(
             String jobId,
             AnalysisEngineResponse analysisEngineResponse,

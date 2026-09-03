@@ -1,5 +1,6 @@
 package com.hanium.presentation.presentation.controller;
 
+import com.hanium.presentation.application.result.AnalysisFrameOverlayStorage;
 import com.hanium.presentation.application.result.ResultCommandService;
 import com.hanium.presentation.application.result.ResultQueryService;
 import com.hanium.presentation.application.result.VideoStreamingService;
@@ -15,6 +16,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.support.ResourceRegion;
+import org.springframework.http.CacheControl;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -38,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 
 @Validated
@@ -55,15 +58,18 @@ public class ResultController {
     private final ResultQueryService resultQueryService;
     private final ResultCommandService resultCommandService;
     private final VideoStreamingService videoStreamingService;
+    private final AnalysisFrameOverlayStorage analysisFrameOverlayStorage;
 
     public ResultController(
             ResultQueryService resultQueryService,
             ResultCommandService resultCommandService,
-            VideoStreamingService videoStreamingService
+            VideoStreamingService videoStreamingService,
+            AnalysisFrameOverlayStorage analysisFrameOverlayStorage
     ) {
         this.resultQueryService = resultQueryService;
         this.resultCommandService = resultCommandService;
         this.videoStreamingService = videoStreamingService;
+        this.analysisFrameOverlayStorage = analysisFrameOverlayStorage;
     }
 
     @GetMapping
@@ -97,6 +103,24 @@ public class ResultController {
                 "분석 결과 조회가 완료되었습니다.",
                 response
         );
+    }
+
+    @GetMapping("/{jobId}/frames/{fileName}")
+    public ResponseEntity<byte[]> getOverlayFrame(
+            @PathVariable @Pattern(regexp = JOB_ID_PATTERN, message = JOB_ID_MESSAGE) String jobId,
+            @PathVariable
+            @Pattern(regexp = "^frame_\\d{3}\\.jpg$", message = "프레임 파일명이 올바르지 않습니다.")
+            String fileName,
+            Authentication authentication
+    ) {
+        resultQueryService.assertResultOwnership(jobId, getCurrentUserId(authentication));
+        byte[] image = analysisFrameOverlayStorage.readFrame(jobId, fileName);
+
+        // 결과와 함께 삭제되는 소유자 전용 리소스라, 브라우저 캐시만 짧게 허용합니다.
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .cacheControl(CacheControl.maxAge(Duration.ofHours(1)).cachePrivate())
+                .body(image);
     }
 
     @PatchMapping("/{jobId}/memo")

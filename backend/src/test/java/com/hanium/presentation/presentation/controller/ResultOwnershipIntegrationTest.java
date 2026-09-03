@@ -22,6 +22,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
 import java.nio.file.Files;
@@ -40,6 +41,7 @@ class ResultOwnershipIntegrationTest {
     private static final String OWNER_THIRD_JOB_ID = "20260702180003-dddddddd";
     private static final String OWNER_PIPELINE_FALLBACK_JOB_ID = "20260702180004-eeeeeeee";
     private static final String OWNER_MISSING_RESULT_JOB_ID = "20260702180005-ffffffff";
+    private static final String OWNER_FRAME_JOB_ID = "20260702180006-a1a1a1a1";
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -237,6 +239,56 @@ class ResultOwnershipIntegrationTest {
                 .contains("결과 파일");
         assertThat(body.path("data").path("result").path("feedback").path("generationMode").asText())
                 .isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void overlayFrameEndpointServesOwnerFrameAndBlocksOthers() throws Exception {
+        String ownerToken = signupAndLogin("frame-owner@example.com");
+        String otherToken = signupAndLogin("frame-other@example.com");
+        Long ownerId = userRepository.findByEmail("frame-owner@example.com")
+                .map(User::getId)
+                .orElseThrow();
+
+        createResultFixture(OWNER_FRAME_JOB_ID, ownerId, "frame-owner-video.mp4");
+
+        Path framePath = filePathGenerator.generateResultFramePath(OWNER_FRAME_JOB_ID, "frame_001.jpg");
+        Files.createDirectories(framePath.getParent());
+        byte[] jpegBytes = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xD9};
+        Files.write(framePath, jpegBytes);
+
+        ResponseEntity<byte[]> ownerResponse = restTemplate.exchange(
+                "/api/results/" + OWNER_FRAME_JOB_ID + "/frames/frame_001.jpg",
+                HttpMethod.GET,
+                createAuthorizedEntity(ownerToken),
+                byte[].class
+        );
+        assertThat(ownerResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ownerResponse.getHeaders().getContentType()).isEqualTo(MediaType.IMAGE_JPEG);
+        assertThat(ownerResponse.getBody()).isEqualTo(jpegBytes);
+
+        ResponseEntity<String> otherResponse = restTemplate.exchange(
+                "/api/results/" + OWNER_FRAME_JOB_ID + "/frames/frame_001.jpg",
+                HttpMethod.GET,
+                createAuthorizedEntity(otherToken),
+                String.class
+        );
+        assertThat(otherResponse.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        ResponseEntity<String> missingResponse = restTemplate.exchange(
+                "/api/results/" + OWNER_FRAME_JOB_ID + "/frames/frame_099.jpg",
+                HttpMethod.GET,
+                createAuthorizedEntity(ownerToken),
+                String.class
+        );
+        assertThat(missingResponse.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+
+        ResponseEntity<String> badNameResponse = restTemplate.exchange(
+                "/api/results/" + OWNER_FRAME_JOB_ID + "/frames/evil.txt",
+                HttpMethod.GET,
+                createAuthorizedEntity(ownerToken),
+                String.class
+        );
+        assertThat(badNameResponse.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     private String extractAccessTokenFromCookie(ResponseEntity<String> loginResponse) {

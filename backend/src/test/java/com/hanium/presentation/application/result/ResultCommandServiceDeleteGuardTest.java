@@ -40,6 +40,7 @@ class ResultCommandServiceDeleteGuardTest {
     private final FilePathGenerator filePathGenerator = mock(FilePathGenerator.class);
     private final JsonFileStorage jsonFileStorage = mock(JsonFileStorage.class);
     private final LocalFileStorage localFileStorage = mock(LocalFileStorage.class);
+    private final AnalysisFrameOverlayStorage analysisFrameOverlayStorage = mock(AnalysisFrameOverlayStorage.class);
     private final StorageDeletionTaskService storageDeletionTaskService = mock(StorageDeletionTaskService.class);
     private final AnalysisJobRepository analysisJobRepository = mock(AnalysisJobRepository.class);
     private final UploadedVideoRepository uploadedVideoRepository = mock(UploadedVideoRepository.class);
@@ -50,6 +51,7 @@ class ResultCommandServiceDeleteGuardTest {
             filePathGenerator,
             jsonFileStorage,
             localFileStorage,
+            analysisFrameOverlayStorage,
             storageDeletionTaskService,
             analysisJobRepository,
             uploadedVideoRepository

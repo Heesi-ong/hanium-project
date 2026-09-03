@@ -417,6 +417,51 @@ class ResultMergeServiceTest {
         return analysisResponse(pose, face, emotion, gesture, Map.of());
     }
 
+    @Test
+    void createFinalResultPassesThroughAnalysisTraceAndFrameGallery() {
+        AnalysisEngineResponse base = analysisResponse(Map.of(), Map.of(), Map.of(), Map.of());
+        List<Map<String, Object>> trace = List.of(Map.of(
+                "stepNo", 5, "totalSteps", 9, "key", "pose_gesture",
+                "label", "자세와 제스처를 분석하는 중...", "durationMs", 42.0
+        ));
+        List<Map<String, Object>> gallery = List.of(Map.of(
+                "sequence", 1, "timestampSec", 1.0, "poseDetected", true,
+                "gestureDetected", false, "fileName", "frame_001.jpg"
+        ));
+        AnalysisEngineResponse response = new AnalysisEngineResponse(
+                base.jobId(), base.status(), trace, List.of(), gallery,
+                base.videoInfo(), base.frame(), base.audio(), base.filler(),
+                base.pose(), base.gesture(), base.face(), base.emotion(),
+                base.score(), base.error()
+        );
+
+        Map<String, Object> finalResult = resultMergeService.createFinalResult(
+                "job-1", response, videoLlmResponse(), openAiFeedbackResponse()
+        );
+
+        Map<String, Object> basicAnalysis = objectMapper.convertValue(
+                finalResult.get("basicAnalysis"), Map.class
+        );
+        assertThat((List<?>) basicAnalysis.get("analysisTrace")).hasSize(1);
+        assertThat((List<?>) basicAnalysis.get("frameGallery")).hasSize(1);
+        assertThat(objectMapper.convertValue(
+                ((List<?>) basicAnalysis.get("frameGallery")).get(0), Map.class
+        )).containsEntry("fileName", "frame_001.jpg");
+    }
+
+    @Test
+    void createFailureResultStillCarriesEmptyTraceAndGallery() {
+        Map<String, Object> failureResult = resultMergeService.createFailureResult(
+                "job-1", "BASIC_ANALYZING", "analysis failed"
+        );
+
+        Map<String, Object> basicAnalysis = objectMapper.convertValue(
+                failureResult.get("basicAnalysis"), Map.class
+        );
+        assertThat((List<?>) basicAnalysis.get("analysisTrace")).isEmpty();
+        assertThat((List<?>) basicAnalysis.get("frameGallery")).isEmpty();
+    }
+
     private AnalysisEngineResponse analysisResponse(
             Map<String, Object> pose,
             Map<String, Object> face,

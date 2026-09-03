@@ -264,6 +264,12 @@ public class ResultQueryService {
                 .increment();
     }
 
+    /** 결과에 딸린 부가 리소스(오버레이 프레임 등) 조회 전 소유권만 확인합니다. */
+    @Transactional(readOnly = true)
+    public void assertResultOwnership(String jobId, Long ownerId) {
+        validateOwnership(jobId, ownerId);
+    }
+
     private AnalysisJob validateOwnership(String jobId, Long ownerId) {
         AnalysisJob analysisJob = analysisJobRepository.findByJobId(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ANALYSIS_JOB_NOT_FOUND));

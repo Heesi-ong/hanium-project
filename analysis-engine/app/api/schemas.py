@@ -50,6 +50,12 @@ class BasicAnalysisResponse(BaseModel):
 
     jobId: str
     status: Literal["success", "failed"]
+    # 사용자에게 "이 영상이 이렇게 분석됐다"를 보여주기 위한 단계별 처리 로그입니다.
+    # 분석 정확도와 무관한 부가 정보라 선택 필드로 둡니다.
+    analysisTrace: list[dict[str, Any]] = Field(default_factory=list)
+    # 샘플 프레임 위에 포즈/제스처 분석 결과를 그린 base64 JPEG 목록입니다.
+    # 백엔드가 스토리지에 저장한 뒤 최종 결과 응답에서는 경로 참조로 대체합니다.
+    frameOverlays: list[dict[str, Any]] = Field(default_factory=list)
     videoInfo: VideoInfoResponse
     frame: FrameAnalysisResponse
     audio: dict[str, Any]

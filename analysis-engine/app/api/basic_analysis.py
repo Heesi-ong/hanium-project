@@ -8,11 +8,14 @@ from app.api.schemas import BasicAnalysisRequest, BasicAnalysisResponse
 from app.services import (
     audio_analysis,
     face_analysis,
+    frame_overlay,
     media_io,
     pose_analysis,
+    progress_file,
     scoring,
     speech_to_text,
 )
+from app.services.analysis_trace import AnalysisTrace
 
 logger = logging.getLogger("analysis-engine")
 
@@ -50,9 +53,18 @@ def basic_analysis(
 
 def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
     job_id = request.jobId
+    trace = AnalysisTrace(TOTAL_ANALYSIS_STEPS)
+
+    def step(step_no: int, key: str, message: str) -> None:
+        """단계 로그 + 트레이스 기록 + progress.json 갱신을 한 번에 처리합니다."""
+        log_step(job_id, step_no, message)
+        trace.step(step_no, key, message)
+        progress_file.write_basic_progress(
+            job_id, step_no, TOTAL_ANALYSIS_STEPS, key, message
+        )
 
     try:
-        log_step(job_id, 1, "영상 파일 확인 중...")
+        step(1, "video_check", "영상 파일 확인 중...")
         resolved_video_path = media_io.resolve_or_download_video_path(
             job_id,
             request.videoPath,
@@ -77,39 +89,67 @@ def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
                 reason="영상 파일을 읽을 수 없습니다.",
             )
 
-        log_step(job_id, 2, "영상에서 프레임(장면 이미지)을 추출하는 중...")
+        step(2, "frame_extract", "영상에서 프레임(장면 이미지)을 추출하는 중...")
         frame_result = media_io.extract_sample_frames(
             job_id=job_id,
             video_path=resolved_video_path,
             fps=video_info["fps"],
             frame_count=video_info["frameCount"],
         )
+        trace.detail(
+            f"{video_info['durationSec']}초 영상에서 프레임 "
+            f"{frame_result['savedCount']}장 추출 "
+            f"({video_info['width']}x{video_info['height']}, {video_info['fps']}fps)"
+        )
 
-        log_step(job_id, 3, "영상에서 오디오(소리)를 분리하는 중...")
+        step(3, "audio_extract", "영상에서 오디오(소리)를 분리하는 중...")
         audio_extraction_result = media_io.extract_audio_from_video(
             job_id=job_id,
             video_path=resolved_video_path,
         )
+        trace.detail(
+            "오디오 분리 완료 (16kHz 모노 WAV)"
+            if audio_extraction_result.get("success")
+            else "오디오 분리 실패 — 음성 분석은 영상 길이 기준으로 대체합니다."
+        )
 
-        log_step(
-            job_id,
+        step(
             4,
+            "speech_to_text",
             "음성을 텍스트로 변환(STT)하는 중... (영상 길이에 따라 시간이 걸릴 수 있습니다)",
         )
         stt_result = speech_to_text.transcribe_audio(audio_extraction_result)
+        trace.detail(
+            f"STT 인식 텍스트 {len(str(stt_result.get('transcript', '')))}자, "
+            f"세그먼트 {len(stt_result.get('segments', []) or [])}개"
+        )
 
         sampled_frames = frame_result["sampledFrames"]
         mp_images = media_io.preload_mediapipe_images(sampled_frames)
 
-        log_step(job_id, 5, "자세(포즈)를 분석하는 중...")
+        step(5, "pose_gesture", "자세(포즈)와 제스처를 분석하는 중... (MediaPipe Pose Landmarker)")
         pose_result = pose_analysis.analyze_pose_from_frames(sampled_frames, mp_images)
         gesture_result = pose_analysis.analyze_gesture_from_pose_result(pose_result)
+        frame_overlays = _build_frame_overlays_safely(
+            job_id, sampled_frames, pose_result, gesture_result
+        )
+        trace.detail(
+            f"포즈 검출 {pose_result.get('detectedFrameCount', 0)}/"
+            f"{pose_result.get('totalFrameCount', 0)} 프레임, "
+            f"제스처 활성 {gesture_result.get('gestureFrameCount', 0)} 프레임, "
+            f"스켈레톤 오버레이 {len(frame_overlays)}장 생성"
+        )
 
-        log_step(job_id, 6, "얼굴/시선/표정을 분석하는 중...")
+        step(6, "face_emotion", "얼굴/시선/표정을 분석하는 중...")
         face_result = face_analysis.analyze_face_from_frames(sampled_frames, mp_images)
         emotion_result = face_analysis.analyze_emotion_from_face_result(face_result)
+        trace.detail(
+            f"얼굴 검출 {face_result.get('detectedFrameCount', 0)}/"
+            f"{face_result.get('totalFrameCount', 0)} 프레임 "
+            "(시선·표정은 참고용으로만 표시하고 점수에는 반영하지 않습니다)"
+        )
 
-        log_step(job_id, 7, "말하기 속도와 침묵 구간을 분석하는 중...")
+        step(7, "speech_metrics", "말하기 속도와 침묵 구간을 분석하는 중...")
         audio_result = audio_analysis.analyze_speech(
             duration_sec=video_info["durationSec"],
             audio_extraction_result=audio_extraction_result,
@@ -125,7 +165,7 @@ def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
         # (말속도 + 침묵 + 필러 + 음량 가중합)
         audio_analysis.finalize_speech_score(audio_result, filler_result)
 
-        log_step(job_id, 8, "항목별 점수와 최종 점수를 계산하는 중...")
+        step(8, "scoring", "항목별 점수와 최종 점수를 계산하는 중...")
         score_result = scoring.calculate_score(
             pose_result=pose_result,
             face_result=face_result,
@@ -133,12 +173,21 @@ def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
             gesture_result=gesture_result,
             emotion_result=emotion_result,
         )
+        trace.detail(
+            f"자세 {score_result.get('postureScore', 0)} · "
+            f"음성 {score_result.get('speechScore', 0)} · "
+            f"제스처 {score_result.get('gestureScore', 0)} → "
+            f"총점 {score_result.get('totalScore', 0)} (weighted-v2)"
+        )
 
-        log_step(job_id, 9, f"기본 분석 완료. 총점 {score_result['totalScore']}점")
+        step(9, "completed", f"기본 분석 완료. 총점 {score_result['totalScore']}점")
+        trace.finish()
 
         return {
             "jobId": request.jobId,
             "status": "success",
+            "analysisTrace": trace.to_list(),
+            "frameOverlays": frame_overlays,
             "videoInfo": {
                 "videoPath": str(resolved_video_path),
                 "durationSec": video_info["durationSec"],
@@ -165,6 +214,25 @@ def _run_basic_analysis(request: BasicAnalysisRequest) -> Dict[str, Any]:
         media_io.cleanup_temp_directory(job_id)
 
 
+def _build_frame_overlays_safely(
+    job_id: str,
+    sampled_frames: list,
+    pose_result: Dict[str, Any],
+    gesture_result: Dict[str, Any],
+) -> list:
+    """오버레이 생성은 사용자에게 보여주기 위한 부가 기능이므로, 실패하더라도
+    분석 응답 자체는 정상 반환되어야 합니다."""
+    try:
+        return frame_overlay.build_frame_overlays(
+            sampled_frames,
+            pose_result.get("frameResults", []),
+            gesture_result.get("frameResults", []),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("(%s) 프레임 오버레이 생성에 실패해 빈 목록으로 진행합니다.", job_id)
+        return []
+
+
 def create_failed_response(
     job_id: str,
     video_path: str,
@@ -173,6 +241,8 @@ def create_failed_response(
     return {
         "jobId": job_id,
         "status": "failed",
+        "analysisTrace": [],
+        "frameOverlays": [],
         "videoInfo": {
             "videoPath": video_path,
             "durationSec": 0,

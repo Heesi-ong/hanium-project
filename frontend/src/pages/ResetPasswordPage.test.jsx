@@ -27,6 +27,22 @@ describe("ResetPasswordPage", () => {
         authApiMock.confirmPasswordReset.mockReset();
     });
 
+    it("centers the card and keeps its width bounded like the login page", () => {
+        renderResetPasswordPage();
+
+        const card = screen
+            .getByRole("heading", { name: "새 비밀번호 설정" })
+            .closest("article");
+
+        expect(card).toHaveClass("w-full", "max-w-[520px]");
+        expect(card?.parentElement).toHaveClass(
+            "flex",
+            "items-center",
+            "justify-center",
+            "min-h-[calc(100svh-200px)]"
+        );
+    });
+
     it("confirms password reset with the token from the URL", async () => {
         authApiMock.confirmPasswordReset.mockResolvedValue({});
 

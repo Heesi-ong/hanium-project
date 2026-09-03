@@ -27,6 +27,22 @@ describe("ForgotPasswordPage", () => {
         authApiMock.requestPasswordReset.mockReset();
     });
 
+    it("centers the card and keeps its width bounded like the login page", () => {
+        renderForgotPasswordPage();
+
+        const card = screen
+            .getByRole("heading", { name: "비밀번호 재설정" })
+            .closest("article");
+
+        expect(card).toHaveClass("w-full", "max-w-[520px]");
+        expect(card?.parentElement).toHaveClass(
+            "flex",
+            "items-center",
+            "justify-center",
+            "min-h-[calc(100svh-200px)]"
+        );
+    });
+
     it("requests a password reset email", async () => {
         authApiMock.requestPasswordReset.mockResolvedValue({
             message: "입력한 이메일로 비밀번호 재설정 안내를 보냈습니다.",

@@ -47,6 +47,19 @@ describe("AppRoutes public policy pages", () => {
             .toHaveAttribute("href", "/login");
     });
 
+    it("renders the shared navigation and logo on the signup page", async () => {
+        renderAppRoutes("/signup");
+
+        await waitFor(() => {
+            expect(screen.getByRole("heading", { name: "회원가입" })).toBeInTheDocument();
+        });
+        expect(screen.getByRole("banner")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /Presentation Coach/ }))
+            .toHaveAttribute("href", "/");
+        expect(screen.getByRole("link", { name: "회원가입" }))
+            .toHaveAttribute("href", "/signup");
+    });
+
     it("renders privacy page without authentication", async () => {
         renderAppRoutes("/privacy");
 
@@ -69,22 +82,28 @@ describe("AppRoutes public policy pages", () => {
             .toBeInTheDocument();
     });
 
-    it("renders forgot password page without authentication", async () => {
+    it("renders forgot password page with the shared navigation", async () => {
         renderAppRoutes("/forgot-password");
 
         await waitFor(() => {
             expect(screen.getByRole("heading", { name: "비밀번호 재설정" }))
                 .toBeInTheDocument();
         });
+        expect(screen.getByRole("banner")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /Presentation Coach/ }))
+            .toHaveAttribute("href", "/");
     });
 
-    it("renders reset password page without authentication", async () => {
+    it("renders reset password page with the shared navigation", async () => {
         renderAppRoutes("/reset-password?token=abc");
 
         await waitFor(() => {
             expect(screen.getByRole("heading", { name: "새 비밀번호 설정" }))
                 .toBeInTheDocument();
         });
+        expect(screen.getByRole("banner")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /Presentation Coach/ }))
+            .toHaveAttribute("href", "/");
     });
 });
 

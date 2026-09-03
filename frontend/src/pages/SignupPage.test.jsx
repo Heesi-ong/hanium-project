@@ -43,6 +43,20 @@ describe("SignupPage", () => {
         cleanup();
     });
 
+    it("centers the signup card and keeps its width bounded like the login page", () => {
+        renderSignupPage();
+
+        const card = screen.getByRole("heading", { name: "회원가입" }).closest("article");
+
+        expect(card).toHaveClass("w-full", "max-w-[520px]");
+        expect(card?.parentElement).toHaveClass(
+            "flex",
+            "items-center",
+            "justify-center",
+            "min-h-[calc(100svh-200px)]"
+        );
+    });
+
     it("shows the password complexity hint next to the password field", () => {
         renderSignupPage();
 

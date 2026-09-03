@@ -225,6 +225,11 @@ analysis:
   stuck-job:
     cron: "${ANALYSIS_STUCK_JOB_CRON:0 */10 * * * *}"
     max-running-minutes: ${ANALYSIS_STUCK_JOB_MAX_RUNNING_MINUTES:30}
+  startup-recovery:
+    # 기동 직후 RUNNING 상태로 남은(=이전 프로세스가 죽으며 유실된) 분석 작업을 즉시 실패
+    # 처리합니다. monolith/단일 워커에서는 안전하며, 30분 워치도그를 기다리지 않아도 됩니다.
+    # analysis-worker를 여러 개로 확장하면 형제 워커의 실행 중 작업을 오인하므로 false로 둡니다.
+    enabled: ${ANALYSIS_STARTUP_RECOVERY_ENABLED:true}
   queued-job:
     resume-cron: "${ANALYSIS_QUEUED_JOB_RESUME_CRON:15 */1 * * * *}"
     stale-seconds: ${ANALYSIS_QUEUED_JOB_STALE_SECONDS:60}

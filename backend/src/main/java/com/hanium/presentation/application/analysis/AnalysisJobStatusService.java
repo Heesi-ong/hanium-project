@@ -115,6 +115,18 @@ public class AnalysisJobStatusService {
     public void updateStatus(String jobId, AnalysisStatus status) {
         analysisJobRepository.findByJobId(jobId).ifPresentOrElse(
                 analysisJob -> {
+                    // updateStatus로 전이하는 대상은 모두 "실행 중" 하위 상태입니다. 워치도그가
+                    // 먼저 실패 처리했거나 취소가 확정된 뒤, 아직 살아 있는 파이프라인 스레드가
+                    // 다음 단계 전이를 뒤늦게 호출하면 종료 상태가 running으로 되살아납니다.
+                    // completeStatus/failStatus/cancelStatus가 현재 상태를 확인하는 것과 동일하게
+                    // 여기서도 실행 중일 때만 전이합니다.
+                    if (!analysisJob.isRunning()) {
+                        log.info(
+                                "[{}] 단계 전이({})를 건너뜁니다. currentStatus={}",
+                                jobId, status, analysisJob.getStatus()
+                        );
+                        return;
+                    }
                     applyStatus(analysisJob, status);
                     analysisJobRepository.save(analysisJob);
                     log.info("[{}] 상태 즉시 반영: {} ({})", jobId, status, status.getDescription());

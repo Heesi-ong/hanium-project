@@ -41,6 +41,10 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
             LocalDateTime threshold
     );
 
+    // 기동 시 orphan 복구용: 이전 프로세스가 실행 중이던(RUNNING) 채로 죽어 남은 작업을 찾습니다.
+    // monolith/단일 워커에서는 기동 직후 executor가 비어 있으므로 RUNNING 행은 전부 orphan입니다.
+    List<AnalysisJob> findByStatusIn(List<AnalysisStatus> statuses);
+
     List<AnalysisJob> findByStatusAndCompletedAtBefore(
             AnalysisStatus status,
             LocalDateTime threshold

@@ -367,7 +367,11 @@ public class AnalysisJob {
     }
 
     public void resetForRetry() {
-        this.retryCount++;
+        // 사용자가 스스로 취소한(CANCELLED) 작업의 재시도는 시스템 실패가 아니므로
+        // 재시도 한도를 소비하지 않습니다. 실패(FAILED) 재시도만 한도에 계산합니다.
+        if (this.status != AnalysisStatus.CANCELLED) {
+            this.retryCount++;
+        }
         this.status = AnalysisStatus.UPLOADED;
         this.failReason = null;
         this.startedAt = null;

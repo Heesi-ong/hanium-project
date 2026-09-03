@@ -4,6 +4,8 @@ Spring Boot 백엔드, React 프론트엔드, Python 분석 엔진, Python Video
 
 사용자는 발표 영상을 업로드하고, 백엔드는 업로드된 영상을 기준으로 기본 분석 엔진과 Video LLM 엔진을 호출합니다. 이후 분석 결과를 축약하고 OpenAI 피드백 생성 단계까지 거쳐 최종 결과를 JSON으로 저장합니다.
 
+기본 분석 엔진(analysis-engine)은 OpenCV로 1초 간격 샘플 프레임과 오디오를 추출하고 MediaPipe Pose Landmarker로 자세·제스처를 검출합니다. 이때 단계별 처리 로그(`analysisTrace`)와, 샘플 프레임 위에 스켈레톤을 그린 오버레이 이미지를 함께 만들어, 결과 상세 화면에서 "어떻게 분석했는지"를 보여줍니다.
+
 > **현재 범위:** 이 저장소는 학생 프로젝트의 로컬/통제된 테스트 시연용입니다. 공개 도메인이나 production 호스트에 배포하지 않으며, GHCR 릴리스·상시 모니터링·원격 백업·상용 SMTP·결제/요금제는 현재 완료 기준에 포함하지 않습니다. 기존 운영 설정과 문서는 학습 이력용 참고 자료입니다.
 
 현재 완성 기준은 로컬에서 MySQL/Redis/MinIO와 네 애플리케이션 서비스를 실행하고, 업로드→비동기 분석→진행 상태→결과 조회 흐름을 재현하는 것입니다. 인증·소유권·파일 보호·외부 AI 전송 고지는 테스트용이라도 유지합니다.
@@ -71,6 +73,11 @@ redis (선택)        : localhost:6379
 Redis는 분석 진행률(%)을 잠깐 보여주기 위한 캐시 용도로만 사용합니다. 실행하지 않아도
 분석 자체는 정상 동작하며, 이 경우 진행률 화면은 저장된 상태 기준으로 대략적인 값만
 보여줍니다.
+
+기본 분석 구간(`BASIC_ANALYZING`) 동안에는 analysis-engine이 공유 `/storage` 볼륨의
+`storage/temp/{jobId}/progress.json`에 현재 세부 단계를 기록하고, 백엔드가 이를 읽어
+진행률 응답에 `basicAnalysisStep`(현재 단계 번호/전체 단계 수/라벨)을 채워줍니다. 이
+파일은 분석이 끝나면 temp 디렉터리와 함께 삭제됩니다.
 
 ## 3. 실행 순서
 
@@ -731,6 +738,37 @@ DELETE /api/results/{jobId}
 
 인증 필요. 브라우저는 로그인 쿠키를 자동 전송하고, 수동 호출은 로그인 때 저장한 쿠키를 전달합니다.
 
+`results/{jobId}/frames/` 아래의 오버레이 프레임도 함께 정리됩니다(로컬 파일 즉시 삭제, MinIO 프리픽스는 삭제 outbox worker가 처리).
+
+### 9.11 분석 진행률 조회
+
+```http
+GET /api/analysis/{jobId}/progress
+```
+
+인증 필요. Redis 진행률 캐시가 있으면 `percent`/`message`/`step`을, 없으면 저장된 상태 기준의 대략치를 반환합니다. 상태가 `BASIC_ANALYZING`이고 analysis-engine이 `progress.json`을 남겼다면 응답에 아래가 추가됩니다.
+
+```json
+{
+  "percent": 22,
+  "message": "자세(포즈)와 제스처를 분석하는 중...",
+  "basicAnalysisStep": {
+    "stepNo": 5,
+    "totalSteps": 9,
+    "stepKey": "pose_gesture",
+    "label": "자세(포즈)와 제스처를 분석하는 중..."
+  }
+}
+```
+
+### 9.12 분석 프레임 오버레이 조회
+
+```http
+GET /api/results/{jobId}/frames/{fileName}
+```
+
+인증 필요(결과 소유자만). `fileName`은 `frame_001.jpg` 형식만 허용합니다. 샘플 프레임 위에 MediaPipe가 검출한 어깨·팔꿈치·손목 골격과 어깨 균형선을 그린 JPEG(가로 640px)를 반환합니다. 프레임 목록과 메타데이터는 결과 상세(`GET /api/results/{jobId}`)의 `result.basicAnalysis.frameGallery` 배열에 있습니다.
+
 ## 10. 분석 상태 흐름
 
 ```text
@@ -759,7 +797,10 @@ storage/results/{jobId}/video-llm-raw.json
 storage/results/{jobId}/video-llm-compact.json
 storage/results/{jobId}/openai-feedback.json
 storage/results/{jobId}/final-result.json
+storage/results/{jobId}/frames/frame_001.jpg ...   # 스켈레톤 오버레이 프레임(최대 20장)
 ```
+
+`basic-analysis.json`의 `analysisTrace`는 엔진 단계별 처리 로그, `frameGallery`는 저장된 오버레이 프레임의 메타데이터입니다. 프레임 이미지 원본(base64)은 저장 JSON에 포함하지 않고 `frames/` 아래 파일로만 둡니다.
 
 업로드 영상은 아래 경로에 저장됩니다.
 

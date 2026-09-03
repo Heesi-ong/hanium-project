@@ -4,6 +4,7 @@ import { useJobStatusPolling } from "../hooks/useJobStatusPolling";
 import AnalysisMetricBarChart from "../components/chart/AnalysisMetricBarChart";
 import AnalysisQualitySection from "../components/result-detail/AnalysisQualitySection";
 import ResultScoreChart from "../components/chart/ResultScoreChart";
+import ScoreCompositionChart from "../components/chart/ScoreCompositionChart";
 import EmptyState from "../components/EmptyState";
 import PageHeader from "../components/PageHeader";
 import AnimatedSection from "../components/motion/AnimatedSection";
@@ -966,6 +967,13 @@ function ResultDetailPage() {
             </AnimatedSection>
 
             <AnimatedSection>
+                <ScoreCompositionChart
+                    scoreSummary={scoreSummary}
+                    scoreExplanation={scoreExplanation}
+                />
+            </AnimatedSection>
+
+            <AnimatedSection>
                 <AnalysisQualitySection
                     analysisQuality={analysisQuality}
                     scoreExplanation={scoreExplanation}
@@ -1000,7 +1008,13 @@ function ResultDetailPage() {
             <AnimatedSection className="no-print">
                 <VideoPlayerSection
                     jobId={jobId}
+                    durationSec={videoInfo.durationSec}
                     notableMoments={notableMoments}
+                    sttSegments={sttSegments}
+                    poseFrameResults={poseFrameResults}
+                    gestureFrameResults={gestureFrameResults}
+                    visualAnalysis={visualAnalysis}
+                    pipeline={pipeline}
                     seekControllerRef={videoSeekControllerRef}
                 />
             </AnimatedSection>

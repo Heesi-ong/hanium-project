@@ -113,4 +113,34 @@ describe("VideoPlayerSection", () => {
         expect(video.currentTime).toBe(83);
         expect(playMock).toHaveBeenCalledTimes(1);
     });
+
+    it("keeps the analysis timeline playhead synchronized with video time", async () => {
+        getVideoAccessToken.mockResolvedValue({
+            data: {
+                token: "video-token",
+                expiresInSeconds: 300,
+            },
+        });
+
+        const { container } = render(
+            <VideoPlayerSection
+                jobId="20260707090000-timeline-job"
+                durationSec={100}
+                sttSegments={[{ start: 10, end: 20, text: "발화 구간" }]}
+            />
+        );
+
+        await screen.findByRole("heading", { name: "영상 동기화 분석 타임라인" });
+        const video = container.querySelector("video");
+
+        Object.defineProperty(video, "currentTime", {
+            configurable: true,
+            value: 50,
+            writable: true,
+        });
+        fireEvent.timeUpdate(video);
+
+        const playhead = container.querySelector(".analysis-timeline-playhead");
+        expect(playhead).toHaveStyle({ left: "50%" });
+    });
 });

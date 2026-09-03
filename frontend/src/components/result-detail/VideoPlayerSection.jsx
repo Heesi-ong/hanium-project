@@ -8,14 +8,27 @@ import {
 } from "../../api/errorUtils";
 import EmptyState from "../EmptyState";
 import StateMessage from "../StateMessage";
+import AnalysisTimelineSection from "./AnalysisTimelineSection";
 import { formatTimestamp } from "./resultDetailFormatters";
 
-function VideoPlayerSection({ jobId, notableMoments = [], seekControllerRef }) {
+function VideoPlayerSection({
+    jobId,
+    durationSec,
+    notableMoments = [],
+    sttSegments = [],
+    poseFrameResults = [],
+    gestureFrameResults = [],
+    visualAnalysis = {},
+    pipeline = {},
+    seekControllerRef,
+}) {
     const videoRef = useRef(null);
     const [loading, setLoading] = useState(true);
     const [videoUrl, setVideoUrl] = useState("");
     const [error, setError] = useState("");
     const [deleted, setDeleted] = useState(false);
+    const [currentTimeSec, setCurrentTimeSec] = useState(0);
+    const [mediaDurationSec, setMediaDurationSec] = useState(0);
 
     useEffect(() => {
         let ignore = false;
@@ -129,6 +142,14 @@ function VideoPlayerSection({ jobId, notableMoments = [], seekControllerRef }) {
                 controls
                 preload="metadata"
                 src={videoUrl}
+                onLoadedMetadata={(event) => {
+                    if (Number.isFinite(event.currentTarget.duration)) {
+                        setMediaDurationSec(event.currentTarget.duration);
+                    }
+                }}
+                onTimeUpdate={(event) => {
+                    setCurrentTimeSec(event.currentTarget.currentTime || 0);
+                }}
                 style={{ width: "100%", borderRadius: 16 }}
             />
             {notableMoments.length > 0 && (
@@ -145,6 +166,17 @@ function VideoPlayerSection({ jobId, notableMoments = [], seekControllerRef }) {
                     ))}
                 </div>
             )}
+            <AnalysisTimelineSection
+                durationSec={mediaDurationSec || durationSec}
+                currentTimeSec={currentTimeSec}
+                sttSegments={sttSegments}
+                poseFrameResults={poseFrameResults}
+                gestureFrameResults={gestureFrameResults}
+                visualAnalysis={visualAnalysis}
+                pipeline={pipeline}
+                notableMoments={notableMoments}
+                onSeekToTime={handleSeekToMoment}
+            />
         </article>
     );
 }

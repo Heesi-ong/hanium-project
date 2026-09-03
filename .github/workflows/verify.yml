@@ -25,7 +25,49 @@ jobs:
           # 있었다.
           cache: gradle
       - run: chmod +x ./gradlew
-      - run: ./gradlew test --no-daemon
+      # MinIO 통합 테스트(MinioObjectStorageIntegrationTest / ObjectStorageBackfillMinioIntegrationTest)를
+      # 메인 test 실행에 포함시켜 그 커버리지가 아래 jacoco 게이트에 반영되게 한다. 예전에는
+      # 게이트 이후 --tests ... --rerun-tasks로 따로 돌렸는데, --rerun-tasks가 jacoco exec를
+      # 덮어써(2026-09-03 실측: 단일 클래스 재실행 후 전체 커버리지가 51/28146로 붕괴) 그
+      # 실행의 커버리지가 게이트에 반영되지 못하고 폐기됐다.
+      - name: Start isolated MinIO for integration tests
+        run: >-
+          docker run -d --name hanium-minio-integration
+          -e MINIO_ROOT_USER=ci-minio-integration
+          -e MINIO_ROOT_PASSWORD=ci-minio-integration-password
+          -p 127.0.0.1:9000:9000
+          minio/minio:RELEASE.2024-12-13T22-19-12Z
+          server /data
+      - name: Wait for MinIO
+        run: |
+          for attempt in {1..30}; do
+            if docker exec hanium-minio-integration mc ready local; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs hanium-minio-integration
+          exit 1
+      - name: Create MinIO integration bucket
+        run: >-
+          docker run --rm
+          --network container:hanium-minio-integration
+          -e MC_HOST_local=http://ci-minio-integration:ci-minio-integration-password@127.0.0.1:9000
+          minio/mc:RELEASE.2025-08-13T08-35-41Z
+          mb --ignore-existing local/hanium-storage
+      - name: Run backend tests (MinIO integration included)
+        # UserRateLimiterIntegrationTest(실제 Redis)는 전용 Testcontainers Redis를
+        # @DynamicPropertySource로만 연결하므로 여기서 추가 서비스가 필요 없다. 공용 Redis를
+        # backend job에 붙이면 IP rate limit 상태가 통합 테스트 컨텍스트 간에 공유되어 다른
+        # 로그인 통합 테스트를 429로 오염시킨다(2026-09-03 실측 12건 실패).
+        env:
+          MINIO_INTEGRATION_TEST: "true"
+          MINIO_ENDPOINT: http://127.0.0.1:9000
+          MINIO_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+          MINIO_ACCESS_KEY: ci-minio-integration
+          MINIO_SECRET_KEY: ci-minio-integration-password
+          MINIO_BUCKET_NAME: hanium-storage
+        run: ./gradlew test --no-daemon
       - name: Require real MySQL and Redis Testcontainers execution
         run: |
           python3 - <<'PY'
@@ -54,8 +96,8 @@ jobs:
               )
           PY
       # coverage가 현재 수준(약 90%)보다 크게 떨어지면 빌드를 실패시킨다(P2-06).
-      # 이후 단계에서 특정 통합 테스트만 --rerun-tasks로 재실행하므로, 그 부분 실행
-      # 데이터로 오탐 실패하지 않도록 이 시점의 jacocoTestReport 결과만으로 검증한다.
+      # 위 test 실행이 MinIO/Redis 통합 테스트까지 모두 포함하므로 이 게이트가 실제 CI가
+      # 돌리는 전체 커버리지를 검증한다.
       - run: ./gradlew jacocoTestCoverageVerification --no-daemon
       - name: Upload backend test and OpenAPI reports
         if: always()
@@ -67,45 +109,6 @@ jobs:
             backend/build/reports/jacoco/test/
             backend/build/contracts/backend-openapi.json
           retention-days: 14
-      - name: Start isolated MinIO for integration tests
-        run: >-
-          docker run -d --name hanium-minio-integration
-          -e MINIO_ROOT_USER=ci-minio-integration
-          -e MINIO_ROOT_PASSWORD=ci-minio-integration-password
-          -p 127.0.0.1:9000:9000
-          minio/minio:RELEASE.2024-12-13T22-19-12Z
-          server /data
-      - name: Wait for MinIO
-        run: |
-          for attempt in {1..30}; do
-            if docker exec hanium-minio-integration mc ready local; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs hanium-minio-integration
-          exit 1
-      - name: Create MinIO integration bucket
-        run: >-
-          docker run --rm
-          --network container:hanium-minio-integration
-          -e MC_HOST_local=http://ci-minio-integration:ci-minio-integration-password@127.0.0.1:9000
-          minio/mc:RELEASE.2025-08-13T08-35-41Z
-          mb --ignore-existing local/hanium-storage
-      - name: Run MinIO storage and backfill integration tests
-        env:
-          MINIO_INTEGRATION_TEST: "true"
-          MINIO_ENDPOINT: http://127.0.0.1:9000
-          MINIO_PUBLIC_ENDPOINT: http://127.0.0.1:9000
-          MINIO_ACCESS_KEY: ci-minio-integration
-          MINIO_SECRET_KEY: ci-minio-integration-password
-          MINIO_BUCKET_NAME: hanium-storage
-        run: >-
-          ./gradlew test
-          --tests com.hanium.presentation.infrastructure.storage.MinioObjectStorageIntegrationTest
-          --tests com.hanium.presentation.application.storage.ObjectStorageBackfillMinioIntegrationTest
-          --rerun-tasks
-          --no-daemon
       - name: Dump MinIO logs on failure
         if: failure()
         run: docker logs hanium-minio-integration

@@ -99,8 +99,10 @@ export INTERNAL_ENGINE_API_KEY=local-dev-shared-key
 ## 3-1. Redis 실행 (선택)
 
 ```bash
-# 도커를 사용하는 경우
-docker compose -f infra/docker/docker-compose.redis.yml up -d
+# 도커를 사용하는 경우 (분석 진행률만 잠깐 저장하는 용도라 영속화 옵션은 꺼둡니다)
+docker run -d --name hanium-redis -p 6379:6379 --restart unless-stopped \
+    redis:7-alpine redis-server --save "" --appendonly no
+# 중지: docker stop hanium-redis && docker rm hanium-redis
 
 # 로컬에 설치한 경우 (예: macOS)
 brew install redis

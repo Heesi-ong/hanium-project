@@ -38,10 +38,6 @@ vi.mock("../components/chart/AnalysisMetricBarChart", () => ({
     default: () => <div data-testid="analysis-metric-chart" />,
 }));
 
-vi.mock("../components/chart/EmotionDoughnutChart", () => ({
-    default: () => <div data-testid="emotion-doughnut-chart" />,
-}));
-
 vi.mock("../components/chart/ResultScoreChart", () => ({
     default: () => <div data-testid="result-score-chart" />,
 }));

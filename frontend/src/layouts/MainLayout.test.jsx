@@ -6,7 +6,6 @@ import MainLayout from "./MainLayout";
 import HomePage from "../pages/HomePage";
 
 vi.mock("../api/analysisApi", () => ({
-    healthCheck: vi.fn(),
     getServiceStatus: vi.fn(),
     getResults: vi.fn().mockResolvedValue({ data: { content: [], last: true } }),
 }));

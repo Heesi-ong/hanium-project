@@ -5,11 +5,6 @@ export const UPLOAD_ANALYSIS_TIMEOUT_MS = 20 * 60 * 1000;
 export const ANALYSIS_COMMAND_TIMEOUT_MS = 30 * 1000;
 export const ANALYSIS_POLL_TIMEOUT_MS = 10 * 1000;
 
-export async function healthCheck() {
-    const response = await apiClient.get("/api/health");
-    return unwrapApiResponse(response);
-}
-
 export async function getServiceStatus() {
     const response = await apiClient.get("/api/status");
     return unwrapApiResponse(response);

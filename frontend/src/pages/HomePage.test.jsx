@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getResults, getServiceStatus, healthCheck } from "../api/analysisApi";
+import { getResults, getServiceStatus } from "../api/analysisApi";
 import HomePage from "./HomePage";
 
 const authMock = vi.hoisted(() => ({
@@ -11,7 +11,6 @@ const authMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/analysisApi", () => ({
-    healthCheck: vi.fn(),
     getServiceStatus: vi.fn(),
     getResults: vi.fn(),
 }));
@@ -35,7 +34,6 @@ describe("HomePage", () => {
     beforeEach(() => {
         authMock.isAuthenticated = false;
         authMock.user = null;
-        healthCheck.mockReset();
         getServiceStatus.mockReset();
         getResults.mockReset();
         getResults.mockResolvedValue({ data: { content: [], last: true } });
@@ -61,7 +59,6 @@ describe("HomePage", () => {
             .not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "지금 업로드하기" }))
             .not.toBeInTheDocument();
-        expect(healthCheck).not.toHaveBeenCalled();
         expect(getServiceStatus).not.toHaveBeenCalled();
     });
 
@@ -86,7 +83,6 @@ describe("HomePage", () => {
             .not.toBeInTheDocument();
         expect(screen.queryByText("예시 결과 — 실제 분석 시 내 점수로 대체됩니다"))
             .not.toBeInTheDocument();
-        expect(healthCheck).not.toHaveBeenCalled();
         expect(getServiceStatus).not.toHaveBeenCalled();
 
         await waitFor(() => expect(getResults).toHaveBeenCalledWith({ page: 0, size: 10 }));

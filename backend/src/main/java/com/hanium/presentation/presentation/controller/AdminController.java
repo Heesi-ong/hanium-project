@@ -22,12 +22,7 @@ import com.hanium.presentation.presentation.dto.response.AdminStatsResponse;
 import com.hanium.presentation.presentation.dto.response.AdminStorageDeletionTaskResponse;
 import com.hanium.presentation.presentation.dto.response.AdminPasswordResetEmailTaskResponse;
 import com.hanium.presentation.presentation.dto.response.AdminUserSummaryResponse;
-import com.hanium.presentation.presentation.dto.response.PagedAdminAnalysisJobSummaryResponse;
-import com.hanium.presentation.presentation.dto.response.PagedAdminAuditLogResponse;
-import com.hanium.presentation.presentation.dto.response.PagedAdminStorageDeletionTaskResponse;
-import com.hanium.presentation.presentation.dto.response.PagedAdminPasswordResetEmailTaskResponse;
-import com.hanium.presentation.presentation.dto.response.PagedAdminUserSummaryResponse;
-import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
+import com.hanium.presentation.presentation.dto.response.PagedResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -91,7 +86,7 @@ public class AdminController {
     }
 
     @GetMapping("/users")
-    public ApiResponse<PagedAdminUserSummaryResponse> getUsers(
+    public ApiResponse<PagedResponse<AdminUserSummaryResponse>> getUsers(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String email,
@@ -107,7 +102,7 @@ public class AdminController {
 
         return ApiResponse.success(
                 "사용자 목록 조회가 완료되었습니다.",
-                PagedAdminUserSummaryResponse.from(users)
+                PagedResponse.from(users)
         );
     }
 
@@ -120,7 +115,7 @@ public class AdminController {
     }
 
     @GetMapping("/users/{userId}/results")
-    public ApiResponse<PagedResultSummaryResponse> getUserResults(
+    public ApiResponse<PagedResponse<ResultSummaryResponse>> getUserResults(
             @PathVariable Long userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
@@ -132,12 +127,12 @@ public class AdminController {
 
         return ApiResponse.success(
                 "사용자 분석 결과 목록 조회가 완료되었습니다.",
-                PagedResultSummaryResponse.from(results)
+                PagedResponse.from(results)
         );
     }
 
     @GetMapping("/audit-logs")
-    public ApiResponse<PagedAdminAuditLogResponse> getAuditLogs(
+    public ApiResponse<PagedResponse<AdminAuditLogResponse>> getAuditLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String adminEmail,
@@ -168,7 +163,7 @@ public class AdminController {
 
         return ApiResponse.success(
                 "관리자 감사로그 조회가 완료되었습니다.",
-                PagedAdminAuditLogResponse.from(auditLogs)
+                PagedResponse.from(auditLogs)
         );
     }
 
@@ -219,7 +214,7 @@ public class AdminController {
     }
 
     @GetMapping("/analysis-jobs/dead-letter")
-    public ApiResponse<PagedAdminAnalysisJobSummaryResponse> getDeadLetterJobs(
+    public ApiResponse<PagedResponse<AdminAnalysisJobSummaryResponse>> getDeadLetterJobs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -229,7 +224,7 @@ public class AdminController {
 
         return ApiResponse.success(
                 "재시도 소진 작업 목록 조회가 완료되었습니다.",
-                PagedAdminAnalysisJobSummaryResponse.from(jobs)
+                PagedResponse.from(jobs)
         );
     }
 
@@ -252,7 +247,7 @@ public class AdminController {
     }
 
     @GetMapping("/storage-deletion-tasks/dead-letter")
-    public ApiResponse<PagedAdminStorageDeletionTaskResponse> getDeadLetterStorageDeletionTasks(
+    public ApiResponse<PagedResponse<AdminStorageDeletionTaskResponse>> getDeadLetterStorageDeletionTasks(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -262,7 +257,7 @@ public class AdminController {
 
         return ApiResponse.success(
                 "재시도 소진 스토리지 삭제 작업 목록 조회가 완료되었습니다.",
-                PagedAdminStorageDeletionTaskResponse.from(tasks)
+                PagedResponse.from(tasks)
         );
     }
 
@@ -285,7 +280,7 @@ public class AdminController {
     }
 
     @GetMapping("/password-reset-email-tasks/dead-letter")
-    public ApiResponse<PagedAdminPasswordResetEmailTaskResponse> getDeadLetterPasswordResetEmailTasks(
+    public ApiResponse<PagedResponse<AdminPasswordResetEmailTaskResponse>> getDeadLetterPasswordResetEmailTasks(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
@@ -296,7 +291,7 @@ public class AdminController {
 
         return ApiResponse.success(
                 "재시도 소진 비밀번호 재설정 이메일 작업 목록 조회가 완료되었습니다.",
-                PagedAdminPasswordResetEmailTaskResponse.from(tasks)
+                PagedResponse.from(tasks)
         );
     }
 

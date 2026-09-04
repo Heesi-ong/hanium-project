@@ -8,7 +8,7 @@ import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.response.ApiResponse;
 import com.hanium.presentation.presentation.dto.response.AnalysisResultResponse;
-import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
+import com.hanium.presentation.presentation.dto.response.PagedResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.VideoAccessTokenResponse;
 import jakarta.validation.Valid;
@@ -72,7 +72,7 @@ public class ResultController {
     }
 
     @GetMapping
-    public ApiResponse<PagedResultSummaryResponse> getResults(
+    public ApiResponse<PagedResponse<ResultSummaryResponse>> getResults(
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
@@ -84,7 +84,7 @@ public class ResultController {
 
         return ApiResponse.success(
                 "분석 결과 목록 조회가 완료되었습니다.",
-                PagedResultSummaryResponse.from(response)
+                PagedResponse.from(response)
         );
     }
 

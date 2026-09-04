@@ -7,7 +7,7 @@ import com.hanium.presentation.application.result.VideoStreamingService;
 import com.hanium.presentation.domain.video.entity.UploadedVideo;
 import com.hanium.presentation.domain.video.type.VideoFileType;
 import com.hanium.presentation.global.response.ApiResponse;
-import com.hanium.presentation.presentation.dto.response.PagedResultSummaryResponse;
+import com.hanium.presentation.presentation.dto.response.PagedResponse;
 import com.hanium.presentation.presentation.dto.response.ResultSummaryResponse;
 import com.hanium.presentation.presentation.dto.response.VideoAccessTokenResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -98,7 +98,7 @@ class ResultControllerTest {
         Page<ResultSummaryResponse> page = Page.empty();
         when(resultQueryService.getResultSummaries(eq(OWNER_ID), any(Pageable.class))).thenReturn(page);
 
-        ApiResponse<PagedResultSummaryResponse> response =
+        ApiResponse<PagedResponse<ResultSummaryResponse>> response =
                 controller.getResults(auth(OWNER_ID), 0, 50);
 
         assertThat(response.data()).isNotNull();

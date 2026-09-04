@@ -21,16 +21,12 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
 
     Optional<AnalysisJob> findByJobId(String jobId);
 
-    Optional<AnalysisJob> findByJobIdAndOwnerId(String jobId, Long ownerId);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))
     @Query("SELECT j FROM AnalysisJob j WHERE j.jobId = :jobId")
     Optional<AnalysisJob> findByJobIdForUpdate(@Param("jobId") String jobId);
 
     boolean existsByJobId(String jobId);
-
-    List<AnalysisJob> findAllByOrderByCreatedAtDesc();
 
     List<AnalysisJob> findAllByOwnerIdOrderByCreatedAtDesc(Long ownerId);
 
@@ -82,16 +78,9 @@ public interface AnalysisJobRepository extends JpaRepository<AnalysisJob, Long> 
     // 대기열을 독점하지 못하게 막을 때 사용합니다.
     long countByStatusAndOwnerId(AnalysisStatus status, Long ownerId);
 
-    // 관리자 대시보드: 사용자별 전체 분석 작업 수(상태 무관)를 보여줄 때 사용합니다.
-    long countByOwnerId(Long ownerId);
-
     long countByVideoAssetId(Long videoAssetId);
 
     boolean existsBySourceJobId(String sourceJobId);
-
-    boolean existsByVideoAssetIdAndStatusNot(Long videoAssetId, AnalysisStatus status);
-
-    boolean existsByVideoAssetIdAndCompletedAtAfter(Long videoAssetId, LocalDateTime completedAt);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))

@@ -31,8 +31,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
 
-    Page<User> findAllByOrderByCreatedAtDesc(Pageable pageable);
-
     @Query("""
             select user
             from User user

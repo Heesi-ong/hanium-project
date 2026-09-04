@@ -13,8 +13,6 @@ import java.time.LocalDateTime;
 
 public interface AdminAuditLogRepository extends JpaRepository<AdminAuditLog, Long> {
 
-    Page<AdminAuditLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
-
     @Query("""
             select auditLog
             from AdminAuditLog auditLog

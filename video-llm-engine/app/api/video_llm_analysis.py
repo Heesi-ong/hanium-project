@@ -41,13 +41,6 @@ def resolve_video_llm_backend() -> str:
     return get_settings().installed_backend
 
 
-# 기존 애플리케이션 초기화 경로와 내부 호출자를 위한 호환 alias입니다.
-configure_runtime = nvidia_runtime.configure_runtime
-resolve_real_model_semaphore_timeout_seconds = (
-    nvidia_runtime.resolve_semaphore_timeout_seconds
-)
-
-
 # 라이브 테스트에서 성공이 확인된 안전 구간(120초)보다 여유를 둔 기본값입니다. 이보다
 # 긴 영상은 이 길이 단위로 실제로 잘라(ffmpeg) 구간마다 독립적으로 NVIDIA를 호출합니다.
 # 프롬프트 지시만으로 긴 타임라인을 구간화하게 하는 것보다, 모델이 실제로 그 구간만
@@ -203,9 +196,8 @@ def call_nvidia_chat_completion(
     )
 
 
-# 기존 내부 import 경로를 사용하는 테스트/도구와의 호환성을 유지합니다. 실제 구현 책임은
-# app.services.nvidia_prompt에 있습니다.
-build_nvidia_chat_completion_payload = nvidia_prompt.build_nvidia_chat_completion_payload
+# 기존 내부 import 경로(video_llm_analysis.build_duration_prompt)를 쓰는 테스트와의
+# 호환성을 유지합니다. 실제 구현 책임은 app.services.nvidia_prompt에 있습니다.
 build_duration_prompt = nvidia_prompt.build_duration_prompt
 
 

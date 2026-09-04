@@ -1,5 +1,6 @@
 import logging
 import math
+import statistics
 import wave
 from array import array
 from pathlib import Path
@@ -272,9 +273,7 @@ def calculate_dbfs(rms: float) -> float:
 
 
 def calculate_population_std_dev(values: List[float]) -> float:
-    average = sum(values) / len(values)
-    variance = sum((value - average) ** 2 for value in values) / len(values)
-    return math.sqrt(variance)
+    return statistics.pstdev(values)
 
 
 def calculate_volume_stability_score(dbfs_std_dev: float) -> int:

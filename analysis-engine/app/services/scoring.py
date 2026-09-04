@@ -1,3 +1,4 @@
+import statistics
 from typing import Any, Dict, List
 
 POSE_LOW_DETECTION_THRESHOLD = 0.5
@@ -131,11 +132,11 @@ def calculate_average_int(values: List[int]) -> int:
     if not values:
         return 0
 
-    return int(sum(values) / len(values))
+    return int(statistics.fmean(values))
 
 
 def calculate_average_float(values: List[float]) -> float:
     if not values:
         return 0
 
-    return round(sum(values) / len(values), 4)
+    return round(statistics.fmean(values), 4)

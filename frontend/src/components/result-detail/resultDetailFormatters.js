@@ -98,64 +98,37 @@ export function firstMeaningfulResultValue(primaryValue, fallbackValue, defaultV
     return defaultValue;
 }
 
+const EMOTION_LABELS = {
+    neutral: "중립",
+    engaged: "몰입/집중",
+    speaking: "발화 중",
+    low_energy: "낮은 에너지",
+    unknown: "알 수 없음",
+};
+
 export function formatEmotionLabel(label) {
-    if (label === "neutral") {
-        return "중립";
-    }
-
-    if (label === "engaged") {
-        return "몰입/집중";
-    }
-
-    if (label === "speaking") {
-        return "발화 중";
-    }
-
-    if (label === "low_energy") {
-        return "낮은 에너지";
-    }
-
-    if (label === "unknown") {
-        return "알 수 없음";
-    }
-
-    return label || "-";
+    return EMOTION_LABELS[label] ?? (label || "-");
 }
+
+const EYE_CONTACT_LEVEL_LABELS = {
+    good: "좋음",
+    normal: "보통",
+    weak: "약함",
+    poor: "부족",
+};
 
 export function formatEyeContactLevel(level) {
-    if (level === "good") {
-        return "좋음";
-    }
-
-    if (level === "normal") {
-        return "보통";
-    }
-
-    if (level === "weak") {
-        return "약함";
-    }
-
-    if (level === "poor") {
-        return "부족";
-    }
-
-    return "알 수 없음";
+    return EYE_CONTACT_LEVEL_LABELS[level] ?? "알 수 없음";
 }
 
+const GAZE_DIRECTION_LABELS = {
+    left: "왼쪽",
+    right: "오른쪽",
+    center: "중앙",
+};
+
 export function formatGazeDirection(direction) {
-    if (direction === "left") {
-        return "왼쪽";
-    }
-
-    if (direction === "right") {
-        return "오른쪽";
-    }
-
-    if (direction === "center") {
-        return "중앙";
-    }
-
-    return "알 수 없음";
+    return GAZE_DIRECTION_LABELS[direction] ?? "알 수 없음";
 }
 
 export function formatSttSuccess(success) {
@@ -218,58 +191,21 @@ export function formatGenerationModeLabel(mode) {
     return "알 수 없음";
 }
 
+const ANALYSIS_METHOD_LABELS = {
+    duration_based_estimation: "영상 길이 기반 추정",
+    audio_extracted_duration_based_estimation: "오디오 추출 + 길이 기반 추정",
+    stt_based_analysis: "STT 기반 분석",
+    stt_based_filler_detection: "STT 기반 필러 탐지",
+    faster_whisper: "faster-whisper",
+    mediapipe_pose_wrist_elbow_based: "MediaPipe 팔/손목 기반",
+    mediapipe_face_mesh_expression_based: "MediaPipe Face Mesh 표정 기반",
+    mediapipe_tasks_pose_landmarker: "MediaPipe Tasks PoseLandmarker",
+    mediapipe_tasks_face_landmarker: "MediaPipe Tasks FaceLandmarker",
+    mediapipe_tasks_pose_landmarker_wrist_elbow_based: "MediaPipe Tasks 팔/손목 기반",
+    mediapipe_tasks_face_landmarker_expression_based: "MediaPipe Tasks 표정 기반",
+    mediapipe_tasks_face_landmarker_iris_gaze_ratio: "MediaPipe Tasks 눈동자(Iris) 응시 비율 기반",
+};
+
 export function formatAnalysisMethod(method) {
-    if (method === "duration_based_estimation") {
-        return "영상 길이 기반 추정";
-    }
-
-    if (method === "audio_extracted_duration_based_estimation") {
-        return "오디오 추출 + 길이 기반 추정";
-    }
-
-    if (method === "stt_based_analysis") {
-        return "STT 기반 분석";
-    }
-
-    if (method === "stt_based_filler_detection") {
-        return "STT 기반 필러 탐지";
-    }
-
-    if (method === "faster_whisper") {
-        return "faster-whisper";
-    }
-
-    if (method === "mediapipe_pose_wrist_elbow_based") {
-        return "MediaPipe 팔/손목 기반";
-    }
-
-    if (method === "mediapipe_face_mesh_expression_based") {
-        return "MediaPipe Face Mesh 표정 기반";
-    }
-
-    if (method === "mediapipe_tasks_pose_landmarker") {
-        return "MediaPipe Tasks PoseLandmarker";
-    }
-
-    if (method === "mediapipe_tasks_face_landmarker") {
-        return "MediaPipe Tasks FaceLandmarker";
-    }
-
-    if (method === "mediapipe_tasks_pose_landmarker_wrist_elbow_based") {
-        return "MediaPipe Tasks 팔/손목 기반";
-    }
-
-    if (method === "mediapipe_tasks_face_landmarker_expression_based") {
-        return "MediaPipe Tasks 표정 기반";
-    }
-
-    if (method === "mediapipe_tasks_face_landmarker_iris_gaze_ratio") {
-        return "MediaPipe Tasks 눈동자(Iris) 응시 비율 기반";
-    }
-
-    if (!method) {
-        return "-";
-    }
-
-    return method;
+    return ANALYSIS_METHOD_LABELS[method] ?? (method || "-");
 }

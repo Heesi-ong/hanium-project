@@ -100,6 +100,35 @@ class ObjectStorageBackfillRunnerTest {
     }
 
     @Test
+    void backfillRootDirectoryResolvesContentTypePerFileExtension() throws IOException {
+        Path uploadRoot = tempDir.resolve("uploads");
+        createFile(uploadRoot.resolve("job1").resolve("v.mp4"), "a");
+        createFile(uploadRoot.resolve("job1").resolve("v.mov"), "b");
+        createFile(uploadRoot.resolve("job1").resolve("v.avi"), "c");
+        createFile(uploadRoot.resolve("job1").resolve("v.mkv"), "d");
+        createFile(uploadRoot.resolve("job1").resolve("notes.bin"), "e");
+
+        ObjectStorage objectStorage = mock(ObjectStorage.class);
+        when(objectStorage.exists(any())).thenReturn(false);
+
+        ObjectStorageBackfillRunner runner = new ObjectStorageBackfillRunner(
+                mock(FilePathGenerator.class),
+                objectStorage,
+                mock(ConfigurableApplicationContext.class)
+        );
+
+        ObjectStorageBackfillRunner.BackfillResult result =
+                runner.backfillRootDirectory(uploadRoot, "uploads/");
+
+        assertThat(result.uploaded).isEqualTo(5);
+        verify(objectStorage).putObject(eq("uploads/job1/v.mp4"), any(), anyLong(), eq("video/mp4"));
+        verify(objectStorage).putObject(eq("uploads/job1/v.mov"), any(), anyLong(), eq("video/quicktime"));
+        verify(objectStorage).putObject(eq("uploads/job1/v.avi"), any(), anyLong(), eq("video/x-msvideo"));
+        verify(objectStorage).putObject(eq("uploads/job1/v.mkv"), any(), anyLong(), eq("video/x-matroska"));
+        verify(objectStorage).putObject(eq("uploads/job1/notes.bin"), any(), anyLong(), eq("application/octet-stream"));
+    }
+
+    @Test
     void determineExitCodeFailsWhenAnyBackfillResultHasFailures() {
         ObjectStorageBackfillRunner.BackfillResult successful = new ObjectStorageBackfillRunner.BackfillResult();
         successful.uploaded = 2;

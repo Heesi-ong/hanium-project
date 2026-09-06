@@ -12,54 +12,61 @@ function SttSection({
                         sttSegments,
                         onSeekToTime,
                     }) {
+    const sttStatus = sttInfo?.success === true
+        ? { label: "텍스트 변환 성공", className: "success" }
+        : sttInfo?.success === false
+            ? { label: "텍스트 변환 실패", className: "warning" }
+            : { label: "변환 상태 미확인", className: "muted" };
+    const audioExtractionStatus = audioExtractionInfo?.success === true
+        ? "성공"
+        : audioExtractionInfo?.success === false
+            ? "실패"
+            : "-";
+
     return (
-        <article className="detail-card wide">
-            <h2>STT 변환 결과</h2>
+        <article className="detail-card wide result-speech-card result-stt-card">
+            <header className="result-speech-card-header">
+                <div>
+                    <span className="result-speech-kicker">Speech to text</span>
+                    <h2>STT 변환 결과</h2>
+                    <p>발표 원문을 먼저 읽고, 필요한 구간은 시작 시간을 눌러 영상에서 확인할 수 있습니다.</p>
+                </div>
+                <span className={`mini-badge ${sttStatus.className}`}>
+                    {sttStatus.label}
+                </span>
+            </header>
 
-            <div className="metric-grid">
-                <article className="metric-card">
-                    <span>STT 상태</span>
-                    <strong>{formatSttSuccess(sttInfo?.success)}</strong>
-                    <p>음성 파일을 텍스트로 변환했는지 여부입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>STT 모델</span>
-                    <strong>{sttInfo?.modelSize || "-"}</strong>
-                    <p>faster-whisper 모델 크기입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>언어</span>
-                    <strong>{sttInfo?.language || "-"}</strong>
-                    <p>Whisper가 감지한 음성 언어입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>언어 확률</span>
-                    <strong>{formatPercent(sttInfo?.languageProbability)}</strong>
-                    <p>감지 언어에 대한 모델의 추정 확률입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>Segment 수</span>
-                    <strong>{sttInfo?.segmentCount ?? 0}개</strong>
-                    <p>STT가 나눈 발화 구간 수입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>오디오 추출</span>
-                    <strong>{audioExtractionInfo?.success ? "성공" : "실패"}</strong>
-                    <p>영상에서 wav 오디오를 분리했는지 여부입니다.</p>
-                </article>
-            </div>
+            <dl className="result-stt-facts" aria-label="STT 변환 정보">
+                <div>
+                    <dt>STT 상태</dt>
+                    <dd>{formatSttSuccess(sttInfo?.success)}</dd>
+                </div>
+                <div>
+                    <dt>STT 모델</dt>
+                    <dd>{sttInfo?.modelSize || "-"}</dd>
+                </div>
+                <div>
+                    <dt>감지 언어</dt>
+                    <dd>{sttInfo?.language || "-"}</dd>
+                </div>
+                <div>
+                    <dt>언어 확률</dt>
+                    <dd>{formatPercent(sttInfo?.languageProbability)}</dd>
+                </div>
+                <div>
+                    <dt>발화 구간</dt>
+                    <dd>{sttInfo?.segmentCount ?? 0}개</dd>
+                </div>
+                <div>
+                    <dt>오디오 추출</dt>
+                    <dd>{audioExtractionStatus}</dd>
+                </div>
+            </dl>
 
             {audioExtractionInfo?.audioPath && (
-                <div className="key-value-list">
-                    <div className="key-value-item">
-                        <span>audio.wav 저장 경로</span>
-                        <strong>{audioExtractionInfo.audioPath}</strong>
-                    </div>
+                <div className="result-speech-technical-path">
+                    <span>audio.wav 저장 경로</span>
+                    <code>{audioExtractionInfo.audioPath}</code>
                 </div>
             )}
 
@@ -67,18 +74,26 @@ function SttSection({
                 <StateMessage type="error">{sttInfo.error}</StateMessage>
             )}
 
-            <div className="feedback-block">
-                <h3>Transcript</h3>
+            <section className="result-transcript-block" aria-labelledby="stt-transcript-heading">
+                <div className="result-transcript-heading">
+                    <div>
+                        <span aria-hidden="true">T</span>
+                        <h3 id="stt-transcript-heading">Transcript</h3>
+                    </div>
+                    <span>{sttInfo?.segmentCount ?? 0}개 구간</span>
+                </div>
                 <p>{sttInfo?.transcript || "표시할 STT 변환 텍스트가 없습니다."}</p>
-            </div>
+            </section>
 
             {Array.isArray(sttSegments) && sttSegments.length > 0 ? (
                 <CollapsibleDetails
                     headingLevel={3}
+                    className="result-speech-details"
                     summary={`STT Segment (${sttSegments.length}개 구간) — 자세히 보기`}
                 >
-                    <div className="pose-frame-table-wrap">
+                    <div className="pose-frame-table-wrap result-speech-table-wrap">
                         <table className="pose-frame-table">
+                            <caption className="sr-only">STT 발화 구간별 시작 및 종료 시간</caption>
                             <thead>
                             <tr>
                                 <th>순서</th>
@@ -117,7 +132,13 @@ function SttSection({
                     </div>
                 </CollapsibleDetails>
             ) : (
-                <p className="muted-text">표시할 STT segment가 없습니다.</p>
+                <div className="result-speech-empty compact">
+                    <span aria-hidden="true">—</span>
+                    <div>
+                        <strong>표시할 STT segment가 없습니다.</strong>
+                        <p>구간 정보가 없는 결과에서도 전체 Transcript는 위에서 확인할 수 있습니다.</p>
+                    </div>
+                </div>
             )}
         </article>
     );

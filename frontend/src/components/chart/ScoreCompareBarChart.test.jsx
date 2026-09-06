@@ -1,12 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ScoreCompareBarChart from "./ScoreCompareBarChart";
+
+vi.mock("motion/react", () => ({ useReducedMotion: () => true }));
 
 vi.mock("react-chartjs-2", () => ({
     Bar: (props) => (
         <div
             data-testid="score-compare-bar"
             data-chart-data={JSON.stringify(props.data)}
+            role={props.role}
+            aria-label={props["aria-label"]}
+            data-animation={String(props.options.animation)}
+            data-plugin-ids={props.plugins.map(plugin => plugin.id).join(",")}
         />
     ),
 }));
@@ -49,6 +55,24 @@ describe("ScoreCompareBarChart", () => {
         expect(chartData.datasets[0].data).toEqual([65, 70, 55, 80]);
         expect(chartData.datasets[1].label).toBe("2차 연습");
         expect(chartData.datasets[1].data).toEqual([82, 75, 60, 85]);
+        expect(screen.getByRole("img", { name: "A 기준 결과와 B 비교 결과의 항목별 점수 차트" }))
+            .toBeInTheDocument();
+        expect(screen.getByTestId("score-compare-bar")).toHaveAttribute("data-animation", "false");
+        expect(screen.getByTestId("score-compare-bar")).toHaveAttribute("data-plugin-ids", "scoreCompareValueLabels");
+    });
+
+    it("toggles each dataset through named buttons without changing score values", () => {
+        render(<ScoreCompareBarChart resultA={{ scoreSummary: { totalScore: 0 } }} resultB={{}} labelA="기준 영상" labelB="비교 영상" />);
+        const toggleA = screen.getByRole("button", { name: /A · 기준 영상/ });
+        expect(toggleA).toHaveAttribute("aria-pressed", "true");
+        fireEvent.click(toggleA);
+        expect(toggleA).toHaveAttribute("aria-pressed", "false");
+        const data = JSON.parse(screen.getByTestId("score-compare-bar").dataset.chartData);
+        expect(data.datasets[0].hidden).toBe(true);
+        expect(data.datasets[0].data).toEqual([0, null, null, null]);
+        expect(data.datasets[1].hidden).toBe(false);
+        fireEvent.click(toggleA);
+        expect(toggleA).toHaveAttribute("aria-pressed", "true");
     });
 
     it("keeps missing score fields distinct from a real zero score", () => {

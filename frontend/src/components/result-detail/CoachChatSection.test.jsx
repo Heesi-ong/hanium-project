@@ -58,6 +58,28 @@ describe("CoachChatSection", () => {
         ).not.toBeInTheDocument();
     });
 
+    it("announces that conversation history is loading", () => {
+        coachApiMock.getCoachMessages.mockReturnValue(new Promise(() => {}));
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        expect(screen.getByRole("status")).toHaveTextContent(
+            "대화 이력을 불러오는 중입니다."
+        );
+    });
+
+    it("shows an alert when loading conversation history fails", async () => {
+        coachApiMock.getCoachMessages.mockRejectedValue({
+            message: "AI 코치 대화 이력을 불러올 수 없습니다.",
+        });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+            "AI 코치 대화 이력을 불러올 수 없습니다."
+        );
+    });
+
     it("loads and displays existing conversation history", async () => {
         coachApiMock.getCoachMessages.mockResolvedValue({
             data: {
@@ -74,6 +96,8 @@ describe("CoachChatSection", () => {
             expect(screen.getByText("말이 너무 빠른가요?")).toBeInTheDocument();
             expect(screen.getByText("속도를 조금 늦춰보세요.")).toBeInTheDocument();
         });
+        expect(screen.getByText("Mock 안내")).toBeInTheDocument();
+        expect(screen.getByRole("log", { name: "AI 코치 대화" })).toBeInTheDocument();
         expect(coachApiMock.getCoachMessages).toHaveBeenCalledWith("job-1");
     });
 
@@ -144,6 +168,12 @@ describe("CoachChatSection", () => {
         expect(
             await screen.findByText(/오늘 5회 중 1회 사용했습니다\. \(남은 횟수: 4회\)/)
         ).toBeInTheDocument();
+        expect(screen.getByRole("progressbar", {
+            name: "오늘 AI 코치 질문 사용량",
+        })).toHaveAttribute("aria-valuenow", "1");
+        expect(screen.getByRole("progressbar", {
+            name: "오늘 AI 코치 질문 사용량",
+        })).toHaveAttribute("aria-valuemax", "5");
     });
 
     it("disables the input and shows a notice once the daily usage is exhausted", async () => {
@@ -234,7 +264,10 @@ describe("CoachChatSection", () => {
         });
 
         expect(screen.queryByText("답변입니다.")).not.toBeInTheDocument();
-        expect(screen.getByText("아직 대화가 없습니다. 궁금한 점을 물어보세요.")).toBeInTheDocument();
+        expect(screen.getByText("아직 대화가 없습니다.")).toBeInTheDocument();
+        expect(
+            screen.getByText("분석 점수나 피드백에서 궁금한 내용을 질문해보세요.")
+        ).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "대화 초기화" })).not.toBeInTheDocument();
     });
 
@@ -287,5 +320,36 @@ describe("CoachChatSection", () => {
             expect(screen.getByText("대화 초기화 중 오류가 발생했습니다.")).toBeInTheDocument();
         });
         expect(screen.getByText("질문입니다.")).toBeInTheDocument();
+    });
+
+    it("distinguishes real, fallback, and mock coach response sources", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({
+            data: {
+                messages: [
+                    { role: "ASSISTANT", content: "실제 답변", generationMode: "REAL" },
+                    { role: "ASSISTANT", content: "대체 답변", generationMode: "FALLBACK" },
+                    { role: "ASSISTANT", content: "샘플 답변", generationMode: "MOCK" },
+                ],
+            },
+        });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        expect(await screen.findByText("실제 AI 응답")).toBeInTheDocument();
+        expect(screen.getByText("AI 실패 후 대체 안내")).toBeInTheDocument();
+        expect(screen.getByText("Mock 안내")).toBeInTheDocument();
+    });
+
+    it("provides an explicit input label and character count", async () => {
+        coachApiMock.getCoachMessages.mockResolvedValue({ data: { messages: [] } });
+
+        render(<CoachChatSection jobId="job-1" isCompleted />);
+
+        await screen.findByText("아직 대화가 없습니다.");
+        const input = screen.getByRole("textbox", { name: "질문 작성" });
+        fireEvent.change(input, { target: { value: "다음 연습은 무엇인가요?" } });
+
+        expect(input).toHaveValue("다음 연습은 무엇인가요?");
+        expect(screen.getByText("13 / 1000")).toBeInTheDocument();
     });
 });

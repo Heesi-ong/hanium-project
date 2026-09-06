@@ -78,6 +78,11 @@ describe("AdminUserDetailPage", () => {
         renderAdminUserDetailPage("1");
 
         expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "사용자 관리" })).toHaveAttribute("aria-current", "page");
+        expect(screen.getByRole("link", { name: "사용자 목록으로 돌아가기" })).toHaveAttribute("href", "/admin/users");
+        expect(screen.getByText("이 화면에는 사용자 #1의 소유 결과만 표시됩니다.")).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "소유 분석 결과" })).toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "presentation.mp4 생성 경로" })).toBeInTheDocument();
         expect(screen.getByText("샘플 시각 분석")).toBeInTheDocument();
         expect(screen.getByText("Video LLM · mock-video-llm")).toBeInTheDocument();
         expect(apiMock.getAdminUserResults).toHaveBeenCalledWith("1", { page: 0 });
@@ -89,6 +94,35 @@ describe("AdminUserDetailPage", () => {
         renderAdminUserDetailPage("2");
 
         expect(await screen.findByText("표시할 분석 결과가 없습니다.")).toBeInTheDocument();
+    });
+
+    it("keeps navigation visible and communicates the loading state", () => {
+        apiMock.getAdminUserResults.mockReturnValue(new Promise(() => {}));
+
+        renderAdminUserDetailPage("2");
+
+        expect(screen.getByRole("navigation", { name: "관리자 메뉴" })).toBeInTheDocument();
+        expect(screen.getByText("사용자 분석 결과 로딩 중")).toBeInTheDocument();
+        expect(screen.getByText("결과를 불러오는 중입니다.")).toBeInTheDocument();
+    });
+
+    it("does not fabricate a zero score when the server provides no total score", async () => {
+        apiMock.getAdminUserResults.mockResolvedValue({
+            data: {
+                content: [{
+                    ...singleResultResponse.data.content[0],
+                    scoreSummary: { level: null },
+                }],
+                last: true,
+            },
+        });
+
+        renderAdminUserDetailPage("1");
+        await screen.findByText("presentation.mp4");
+
+        const scoreBlock = screen.getByText("총점").closest("div");
+        expect(scoreBlock.querySelector("strong")).toHaveTextContent("-");
+        expect(scoreBlock.querySelector("strong")).not.toHaveTextContent("0");
     });
 
     it("shows data issue warnings for broken user results", async () => {
@@ -147,7 +181,7 @@ describe("AdminUserDetailPage", () => {
 
         await screen.findByText("presentation.mp4");
 
-        fireEvent.click(screen.getByRole("button", { name: "삭제" }));
+        fireEvent.click(screen.getByRole("button", { name: "결과 삭제" }));
 
         await waitFor(() => {
             expect(apiMock.deleteAdminResult).toHaveBeenCalledWith(
@@ -158,6 +192,7 @@ describe("AdminUserDetailPage", () => {
         await waitFor(() => {
             expect(screen.queryByText("presentation.mp4")).not.toBeInTheDocument();
         });
+        expect(screen.getByRole("status")).toHaveTextContent("분석 결과 20260715090000-abcd1234를 삭제했습니다.");
     });
 
     it("does not delete a result when the reason prompt is cancelled", async () => {
@@ -168,10 +203,47 @@ describe("AdminUserDetailPage", () => {
 
         await screen.findByText("presentation.mp4");
 
-        fireEvent.click(screen.getByRole("button", { name: "삭제" }));
+        fireEvent.click(screen.getByRole("button", { name: "결과 삭제" }));
 
         await waitFor(() => expect(confirmMock.promptReason).toHaveBeenCalled());
         expect(apiMock.deleteAdminResult).not.toHaveBeenCalled();
         expect(screen.getByText("presentation.mp4")).toBeInTheDocument();
+    });
+
+    it("shows an initial load error separately and retries", async () => {
+        apiMock.getAdminUserResults
+            .mockRejectedValueOnce({ message: "소유 결과 조회 실패" })
+            .mockResolvedValueOnce(singleResultResponse);
+
+        renderAdminUserDetailPage("1");
+
+        expect(await screen.findByText("소유 결과 조회 실패")).toBeInTheDocument();
+        expect(screen.getByText("사용자 분석 결과를 표시할 수 없습니다.")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+
+        expect(await screen.findByText("presentation.mp4")).toBeInTheDocument();
+        expect(apiMock.getAdminUserResults).toHaveBeenCalledTimes(2);
+    });
+
+    it("appends the next result page for the same owner", async () => {
+        const nextResult = {
+            ...singleResultResponse.data.content[0],
+            jobId: "20260716090000-next5678",
+            fileName: "second-presentation.mp4",
+        };
+        apiMock.getAdminUserResults
+            .mockResolvedValueOnce({
+                data: { content: singleResultResponse.data.content, last: false },
+            })
+            .mockResolvedValueOnce({
+                data: { content: [nextResult], last: true },
+            });
+
+        renderAdminUserDetailPage("1");
+        await screen.findByText("presentation.mp4");
+        fireEvent.click(screen.getByRole("button", { name: "더 보기" }));
+
+        expect(await screen.findByText("second-presentation.mp4")).toBeInTheDocument();
+        expect(apiMock.getAdminUserResults).toHaveBeenLastCalledWith("1", { page: 1 });
     });
 });

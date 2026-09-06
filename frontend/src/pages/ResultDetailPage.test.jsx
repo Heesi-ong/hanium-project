@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
@@ -188,11 +188,13 @@ describe("ResultDetailPage", () => {
         renderResultDetailPage();
 
         expect(
-            await screen.findByText(/분석 처리 과정 — OpenCV·MediaPipe/)
+            await screen.findByRole("heading", { name: /^분석 처리 기록/ })
         ).toBeInTheDocument();
         expect(
-            screen.getByText(/분석 프레임 미리보기 — MediaPipe 스켈레톤 오버레이 \(1장\)/)
+            screen.getByRole("heading", { name: /^근거 프레임 갤러리/ })
         ).toBeInTheDocument();
+        expect(screen.getByText("보호된 MediaPipe 오버레이 · 1장"))
+            .toBeInTheDocument();
     });
 
     it("omits the analysis trace and frame gallery sections when they are absent", async () => {
@@ -202,8 +204,84 @@ describe("ResultDetailPage", () => {
             expect(analysisApiMock.getResult).toHaveBeenCalledWith("job-print-test");
         });
 
-        expect(screen.queryByText(/분석 처리 과정 —/)).not.toBeInTheDocument();
-        expect(screen.queryByText(/분석 프레임 미리보기 —/)).not.toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: /^분석 처리 기록/ }))
+            .not.toBeInTheDocument();
+        expect(screen.queryByRole("heading", { name: /^근거 프레임 갤러리/ }))
+            .not.toBeInTheDocument();
+    });
+
+    it("introduces coaching feedback with visible source context and expandable execution details", async () => {
+        const result = createCompletedResult();
+        result.data.result.feedback = {
+            generationMode: "REAL",
+            overall: "실제 피드백 원문",
+            strengths: ["구조가 명확합니다."],
+            improvements: ["결론을 천천히 말하세요."],
+        };
+        result.data.result.visualAnalysis = {
+            model: { generationMode: "MOCK" },
+            observations: {},
+        };
+        result.data.result.pipeline = {
+            openAiGenerationMode: "REAL",
+            openAiRealApiUsed: true,
+            videoLlmGenerationMode: "MOCK",
+        };
+        analysisApiMock.getResult.mockResolvedValue(result);
+
+        renderResultDetailPage();
+
+        expect(await screen.findByRole("heading", {
+            name: "피드백의 출처와 다음 행동을 함께 확인하세요",
+        })).toBeInTheDocument();
+        expect(screen.getByText("실제 OpenAI API가 생성한 응답 원문입니다."))
+            .toBeInTheDocument();
+
+        const executionDetails = screen.getByRole("heading", {
+            name: /^AI 실행 기록과 파이프라인/,
+        });
+        fireEvent.click(executionDetails);
+
+        expect(await screen.findByRole("article", { name: "AI 피드백 생성 상태" }))
+            .toBeInTheDocument();
+    });
+
+    it("places the next-practice actions after feedback and before the coach", async () => {
+        const result = createCompletedResult();
+        result.data.result.practicePlan = [
+            {
+                title: "핵심 문장 멈춤 연습",
+                description: "핵심 문장 앞에서 1초간 멈춥니다.",
+                duration: "3분",
+            },
+        ];
+        analysisApiMock.getResult.mockResolvedValue(result);
+
+        renderResultDetailPage();
+
+        const feedbackHeading = await screen.findByRole("heading", {
+            name: "종합 피드백",
+        });
+        const actionHeading = screen.getByRole("heading", {
+            name: "피드백을 다음 연습으로 연결하세요",
+        });
+        const planHeading = screen.getByRole("heading", { name: "연습 계획" });
+        const coachHeading = screen.getByRole("heading", {
+            name: "AI 코치에게 물어보기",
+        });
+
+        expect(
+            feedbackHeading.compareDocumentPosition(actionHeading)
+            & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
+        expect(
+            actionHeading.compareDocumentPosition(planHeading)
+            & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
+        expect(
+            planHeading.compareDocumentPosition(coachHeading)
+            & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
     });
 
     it("shows the Korean status label instead of the raw status enum", async () => {
@@ -215,6 +293,52 @@ describe("ResultDetailPage", () => {
 
         expect(await screen.findByText("분석 완료")).toBeInTheDocument();
         expect(screen.queryByText("COMPLETED")).not.toBeInTheDocument();
+    });
+
+    it("presents one summary hierarchy with the stored total and area scores", async () => {
+        renderResultDetailPage();
+
+        const summary = await screen.findByRole("article", {
+            name: "발표 분석 핵심 요약",
+        });
+
+        expect(within(summary).getByLabelText("총점 82점, 양호")).toBeInTheDocument();
+        expect(within(summary).getByText("자세")).toBeInTheDocument();
+        expect(within(summary).getByText("80점")).toBeInTheDocument();
+        expect(within(summary).getByText("84점")).toBeInTheDocument();
+        expect(within(summary).getByText("79점")).toBeInTheDocument();
+        expect(screen.getByRole("heading", {
+            name: "영상과 분석 근거를 함께 확인하세요",
+        })).toBeInTheDocument();
+    });
+
+    it("distinguishes real zero values from missing summary metrics", async () => {
+        const result = createCompletedResult();
+        result.data.result.scoreSummary = {
+            totalScore: 0,
+            postureScore: 0,
+            speechScore: null,
+            gestureScore: 0,
+        };
+        result.data.result.basicAnalysis.audio = {
+            speechSpeedWpm: 0,
+            silenceCount: null,
+        };
+        result.data.result.basicAnalysis.filler = { fillerCount: 0 };
+        analysisApiMock.getResult.mockResolvedValue(result);
+
+        renderResultDetailPage();
+
+        const summary = await screen.findByRole("article", {
+            name: "발표 분석 핵심 요약",
+        });
+
+        expect(within(summary).getByLabelText("총점 0점, 개선 필요"))
+            .toBeInTheDocument();
+        expect(within(summary).getAllByText("0점")).toHaveLength(2);
+        expect(within(summary).getByText("0 WPM")).toBeInTheDocument();
+        expect(within(summary).getByText("0개")).toBeInTheDocument();
+        expect(within(summary).getAllByText("-").length).toBeGreaterThan(0);
     });
 
     it("shows a data issue warning when the result payload is incomplete", async () => {
@@ -239,7 +363,7 @@ describe("ResultDetailPage", () => {
         renderResultDetailPage();
 
         expect(await screen.findByRole("alert")).toHaveTextContent("불완전");
-        expect(screen.getAllByText("결과 확인 필요")).toHaveLength(2);
+        expect(screen.getByText("결과 확인 필요")).toBeInTheDocument();
         expect(screen.queryByText("개선 필요")).not.toBeInTheDocument();
         expect(
             screen.getByText("분석 결과 파일은 있지만 점수 또는 피드백 데이터가 불완전합니다.")

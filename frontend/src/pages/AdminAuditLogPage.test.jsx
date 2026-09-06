@@ -106,5 +106,68 @@ describe("AdminAuditLogPage", () => {
             from: "2026-08-01T00:00",
             to: "2026-08-02T00:00",
         }));
+        expect(screen.getByText("관리자 이메일: admin@example.com")).toBeInTheDocument();
+        expect(screen.getByText("작업: 스토리지 삭제 재큐잉")).toBeInTheDocument();
+        expect(screen.getByText("대상 유형: 스토리지 삭제 작업")).toBeInTheDocument();
+    });
+
+    it("distinguishes a filtered empty result and clears the applied conditions", async () => {
+        apiMock.getAdminAuditLogs
+            .mockResolvedValueOnce({
+                data: {
+                    content: [{ id: 1, adminEmail: "admin@example.com", action: "SUSPEND_USER", targetType: "USER", targetId: "42", createdAt: "2026-07-15T09:00:00" }],
+                    last: true,
+                },
+            })
+            .mockResolvedValueOnce({ data: { content: [], last: true } });
+        renderAdminAuditLogPage();
+        await screen.findByText("admin@example.com");
+
+        fireEvent.change(screen.getByLabelText("관리자 이메일"), {
+            target: { value: "nobody@example.com" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
+
+        expect(await screen.findByText("검색 조건에 맞는 감사로그가 없습니다.")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "검색 조건 초기화" }));
+
+        await waitFor(() => expect(apiMock.getAdminAuditLogs).toHaveBeenLastCalledWith({ page: 0 }));
+    });
+
+    it("shows an initial load error separately and retries the list request", async () => {
+        apiMock.getAdminAuditLogs
+            .mockRejectedValueOnce({ message: "감사로그 조회 실패" })
+            .mockResolvedValueOnce({ data: { content: [], last: true } });
+        renderAdminAuditLogPage();
+
+        expect(await screen.findByText("감사로그 조회 실패")).toBeInTheDocument();
+        expect(screen.getByText("감사로그를 표시할 수 없습니다.")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+
+        expect(await screen.findByText("표시할 감사로그가 없습니다.")).toBeInTheDocument();
+        expect(apiMock.getAdminAuditLogs).toHaveBeenCalledTimes(2);
+    });
+
+    it("appends the next server page without changing the applied contract", async () => {
+        apiMock.getAdminAuditLogs
+            .mockResolvedValueOnce({
+                data: {
+                    content: [{ id: 1, adminEmail: "admin@example.com", action: "SUSPEND_USER", targetType: "USER", targetId: "42", createdAt: "2026-07-15T09:00:00" }],
+                    last: false,
+                },
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    content: [{ id: 2, adminEmail: "second@example.com", action: "ACTIVATE_USER", targetType: "USER", targetId: "43", createdAt: "2026-07-16T09:00:00" }],
+                    last: true,
+                },
+            });
+        renderAdminAuditLogPage();
+        await screen.findByText("admin@example.com");
+
+        fireEvent.click(screen.getByRole("button", { name: "더 보기" }));
+
+        expect(await screen.findByText("second@example.com")).toBeInTheDocument();
+        expect(apiMock.getAdminAuditLogs).toHaveBeenLastCalledWith({ page: 1 });
     });
 });

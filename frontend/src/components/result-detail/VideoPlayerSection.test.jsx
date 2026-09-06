@@ -33,12 +33,14 @@ describe("VideoPlayerSection", () => {
         const { container } = render(<VideoPlayerSection jobId={jobId} />);
 
         expect(
-            await screen.findByRole("heading", { name: "업로드 영상" })
+            await screen.findByRole("heading", { name: "발표 영상과 분석 신호" })
         ).toBeInTheDocument();
 
         const video = container.querySelector("video");
 
         expect(video).toBeInTheDocument();
+        expect(video).toHaveAccessibleName("업로드한 발표 영상");
+        expect(screen.getByText("보호된 영상")).toBeInTheDocument();
         // VITE_API_BASE_URL이 로컬 .env로 설정된 환경에서는 절대경로(예: http://localhost:8080/...)로
         // 렌더링되므로, 오리진 유무와 무관하게 경로+쿼리만 검증합니다.
         expect(video.getAttribute("src")).toContain(
@@ -59,6 +61,10 @@ describe("VideoPlayerSection", () => {
                 "원본 영상이 보존 기간 정책에 따라 삭제되어 더 이상 재생할 수 없습니다."
             )
         ).toBeInTheDocument();
+        expect(screen.getByText("분석 결과와 피드백은 계속 확인할 수 있습니다."))
+            .toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "발표 영상과 분석 신호" }))
+            .toBeInTheDocument();
     });
 
     it("shows a generic error message for other failures", async () => {
@@ -72,6 +78,8 @@ describe("VideoPlayerSection", () => {
         expect(
             await screen.findByText("서버와 통신할 수 없습니다.")
         ).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "발표 영상과 분석 신호" }))
+            .toBeInTheDocument();
     });
 
     it("seeks to a notable moment and starts playback", async () => {
@@ -142,5 +150,15 @@ describe("VideoPlayerSection", () => {
 
         const playhead = container.querySelector(".analysis-timeline-playhead");
         expect(playhead).toHaveStyle({ left: "50%" });
+    });
+
+    it("keeps the section context visible while the access token is loading", () => {
+        getVideoAccessToken.mockReturnValue(new Promise(() => {}));
+
+        render(<VideoPlayerSection jobId="20260707090000-loading-job" />);
+
+        expect(screen.getByRole("heading", { name: "발표 영상과 분석 신호" }))
+            .toBeInTheDocument();
+        expect(screen.getByText("영상을 불러오는 중입니다.")).toBeInTheDocument();
     });
 });

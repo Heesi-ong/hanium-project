@@ -28,7 +28,69 @@ function getVisualGenerationModeClassName(mode) {
         return "mini-badge success";
     }
 
+    if (mode === "FALLBACK") {
+        return "mini-badge warning";
+    }
+
     return "mini-badge muted";
+}
+
+function getFeedbackGenerationModeClassName(mode) {
+    if (mode === "REAL") {
+        return "mini-badge success";
+    }
+
+    if (mode === "FALLBACK") {
+        return "mini-badge warning";
+    }
+
+    return "mini-badge muted";
+}
+
+function getGenerationModeToken(mode) {
+    return ["REAL", "FALLBACK", "MOCK", "SKIPPED"].includes(mode)
+        ? mode.toLowerCase()
+        : "unknown";
+}
+
+function getFeedbackSourceDescription(mode) {
+    if (mode === "REAL") {
+        return "실제 OpenAI API가 생성한 응답 원문입니다.";
+    }
+
+    if (mode === "FALLBACK") {
+        return "외부 AI 호출 실패 후 내부 대체 응답이 최종 피드백으로 사용됐습니다.";
+    }
+
+    if (mode === "MOCK") {
+        return "외부 AI를 호출하지 않고 내부 Mock 로직으로 만든 테스트 피드백입니다.";
+    }
+
+    if (mode === "SKIPPED") {
+        return "사용자 설정에 따라 외부 AI 피드백 생성을 건너뛴 결과입니다.";
+    }
+
+    return "피드백 생성 출처를 확인할 수 없습니다.";
+}
+
+function getVisualSourceDescription(mode) {
+    if (mode === "REAL") {
+        return "실제 Video LLM이 업로드 영상을 분석한 관찰입니다.";
+    }
+
+    if (mode === "FALLBACK") {
+        return "실제 Video LLM 분석 실패 후 샘플 관찰로 대체됐습니다.";
+    }
+
+    if (mode === "MOCK") {
+        return "외부 Video LLM을 호출하지 않은 샘플 관찰입니다.";
+    }
+
+    if (mode === "SKIPPED") {
+        return "사용자 설정에 따라 Video LLM 분석을 건너뛰었습니다.";
+    }
+
+    return "시각 분석 출처를 확인할 수 없습니다.";
 }
 
 // 실제 영상 분석(REAL)이 아니라 예시/대체 데이터로 채워진 경우, 사용자가 이 결과를
@@ -100,9 +162,21 @@ function getObservationGroups(observations) {
 function VisualAnalysisBox({ visualAnalysis, pipeline, onSeekToTime }) {
     if (!visualAnalysis) {
         return (
-            <article className="detail-card">
-                <h2>시각 분석 (Video LLM)</h2>
-                <p className="muted-text">영상 분석 데이터가 아직 없습니다.</p>
+            <article
+                className="detail-card result-feedback-card result-visual-feedback-card"
+                aria-labelledby="visual-feedback-title"
+            >
+                <header className="result-feedback-card-header">
+                    <div>
+                        <span className="result-feedback-kicker">Visual observation</span>
+                        <h2 id="visual-feedback-title">시각 분석 (Video LLM)</h2>
+                    </div>
+                    <span className="mini-badge muted">데이터 없음</span>
+                </header>
+                <div className="result-feedback-empty">
+                    <strong>영상 분석 데이터가 아직 없습니다.</strong>
+                    <p>Video LLM 결과가 제공되면 자세와 제스처 관찰이 표시됩니다.</p>
+                </div>
             </article>
         );
     }
@@ -114,85 +188,109 @@ function VisualAnalysisBox({ visualAnalysis, pipeline, onSeekToTime }) {
     );
     const sampleWarning = getSampleWarning(generationMode);
     const observationGroups = getObservationGroups(visualAnalysis?.observations);
+    const observationCount = observationGroups.reduce(
+        (sum, [, items]) => sum + items.length,
+        0
+    );
 
     return (
-        <article className="detail-card">
-            <h2>시각 분석 (Video LLM)</h2>
-
-            <div className="key-value-list">
-                <div className="key-value-item">
-                    <span>생성 방식</span>
-                    <strong>
-                        <span className={getVisualGenerationModeClassName(generationMode)}>
-                            {getVisualGenerationModeLabel(generationMode)}
-                        </span>
-                    </strong>
+        <article
+            className="detail-card result-feedback-card result-visual-feedback-card"
+            aria-labelledby="visual-feedback-title"
+        >
+            <header className="result-feedback-card-header">
+                <div>
+                    <span className="result-feedback-kicker">Visual observation</span>
+                    <h2 id="visual-feedback-title">시각 분석 (Video LLM)</h2>
+                    <p>영상 구간별 자세와 제스처 관찰을 근거와 함께 확인하세요.</p>
                 </div>
+                <span className={getVisualGenerationModeClassName(generationMode)}>
+                    {getVisualGenerationModeLabel(generationMode)}
+                </span>
+            </header>
 
-                {sampleWarning && (
-                    <p className="muted-text" role="note">
-                        {sampleWarning}
-                    </p>
-                )}
+            <div className={`result-feedback-source-note ${getGenerationModeToken(generationMode)}`}>
+                <span className="result-feedback-source-symbol" aria-hidden="true">
+                    {generationMode === "REAL" ? "✓" : "i"}
+                </span>
+                <div>
+                    <strong>시각 분석 출처</strong>
+                    <p>{getVisualSourceDescription(generationMode)}</p>
+                </div>
             </div>
 
-            <div className="observation-groups">
-                <h3>세부 관찰</h3>
+            {sampleWarning && (
+                <p className="result-sample-warning" role="note">
+                    {sampleWarning}
+                </p>
+            )}
+
+            <div className="observation-groups result-observation-groups">
+                <div className="result-observation-heading">
+                    <h3>세부 관찰</h3>
+                    <span>{observationCount}개 관찰</span>
+                </div>
                 {observationGroups.length === 0 ? (
-                    <p className="muted-text">표시할 세부 관찰 데이터가 없습니다.</p>
+                    <div className="result-feedback-empty compact">
+                        <strong>표시할 세부 관찰 데이터가 없습니다.</strong>
+                        <p>분석 결과에 포함된 자세·제스처 관찰만 표시합니다.</p>
+                    </div>
                 ) : (
                     observationGroups.map(([categoryLabel, items]) => (
-                                <div className="observation-group" key={categoryLabel}>
-                                    <h4>{categoryLabel}</h4>
-                                    <ul className="observation-list">
-                                        {items.map((item, index) => {
-                                            const range = formatObservationRange(item);
-                                            const confidence = formatConfidence(item?.confidence);
-                                            return (
-                                                <li
-                                                    className="observation-item"
-                                                    key={`${categoryLabel}-${index}`}
-                                                >
-                                                    <div className="observation-meta">
-                                                        {range &&
-                                                            (onSeekToTime &&
-                                                            typeof item?.startSec === "number" ? (
-                                                                <button
-                                                                    type="button"
-                                                                    className="observation-time observation-seek"
-                                                                    onClick={() =>
-                                                                        onSeekToTime(item.startSec)
-                                                                    }
-                                                                    aria-label={`영상을 ${range} 구간으로 이동`}
-                                                                >
-                                                                    {range}
-                                                                </button>
-                                                            ) : (
-                                                                <span className="observation-time">
-                                                                    {range}
-                                                                </span>
-                                                            ))}
-                                                        {hasText(item?.label) && (
-                                                            <span className="mini-badge muted">
-                                                                {item.label.trim()}
-                                                            </span>
-                                                        )}
-                                                        {confidence && (
-                                                            <span className="observation-confidence">
-                                                                신뢰도 {confidence}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {hasText(item?.description) && (
-                                                        <p className="observation-description">
-                                                            {item.description.trim()}
-                                                        </p>
-                                                    )}
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                </div>
+                        <section className="observation-group" key={categoryLabel}>
+                            <div className="result-observation-group-heading">
+                                <h4>{categoryLabel}</h4>
+                                <span>{items.length}개</span>
+                            </div>
+                            <ul className="observation-list">
+                                {items.map((item, index) => {
+                                    const range = formatObservationRange(item);
+                                    const confidence = formatConfidence(item?.confidence);
+                                    return (
+                                        <li
+                                            className="observation-item"
+                                            key={`${categoryLabel}-${index}`}
+                                        >
+                                            <div className="observation-meta">
+                                                {range &&
+                                                    (onSeekToTime &&
+                                                    typeof item?.startSec === "number" ? (
+                                                        <button
+                                                            type="button"
+                                                            className="observation-time observation-seek"
+                                                            onClick={() =>
+                                                                onSeekToTime(item.startSec)
+                                                            }
+                                                            aria-label={`영상을 ${range} 구간으로 이동`}
+                                                        >
+                                                            {range}
+                                                        </button>
+                                                    ) : (
+                                                        <span className="observation-time">
+                                                            {range}
+                                                        </span>
+                                                    ))}
+                                                {hasText(item?.label) && (
+                                                    <span className="mini-badge muted">
+                                                        {item.label.trim()}
+                                                    </span>
+                                                )}
+                                                {confidence && (
+                                                    <span className="observation-confidence">
+                                                        신뢰도 {confidence}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {hasText(item?.description) && (
+                                                <p className="observation-description">
+                                                    {item.description.trim()}
+                                                </p>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </section>
                     ))
                 )}
             </div>
@@ -206,55 +304,88 @@ function FeedbackSection({ feedback, visualAnalysis, pipeline, onSeekToTime }) {
         pipeline?.openAiGenerationMode,
         "UNKNOWN"
     );
+    const strengths = Array.isArray(feedback?.strengths)
+        ? feedback.strengths
+        : [];
+    const improvements = Array.isArray(feedback?.improvements)
+        ? feedback.improvements
+        : [];
 
     return (
-        <div className="detail-grid">
-            <article className="detail-card wide">
-                <h2>종합 피드백</h2>
+        <div className="result-feedback-layout">
+            <article
+                className="detail-card result-feedback-card result-feedback-overview-card"
+                aria-labelledby="result-feedback-title"
+            >
+                <header className="result-feedback-card-header">
+                    <div>
+                        <span className="result-feedback-kicker">Coaching summary</span>
+                        <h2 id="result-feedback-title">종합 피드백</h2>
+                        <p>응답 출처를 먼저 확인한 뒤 강점과 다음 개선 행동을 읽어보세요.</p>
+                    </div>
+                    <span className={getFeedbackGenerationModeClassName(generationMode)}>
+                        {formatGenerationModeLabel(generationMode)}
+                    </span>
+                </header>
 
-                <div className="feedback-block llm-raw-text-block">
-                    <h3>
-                        AI 응답 원문
-                        <span className="mini-badge muted">
-                            {formatGenerationModeLabel(generationMode)}
-                        </span>
-                    </h3>
-                    <p className="muted-text">
-                        AI가 실제로 생성해 전달한 텍스트를 가공 없이 그대로 보여줍니다.
-                    </p>
-                    <pre className="llm-raw-text" tabIndex={0}>
-                        {feedback?.overall || "표시할 종합 피드백이 없습니다."}
-                    </pre>
+                <div className={`result-feedback-source-note ${getGenerationModeToken(generationMode)}`}>
+                    <span className="result-feedback-source-symbol" aria-hidden="true">
+                        {generationMode === "REAL" ? "✓" : "i"}
+                    </span>
+                    <div>
+                        <strong>피드백 출처</strong>
+                        <p>{getFeedbackSourceDescription(generationMode)}</p>
+                    </div>
                 </div>
 
-                <div className="feedback-columns">
-                    <div>
-                        <h3>강점</h3>
-                        {Array.isArray(feedback?.strengths) &&
-                        feedback.strengths.length > 0 ? (
+                <section className="feedback-block llm-raw-text-block result-feedback-raw">
+                    <div className="result-feedback-block-heading">
+                        <h3>응답 원문</h3>
+                        <span>가공 없이 표시</span>
+                    </div>
+                    <pre
+                        className="llm-raw-text"
+                        tabIndex={0}
+                        aria-label="종합 피드백 응답 원문"
+                    >
+                        {feedback?.overall || "표시할 종합 피드백이 없습니다."}
+                    </pre>
+                </section>
+
+                <div className="feedback-columns result-feedback-columns">
+                    <section className="result-feedback-signal strength">
+                        <div className="result-feedback-signal-heading">
+                            <span className="result-feedback-signal-icon" aria-hidden="true">+</span>
+                            <h3>강점</h3>
+                            <span>{strengths.length}개</span>
+                        </div>
+                        {strengths.length > 0 ? (
                             <ul>
-                                {feedback.strengths.map((item, index) => (
+                                {strengths.map((item, index) => (
                                     <li key={`${item}-${index}`}>{item}</li>
                                 ))}
                             </ul>
                         ) : (
                             <p className="muted-text">표시할 강점이 없습니다.</p>
                         )}
-                    </div>
+                    </section>
 
-                    <div>
-                        <h3>개선점</h3>
-                        {Array.isArray(feedback?.improvements) &&
-                        feedback.improvements.length > 0 ? (
+                    <section className="result-feedback-signal improvement">
+                        <div className="result-feedback-signal-heading">
+                            <span className="result-feedback-signal-icon" aria-hidden="true">→</span>
+                            <h3>개선점</h3>
+                            <span>{improvements.length}개</span>
+                        </div>
+                        {improvements.length > 0 ? (
                             <ul>
-                                {feedback.improvements.map((item, index) => (
+                                {improvements.map((item, index) => (
                                     <li key={`${item}-${index}`}>{item}</li>
                                 ))}
                             </ul>
                         ) : (
                             <p className="muted-text">표시할 개선점이 없습니다.</p>
                         )}
-                    </div>
+                    </section>
                 </div>
             </article>
 

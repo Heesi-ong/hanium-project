@@ -36,6 +36,13 @@ describe("AnalysisTimelineSection", () => {
 
         expect(screen.getAllByText("실제 Video LLM")).toHaveLength(2);
         expect(screen.queryByText(/예시 데이터/)).not.toBeInTheDocument();
+        expect(screen.getByRole("region", { name: "분석 타임라인 탐색" }))
+            .toHaveAttribute("tabindex", "0");
+        expect(screen.getByLabelText("현재 재생 위치 00:25")).toBeInTheDocument();
+        expect(screen.getByRole("group", { name: "발화 분석 트랙" }))
+            .toBeInTheDocument();
+        expect(screen.getByRole("group", { name: "AI 관찰 분석 트랙" }))
+            .toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", {
             name: /발화 00:10 구간으로 이동/,
@@ -68,5 +75,19 @@ describe("AnalysisTimelineSection", () => {
     it("does not render an empty timeline", () => {
         const { container } = render(<AnalysisTimelineSection durationSec={60} />);
         expect(container).toBeEmptyDOMElement();
+    });
+
+    it("clamps the displayed playhead time to the resolved duration", () => {
+        const { container } = render(
+            <AnalysisTimelineSection
+                durationSec={60}
+                currentTimeSec={90}
+                notableMoments={[{ timestampSec: 20, label: "핵심 구간" }]}
+            />
+        );
+
+        expect(screen.getByLabelText("현재 재생 위치 01:00")).toBeInTheDocument();
+        expect(container.querySelector(".analysis-timeline-playhead"))
+            .toHaveStyle({ left: "100%" });
     });
 });

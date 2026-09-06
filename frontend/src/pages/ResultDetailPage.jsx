@@ -21,7 +21,7 @@ import PipelineSection from "../components/result-detail/PipelineSection";
 import PoseAnalysisSection from "../components/result-detail/PoseAnalysisSection";
 import PracticePlanSection from "../components/result-detail/PracticePlanSection";
 import PracticeProgressSection from "../components/result-detail/PracticeProgressSection";
-import { formatDateTime, formatScoreLevel } from "../components/result-detail/resultDetailFormatters";
+import { formatDateTime } from "../components/result-detail/resultDetailFormatters";
 import ResultSummaryOverview from "../components/result-detail/ResultSummaryOverview";
 import SttSection from "../components/result-detail/SttSection";
 import TimelineFeedbackSection from "../components/result-detail/TimelineFeedbackSection";
@@ -206,33 +206,11 @@ function ResultDetailPage() {
     const isQueued = currentStatus === "QUEUED";
     const isRunning = RUNNING_STATUSES.includes(currentStatus);
     const scoreAvailable = isCompleted && !dataIssue && Number.isFinite(scoreSummary.totalScore);
-    const scoreLevelLabel = dataIssue
-        ? "결과 확인 필요"
-        : formatScoreLevel(scoreAvailable ? scoreSummary.totalScore : null);
     const isRateLimited = rateLimitedUntil > clockTick;
     const canRequestVideoLlmReanalysis =
         isCompleted &&
         analysisKind === "STANDARD" &&
         storedVideoLlmGenerationMode === "FALLBACK";
-
-    const scoreItems = [
-        {
-            label: "총점",
-            value: scoreAvailable ? scoreSummary.totalScore : null,
-        },
-        {
-            label: "자세",
-            value: scoreAvailable ? scoreSummary.postureScore : null,
-        },
-        {
-            label: "음성",
-            value: scoreAvailable ? scoreSummary.speechScore : null,
-        },
-        {
-            label: "제스처",
-            value: scoreAvailable ? scoreSummary.gestureScore : null,
-        },
-    ];
 
     const stopRateLimitCooldown = useCallback(() => {
         if (cooldownTimerRef.current) {
@@ -595,26 +573,6 @@ function ResultDetailPage() {
         return value;
     }
 
-    function getScoreClassName(value) {
-        if (typeof value !== "number") {
-            return "score-value muted";
-        }
-
-        if (value >= 85) {
-            return "score-value excellent";
-        }
-
-        if (value >= 70) {
-            return "score-value good";
-        }
-
-        if (value >= 50) {
-            return "score-value normal";
-        }
-
-        return "score-value poor";
-    }
-
     function getMetricLevelClassName(value) {
         if (typeof value !== "number") {
             return "metric-value muted";
@@ -782,81 +740,96 @@ function ResultDetailPage() {
     }
 
     return (
-        <section className="page-section">
+        <section className="page-section result-detail-page">
             <div className="print-only">
                 <p>AI Presentation Coach — 분석 결과 리포트</p>
                 <p>생성일: {new Date().toLocaleString("ko-KR")} · jobId: {jobId}</p>
             </div>
 
-            <AnimatedSection className="detail-header-card">
-                <div>
-                    <p className="eyebrow">Result Detail</p>
+            <AnimatedSection className="detail-header-card result-detail-hero">
+                <div className="result-detail-hero-copy">
+                    <div className="result-detail-status-row">
+                        <p className="eyebrow">Result Detail</p>
+                        <StatusBadge
+                            status={currentStatus}
+                            label={currentStatusDescription}
+                        />
+                    </div>
                     <h1>분석 결과 상세</h1>
-                    <p>
-                        현재 조회 대상 jobId: <code>{jobId}</code>
+                    <p className="result-detail-lead">
+                        발표의 핵심 점수부터 분석 근거와 다음 연습까지 순서대로 확인하세요.
                     </p>
+                    <div className="result-detail-job-id">
+                        <span>분석 작업 ID</span>
+                        <code>{jobId}</code>
+                    </div>
                 </div>
 
                 <div className="detail-actions no-print">
-                    <button
-                        type="button"
-                        className="secondary-button no-print"
-                        onClick={() => window.print()}
-                    >
-                        인쇄 / PDF로 저장
-                    </button>
+                    <div className="detail-action-group detail-action-primary">
+                        {(isFailed || isCancelled) && (
+                            <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleRetry}
+                                disabled={retrying || polling || deleting || cancelling || isRateLimited}
+                            >
+                                {retrying || polling ? "재시도 진행 중..." : "분석 재시도"}
+                            </button>
+                        )}
 
-                    <Link to="/results" className="secondary-button">
-                        목록으로
-                    </Link>
+                        {canRequestVideoLlmReanalysis && (
+                            <button
+                                type="button"
+                                className="primary-button"
+                                onClick={handleVideoLlmReanalysis}
+                                disabled={reanalyzing || deleting || cancelling}
+                            >
+                                {reanalyzing
+                                    ? "실제 Video LLM 재분석 요청 중..."
+                                    : "실제 Video LLM으로 다시 분석"}
+                            </button>
+                        )}
 
-                    {(isFailed || isCancelled) && (
+                        {isRunning && (
+                            <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={handleCancel}
+                                disabled={retrying || deleting || cancelling || isRateLimited}
+                            >
+                                {cancelling
+                                    ? "취소 요청 중..."
+                                    : isQueued
+                                        ? "대기 중 취소"
+                                        : "분석 취소"}
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="detail-action-group detail-action-utility">
+                        <Link to="/results" className="secondary-button">
+                            목록으로
+                        </Link>
                         <button
                             type="button"
-                            className="primary-button"
-                            onClick={handleRetry}
-                            disabled={retrying || polling || deleting || cancelling || isRateLimited}
+                            className="secondary-button no-print"
+                            onClick={() => window.print()}
                         >
-                            {retrying || polling ? "재시도 진행 중..." : "분석 재시도"}
+                            인쇄 / PDF로 저장
                         </button>
-                    )}
+                    </div>
 
-                    {canRequestVideoLlmReanalysis && (
+                    <div className="detail-action-group detail-action-danger">
                         <button
                             type="button"
-                            className="primary-button"
-                            onClick={handleVideoLlmReanalysis}
-                            disabled={reanalyzing || deleting || cancelling}
+                            className="danger-button"
+                            onClick={handleDelete}
+                            disabled={retrying || reanalyzing || polling || deleting || cancelling || isRunning}
                         >
-                            {reanalyzing
-                                ? "실제 Video LLM 재분석 요청 중..."
-                                : "실제 Video LLM으로 다시 분석"}
+                            {deleting ? "삭제 중..." : "삭제"}
                         </button>
-                    )}
-
-                    {isRunning && (
-                        <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={handleCancel}
-                            disabled={retrying || deleting || cancelling || isRateLimited}
-                        >
-                            {cancelling
-                                ? "취소 요청 중..."
-                                : isQueued
-                                    ? "대기 중 취소"
-                                    : "분석 취소"}
-                        </button>
-                    )}
-
-                    <button
-                        type="button"
-                        className="danger-button"
-                        onClick={handleDelete}
-                        disabled={retrying || reanalyzing || polling || deleting || cancelling || isRunning}
-                    >
-                        {deleting ? "삭제 중..." : "삭제"}
-                    </button>
+                    </div>
                 </div>
             </AnimatedSection>
 
@@ -934,31 +907,6 @@ function ResultDetailPage() {
                     : ""}
             </StateMessage>
 
-            <AnimatedSection className="score-panel">
-                <div className="score-panel-main">
-                    <span className="score-panel-label">종합 등급</span>
-                    <strong>{scoreLevelLabel}</strong>
-                    <p>
-                        상태:{" "}
-                        <StatusBadge
-                            status={currentStatus}
-                            label={currentStatusDescription}
-                        />
-                    </p>
-                </div>
-
-                <div className="score-grid">
-                    {scoreItems.map((item) => (
-                        <article className="score-card" key={item.label}>
-                            <span>{item.label}</span>
-                            <strong className={getScoreClassName(item.value)}>
-                                {formatScore(item.value)}
-                            </strong>
-                        </article>
-                    ))}
-                </div>
-            </AnimatedSection>
-
             <AnimatedSection>
                 <ResultSummaryOverview
                     scoreSummary={scoreSummary}
@@ -972,39 +920,31 @@ function ResultDetailPage() {
                 />
             </AnimatedSection>
 
-            <AnimatedSection>
-                <ResultScoreChart scoreSummary={scoreSummary} />
-            </AnimatedSection>
+            <div className="result-detail-section-heading">
+                <span>Score reading</span>
+                <div>
+                    <h2>점수가 만들어진 과정을 확인하세요</h2>
+                    <p>영역별 균형과 가중 기여도를 함께 보면 다음 연습의 우선순위가 선명해집니다.</p>
+                </div>
+            </div>
 
-            <AnimatedSection>
-                <ScoreCompositionChart
-                    scoreSummary={scoreSummary}
-                    scoreExplanation={scoreExplanation}
-                />
-            </AnimatedSection>
+            <div className="result-detail-chart-grid">
+                <AnimatedSection>
+                    <ResultScoreChart scoreSummary={scoreSummary} />
+                </AnimatedSection>
+
+                <AnimatedSection>
+                    <ScoreCompositionChart
+                        scoreSummary={scoreSummary}
+                        scoreExplanation={scoreExplanation}
+                    />
+                </AnimatedSection>
+            </div>
 
             <AnimatedSection>
                 <AnalysisQualitySection
                     analysisQuality={analysisQuality}
                     scoreExplanation={scoreExplanation}
-                />
-            </AnimatedSection>
-
-            <AnimatedSection>
-                <PracticeProgressSection
-                    currentJobId={jobId}
-                    currentScoreSummary={scoreSummary}
-                    baselineJobId={baselineJobId}
-                    baselineScoreSummary={
-                        baselineResult?.jobId === baselineJobId
-                            ? baselineResult.result?.scoreSummary
-                            : null
-                    }
-                    practiceGoal={practiceGoal}
-                    canStartPractice={isCompleted && !dataIssue}
-                    onStartPractice={(practiceContext) => navigate("/upload", {
-                        state: { practiceContext },
-                    })}
                 />
             </AnimatedSection>
 
@@ -1015,7 +955,15 @@ function ResultDetailPage() {
                 />
             </AnimatedSection>
 
-            <AnimatedSection className="no-print">
+            <div className="result-detail-section-heading">
+                <span>Evidence review</span>
+                <div>
+                    <h2>영상과 분석 근거를 함께 확인하세요</h2>
+                    <p>주요 순간과 분석 트랙을 선택하면 영상이 해당 시점으로 이동합니다.</p>
+                </div>
+            </div>
+
+            <AnimatedSection className="no-print result-video-section">
                 <VideoPlayerSection
                     jobId={jobId}
                     durationSec={videoInfo.durationSec}
@@ -1033,40 +981,54 @@ function ResultDetailPage() {
                 <VideoInfoSection videoInfo={videoInfo} frameInfo={frameInfo} />
             </AnimatedSection>
 
-            {analysisTrace.length > 0 && (
-                <AnimatedSection>
-                    <CollapsibleDetails
-                        className="analysis-info-details"
-                        summary="분석 처리 과정 — OpenCV·MediaPipe 단계별 소요 시간과 처리량"
-                    >
-                        <AnalysisTraceSection analysisTrace={analysisTrace} />
-                    </CollapsibleDetails>
-                </AnimatedSection>
+            {(analysisTrace.length > 0 || frameGallery.length > 0) && (
+                <div className="result-evidence-details-grid">
+                    {analysisTrace.length > 0 && (
+                        <AnimatedSection>
+                            <CollapsibleDetails
+                                className="analysis-info-details result-evidence-details"
+                                headingLevel={3}
+                                summary={(
+                                    <span className="result-evidence-summary-copy">
+                                        <strong>분석 처리 기록</strong>
+                                        <span>OpenCV·MediaPipe 단계와 실제 처리량</span>
+                                    </span>
+                                )}
+                            >
+                                <AnalysisTraceSection analysisTrace={analysisTrace} />
+                            </CollapsibleDetails>
+                        </AnimatedSection>
+                    )}
+
+                    {frameGallery.length > 0 && (
+                        <AnimatedSection className="no-print">
+                            <CollapsibleDetails
+                                className="analysis-info-details result-evidence-details"
+                                headingLevel={3}
+                                summary={(
+                                    <span className="result-evidence-summary-copy">
+                                        <strong>근거 프레임 갤러리</strong>
+                                        <span>보호된 MediaPipe 오버레이 · {frameGallery.length}장</span>
+                                    </span>
+                                )}
+                            >
+                                <FrameGallerySection
+                                    jobId={jobId}
+                                    frameGallery={frameGallery}
+                                />
+                            </CollapsibleDetails>
+                        </AnimatedSection>
+                    )}
+                </div>
             )}
 
-            {frameGallery.length > 0 && (
-                <AnimatedSection className="no-print">
-                    <CollapsibleDetails
-                        className="analysis-info-details"
-                        summary={`분석 프레임 미리보기 — MediaPipe 스켈레톤 오버레이 (${frameGallery.length}장)`}
-                    >
-                        <FrameGallerySection
-                            jobId={jobId}
-                            frameGallery={frameGallery}
-                        />
-                    </CollapsibleDetails>
-                </AnimatedSection>
-            )}
-
-            <AnimatedSection>
-                <CollapsibleDetails
-                    className="inquiry-id-details analysis-info-details"
-                    summary="분석 정보 — OpenAI/Video LLM 생성 방식 · 파이프라인 세부 정보"
-                >
-                    <OpenAiFeedbackStatusSection feedback={feedback} pipeline={pipeline} />
-                    <PipelineSection pipeline={pipeline} />
-                </CollapsibleDetails>
-            </AnimatedSection>
+            <div className="result-detail-section-heading">
+                <span>Coaching review</span>
+                <div>
+                    <h2>피드백의 출처와 다음 행동을 함께 확인하세요</h2>
+                    <p>실제 AI, 대체 응답, Mock을 구분한 뒤 강점과 개선점을 연습 계획으로 연결합니다.</p>
+                </div>
+            </div>
 
             <AnimatedSection>
                 <FeedbackSection
@@ -1077,16 +1039,60 @@ function ResultDetailPage() {
                 />
             </AnimatedSection>
 
+            <AnimatedSection>
+                <CollapsibleDetails
+                    className="inquiry-id-details analysis-info-details result-generation-details"
+                    headingLevel={3}
+                    summary={(
+                        <span className="result-generation-summary-copy">
+                            <strong>AI 실행 기록과 파이프라인</strong>
+                            <span>OpenAI·Video LLM 생성 방식, 모델, 미사용·대체 사유</span>
+                        </span>
+                    )}
+                >
+                    <OpenAiFeedbackStatusSection feedback={feedback} pipeline={pipeline} />
+                    <PipelineSection pipeline={pipeline} />
+                </CollapsibleDetails>
+            </AnimatedSection>
+
+            <div className="result-detail-section-heading result-next-action-heading">
+                <span>Next practice</span>
+                <div>
+                    <h2>피드백을 다음 연습으로 연결하세요</h2>
+                    <p>제안된 연습 순서를 확인하고 개선할 영역을 선택하면 현재 결과와 연결된 새 업로드를 시작합니다.</p>
+                </div>
+            </div>
+
+            <div className="result-practice-grid">
+                <AnimatedSection>
+                    <PracticePlanSection practicePlan={practicePlan} />
+                </AnimatedSection>
+
+                <AnimatedSection>
+                    <PracticeProgressSection
+                        currentJobId={jobId}
+                        currentScoreSummary={scoreSummary}
+                        baselineJobId={baselineJobId}
+                        baselineScoreSummary={
+                            baselineResult?.jobId === baselineJobId
+                                ? baselineResult.result?.scoreSummary
+                                : null
+                        }
+                        practiceGoal={practiceGoal}
+                        canStartPractice={isCompleted && !dataIssue}
+                        onStartPractice={(practiceContext) => navigate("/upload", {
+                            state: { practiceContext },
+                        })}
+                    />
+                </AnimatedSection>
+            </div>
+
             <AnimatedSection className="no-print">
                 <CoachChatSection
                     jobId={jobId}
                     isCompleted={isCompleted}
                     disabledReason={coachDisabledReason}
                 />
-            </AnimatedSection>
-
-            <AnimatedSection>
-                <PracticePlanSection practicePlan={practicePlan} />
             </AnimatedSection>
 
             <AnimatedSection>

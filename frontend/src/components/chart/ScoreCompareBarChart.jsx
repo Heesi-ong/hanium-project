@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useReducedMotion } from "motion/react";
 import {
     BarElement,
     CategoryScale,
@@ -34,7 +36,7 @@ const scoreValueLabelPlugin = {
                 const labelY = Math.max(bar.y - 6, chartArea.top + 12);
 
                 ctx.save();
-                ctx.fillStyle = "#2B2420";
+                ctx.fillStyle = "#F5EFE8";
                 ctx.font = "600 11px sans-serif";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "bottom";
@@ -50,8 +52,7 @@ ChartJS.register(
     LinearScale,
     BarElement,
     Tooltip,
-    Legend,
-    scoreValueLabelPlugin
+    Legend
 );
 
 const SCORE_FIELDS = [
@@ -66,6 +67,8 @@ function toScore(value) {
 }
 
 function ScoreCompareBarChart({ resultA, resultB, labelA, labelB }) {
+    const prefersReducedMotion = useReducedMotion();
+    const [visibleSeries, setVisibleSeries] = useState([true, true]);
     const scoresA = resultA?.dataIssue ? {} : resultA?.scoreSummary || {};
     const scoresB = resultB?.dataIssue ? {} : resultB?.scoreSummary || {};
 
@@ -75,14 +78,18 @@ function ScoreCompareBarChart({ resultA, resultB, labelA, labelB }) {
             {
                 label: labelA,
                 data: SCORE_FIELDS.map((field) => toScore(scoresA[field.key])),
-                backgroundColor: "rgba(114, 165, 255, 0.65)",
+                backgroundColor: "rgba(216, 195, 163, 0.7)",
+                borderColor: "#D8C3A3",
+                borderWidth: 2,
+                hidden: !visibleSeries[0],
                 borderRadius: 8,
                 maxBarThickness: 34,
             },
             {
                 label: labelB,
                 data: SCORE_FIELDS.map((field) => toScore(scoresB[field.key])),
-                backgroundColor: "rgba(226, 112, 74, 0.75)",
+                backgroundColor: "#F27424",
+                hidden: !visibleSeries[1],
                 borderRadius: 8,
                 maxBarThickness: 34,
             },
@@ -92,18 +99,27 @@ function ScoreCompareBarChart({ resultA, resultB, labelA, labelB }) {
     const chartOptions = {
         responsive: true,
         maintainAspectRatio: false,
+        animation: prefersReducedMotion ? false : { duration: 300 },
         scales: {
+            x: {
+                ticks: { color: "#B7ADA4" },
+                grid: { display: false },
+                border: { color: "rgba(255,255,255,0.12)" },
+            },
             y: {
                 min: 0,
                 max: 100,
                 ticks: {
+                    color: "#B7ADA4",
                     callback: (value) => `${value}점`,
                 },
+                grid: { color: "rgba(255,255,255,0.07)" },
+                border: { display: false },
             },
         },
         plugins: {
             legend: {
-                position: "bottom",
+                display: false,
             },
             tooltip: {
                 callbacks: {
@@ -116,15 +132,40 @@ function ScoreCompareBarChart({ resultA, resultB, labelA, labelB }) {
     };
 
     return (
-        <article className="chart-card">
+        <article className="chart-card score-compare-chart">
             <h2>항목별 점수 비교</h2>
             <p className="chart-card-description">
                 두 결과의 총점과 항목별 점수를 나란히 비교합니다.
             </p>
 
-            <div className="chart-container bar">
-                <Bar data={chartData} options={chartOptions} />
+            <div className="compare-chart-controls" aria-label="비교 차트 표시 설정">
+                {[labelA, labelB].map((label, index) => (
+                    <button
+                        type="button"
+                        key={index}
+                        data-side={index === 0 ? "a" : "b"}
+                        aria-pressed={visibleSeries[index]}
+                        onClick={() => setVisibleSeries(previous => previous.map((visible, itemIndex) => (
+                            itemIndex === index ? !visible : visible
+                        )))}
+                    >
+                        <b aria-hidden="true">{index === 0 ? "A" : "B"}</b>
+                        <span>{index === 0 ? "A" : "B"} · {label}</span>
+                        <small>{visibleSeries[index] ? "표시 중" : "숨김"}</small>
+                    </button>
+                ))}
             </div>
+
+            <div className="chart-container bar">
+                <Bar
+                    data={chartData}
+                    options={chartOptions}
+                    plugins={[scoreValueLabelPlugin]}
+                    role="img"
+                    aria-label="A 기준 결과와 B 비교 결과의 항목별 점수 차트"
+                />
+            </div>
+            <p className="compare-chart-hint">A/B 버튼으로 막대를 표시하거나 숨길 수 있습니다. 정확한 수치는 아래 점수표에서 확인하세요.</p>
         </article>
     );
 }

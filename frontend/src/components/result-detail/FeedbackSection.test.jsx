@@ -26,6 +26,56 @@ function getVisualAnalysisCard() {
 }
 
 describe("FeedbackSection", () => {
+    it.each([
+        ["REAL", "실제 OpenAI API가 생성한 응답 원문입니다."],
+        ["FALLBACK", "외부 AI 호출 실패 후 내부 대체 응답"],
+        ["MOCK", "외부 AI를 호출하지 않고 내부 Mock 로직"],
+        ["SKIPPED", "사용자 설정에 따라 외부 AI 피드백 생성을 건너뛴"],
+    ])("explains the feedback source for %s mode", (generationMode, description) => {
+        renderFeedbackSection(
+            { model: { generationMode: "SKIPPED" } },
+            {
+                feedback: {
+                    ...baseFeedback,
+                    generationMode,
+                },
+            }
+        );
+
+        const feedbackCard = screen.getByRole("article", { name: "종합 피드백" });
+        expect(within(feedbackCard).getByText(description, { exact: false }))
+            .toBeInTheDocument();
+        expect(within(feedbackCard).getByLabelText("종합 피드백 응답 원문"))
+            .toHaveTextContent("전체 피드백");
+    });
+
+    it("shows separate strength and improvement counts without changing their content", () => {
+        renderFeedbackSection(
+            { model: { generationMode: "REAL" } },
+            {
+                feedback: {
+                    generationMode: "REAL",
+                    overall: "전체 피드백",
+                    strengths: ["발표 구조가 명확합니다.", "시선이 안정적입니다."],
+                    improvements: ["결론의 말하기 속도를 조절하세요."],
+                },
+            }
+        );
+
+        const feedbackCard = screen.getByRole("article", { name: "종합 피드백" });
+        const strengthSection = within(feedbackCard).getByRole("heading", { name: "강점" })
+            .closest("section");
+        const improvementSection = within(feedbackCard).getByRole("heading", { name: "개선점" })
+            .closest("section");
+
+        expect(within(strengthSection).getByText("2개")).toBeInTheDocument();
+        expect(within(strengthSection).getByText("발표 구조가 명확합니다."))
+            .toBeInTheDocument();
+        expect(within(improvementSection).getByText("1개")).toBeInTheDocument();
+        expect(within(improvementSection).getByText("결론의 말하기 속도를 조절하세요."))
+            .toBeInTheDocument();
+    });
+
     it("hides untrusted global summary and renders only supported observation categories", () => {
         renderFeedbackSection({
             model: {
@@ -96,6 +146,7 @@ describe("FeedbackSection", () => {
         ).toBeInTheDocument();
         expect(within(card).getByText("신뢰도 74%")).toBeInTheDocument();
         expect(within(card).getByText("신뢰도 81%")).toBeInTheDocument();
+        expect(within(card).getByText("2개 관찰")).toBeInTheDocument();
     });
 
     it("calls onSeekToTime with the observation startSec when the time is clicked", () => {
@@ -215,6 +266,8 @@ describe("FeedbackSection", () => {
         expect(
             within(visualAnalysisCard).getByText(/예시\(샘플\) 데이터/)
         ).toBeInTheDocument();
+        expect(within(visualAnalysisCard).getByText(/시각 분석 출처/))
+            .toBeInTheDocument();
     });
 
     it("does not show a sample-data warning for REAL mode", () => {

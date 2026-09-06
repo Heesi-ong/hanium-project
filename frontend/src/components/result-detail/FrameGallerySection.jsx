@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { buildOverlayFrameUrl } from "../../api/resultAssets";
 import { formatTimestamp } from "./resultDetailFormatters";
@@ -10,23 +11,77 @@ import { formatTimestamp } from "./resultDetailFormatters";
 function FrameGallerySection({ jobId, frameGallery }) {
     const frames = Array.isArray(frameGallery) ? frameGallery : [];
     const [activeFrame, setActiveFrame] = useState(null);
+    const closeButtonRef = useRef(null);
+    const triggerButtonRef = useRef(null);
+
+    useEffect(() => {
+        if (!activeFrame) {
+            return undefined;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        closeButtonRef.current?.focus();
+
+        function handleKeyDown(event) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                setActiveFrame(null);
+            }
+
+            if (event.key === "Tab") {
+                event.preventDefault();
+                closeButtonRef.current?.focus();
+            }
+        }
+
+        document.addEventListener("keydown", handleKeyDown);
+
+        return () => {
+            document.removeEventListener("keydown", handleKeyDown);
+            document.body.style.overflow = previousOverflow;
+            triggerButtonRef.current?.focus();
+        };
+    }, [activeFrame]);
 
     if (!jobId || frames.length === 0) {
         return null;
     }
 
     const detectedCount = frames.filter((frame) => frame.poseDetected).length;
+    const gestureCount = frames.filter((frame) => frame.gestureDetected).length;
+
+    function openFrame(frame, imageUrl, triggerButton) {
+        triggerButtonRef.current = triggerButton;
+        setActiveFrame({ ...frame, imageUrl });
+    }
+
+    function closeFrame() {
+        setActiveFrame(null);
+    }
 
     return (
-        <article className="detail-card wide">
-            <h2>분석 프레임 미리보기</h2>
+        <article
+            className="detail-card wide result-evidence-card result-frame-gallery-card"
+            aria-labelledby="frame-gallery-title"
+        >
+            <header className="result-evidence-card-header">
+                <div>
+                    <span className="result-evidence-kicker">Visual evidence</span>
+                    <h2 id="frame-gallery-title">근거 프레임</h2>
+                    <p>
+                        MediaPipe 오버레이가 적용된 실제 분석 샘플입니다. 프레임을 선택하면
+                        원본 비율로 확대됩니다.
+                    </p>
+                </div>
+                <span className="result-evidence-count">전체 {frames.length}장</span>
+            </header>
 
-            <p className="muted-text">
-                초록/파랑 선은 어깨·팔꿈치·손목을 이은 골격, 어깨를 잇는 선은 좌우 균형
-                상태(초록=균형, 주황=기울어짐)를 나타냅니다. 상단 라벨은 제스처 활성
-                여부입니다. 전체 {frames.length}장 중 {detectedCount}장에서 자세가
-                검출됐습니다.
-            </p>
+            <div className="frame-gallery-legend" aria-label="프레임 분석 요약">
+                <span><b>{detectedCount}</b> 포즈 검출</span>
+                <span><b>{gestureCount}</b> 제스처 검출</span>
+                <span>선·점은 분석 엔진이 기록한 오버레이</span>
+            </div>
 
             <ul className="frame-gallery-grid">
                 {frames.map((frame, index) => {
@@ -40,8 +95,9 @@ function FrameGallerySection({ jobId, frameGallery }) {
                             <button
                                 type="button"
                                 className="frame-gallery-thumb"
-                                onClick={() =>
-                                    setActiveFrame({ ...frame, imageUrl })
+                                aria-label={`${formatTimestamp(frame.timestampSec)} 지점 분석 프레임 확대, ${frame.poseDetected ? "포즈 검출" : "포즈 미검출"}${frame.gestureDetected ? ", 제스처 검출" : ""}`}
+                                onClick={(event) =>
+                                    openFrame(frame, imageUrl, event.currentTarget)
                                 }
                             >
                                 <img
@@ -49,6 +105,11 @@ function FrameGallerySection({ jobId, frameGallery }) {
                                     alt={`${formatTimestamp(frame.timestampSec)} 지점 분석 프레임`}
                                     loading="lazy"
                                 />
+                                <span className="frame-gallery-expand" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24">
+                                        <path d="M9 5H5v4M15 5h4v4M9 19H5v-4M15 19h4v-4" />
+                                    </svg>
+                                </span>
                             </button>
 
                             <div className="frame-gallery-meta">
@@ -67,36 +128,43 @@ function FrameGallerySection({ jobId, frameGallery }) {
                 })}
             </ul>
 
-            {activeFrame && (
+            {activeFrame && createPortal(
                 <div
-                    className="frame-gallery-lightbox"
+                    className="frame-gallery-lightbox result-frame-gallery-lightbox"
                     role="dialog"
                     aria-modal="true"
                     aria-label="분석 프레임 확대 보기"
-                    onClick={() => setActiveFrame(null)}
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                            closeFrame();
+                        }
+                    }}
                 >
-                    <figure onClick={(event) => event.stopPropagation()}>
+                    <figure>
                         <img
                             src={activeFrame.imageUrl}
                             alt={`${formatTimestamp(activeFrame.timestampSec)} 지점 분석 프레임 확대`}
                         />
                         <figcaption>
-                            <span>
-                                {formatTimestamp(activeFrame.timestampSec)} ·{" "}
-                                {activeFrame.poseDetected
-                                    ? "포즈 검출됨"
-                                    : "포즈 미검출"}
-                            </span>
+                            <div>
+                                <strong>{formatTimestamp(activeFrame.timestampSec)}</strong>
+                                <span>
+                                    {activeFrame.poseDetected ? "포즈 검출됨" : "포즈 미검출"}
+                                    {activeFrame.gestureDetected ? " · 제스처 검출됨" : ""}
+                                </span>
+                            </div>
                             <button
+                                ref={closeButtonRef}
                                 type="button"
                                 className="secondary-button"
-                                onClick={() => setActiveFrame(null)}
+                                onClick={closeFrame}
                             >
                                 닫기
                             </button>
                         </figcaption>
                     </figure>
-                </div>
+                </div>,
+                document.body
             )}
         </article>
     );

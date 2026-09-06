@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -74,6 +74,7 @@ const resultB = {
 describe("ResultComparePage", () => {
     it("shows guidance and a link back to the result list when no results were passed via navigation state", () => {
         renderWithResults(undefined);
+        expect(screen.getByRole("heading", { level: 1, name: "결과 비교" })).toBeInTheDocument();
 
         expect(
             screen.getByText("비교할 결과 정보가 없습니다.")
@@ -81,6 +82,16 @@ describe("ResultComparePage", () => {
         expect(
             screen.getByRole("link", { name: "분석 결과 목록으로 이동" })
         ).toHaveAttribute("href", "/results");
+    });
+
+    it("provides a semantic score table and explains the selected comparison order", () => {
+        renderWithResults([resultB, resultA]);
+
+        const table = screen.getByRole("table", { name: "두 결과의 항목별 점수와 B − A 변화" });
+        expect(within(table).getAllByRole("columnheader")).toHaveLength(4);
+        expect(within(table).getAllByRole("rowheader")).toHaveLength(6);
+        expect(within(table).getByText("▼ -17")).toBeInTheDocument();
+        expect(screen.getByText(/생성일순으로 자동 정렬하지 않습니다/)).toBeInTheDocument();
     });
 
     it("renders both results' titles, dates, and feedback side by side", () => {
@@ -129,5 +140,6 @@ describe("ResultComparePage", () => {
         expect(screen.getByText("0점")).toBeInTheDocument();
         expect(screen.getAllByText("-").length).toBeGreaterThan(0);
         expect(screen.getAllByText("비교 불가")).toHaveLength(6);
+        expect(screen.getByRole("status")).toHaveTextContent("점수 데이터를 확인할 수 없어");
     });
 });

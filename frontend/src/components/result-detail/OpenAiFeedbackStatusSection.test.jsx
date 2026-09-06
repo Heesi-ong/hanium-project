@@ -21,10 +21,10 @@ describe("OpenAiFeedbackStatusSection", () => {
             />
         );
 
-        expect(screen.getByText("실제 OpenAI API")).toBeInTheDocument();
+        expect(screen.getAllByText("실제 OpenAI API").length).toBeGreaterThan(0);
         expect(screen.getByText("gpt-4.1-mini")).toBeInTheDocument();
 
-        const realApiCard = screen.getByText("실제 API 사용 여부").closest("article");
+        const realApiCard = screen.getByText("실제 API 응답 사용").closest("div");
         expect(within(realApiCard).getByText("예")).toBeInTheDocument();
     });
 
@@ -45,11 +45,11 @@ describe("OpenAiFeedbackStatusSection", () => {
             />
         );
 
-        expect(screen.getByText("OpenAI 실패 후 Mock 대체")).toBeInTheDocument();
+        expect(screen.getAllByText("OpenAI 실패 후 Mock 대체").length).toBeGreaterThan(0);
         expect(screen.getByText("gpt-4o-mini")).toBeInTheDocument();
         expect(screen.getByText("OpenAI API timeout")).toBeInTheDocument();
 
-        const realApiCard = screen.getByText("실제 API 사용 여부").closest("article");
+        const realApiCard = screen.getByText("실제 API 응답 사용").closest("div");
         expect(within(realApiCard).getByText("아니오")).toBeInTheDocument();
     });
 
@@ -66,7 +66,7 @@ describe("OpenAiFeedbackStatusSection", () => {
             />
         );
 
-        expect(screen.getByText("OpenAI 피드백 사용 안 함")).toBeInTheDocument();
+        expect(screen.getAllByText("OpenAI 피드백 사용 안 함").length).toBeGreaterThan(0);
         expect(
             screen.getByText("사용자 설정에 따라 OpenAI 피드백 생성을 건너뛰었습니다.")
         ).toBeInTheDocument();
@@ -74,5 +74,39 @@ describe("OpenAiFeedbackStatusSection", () => {
             screen.getByText("사용자 설정으로 OpenAI 피드백 생성이 비활성화되었습니다.")
         ).toBeInTheDocument();
         expect(screen.getByText("미사용·대체 사유")).toBeInTheDocument();
+    });
+
+    it("does not present missing API usage metadata as a definite no", () => {
+        render(
+            <OpenAiFeedbackStatusSection
+                feedback={{ generationMode: "UNKNOWN" }}
+                pipeline={{}}
+            />
+        );
+
+        const realApiItem = screen.getByText("실제 API 응답 사용").closest("div");
+        expect(within(realApiItem).getByText("확인 불가")).toBeInTheDocument();
+        expect(within(realApiItem).queryByText("아니오")).not.toBeInTheDocument();
+        expect(
+            screen.getByText("외부 OpenAI API 실행 여부를 결과 데이터에서 확인할 수 없습니다.")
+        ).toBeInTheDocument();
+    });
+
+    it("distinguishes a fallback attempt from the response used in the final feedback", () => {
+        render(
+            <OpenAiFeedbackStatusSection
+                feedback={{
+                    generationMode: "FALLBACK",
+                    realApiUsed: false,
+                    fallbackReason: "OpenAI API timeout",
+                }}
+                pipeline={{}}
+            />
+        );
+
+        expect(
+            screen.getByText(/외부 OpenAI API 호출을 시도했지만 최종 피드백은 내부 대체 응답/)
+        ).toBeInTheDocument();
+        expect(screen.getByText("OpenAI API timeout")).toBeInTheDocument();
     });
 });

@@ -34,8 +34,29 @@ describe("AnalysisTraceSection", () => {
 
         expect(screen.getByText("자세와 제스처를 분석하는 중...")).toBeInTheDocument();
         expect(screen.getByText("1.2초")).toBeInTheDocument();
-        expect(screen.getByText("2/9")).toBeInTheDocument();
-        expect(screen.getByText("5/9")).toBeInTheDocument();
+        expect(screen.getByText("단계 2 / 9")).toBeInTheDocument();
+        expect(screen.getByText("단계 5 / 9")).toBeInTheDocument();
+        expect(screen.getByText("단계별 기록 시간 합계 1.7초"))
+            .toBeInTheDocument();
+    });
+
+    it("labels missing durations without treating them as zero milliseconds", () => {
+        render(
+            <AnalysisTraceSection
+                analysisTrace={[
+                    {
+                        stepNo: 1,
+                        totalSteps: 1,
+                        label: "영상 정보를 확인하는 중...",
+                        durationMs: null,
+                    },
+                ]}
+            />
+        );
+
+        expect(screen.getByText("단계별 처리 시간 미기록")).toBeInTheDocument();
+        expect(screen.getByText("시간 미기록")).toBeInTheDocument();
+        expect(screen.queryByText("0ms")).not.toBeInTheDocument();
     });
 
     it("renders nothing when there are no steps", () => {

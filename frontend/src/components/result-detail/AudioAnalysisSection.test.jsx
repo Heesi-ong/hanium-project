@@ -45,6 +45,9 @@ describe("AudioAnalysisSection", () => {
         expect(screen.getByText("18개")).toBeInTheDocument();
         expect(screen.getByText("무음 구간")).toBeInTheDocument();
         expect(screen.getByText("2개")).toBeInTheDocument();
+        expect(screen.getByText("핵심 음성 점수")).toBeInTheDocument();
+        expect(screen.getByText("측정값 자세히 보기")).toBeInTheDocument();
+        expect(screen.getByText("음량 실측값 포함")).toBeInTheDocument();
     });
 
     it("explains fallback reason when volume stability uses the neutral fallback", () => {
@@ -66,5 +69,7 @@ describe("AudioAnalysisSection", () => {
         expect(screen.getByText(
             "음량 안정성은 오디오를 사용할 수 없음 사유로 중립값을 사용했습니다."
         )).toBeInTheDocument();
+        expect(screen.getByRole("note")).toHaveTextContent("음량 안정성 중립값 적용");
+        expect(screen.getByText("음량 중립값 포함")).toBeInTheDocument();
     });
 });

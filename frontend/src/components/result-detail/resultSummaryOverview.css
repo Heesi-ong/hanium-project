@@ -115,3 +115,278 @@
         font-size: 22px;
     }
 }
+
+/* 결과 상세 개요 카드: 따뜻한 다크 무대와 분석 신호 모티프를 한 영역에 묶습니다. */
+.summary-overview {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    margin: 0;
+    padding: clamp(24px, 4vw, 40px);
+    border: 1px solid rgba(255, 147, 77, 0.22);
+    border-radius: 28px;
+    background:
+        radial-gradient(circle at 88% 10%, rgba(242, 116, 36, 0.18), transparent 34%),
+        linear-gradient(145deg, #211a14 0%, #17130f 52%, #100e0c 100%);
+    color: #f5efe8;
+    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.34);
+}
+
+.summary-overview::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 38px 38px;
+    content: "";
+    mask-image: linear-gradient(to bottom, black, transparent 78%);
+}
+
+.summary-overview-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
+    gap: clamp(28px, 5vw, 64px);
+    align-items: stretch;
+    margin-bottom: 28px;
+}
+
+.summary-overview-copy {
+    min-width: 0;
+}
+
+.summary-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: #ff934d;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.summary-eyebrow::before {
+    width: 20px;
+    height: 1px;
+    background: currentColor;
+    content: "";
+}
+
+.summary-overview h2 {
+    margin: 0 0 12px;
+    color: #f5efe8;
+    font-size: clamp(26px, 3vw, 38px);
+    font-weight: 900;
+    line-height: 1.12;
+    letter-spacing: -0.04em;
+}
+
+.summary-overview p {
+    max-width: 640px;
+    margin: 0;
+    color: #b7ada4;
+    font-size: 15px;
+    line-height: 1.75;
+}
+
+.summary-domain-scores {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: 580px;
+    margin-top: 26px;
+    border-block: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.summary-domain-score {
+    position: relative;
+    min-width: 0;
+    padding: 16px 18px 16px 0;
+}
+
+.summary-domain-score + .summary-domain-score {
+    padding-left: 18px;
+}
+
+.summary-domain-score + .summary-domain-score::before {
+    position: absolute;
+    inset: 14px auto 14px 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    content: "";
+}
+
+.summary-domain-score span,
+.summary-domain-score strong {
+    display: block;
+}
+
+.summary-domain-score span {
+    color: #8f847a;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.summary-domain-score strong {
+    margin-top: 6px;
+    color: #f5efe8;
+    font-size: clamp(20px, 2.4vw, 28px);
+    letter-spacing: -0.04em;
+}
+
+.summary-score-box {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    min-height: 220px;
+    padding: 26px 20px;
+    border: 1px solid rgba(255, 147, 77, 0.3);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255, 147, 77, 0.13), rgba(255, 255, 255, 0.025));
+    text-align: center;
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.summary-score-box span,
+.summary-score-box small {
+    color: #b7ada4;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.summary-score-box strong {
+    display: block;
+    margin: 12px 0 8px;
+    color: #f5efe8;
+    font-size: clamp(54px, 7vw, 76px);
+    font-weight: 950;
+    line-height: 0.95;
+    letter-spacing: -0.08em;
+}
+
+.summary-score-box em {
+    display: inline-flex;
+    align-self: center;
+    min-height: 28px;
+    align-items: center;
+    padding: 0 11px;
+    border-radius: 999px;
+    background: rgba(79, 199, 138, 0.14);
+    color: #75dca5;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 900;
+}
+
+.summary-score-box small {
+    margin-top: 12px;
+    color: #776e66;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.summary-overview[data-score-state="pending"] .summary-score-box em {
+    background: rgba(244, 176, 74, 0.14);
+    color: #f4b04a;
+}
+
+.summary-overview[data-score-state="issue"] .summary-score-box {
+    border-color: rgba(231, 104, 90, 0.4);
+}
+
+.summary-overview[data-score-state="issue"] .summary-score-box em {
+    background: rgba(231, 104, 90, 0.14);
+    color: #f28a7f;
+}
+
+.summary-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.summary-overview-item {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 14px;
+    padding: 15px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.summary-overview-item .summary-signal-index {
+    flex: 0 0 auto;
+    color: rgba(255, 147, 77, 0.68);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.summary-overview-item > div {
+    min-width: 0;
+}
+
+.summary-overview-item div > span,
+.summary-overview-item strong {
+    display: block;
+}
+
+.summary-overview-item div > span {
+    color: #8f847a;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.summary-overview-item strong {
+    overflow-wrap: anywhere;
+    margin-top: 4px;
+    color: #f5efe8;
+    font-size: 18px;
+    font-weight: 850;
+}
+
+@media (max-width: 860px) {
+    .summary-overview-main {
+        grid-template-columns: minmax(0, 1fr) 190px;
+        gap: 24px;
+    }
+
+    .summary-overview-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .summary-overview {
+        padding: 22px 18px;
+        border-radius: 22px;
+    }
+
+    .summary-overview-main {
+        grid-template-columns: 1fr;
+        gap: 22px;
+    }
+
+    .summary-score-box {
+        min-height: 164px;
+    }
+
+    .summary-domain-score {
+        padding: 14px 10px 14px 0;
+    }
+
+    .summary-domain-score + .summary-domain-score {
+        padding-left: 10px;
+    }
+
+    .summary-overview-grid {
+        grid-template-columns: 1fr;
+    }
+}

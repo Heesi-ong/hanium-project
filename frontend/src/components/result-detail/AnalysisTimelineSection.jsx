@@ -71,7 +71,7 @@ function TimelineTrack({ track, duration, currentTimeSec, onSeekToTime }) {
     const playheadLeft = clamp((currentTimeSec / duration) * 100, 0, 100);
 
     return (
-        <div className="analysis-timeline-row">
+        <div className="analysis-timeline-row" role="group" aria-label={`${track.label} 분석 트랙`}>
             <div className="analysis-timeline-label">
                 <strong>{track.label}</strong>
                 <span>{track.source}</span>
@@ -88,8 +88,8 @@ function TimelineTrack({ track, duration, currentTimeSec, onSeekToTime }) {
                             type="button"
                             className="analysis-timeline-interval"
                             style={{
-                                left: `${item.left}%`,
-                                width: `${item.width}%`,
+                                "--timeline-left": `${item.left}%`,
+                                "--timeline-width": `${item.width}%`,
                             }}
                             key={`${track.key}-${item.start}-${item.end}-${index}`}
                             onClick={() => onSeekToTime?.(item.start)}
@@ -103,7 +103,7 @@ function TimelineTrack({ track, duration, currentTimeSec, onSeekToTime }) {
                         <button
                             type="button"
                             className={`analysis-timeline-point ${item.active === false ? "is-muted" : ""}`}
-                            style={{ left: `${item.left}%` }}
+                            style={{ "--timeline-left": `${item.left}%` }}
                             key={`${track.key}-${item.timestamp}-${index}`}
                             onClick={() => onSeekToTime?.(item.timestamp)}
                             title={`${formatTimestamp(item.timestamp)} · ${item.displayLabel}`}
@@ -139,6 +139,7 @@ function AnalysisTimelineSection({
         notableMoments,
     ];
     const duration = resolveDuration(durationSec, collections);
+    const currentTimestamp = clamp(toFiniteNumber(currentTimeSec) || 0, 0, duration);
     const generationMode = visualAnalysis?.model?.generationMode
         || pipeline?.videoLlmGenerationMode
         || "UNKNOWN";
@@ -209,15 +210,23 @@ function AnalysisTimelineSection({
             <div className="analysis-timeline-header">
                 <div>
                     <h3 id="analysis-timeline-title">영상 동기화 분석 타임라인</h3>
-                    <p>막대나 점을 선택하면 영상이 해당 시점으로 이동합니다.</p>
+                    <p id="analysis-timeline-help">
+                        막대나 점을 선택하면 영상이 해당 시점으로 이동합니다.
+                    </p>
                 </div>
-                <div className="analysis-timeline-legend" aria-label="분석 출처 범례">
-                    <span className="timeline-source-badge quantitative">정량 분석</span>
-                    {videoLlmItems.length > 0 && (
-                        <span className={`timeline-source-badge ${sampleMode ? "sample" : "real"}`}>
-                            {formatGenerationMode(generationMode)}
-                        </span>
-                    )}
+                <div className="analysis-timeline-tools">
+                    <div className="analysis-timeline-current" aria-label={`현재 재생 위치 ${formatTimestamp(currentTimestamp)}`}>
+                        <span>현재 위치</span>
+                        <strong>{formatTimestamp(currentTimestamp)}</strong>
+                    </div>
+                    <div className="analysis-timeline-legend" aria-label="분석 출처 범례">
+                        <span className="timeline-source-badge quantitative">정량 분석</span>
+                        {videoLlmItems.length > 0 && (
+                            <span className={`timeline-source-badge ${sampleMode ? "sample" : "real"}`}>
+                                {formatGenerationMode(generationMode)}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -227,27 +236,35 @@ function AnalysisTimelineSection({
                 </p>
             )}
 
-            <div className="analysis-timeline-scroll">
-                <div className="analysis-timeline-axis" aria-hidden="true">
-                    <span />
-                    <div>
-                        {AXIS_RATIOS.map((ratio) => (
-                            <span key={ratio} style={{ left: `${ratio * 100}%` }}>
-                                {formatTimestamp(duration * ratio)}
-                            </span>
-                        ))}
+            <div
+                className="analysis-timeline-viewport"
+                role="region"
+                aria-label="분석 타임라인 탐색"
+                aria-describedby="analysis-timeline-help"
+                tabIndex={0}
+            >
+                <div className="analysis-timeline-scroll">
+                    <div className="analysis-timeline-axis" aria-hidden="true">
+                        <span />
+                        <div>
+                            {AXIS_RATIOS.map((ratio) => (
+                                <span key={ratio} style={{ left: `${ratio * 100}%` }}>
+                                    {formatTimestamp(duration * ratio)}
+                                </span>
+                            ))}
+                        </div>
                     </div>
-                </div>
 
-                {tracks.map((track) => (
-                    <TimelineTrack
-                        key={track.key}
-                        track={track}
-                        duration={duration}
-                        currentTimeSec={currentTimeSec}
-                        onSeekToTime={onSeekToTime}
-                    />
-                ))}
+                    {tracks.map((track) => (
+                        <TimelineTrack
+                            key={track.key}
+                            track={track}
+                            duration={duration}
+                            currentTimeSec={currentTimestamp}
+                            onSeekToTime={onSeekToTime}
+                        />
+                    ))}
+                </div>
             </div>
         </section>
     );

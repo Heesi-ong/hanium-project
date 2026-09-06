@@ -9,45 +9,65 @@ function FillerAnalysisSection({
                                    fillerWords,
                                    renderMetricCard,
                                }) {
+    const fillerCount = fillerInfo?.fillerCount ?? 0;
+
     return (
-        <article className="detail-card wide">
-            <h2>필러 분석 요약</h2>
+        <article className="detail-card wide result-speech-card result-filler-card">
+            <header className="result-speech-card-header">
+                <div>
+                    <span className="result-speech-kicker">Verbal habits</span>
+                    <h2>필러 분석 요약</h2>
+                    <p>반복된 간투사의 수와 비율을 확인하고 다음 발표에서 줄일 표현을 찾습니다.</p>
+                </div>
+                <span className={`mini-badge ${fillerCount > 0 ? "warning" : "success"}`}>
+                    {fillerCount > 0 ? `${fillerCount}회 감지` : "감지된 표현 없음"}
+                </span>
+            </header>
 
-            <div className="metric-grid">
-                {renderMetricCard(
-                    "필러 점수",
-                    fillerInfo?.fillerScore,
-                    "전체 단어 수 대비 필러 비율이 낮을수록 높은 점수입니다."
-                )}
+            <div className="result-filler-overview">
+                <div className="result-filler-score">
+                    {renderMetricCard(
+                        "필러 점수",
+                        fillerInfo?.fillerScore,
+                        "전체 단어 수 대비 필러 비율이 낮을수록 높은 점수입니다."
+                    )}
+                </div>
 
-                <article className="metric-card">
-                    <span>필러 수</span>
-                    <strong>{fillerInfo?.fillerCount ?? 0}개</strong>
-                    <p>STT transcript에서 감지한 필러 표현 수입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>필러 비율</span>
-                    <strong>{formatPercent(fillerInfo?.fillerRatio)}</strong>
-                    <p>전체 단어 수 대비 필러 표현의 비율입니다.</p>
-                </article>
-
-                <article className="metric-card">
-                    <span>분석 방식</span>
-                    <strong>{formatAnalysisMethod(fillerInfo?.analysisMethod)}</strong>
-                    <p>현재 필러 분석에 사용된 계산 방식입니다.</p>
-                </article>
+                <dl className="result-filler-facts">
+                    <div>
+                        <dt>필러 수</dt>
+                        <dd>{fillerCount}개</dd>
+                        <span>STT transcript에서 감지</span>
+                    </div>
+                    <div>
+                        <dt>필러 비율</dt>
+                        <dd>{formatPercent(fillerInfo?.fillerRatio)}</dd>
+                        <span>전체 단어 수 대비</span>
+                    </div>
+                    <div>
+                        <dt>분석 방식</dt>
+                        <dd>{formatAnalysisMethod(fillerInfo?.analysisMethod)}</dd>
+                        <span>현재 적용된 계산 방식</span>
+                    </div>
+                </dl>
             </div>
 
-            {fillerInfo?.note && <p className="muted-text">{fillerInfo.note}</p>}
+            {fillerInfo?.note && (
+                <div className="result-speech-notice">
+                    <span aria-hidden="true">i</span>
+                    <p>{fillerInfo.note}</p>
+                </div>
+            )}
 
             {Array.isArray(fillerWords) && fillerWords.length > 0 ? (
                 <CollapsibleDetails
                     headingLevel={3}
+                    className="result-speech-details"
                     summary={`감지된 필러 표현 (${fillerWords.length}종) — 자세히 보기`}
                 >
-                    <div className="pose-frame-table-wrap">
+                    <div className="pose-frame-table-wrap result-speech-table-wrap">
                         <table className="pose-frame-table">
+                            <caption className="sr-only">감지된 필러 표현과 사용 횟수</caption>
                             <thead>
                             <tr>
                                 <th>순서</th>
@@ -69,7 +89,13 @@ function FillerAnalysisSection({
                     </div>
                 </CollapsibleDetails>
             ) : (
-                <p className="muted-text">감지된 필러 표현이 없습니다.</p>
+                <div className="result-speech-empty compact">
+                    <span aria-hidden="true">✓</span>
+                    <div>
+                        <strong>감지된 필러 표현이 없습니다.</strong>
+                        <p>현재 STT 결과에서 집계된 간투사가 없습니다.</p>
+                    </div>
+                </div>
             )}
         </article>
     );

@@ -21,22 +21,41 @@ function AnalysisTraceSection({ analysisTrace }) {
         return null;
     }
 
-    const totalMilliseconds = steps.reduce(
-        (sum, step) =>
-            sum + (typeof step.durationMs === "number" ? step.durationMs : 0),
+    const recordedDurations = steps
+        .map((step) => step.durationMs)
+        .filter((duration) => typeof duration === "number" && !Number.isNaN(duration));
+    const recordedDurationTotal = recordedDurations.reduce(
+        (sum, duration) => sum + duration,
         0
     );
 
     return (
-        <article className="detail-card wide">
-            <h2>분석 처리 과정</h2>
+        <article
+            className="detail-card wide result-evidence-card result-analysis-trace-card"
+            aria-labelledby="analysis-trace-title"
+        >
+            <header className="result-evidence-card-header">
+                <div>
+                    <span className="result-evidence-kicker">Processing record</span>
+                    <h2 id="analysis-trace-title">분석 처리 과정</h2>
+                    <p>
+                        분석 엔진이 반환한 단계와 처리량을 순서대로 보여줍니다.
+                    </p>
+                </div>
+                <div className="analysis-trace-summary" aria-label={`처리 기록 ${steps.length}단계`}>
+                    <strong>{steps.length}</strong>
+                    <span>기록 단계</span>
+                </div>
+            </header>
 
-            <p className="muted-text">
-                업로드한 영상은 OpenCV로 장면 프레임과 오디오를 추출하고, MediaPipe Pose
-                Landmarker로 자세와 제스처를 검출한 뒤 점수를 계산합니다. 아래는 이번
-                분석에서 각 단계가 실제로 처리한 내용과 걸린 시간입니다. (총 약{" "}
-                {formatDuration(totalMilliseconds)})
-            </p>
+            <div className="analysis-trace-context">
+                <span>OpenCV 추출 → MediaPipe 검출 → 점수 계산</span>
+                <span>
+                    {recordedDurations.length > 0
+                        ? `단계별 기록 시간 합계 ${formatDuration(recordedDurationTotal)}`
+                        : "단계별 처리 시간 미기록"}
+                </span>
+            </div>
 
             <ol className="analysis-trace-list">
                 {steps.map((step, index) => (
@@ -44,14 +63,18 @@ function AnalysisTraceSection({ analysisTrace }) {
                         className="analysis-trace-item"
                         key={`${step.stepNo ?? index}-${index}`}
                     >
+                        <span className="analysis-trace-marker" aria-hidden="true">
+                            {step.stepNo ?? index + 1}
+                        </span>
                         <div className="analysis-trace-head">
                             <span className="analysis-trace-step">
-                                {step.stepNo ?? index + 1}/
-                                {step.totalSteps ?? steps.length}
+                                단계 {step.stepNo ?? index + 1} / {step.totalSteps ?? steps.length}
                             </span>
                             <strong>{step.label ?? "-"}</strong>
                             <span className="analysis-trace-duration">
-                                {formatDuration(step.durationMs)}
+                                {formatDuration(step.durationMs) === "-"
+                                    ? "시간 미기록"
+                                    : formatDuration(step.durationMs)}
                             </span>
                         </div>
 

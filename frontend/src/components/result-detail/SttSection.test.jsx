@@ -43,6 +43,10 @@ describe("SttSection", () => {
 
         const seekButtons = screen.getAllByRole("button", { name: /영상을 .*초 지점으로 이동/ });
         expect(seekButtons).toHaveLength(2);
+        expect(screen.getByText("텍스트 변환 성공")).toBeInTheDocument();
+        expect(screen.getByText("STT 상태")).toBeInTheDocument();
+        expect(screen.getAllByRole("term")).toHaveLength(6);
+        expect(screen.getByText("2개 구간")).toBeInTheDocument();
 
         fireEvent.click(seekButtons[1]);
 
@@ -77,5 +81,18 @@ describe("SttSection", () => {
         );
 
         expect(screen.getByText("표시할 STT segment가 없습니다.")).toBeInTheDocument();
+    });
+
+    it("does not invent a failed extraction state when extraction information is absent", () => {
+        render(
+            <SttSection
+                sttInfo={{ ...baseSttInfo, success: undefined }}
+                sttSegments={[]}
+            />
+        );
+
+        expect(screen.getByText("변환 상태 미확인")).toBeInTheDocument();
+        expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+        expect(screen.queryByText("오디오 추출 실패")).not.toBeInTheDocument();
     });
 });

@@ -3,10 +3,18 @@ from typing import Any, Mapping
 
 MIN_DURATION_FOR_FORCED_SEGMENTATION_SEC = 30.0
 
+_KOREAN_OUTPUT_INSTRUCTION = (
+    "Keep every JSON property name exactly as specified in English. "
+    "Write every user-facing string value in natural Korean (ko-KR), including "
+    "label, description, visualDelivery, mainStrength, and mainWeakness. "
+    "Do not translate JSON property names or observation category names."
+)
+
 _SYSTEM_PROMPT = (
     "/no_think\n"
     "You are a presentation-coaching video analyst. Return only strict JSON. "
-    "Do not wrap the JSON in Markdown. The JSON must match the requested schema exactly."
+    "Do not wrap the JSON in Markdown. The JSON must match the requested schema exactly. "
+    f"{_KOREAN_OUTPUT_INSTRUCTION}"
 )
 
 
@@ -88,6 +96,7 @@ def _build_user_prompt(
         "}"
         "}. "
         "Use seconds from the start of the video. Keep confidence between 0 and 1. "
+        f"{_KOREAN_OUTPUT_INSTRUCTION} "
         f"{duration_prompt}"
         f"Sampling hint from caller: sampleFps={sample_fps}, maxFrames={max_frames}."
     )

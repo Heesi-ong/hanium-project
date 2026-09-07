@@ -62,9 +62,12 @@ def test_build_inline_payload_preserves_system_text_video_and_json_contract():
         assert payload[key] == expected
     assert [message["role"] for message in payload["messages"]] == ["system", "user"]
     assert payload["messages"][0]["content"].startswith("/no_think\n")
+    assert "natural Korean (ko-KR)" in payload["messages"][0]["content"]
     user_content = payload["messages"][1]["content"]
     assert user_content[0]["type"] == "text"
     assert "The video is exactly 4.166 seconds long." in user_content[0]["text"]
+    assert "natural Korean (ko-KR)" in user_content[0]["text"]
+    assert "Do not translate JSON property names" in user_content[0]["text"]
     assert "sampleFps=2, maxFrames=45" in user_content[0]["text"]
     assert user_content[1] == {
         "type": "video_url",
@@ -92,5 +95,7 @@ def test_build_asset_payload_preserves_single_message_and_asset_reference():
     content = payload["messages"][0]["content"]
     assert content.startswith("/no_think\n")
     assert "Divide the video into three temporal segments" in content
+    assert "natural Korean (ko-KR)" in content
+    assert "Do not translate JSON property names" in content
     assert '<video src="data:video/mp4;asset_id,asset-123" />' in content
     assert "Return only valid JSON" in content

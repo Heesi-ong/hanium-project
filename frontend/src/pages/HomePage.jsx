@@ -787,7 +787,7 @@ function HomePage() {
                                 <motion.div className="faq-row border-b border-white/10 py-6" key={item.question} variants={fadeUp}>
                                     <button
                                         type="button"
-                                        className="flex w-full items-center justify-between text-left text-base font-semibold text-text-primary"
+                                        className="flex w-full appearance-none items-center justify-between border-0 bg-transparent p-0 text-left text-base font-semibold text-warm-white"
                                         onClick={() => toggleFaq(index)}
                                         aria-expanded={isOpen}
                                     >

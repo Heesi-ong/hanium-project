@@ -235,6 +235,8 @@ describe("HomePage", () => {
             name: /업로드한 영상은 계속 보관되나요/,
         });
 
+        expect(uploadQuestion).toHaveClass("appearance-none", "border-0", "bg-transparent", "text-warm-white");
+
         expect(screen.queryByText(/mp4, mov, avi, mkv 형식을 지원하며/))
             .not.toBeInTheDocument();
         expect(screen.queryByText(/분석이 완료된 원본 영상은 30일간 보관/))
